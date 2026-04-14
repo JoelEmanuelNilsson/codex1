@@ -139,7 +139,7 @@ fn internal_runtime_flow_creates_mission_package_and_review_contracts() {
 
     let blueprint = run_json(
         repo.path(),
-        &["internal", "write-blueprint"],
+        &["internal", "materialize-plan"],
         json!({
             "mission_id": mission_id,
             "body_markdown": canonical_blueprint_body("Use internal commands plus visible artifacts."),
@@ -243,7 +243,7 @@ fn internal_runtime_flow_creates_mission_package_and_review_contracts() {
 
     let review = run_json(
         repo.path(),
-        &["internal", "record-review-result"],
+        &["internal", "record-review-outcome"],
         json!({
             "mission_id": mission_id,
             "bundle_id": bundle_id,
@@ -299,7 +299,7 @@ fn internal_runtime_flow_creates_mission_package_and_review_contracts() {
         .expect("post-completion bundle id");
     let post_completion_review = run_json(
         repo.path(),
-        &["internal", "record-review-result"],
+        &["internal", "record-review-outcome"],
         json!({
             "mission_id": mission_id,
             "bundle_id": post_completion_bundle_id,
@@ -355,7 +355,7 @@ fn internal_runtime_flow_creates_mission_package_and_review_contracts() {
 
     let mission_close_review = run_json(
         repo.path(),
-        &["internal", "record-review-result"],
+        &["internal", "record-review-outcome"],
         json!({
             "mission_id": mission_id,
             "bundle_id": mission_close_bundle_id,
@@ -984,7 +984,7 @@ fn newer_packages_and_bundles_stale_older_artifacts() {
     );
     run_json(
         repo.path(),
-        &["internal", "write-blueprint"],
+        &["internal", "materialize-plan"],
         json!({
             "mission_id": mission_id,
             "body_markdown": canonical_blueprint_body("Use internal commands."),
@@ -1157,7 +1157,7 @@ fn newer_packages_and_bundles_stale_older_artifacts() {
 
     let stale_review_error = run_json_failure(
         repo.path(),
-        &["internal", "record-review-result"],
+        &["internal", "record-review-outcome"],
         json!({
             "mission_id": mission_id,
             "bundle_id": bundle_one_id,
@@ -1193,7 +1193,7 @@ fn planning_reuses_or_advances_spec_revision_honestly() {
 
     let first = run_json(
         repo.path(),
-        &["internal", "write-blueprint"],
+        &["internal", "materialize-plan"],
         json!({
             "mission_id": mission_id,
             "body_markdown": canonical_blueprint_body("Use runtime commands."),
@@ -1214,7 +1214,7 @@ fn planning_reuses_or_advances_spec_revision_honestly() {
 
     let unchanged = run_json(
         repo.path(),
-        &["internal", "write-blueprint"],
+        &["internal", "materialize-plan"],
         json!({
             "mission_id": mission_id,
             "body_markdown": canonical_blueprint_body("Use runtime commands."),
@@ -1235,7 +1235,7 @@ fn planning_reuses_or_advances_spec_revision_honestly() {
 
     let changed = run_json(
         repo.path(),
-        &["internal", "write-blueprint"],
+        &["internal", "materialize-plan"],
         json!({
             "mission_id": mission_id,
             "body_markdown": canonical_blueprint_body("Use runtime commands. Changed details."),
@@ -1273,7 +1273,7 @@ fn mission_close_bundle_requires_integrated_visible_truth() {
     );
     let blueprint = run_json(
         repo.path(),
-        &["internal", "write-blueprint"],
+        &["internal", "materialize-plan"],
         json!({
             "mission_id": mission_id,
             "body_markdown": canonical_blueprint_body("Use runtime commands."),
@@ -1377,7 +1377,7 @@ fn internal_write_closeout_rejects_terminal_verdicts() {
 
     let error = run_json_failure(
         repo.path(),
-        &["internal", "write-closeout", "--mission-id", mission_id],
+        &["internal", "append-closeout", "--mission-id", mission_id],
         json!({
             "closeout_seq": 0,
             "mission_id": mission_id,

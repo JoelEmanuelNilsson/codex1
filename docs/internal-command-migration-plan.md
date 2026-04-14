@@ -57,7 +57,7 @@ Exit criteria:
 
 ## Phase 2: Migrate Repo-Owned Callers
 
-Status: planned.
+Status: active.
 
 Scope:
 
@@ -71,6 +71,7 @@ Targets in this phase:
 - `crates/codex1/src/commands/qualify.rs`
 - `crates/codex1/tests/runtime_internal.rs`
 - any helper scripts or fixture docs that shell out to `codex1 internal ...`
+- repo-local public skill docs under `.codex/skills/`
 
 Rules:
 
@@ -80,6 +81,13 @@ Rules:
   - runtime integration tests
   - examples in docs
 - Do not remove aliases in this phase.
+
+Completed in the current wave:
+
+- `crates/codex1/src/commands/qualify.rs` now prefers canonical names.
+- `crates/codex1/tests/runtime_internal.rs` now prefers canonical names.
+- repo-local skill docs for `plan`, `execute`, and `review` now prefer
+  canonical names.
 
 Exit criteria:
 

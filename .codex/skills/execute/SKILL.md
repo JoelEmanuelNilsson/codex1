@@ -21,7 +21,7 @@ Deterministic backend:
 - derive bounded child write briefs with `codex1 internal derive-writer-packet`
 - when execution discovers a non-local contract break, write a structured
   record with `codex1 internal record-contradiction`
-- end every bounded cycle with `codex1 internal write-closeout` when a more
+- end every bounded cycle with `codex1 internal append-closeout` when a more
   specific helper did not already do it; that low-level helper is only for
   non-terminal Ralph verdicts
 

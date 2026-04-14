@@ -1724,7 +1724,7 @@ fn run_runtime_backend_flow() -> Result<QualificationGate> {
         &repo_root,
         &[
             "internal",
-            "write-blueprint",
+            "materialize-plan",
             "--repo-root",
             repo_root.to_str().unwrap(),
             "--input-json",
@@ -1847,7 +1847,7 @@ fn run_runtime_backend_flow() -> Result<QualificationGate> {
         &repo_root,
         &[
             "internal",
-            "validate-artifacts",
+            "validate-mission-artifacts",
             "--repo-root",
             repo_root.to_str().unwrap(),
             "--mission-id",
@@ -1960,7 +1960,7 @@ fn run_runtime_backend_flow() -> Result<QualificationGate> {
         &repo_root,
         &[
             "internal",
-            "record-review-result",
+            "record-review-outcome",
             "--repo-root",
             repo_root.to_str().unwrap(),
             "--input-json",
@@ -1986,7 +1986,7 @@ fn run_runtime_backend_flow() -> Result<QualificationGate> {
         &repo_root,
         &[
             "internal",
-            "write-blueprint",
+            "materialize-plan",
             "--repo-root",
             repo_root.to_str().unwrap(),
             "--input-json",
@@ -2112,7 +2112,7 @@ fn run_runtime_backend_flow() -> Result<QualificationGate> {
         &repo_root,
         &[
             "internal",
-            "record-review-result",
+            "record-review-outcome",
             "--repo-root",
             repo_root.to_str().unwrap(),
             "--input-json",
@@ -2185,7 +2185,7 @@ fn run_runtime_backend_flow() -> Result<QualificationGate> {
         &repo_root,
         &[
             "internal",
-            "record-review-result",
+            "record-review-outcome",
             "--repo-root",
             repo_root.to_str().unwrap(),
             "--input-json",
@@ -2957,7 +2957,7 @@ fn run_native_multi_agent_resume_flow(live: bool) -> Result<QualificationGate> {
         &repo_root,
         &[
             "internal",
-            "write-closeout",
+            "append-closeout",
             "--repo-root",
             repo_root.to_str().unwrap(),
             "--mission-id",
@@ -3667,7 +3667,7 @@ fn run_manual_parity_flow(binary: &Path, repo_root: &Path) -> Result<ParityFlowO
         repo_root,
         &[
             "internal",
-            "write-blueprint",
+            "materialize-plan",
             "--repo-root",
             repo_root.to_str().unwrap(),
             "--input-json",
@@ -3737,7 +3737,7 @@ fn run_manual_parity_flow(binary: &Path, repo_root: &Path) -> Result<ParityFlowO
             repo_root,
             &[
                 "internal",
-                "record-review-result",
+                "record-review-outcome",
                 "--repo-root",
                 repo_root.to_str().unwrap(),
                 "--input-json",
@@ -3777,7 +3777,7 @@ fn run_manual_parity_flow(binary: &Path, repo_root: &Path) -> Result<ParityFlowO
             repo_root,
             &[
                 "internal",
-                "record-review-result",
+                "record-review-outcome",
                 "--repo-root",
                 repo_root.to_str().unwrap(),
                 "--input-json",
@@ -3795,7 +3795,7 @@ fn run_manual_parity_flow(binary: &Path, repo_root: &Path) -> Result<ParityFlowO
             repo_root,
             &[
                 "internal",
-                "validate-artifacts",
+                "validate-mission-artifacts",
                 "--repo-root",
                 repo_root.to_str().unwrap(),
                 "--mission-id",
@@ -3849,7 +3849,7 @@ fn run_autopilot_parity_flow(binary: &Path, repo_root: &Path) -> Result<ParityFl
                 repo_root,
                 &[
                     "internal",
-                    "write-blueprint",
+                    "materialize-plan",
                     "--repo-root",
                     repo_root.to_str().unwrap(),
                     "--input-json",
@@ -3917,7 +3917,7 @@ fn run_autopilot_parity_flow(binary: &Path, repo_root: &Path) -> Result<ParityFl
                     repo_root,
                     &[
                         "internal",
-                        "record-review-result",
+                        "record-review-outcome",
                         "--repo-root",
                         repo_root.to_str().unwrap(),
                         "--input-json",
@@ -3953,7 +3953,7 @@ fn run_autopilot_parity_flow(binary: &Path, repo_root: &Path) -> Result<ParityFl
                     repo_root,
                     &[
                         "internal",
-                        "record-review-result",
+                        "record-review-outcome",
                         "--repo-root",
                         repo_root.to_str().unwrap(),
                         "--input-json",
@@ -3970,7 +3970,7 @@ fn run_autopilot_parity_flow(binary: &Path, repo_root: &Path) -> Result<ParityFl
                     repo_root,
                     &[
                         "internal",
-                        "validate-artifacts",
+                        "validate-mission-artifacts",
                         "--repo-root",
                         repo_root.to_str().unwrap(),
                         "--mission-id",

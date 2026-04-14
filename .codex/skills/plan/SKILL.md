@@ -28,7 +28,7 @@ Bootstrap or refresh planning artifacts from:
 
 Deterministic backend:
 
-- use `codex1 internal write-blueprint` for visible blueprint/spec writeback
+- use `codex1 internal materialize-plan` for visible blueprint/spec writeback
 - use `codex1 internal compile-execution-package` and
   `codex1 internal validate-execution-package` for the next selected target
 - see `docs/runtime-backend.md` for payload shape and state ownership

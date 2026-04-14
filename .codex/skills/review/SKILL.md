@@ -17,7 +17,7 @@ Deterministic backend:
 - use `codex1 internal compile-review-bundle` to create the bounded review
   contract
 - use `codex1 internal validate-review-bundle` before trusting the bundle
-- use `codex1 internal record-review-result` for ledger writeback, gate updates,
+- use `codex1 internal record-review-outcome` for ledger writeback, gate updates,
   and review closeout
 
 Use a fresh read-only reviewer context. If subagents help, route that through
