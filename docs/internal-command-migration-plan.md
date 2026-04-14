@@ -133,6 +133,9 @@ Completed groundwork in the current wave:
 - added `validate-gates`
 - added `validate-closeouts`
 - added `latest-valid-closeout`
+- moved the real stop decision path into `codex1-core` so `codex1 internal stop-hook`
+  can stay a thin hook adapter instead of carrying duplicated mission-state
+  branching in the CLI crate
 
 Rule:
 

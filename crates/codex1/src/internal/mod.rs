@@ -9,19 +9,18 @@ use codex1_core::{
     ArtifactDocument, CloseoutRecord, ContradictionInput, EffectiveConfigReport,
     ExecutionGraphValidationReport, ExecutionPackageInput, MissionBootstrapReport,
     MissionGateIndex, MissionInitInput, MissionPaths, MissionStateFrontmatter,
-    OutcomeLockFrontmatter,
-    PackageValidationReport, PlanningWriteInput, ProgramBlueprintFrontmatter, ReplanLogInput,
-    ResolveResumeInput, ResolveResumeReport, ReviewBundleInput, ReviewBundleValidationReport,
-    ReviewResultInput, SelectionAcknowledgementInput, SelectionConsumptionInput,
-    SelectionResolutionInput, SelectionState, SelectionStateInput, StopHookOutput, Verdict,
-    WaitingRequestAcknowledgementInput, WorkstreamSpecFrontmatter, WriterPacketInput,
-    WriterPacketValidationReport, acknowledge_selection_request, acknowledge_waiting_request,
-    append_contradiction, append_replan_log, compile_execution_package, compile_review_bundle,
-    consume_selection_wait, derive_writer_packet, determine_stop_decision, initialize_mission,
-    list_non_terminal_missions, load_closeouts, load_state, open_selection_wait,
+    OutcomeLockFrontmatter, PackageValidationReport, PlanningWriteInput,
+    ProgramBlueprintFrontmatter, ReplanLogInput, ResolveResumeInput, ResolveResumeReport,
+    ReviewBundleInput, ReviewBundleValidationReport, ReviewResultInput,
+    SelectionAcknowledgementInput, SelectionConsumptionInput, SelectionResolutionInput,
+    SelectionState, SelectionStateInput, WaitingRequestAcknowledgementInput,
+    WorkstreamSpecFrontmatter, WriterPacketInput, WriterPacketValidationReport,
+    acknowledge_selection_request, acknowledge_waiting_request, append_contradiction,
+    append_replan_log, compile_execution_package, compile_review_bundle, consume_selection_wait,
+    derive_writer_packet, initialize_mission, load_closeouts, open_selection_wait,
     rebuild_state_from_files, record_review_result, resolve_resume, resolve_selection_wait,
-    validate_execution_graph, validate_execution_package, validate_review_bundle,
-    validate_writer_packet, write_closeout, write_planning_artifacts,
+    resolve_stop_hook_output, validate_execution_graph, validate_execution_package,
+    validate_review_bundle, validate_writer_packet, write_closeout, write_planning_artifacts,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -429,336 +428,12 @@ struct LatestValidCloseoutReport {
 fn run_stop_hook() -> Result<()> {
     let input: StopHookInput = read_stdin_json()?;
     let repo_root = PathBuf::from(input.cwd);
-    let ralph_root = repo_root.join(".ralph");
-    let existing_selection_state =
-        match load_selection_state(&ralph_root.join("selection-state.json")) {
-            Ok(state) => state,
-            Err(error) => {
-                let output = StopHookOutput {
-                    continue_processing: true,
-                    decision: Some("block".to_string()),
-                    reason: Some(format!(
-                        "Repair malformed selection state before continuing: {}",
-                        error
-                    )),
-                    system_message: None,
-                };
-                println!(
-                    "{}",
-                    serde_json::to_string(&output)
-                        .context("failed to serialize stop-hook output")?
-                );
-                return Ok(());
-            }
-        };
-    if let Some(selection_state) = existing_selection_state
-        && selection_state.cleared_at.is_none()
-    {
-        let report = match resolve_resume(
-            &repo_root,
-            &ResolveResumeInput {
-                mission_id: None,
-                live_child_lanes: Vec::new(),
-            },
-        ) {
-            Ok(report) => report,
-            Err(error) => {
-                let output =
-                    block_stop_output(format!("Repair resume state before continuing: {}", error));
-                println!(
-                    "{}",
-                    serde_json::to_string(&output)
-                        .context("failed to serialize stop-hook output")?
-                );
-                return Ok(());
-            }
-        };
-        let output = match report.resume_status {
-            codex1_core::ResumeStatus::Terminal => {
-                let mission_id = match report.selected_mission_id.clone() {
-                    Some(mission_id) => mission_id,
-                    None => {
-                        return Ok(println_and_return_output(block_stop_output(
-                            "Repair terminal mission state before continuing: resolved selection has no mission id.",
-                        ))?);
-                    }
-                };
-                let paths = MissionPaths::new(&repo_root, mission_id);
-                if latest_closeout_is_terminal(&paths)? {
-                    StopHookOutput {
-                        continue_processing: true,
-                        decision: None,
-                        reason: None,
-                        system_message: None,
-                    }
-                } else {
-                    block_stop_output(
-                        "Repair terminal mission state before continuing: latest closeout is not terminal.",
-                    )
-                }
-            }
-            codex1_core::ResumeStatus::WaitingSelection => {
-                let current_selection_state =
-                    load_selection_state(&ralph_root.join("selection-state.json"))?
-                        .context("selection wait report returned without selection state")?;
-                let emitted_selection_state =
-                    if current_selection_state.request_emitted_at.is_none() {
-                        acknowledge_selection_request(
-                            &ralph_root,
-                            &SelectionAcknowledgementInput {
-                                selection_request_id: current_selection_state
-                                    .selection_request_id
-                                    .clone(),
-                            },
-                        )?
-                    } else {
-                        current_selection_state
-                    };
-                StopHookOutput::for_selection_wait(&emitted_selection_state)
-            }
-            codex1_core::ResumeStatus::WaitingNeedsUser => {
-                let mission_id = report
-                    .selected_mission_id
-                    .clone()
-                    .context("resolved selection did not bind a mission id")?;
-                let paths = MissionPaths::new(&repo_root, mission_id);
-                let state = load_state(&paths.state_json())?
-                    .context("waiting selection resolved without mission state")?;
-                if state.request_emitted_at.is_none()
-                    && let Some(waiting_request_id) = state.waiting_request_id.clone()
-                    && latest_closeout_supports_waiting_ack(&paths, &waiting_request_id)?
-                    && let Err(error) = acknowledge_waiting_request(
-                        &paths,
-                        &WaitingRequestAcknowledgementInput { waiting_request_id },
-                    )
-                {
-                    let output = StopHookOutput {
-                        continue_processing: true,
-                        decision: Some("block".to_string()),
-                        reason: Some(format!(
-                            "Repair waiting emission acknowledgement before continuing: {}",
-                            error
-                        )),
-                        system_message: None,
-                    };
-                    println!(
-                        "{}",
-                        serde_json::to_string(&output)
-                            .context("failed to serialize stop-hook output")?
-                    );
-                    return Ok(());
-                }
-                StopHookOutput {
-                    continue_processing: true,
-                    decision: None,
-                    reason: None,
-                    system_message: Some(report.next_action),
-                }
-            }
-            codex1_core::ResumeStatus::ActionableNonTerminal
-            | codex1_core::ResumeStatus::InterruptedCycle
-            | codex1_core::ResumeStatus::ContradictoryState => StopHookOutput {
-                continue_processing: true,
-                decision: Some("block".to_string()),
-                reason: Some(report.next_action),
-                system_message: None,
-            },
-            _ => StopHookOutput {
-                continue_processing: true,
-                decision: None,
-                reason: None,
-                system_message: None,
-            },
-        };
-        println!(
-            "{}",
-            serde_json::to_string(&output).context("failed to serialize stop-hook output")?
-        );
-        return Ok(());
-    }
-    let missions_root = repo_root.join(".ralph").join("missions");
-    let active = match list_non_terminal_missions(&missions_root) {
-        Ok(active) => active,
-        Err(error) => {
-            let output = block_stop_output(format!(
-                "Repair mission discovery before continuing: {}",
-                error
-            ));
-            println!(
-                "{}",
-                serde_json::to_string(&output).context("failed to serialize stop-hook output")?
-            );
-            return Ok(());
-        }
-    };
-
-    let output = match active.len() {
-        0 => StopHookOutput {
-            continue_processing: true,
-            decision: None,
-            reason: None,
-            system_message: None,
-        },
-        1 => {
-            let (mission_id, state) = &active[0];
-            match resolve_resume(
-                &repo_root,
-                &ResolveResumeInput {
-                    mission_id: Some(mission_id.clone()),
-                    live_child_lanes: Vec::new(),
-                },
-            ) {
-                Ok(report)
-                    if matches!(
-                        report.resume_status,
-                        codex1_core::ResumeStatus::ActionableNonTerminal
-                            | codex1_core::ResumeStatus::InterruptedCycle
-                            | codex1_core::ResumeStatus::ContradictoryState
-                    ) =>
-                {
-                    StopHookOutput {
-                        continue_processing: true,
-                        decision: Some("block".to_string()),
-                        reason: Some(report.next_action),
-                        system_message: None,
-                    }
-                }
-                Ok(report)
-                    if report.resume_status == codex1_core::ResumeStatus::WaitingNeedsUser
-                        && state.request_emitted_at.is_none() =>
-                {
-                    let paths = MissionPaths::new(&repo_root, mission_id.clone());
-                    let refreshed_state =
-                        load_state(&paths.state_json())?.unwrap_or_else(|| state.clone());
-                    if let Some(waiting_request_id) = refreshed_state.waiting_request_id.clone()
-                        && latest_closeout_supports_waiting_ack(&paths, &waiting_request_id)?
-                        && let Err(error) = acknowledge_waiting_request(
-                            &paths,
-                            &WaitingRequestAcknowledgementInput { waiting_request_id },
-                        )
-                    {
-                        StopHookOutput {
-                            continue_processing: true,
-                            decision: Some("block".to_string()),
-                            reason: Some(format!(
-                                "Repair waiting emission acknowledgement before continuing: {}",
-                                error
-                            )),
-                            system_message: None,
-                        }
-                    } else {
-                        StopHookOutput {
-                            continue_processing: true,
-                            decision: None,
-                            reason: None,
-                            system_message: Some(report.next_action),
-                        }
-                    }
-                }
-                Ok(report) => {
-                    let paths = MissionPaths::new(&repo_root, mission_id.clone());
-                    let refreshed_state =
-                        load_state(&paths.state_json())?.unwrap_or_else(|| state.clone());
-                    if report.resume_status == codex1_core::ResumeStatus::Terminal
-                        && !latest_closeout_is_terminal(&paths)?
-                    {
-                        block_stop_output(
-                            "Repair terminal mission state before continuing: latest closeout is not terminal.",
-                        )
-                    } else {
-                        let decision = determine_stop_decision(&refreshed_state);
-                        let mut output = StopHookOutput::from_state(&decision, &refreshed_state);
-                        if report.resume_status == codex1_core::ResumeStatus::Terminal {
-                            output.reason = None;
-                        }
-                        output
-                    }
-                }
-                Err(error) => StopHookOutput {
-                    continue_processing: true,
-                    decision: Some("block".to_string()),
-                    reason: Some(format!("Repair resume state before continuing: {}", error)),
-                    system_message: None,
-                },
-            }
-        }
-        _ => {
-            let candidates: Vec<String> = active
-                .into_iter()
-                .map(|(mission_id, _)| mission_id)
-                .collect();
-            let canonical_selection_request = "Select the mission to resume.".to_string();
-            let selection_state = open_selection_wait(
-                &ralph_root,
-                &SelectionStateInput {
-                    candidate_mission_ids: candidates,
-                    canonical_selection_request,
-                },
-            )?;
-            let emitted_selection_state = acknowledge_selection_request(
-                &ralph_root,
-                &SelectionAcknowledgementInput {
-                    selection_request_id: selection_state.selection_request_id.clone(),
-                },
-            )?;
-            StopHookOutput::for_selection_wait(&emitted_selection_state)
-        }
-    };
-
+    let output = resolve_stop_hook_output(&repo_root, &[])?;
     println!(
         "{}",
         serde_json::to_string(&output).context("failed to serialize stop-hook output")?
     );
     Ok(())
-}
-
-fn println_and_return_output(output: StopHookOutput) -> Result<()> {
-    println!(
-        "{}",
-        serde_json::to_string(&output).context("failed to serialize stop-hook output")?
-    );
-    Ok(())
-}
-
-fn block_stop_output(reason: impl Into<String>) -> StopHookOutput {
-    StopHookOutput {
-        continue_processing: true,
-        decision: Some("block".to_string()),
-        reason: Some(reason.into()),
-        system_message: None,
-    }
-}
-
-fn latest_closeout_supports_waiting_ack(
-    paths: &MissionPaths,
-    waiting_request_id: &str,
-) -> Result<bool> {
-    let latest = load_closeouts(&paths.closeouts_ndjson())?
-        .into_iter()
-        .last();
-    Ok(latest.is_some_and(|closeout| {
-        closeout.verdict == Verdict::NeedsUser
-            && closeout.waiting_request_id.as_deref() == Some(waiting_request_id)
-    }))
-}
-
-fn latest_closeout_is_terminal(paths: &MissionPaths) -> Result<bool> {
-    Ok(load_closeouts(&paths.closeouts_ndjson())?
-        .into_iter()
-        .last()
-        .is_some_and(|closeout| {
-            matches!(closeout.verdict, Verdict::Complete | Verdict::HardBlocked)
-        }))
-}
-
-fn load_selection_state(path: &Path) -> Result<Option<SelectionState>> {
-    match fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&bytes)
-            .map(Some)
-            .with_context(|| format!("failed to parse {}", path.display())),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error).with_context(|| format!("failed to read {}", path.display())),
-    }
 }
 
 fn run_rebuild_state(
@@ -898,7 +573,9 @@ fn run_validate_closeouts(
                 valid: true,
                 closeout_count: closeouts.len(),
                 latest_closeout_seq: closeouts.last().map(|record| record.closeout_seq),
-                latest_closeout_id: closeouts.last().and_then(|record| record.closeout_id.clone()),
+                latest_closeout_id: closeouts
+                    .last()
+                    .and_then(|record| record.closeout_id.clone()),
                 findings: Vec::new(),
             },
             Err(error) => CloseoutsValidationReport {
@@ -1300,6 +977,16 @@ where
     let raw = fs::read_to_string(path_or_dash)
         .with_context(|| format!("failed to read {}", path_or_dash))?;
     serde_json::from_str(&raw).with_context(|| format!("failed to parse {} as JSON", path_or_dash))
+}
+
+fn load_selection_state(path: &Path) -> Result<Option<SelectionState>> {
+    match fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .map(Some)
+            .with_context(|| format!("failed to parse {}", path.display())),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error).with_context(|| format!("failed to read {}", path.display())),
+    }
 }
 
 fn derive_mission_id(title: &str) -> String {

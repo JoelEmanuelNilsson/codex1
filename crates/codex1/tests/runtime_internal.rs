@@ -495,7 +495,12 @@ fn gate_and_closeout_inspection_commands_report_current_mission_state() {
 
     let latest = run_json(
         repo.path(),
-        &["internal", "latest-valid-closeout", "--mission-id", mission_id],
+        &[
+            "internal",
+            "latest-valid-closeout",
+            "--mission-id",
+            mission_id,
+        ],
         json!({}),
     );
     assert_eq!(latest["mission_id"], mission_id);

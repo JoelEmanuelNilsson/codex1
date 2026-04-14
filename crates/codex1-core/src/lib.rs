@@ -53,6 +53,7 @@ pub use runtime::{
     acknowledge_waiting_request, append_contradiction, append_replan_log,
     compile_execution_package, compile_review_bundle, consume_selection_wait, derive_writer_packet,
     initialize_mission, open_selection_wait, record_review_result, resolve_resume,
-    resolve_selection_wait, validate_execution_graph, validate_execution_package,
-    validate_review_bundle, validate_writer_packet, write_closeout, write_planning_artifacts,
+    resolve_selection_wait, resolve_stop_hook_output, validate_execution_graph,
+    validate_execution_package, validate_review_bundle, validate_writer_packet, write_closeout,
+    write_planning_artifacts,
 };

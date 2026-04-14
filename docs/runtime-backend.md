@@ -18,6 +18,10 @@ persist mission truth under `PLANS/` and `.ralph/`.
 
 All commands live under `codex1 internal ...` and support `--json`.
 
+`codex1 internal stop-hook` remains the single hook-facing adapter, but the
+artifact-driven stop decision now lives in `codex1-core` so the CLI crate does
+not carry duplicate Ralph branching logic.
+
 ## Migration status
 
 Phase 1 of the internal command taxonomy migration is active.

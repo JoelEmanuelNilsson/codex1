@@ -13,9 +13,9 @@ use uuid::Uuid;
 use crate::commands::SetupArgs;
 use crate::commands::resolve_repo_root;
 use crate::support_surface::{
-    AGENTS_BLOCK, AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END, MANAGED_STOP_HOOK_STATUS,
-    ManagedSkillFile, OBSERVATIONAL_STOP_HOOK_FLAG, OBSERVATIONAL_STOP_HOOK_FLAG_CAMEL,
-    SkillInstallMode, SkillSurfaceInspection, SkillSurfaceStatus, default_skill_root,
+    AGENTS_BLOCK, AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END, MANAGED_STOP_HOOK_STATUS, ManagedSkillFile,
+    OBSERVATIONAL_STOP_HOOK_FLAG, OBSERVATIONAL_STOP_HOOK_FLAG_CAMEL, SkillInstallMode,
+    SkillSurfaceInspection, SkillSurfaceStatus, default_skill_root,
     inspect_skill_surface_with_source, is_managed_stop_handler, managed_skill_files,
     resolve_source_skills_root, summarize_stop_authority_with_observational,
     summarize_stop_handlers,

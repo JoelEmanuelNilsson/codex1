@@ -21,7 +21,7 @@ use crate::fingerprint::Fingerprint;
 use crate::paths::MissionPaths;
 use crate::ralph::{
     ActiveCycleLoad, ActiveCycleState, ChildLaneExpectation, ChildLaneIntegrationStatus,
-    CloseoutRecord, CycleKind, RalphState, ResumeMode, Terminality, Verdict,
+    CloseoutRecord, CycleKind, RalphState, ResumeMode, StopHookOutput, Terminality, Verdict,
     append_closeout_and_rebuild_state, contradictory_active_cycle_state, inspect_active_cycle,
     load_closeouts, load_state, rebuild_state_from_closeouts,
 };
@@ -3513,6 +3513,38 @@ pub fn resolve_resume(repo_root: &Path, input: &ResolveResumeInput) -> Result<Re
     }
 }
 
+pub fn resolve_stop_hook_output(
+    repo_root: &Path,
+    live_child_lanes: &[LiveChildLaneSnapshot],
+) -> Result<StopHookOutput> {
+    let ralph_root = repo_root.join(".ralph");
+
+    if let Err(error) = load_optional_selection_state(&ralph_root) {
+        return Ok(block_stop_output(format!(
+            "Repair malformed selection state before continuing: {}",
+            error
+        )));
+    }
+
+    let report = match resolve_resume(
+        repo_root,
+        &ResolveResumeInput {
+            mission_id: None,
+            live_child_lanes: live_child_lanes.to_vec(),
+        },
+    ) {
+        Ok(report) => report,
+        Err(error) => {
+            return Ok(block_stop_output(format!(
+                "Repair resume state before continuing: {}",
+                error
+            )));
+        }
+    };
+
+    stop_output_from_resume_report(repo_root, &ralph_root, &report)
+}
+
 pub fn acknowledge_waiting_request(
     paths: &MissionPaths,
     input: &WaitingRequestAcknowledgementInput,
@@ -3994,6 +4026,123 @@ fn selection_wait_report(
         selection_state_action,
         state_repairs_applied,
     }
+}
+
+fn stop_output_from_resume_report(
+    repo_root: &Path,
+    ralph_root: &Path,
+    report: &ResolveResumeReport,
+) -> Result<StopHookOutput> {
+    match report.resume_status {
+        ResumeStatus::NoActiveMission => Ok(StopHookOutput {
+            continue_processing: true,
+            decision: None,
+            reason: None,
+            system_message: None,
+        }),
+        ResumeStatus::WaitingSelection => {
+            let current_selection_state = load_optional_selection_state(ralph_root)?
+                .context("selection wait report returned without selection state")?;
+            let emitted_selection_state = if current_selection_state.request_emitted_at.is_none() {
+                acknowledge_selection_request(
+                    ralph_root,
+                    &SelectionAcknowledgementInput {
+                        selection_request_id: current_selection_state.selection_request_id.clone(),
+                    },
+                )?
+            } else {
+                current_selection_state
+            };
+            Ok(StopHookOutput::for_selection_wait(&emitted_selection_state))
+        }
+        ResumeStatus::WaitingNeedsUser => {
+            let mission_id = report
+                .selected_mission_id
+                .clone()
+                .context("resolved waiting mission did not bind a mission id")?;
+            let paths = MissionPaths::new(repo_root, mission_id);
+            let state = load_state(&paths.state_json())?
+                .context("waiting mission resolved without mission state")?;
+            if state.request_emitted_at.is_none()
+                && let Some(waiting_request_id) = state.waiting_request_id.clone()
+                && latest_closeout_supports_waiting_ack(&paths, &waiting_request_id)?
+            {
+                if let Err(error) = acknowledge_waiting_request(
+                    &paths,
+                    &WaitingRequestAcknowledgementInput { waiting_request_id },
+                ) {
+                    return Ok(block_stop_output(format!(
+                        "Repair waiting emission acknowledgement before continuing: {}",
+                        error
+                    )));
+                }
+            }
+            Ok(StopHookOutput {
+                continue_processing: true,
+                decision: None,
+                reason: None,
+                system_message: Some(report.next_action.clone()),
+            })
+        }
+        ResumeStatus::ActionableNonTerminal
+        | ResumeStatus::InterruptedCycle
+        | ResumeStatus::ContradictoryState => Ok(StopHookOutput {
+            continue_processing: true,
+            decision: Some("block".to_string()),
+            reason: Some(report.next_action.clone()),
+            system_message: None,
+        }),
+        ResumeStatus::Terminal => {
+            let mission_id = report
+                .selected_mission_id
+                .clone()
+                .context("resolved terminal mission did not bind a mission id")?;
+            let paths = MissionPaths::new(repo_root, mission_id);
+            if latest_closeout_is_terminal(&paths)? {
+                Ok(StopHookOutput {
+                    continue_processing: true,
+                    decision: None,
+                    reason: None,
+                    system_message: None,
+                })
+            } else {
+                Ok(block_stop_output(
+                    "Repair terminal mission state before continuing: latest closeout is not terminal.",
+                ))
+            }
+        }
+    }
+}
+
+fn block_stop_output(reason: impl Into<String>) -> StopHookOutput {
+    StopHookOutput {
+        continue_processing: true,
+        decision: Some("block".to_string()),
+        reason: Some(reason.into()),
+        system_message: None,
+    }
+}
+
+fn latest_closeout_supports_waiting_ack(
+    paths: &MissionPaths,
+    waiting_request_id: &str,
+) -> Result<bool> {
+    let latest = load_closeouts(&paths.closeouts_ndjson())?
+        .into_iter()
+        .last();
+    Ok(latest.is_some_and(|closeout| {
+        closeout.verdict == Verdict::NeedsUser
+            && closeout.waiting_request_id.as_deref() == Some(waiting_request_id)
+    }))
+}
+
+fn latest_closeout_is_terminal(paths: &MissionPaths) -> Result<bool> {
+    Ok(load_closeouts(&paths.closeouts_ndjson())?
+        .into_iter()
+        .last()
+        .is_some_and(|closeout| {
+            matches!(closeout.verdict, Verdict::Complete | Verdict::HardBlocked)
+        }))
 }
 
 fn classify_active_cycle(
@@ -8938,7 +9087,7 @@ Keep the implementation bounded and explicit.
                     packetization_status: Some(PacketizationStatus::Runnable),
                     execution_status: Some(SpecExecutionStatus::NotStarted),
                     owner_mode: None,
-                replan_boundary: None,
+                    replan_boundary: None,
                 }],
                 selected_target_ref: Some("spec:spec_api".to_string()),
                 execution_graph: None,
@@ -9316,7 +9465,7 @@ Keep the implementation bounded and explicit.
                     packetization_status: Some(PacketizationStatus::Runnable),
                     execution_status: Some(SpecExecutionStatus::NotStarted),
                     owner_mode: None,
-                replan_boundary: None,
+                    replan_boundary: None,
                 }],
                 selected_target_ref: Some("spec:spec_api".to_string()),
                 execution_graph: None,
@@ -9438,7 +9587,7 @@ Keep the implementation bounded and explicit.
                     packetization_status: Some(PacketizationStatus::Runnable),
                     execution_status: Some(SpecExecutionStatus::NotStarted),
                     owner_mode: None,
-                replan_boundary: None,
+                    replan_boundary: None,
                 }],
                 selected_target_ref: Some("spec:spec_api".to_string()),
                 execution_graph: None,
@@ -9694,7 +9843,7 @@ Keep the implementation bounded and explicit.
                     packetization_status: Some(PacketizationStatus::Runnable),
                     execution_status: Some(SpecExecutionStatus::NotStarted),
                     owner_mode: None,
-                replan_boundary: None,
+                    replan_boundary: None,
                 }],
                 selected_target_ref: Some("spec:spec_api".to_string()),
                 execution_graph: None,
@@ -10377,7 +10526,7 @@ Keep the implementation bounded and explicit.
                     packetization_status: Some(PacketizationStatus::Runnable),
                     execution_status: Some(SpecExecutionStatus::NotStarted),
                     owner_mode: None,
-                replan_boundary: None,
+                    replan_boundary: None,
                 }],
                 selected_target_ref: Some("spec:spec_api".to_string()),
                 execution_graph: None,
@@ -10515,7 +10664,7 @@ Keep the implementation bounded and explicit.
                     packetization_status: Some(PacketizationStatus::Runnable),
                     execution_status: Some(SpecExecutionStatus::NotStarted),
                     owner_mode: None,
-                replan_boundary: None,
+                    replan_boundary: None,
                 }],
                 selected_target_ref: Some("spec:spec_api".to_string()),
                 execution_graph: None,
@@ -10619,7 +10768,7 @@ Keep the implementation bounded and explicit.
                     packetization_status: Some(PacketizationStatus::Runnable),
                     execution_status: Some(SpecExecutionStatus::NotStarted),
                     owner_mode: None,
-                replan_boundary: None,
+                    replan_boundary: None,
                 }],
                 selected_target_ref: Some("spec:spec_api".to_string()),
                 execution_graph: None,
@@ -10754,7 +10903,7 @@ Keep the implementation bounded and explicit.
                     packetization_status: Some(PacketizationStatus::Runnable),
                     execution_status: Some(SpecExecutionStatus::NotStarted),
                     owner_mode: None,
-                replan_boundary: None,
+                    replan_boundary: None,
                 }],
                 selected_target_ref: Some("spec:spec_api".to_string()),
                 execution_graph: None,
@@ -10882,7 +11031,7 @@ Keep the implementation bounded and explicit.
                     packetization_status: Some(PacketizationStatus::Runnable),
                     execution_status: Some(SpecExecutionStatus::NotStarted),
                     owner_mode: None,
-                replan_boundary: None,
+                    replan_boundary: None,
                 }],
                 selected_target_ref: Some("spec:spec_api".to_string()),
                 execution_graph: None,
@@ -11137,12 +11286,12 @@ Keep the implementation bounded and explicit.
                     WorkstreamSpecInput {
                         spec_id: "spec_api".to_string(),
                         purpose: "Implement the API slice".to_string(),
-                    body_markdown: Some(canonical_spec_body("Implement the API slice")),
+                        body_markdown: Some(canonical_spec_body("Implement the API slice")),
                         artifact_status: Some(SpecArtifactStatus::Active),
                         packetization_status: Some(PacketizationStatus::Runnable),
                         execution_status: Some(SpecExecutionStatus::NotStarted),
                         owner_mode: None,
-                    replan_boundary: None,
+                        replan_boundary: None,
                     },
                     WorkstreamSpecInput {
                         spec_id: "spec_descoped".to_string(),
@@ -11152,7 +11301,7 @@ Keep the implementation bounded and explicit.
                         packetization_status: Some(PacketizationStatus::Descoped),
                         execution_status: Some(SpecExecutionStatus::NotStarted),
                         owner_mode: None,
-                    replan_boundary: None,
+                        replan_boundary: None,
                     },
                 ],
                 selected_target_ref: Some("spec:spec_api".to_string()),

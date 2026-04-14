@@ -11,9 +11,8 @@ use serde_json::Value;
 
 use crate::commands::{DoctorArgs, resolve_repo_root};
 use crate::support_surface::{
-    AGENTS_BLOCK, AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END, SkillSurfaceInspection,
-    SkillSurfaceStatus, compute_support_surface_signature, extract_managed_block,
-    inspect_skill_surface,
+    AGENTS_BLOCK, AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END, SkillSurfaceInspection, SkillSurfaceStatus,
+    compute_support_surface_signature, extract_managed_block, inspect_skill_surface,
     summarize_stop_authority_with_observational,
 };
 

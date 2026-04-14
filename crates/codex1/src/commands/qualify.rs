@@ -19,9 +19,8 @@ use uuid::Uuid;
 
 use crate::commands::{QualifyArgs, resolve_repo_root};
 use crate::support_surface::{
-    AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END, SkillSurfaceStatus,
-    compute_support_surface_signature, extract_managed_block, inspect_skill_surface,
-    summarize_stop_authority,
+    AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END, SkillSurfaceStatus, compute_support_surface_signature,
+    extract_managed_block, inspect_skill_surface, summarize_stop_authority,
     summarize_stop_authority_with_observational,
 };
 
@@ -4603,8 +4602,8 @@ fn emit_report(report: &QualificationReport, json_output: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CodexBuildInfo, EvidencePaths, GateStatus, QualificationGate, QualificationReport,
-        QualificationSummary, RequestedQualification, INTERNAL_CONTRACT_PARITY_GATE,
+        CodexBuildInfo, EvidencePaths, GateStatus, INTERNAL_CONTRACT_PARITY_GATE,
+        QualificationGate, QualificationReport, QualificationSummary, RequestedQualification,
         count_stop_hooks, detect_codex_hooks_setting, self_hosting_gate,
     };
     use serde_json::json;
@@ -4733,7 +4732,12 @@ features.codex_hooks = false
             QualificationGate::pass("waiting_stop_hook_flow", "desc", "message", None),
             QualificationGate::pass("native_exec_resume_flow", "desc", "message", None),
             QualificationGate::pass("native_multi_agent_resume_flow", "desc", "message", None),
-            QualificationGate::skipped(INTERNAL_CONTRACT_PARITY_GATE, "desc", "not automated", None),
+            QualificationGate::skipped(
+                INTERNAL_CONTRACT_PARITY_GATE,
+                "desc",
+                "not automated",
+                None,
+            ),
         ];
 
         let summary = QualificationSummary::from_gates(&gates);

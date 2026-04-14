@@ -217,7 +217,9 @@ fn resolve_skill_surface_root(
 
     if default_root.exists() {
         let install_mode = match fs::symlink_metadata(default_root) {
-            Ok(metadata) if metadata.file_type().is_symlink() => Some(SkillInstallMode::LinkedSkills),
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                Some(SkillInstallMode::LinkedSkills)
+            }
             Ok(_) => Some(SkillInstallMode::CopiedSkills),
             Err(_) => None,
         };
@@ -242,7 +244,10 @@ fn resolve_skills_config_bridge_root(repo_root: &Path) -> Result<Option<PathBuf>
             continue;
         }
         if trimmed.starts_with("[[") && trimmed.ends_with("]]") {
-            if in_bridge && enabled && let Some(path) = path.take() {
+            if in_bridge
+                && enabled
+                && let Some(path) = path.take()
+            {
                 return resolve_bridge_candidate(&config_path, repo_root, &path).map(Some);
             }
             in_bridge = trimmed == "[[skills.config]]";
@@ -260,23 +265,27 @@ fn resolve_skills_config_bridge_root(repo_root: &Path) -> Result<Option<PathBuf>
         }
     }
 
-    if in_bridge && enabled && let Some(path) = path {
+    if in_bridge
+        && enabled
+        && let Some(path) = path
+    {
         return resolve_bridge_candidate(&config_path, repo_root, &path).map(Some);
     }
 
     Ok(None)
 }
 
-fn resolve_bridge_candidate(config_path: &Path, repo_root: &Path, raw_path: &str) -> Result<PathBuf> {
+fn resolve_bridge_candidate(
+    config_path: &Path,
+    repo_root: &Path,
+    raw_path: &str,
+) -> Result<PathBuf> {
     let candidate = PathBuf::from(raw_path);
     let candidates = if candidate.is_absolute() {
         vec![candidate]
     } else {
         vec![
-            config_path
-                .parent()
-                .unwrap_or(repo_root)
-                .join(&candidate),
+            config_path.parent().unwrap_or(repo_root).join(&candidate),
             repo_root.join(&candidate),
         ]
     };
@@ -284,7 +293,10 @@ fn resolve_bridge_candidate(config_path: &Path, repo_root: &Path, raw_path: &str
     for candidate in candidates {
         if candidate.exists() {
             let canonical = fs::canonicalize(&candidate).with_context(|| {
-                format!("failed to canonicalize bridged skill root {}", candidate.display())
+                format!(
+                    "failed to canonicalize bridged skill root {}",
+                    candidate.display()
+                )
             })?;
             validate_source_skills_root(&canonical)?;
             return Ok(canonical);
@@ -741,7 +753,10 @@ mod tests {
         let inspection =
             inspect_skill_surface_with_source(target.path(), source.path()).expect("inspect");
         assert_eq!(inspection.status, SkillSurfaceStatus::ValidExisting);
-        assert_eq!(inspection.install_mode, Some(SkillInstallMode::CopiedSkills));
+        assert_eq!(
+            inspection.install_mode,
+            Some(SkillInstallMode::CopiedSkills)
+        );
     }
 
     #[test]
@@ -753,8 +768,7 @@ mod tests {
         let codex_dir = target.path().join(".codex");
         fs::create_dir_all(&codex_dir).expect("create .codex");
         #[cfg(unix)]
-        std::os::unix::fs::symlink(source.path(), codex_dir.join("skills"))
-            .expect("link skills");
+        std::os::unix::fs::symlink(source.path(), codex_dir.join("skills")).expect("link skills");
         #[cfg(windows)]
         std::os::windows::fs::symlink_dir(source.path(), codex_dir.join("skills"))
             .expect("link skills");
@@ -762,7 +776,10 @@ mod tests {
         let inspection =
             inspect_skill_surface_with_source(target.path(), source.path()).expect("inspect");
         assert_eq!(inspection.status, SkillSurfaceStatus::ValidExisting);
-        assert_eq!(inspection.install_mode, Some(SkillInstallMode::LinkedSkills));
+        assert_eq!(
+            inspection.install_mode,
+            Some(SkillInstallMode::LinkedSkills)
+        );
     }
 
     #[test]
