@@ -14,12 +14,10 @@ Render the files in `templates/setup/project/` into the target repo root.
 
 Replace these placeholders before installation:
 
+- `{{REPO_SPECIFIC_NOTES}}`
 - `{{BUILD_COMMAND}}`
 - `{{TEST_COMMAND}}`
-- `{{LINT_COMMAND}}`
-- `{{ADDITIONAL_CHECK_1}}`
-- `{{ADDITIONAL_CHECK_2}}`
-- `{{REPO_SPECIFIC_NOTES}}`
+- `{{LINT_OR_FORMAT_COMMAND}}`
 - `{{STOP_HOOK_COMMAND}}`
 - `{{SKILLS_BRIDGE_PATH}}` when using a non-default skill install mode
 

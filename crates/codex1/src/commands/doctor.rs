@@ -11,8 +11,9 @@ use serde_json::Value;
 
 use crate::commands::{DoctorArgs, resolve_repo_root};
 use crate::support_surface::{
-    AGENTS_BLOCK, AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END, SkillSurfaceInspection, SkillSurfaceStatus,
-    compute_support_surface_signature, extract_managed_block, inspect_skill_surface,
+    AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END, AgentsCommandStatus, AgentsScaffoldStatus,
+    SkillSurfaceInspection, SkillSurfaceStatus, compute_support_surface_signature,
+    extract_managed_block, inspect_agents_scaffold_details, inspect_skill_surface,
     summarize_stop_authority_with_observational,
 };
 
@@ -86,6 +87,8 @@ pub struct SkillSurfaceSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub install_mode: Option<String>,
     pub status: FindingStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bridge_error: Option<String>,
     pub missing_required_public_skills: Vec<String>,
     pub drifted_managed_files: Vec<String>,
     pub matched_managed_files: usize,
@@ -405,21 +408,37 @@ pub fn run(args: DoctorArgs) -> Result<()> {
         }
     });
 
-    let agents_state = inspect_agents_doc(agents_doc.as_deref());
-    findings.push(match agents_state {
-        AgentsState::Present => DoctorFinding {
-            status: FindingStatus::Pass,
+    let agents_inspection = inspect_agents_scaffold_details(agents_doc.as_deref());
+    findings.push(match agents_inspection.status {
+        AgentsScaffoldStatus::Present => DoctorFinding {
+            status: if agents_inspection.command_status == AgentsCommandStatus::Concrete {
+                FindingStatus::Pass
+            } else {
+                FindingStatus::Warn
+            },
             check: "agents_md".to_string(),
-            message: "AGENTS.md contains the Codex1 managed scaffold block".to_string(),
-            remediation: None,
+            message: if agents_inspection.command_status == AgentsCommandStatus::Concrete {
+                "AGENTS.md contains the Codex1 managed scaffold block with concrete repo commands"
+                    .to_string()
+            } else {
+                "AGENTS.md contains the Codex1 managed scaffold block, but the repo command slots still need concrete values".to_string()
+            },
+            remediation: if agents_inspection.command_status == AgentsCommandStatus::Concrete {
+                None
+            } else {
+                Some(
+                    "fill in the Build/Test/Lint or format command lines inside the managed Codex1 block"
+                        .to_string(),
+                )
+            },
         },
-        AgentsState::MissingFile => DoctorFinding {
+        AgentsScaffoldStatus::MissingFile => DoctorFinding {
             status: FindingStatus::Warn,
             check: "agents_md".to_string(),
             message: "AGENTS.md is missing".to_string(),
             remediation: Some("run codex1 setup to install the thin Codex1 scaffold".to_string()),
         },
-        AgentsState::MissingBlock => DoctorFinding {
+        AgentsScaffoldStatus::MissingBlock => DoctorFinding {
             status: FindingStatus::Warn,
             check: "agents_md".to_string(),
             message: "AGENTS.md exists but the Codex1 managed block is missing".to_string(),
@@ -427,7 +446,7 @@ pub fn run(args: DoctorArgs) -> Result<()> {
                 "run codex1 setup to reapply the managed AGENTS.md block".to_string(),
             ),
         },
-        AgentsState::DriftedBlock => DoctorFinding {
+        AgentsScaffoldStatus::DriftedBlock => DoctorFinding {
             status: FindingStatus::Fail,
             check: "agents_md".to_string(),
             message: "AGENTS.md contains Codex1 markers, but the managed block has drifted"
@@ -437,7 +456,7 @@ pub fn run(args: DoctorArgs) -> Result<()> {
                     .to_string(),
             ),
         },
-        AgentsState::MalformedMarkers => DoctorFinding {
+        AgentsScaffoldStatus::MalformedMarkers => DoctorFinding {
             status: FindingStatus::Fail,
             check: "agents_md".to_string(),
             message: "AGENTS.md has malformed Codex1 markers".to_string(),
@@ -756,14 +775,6 @@ fn inspect_hooks(path: &Path, raw: Option<&str>) -> Result<HookSummary> {
     })
 }
 
-enum AgentsState {
-    Present,
-    MissingFile,
-    MissingBlock,
-    DriftedBlock,
-    MalformedMarkers,
-}
-
 fn summarize_skill_surface(inspection: &SkillSurfaceInspection) -> SkillSurfaceSummary {
     SkillSurfaceSummary {
         file_path: inspection.discovery_root.display().to_string(),
@@ -772,10 +783,11 @@ fn summarize_skill_surface(inspection: &SkillSurfaceInspection) -> SkillSurfaceS
             .map(|mode| mode.as_str().to_string()),
         status: match inspection.status {
             SkillSurfaceStatus::ValidExisting => FindingStatus::Pass,
-            SkillSurfaceStatus::Missing | SkillSurfaceStatus::PartialOrDrifted => {
-                FindingStatus::Fail
-            }
+            SkillSurfaceStatus::Missing
+            | SkillSurfaceStatus::PartialOrDrifted
+            | SkillSurfaceStatus::InvalidBridge => FindingStatus::Fail,
         },
+        bridge_error: inspection.bridge_error.clone(),
         missing_required_public_skills: inspection.missing_required_public_skills.clone(),
         drifted_managed_files: inspection.drifted_managed_files.clone(),
         matched_managed_files: inspection.matched_managed_files,
@@ -832,33 +844,22 @@ fn render_skill_surface_finding(inspection: &SkillSurfaceInspection) -> DoctorFi
                     .to_string(),
             ),
         },
-    }
-}
-
-fn inspect_agents_doc(raw: Option<&str>) -> AgentsState {
-    let Some(raw) = raw else {
-        return AgentsState::MissingFile;
-    };
-
-    let begin_count = raw.matches(AGENTS_BLOCK_BEGIN).count();
-    let end_count = raw.matches(AGENTS_BLOCK_END).count();
-    match (begin_count, end_count) {
-        (0, 0) => AgentsState::MissingBlock,
-        (1, 1) => match extract_managed_block(raw, AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END) {
-            Some(block) if ensure_trailing_newline(&block) == AGENTS_BLOCK => AgentsState::Present,
-            Some(_) => AgentsState::DriftedBlock,
-            None => AgentsState::MalformedMarkers,
+        SkillSurfaceStatus::InvalidBridge => DoctorFinding {
+            status: FindingStatus::Fail,
+            check: "skill_surface".to_string(),
+            message: format!(
+                "the configured `[[skills.config]]` bridge is not support-ready at {} ({})",
+                inspection.discovery_root.display(),
+                inspection
+                    .bridge_error
+                    .as_deref()
+                    .unwrap_or("invalid bridge target")
+            ),
+            remediation: Some(
+                "repair or remove the stale `[[skills.config]]` bridge, or rerun codex1 setup --force to reinstall the managed copied skill surface".to_string(),
+            ),
         },
-        _ => AgentsState::MalformedMarkers,
     }
-}
-
-fn ensure_trailing_newline(value: &str) -> String {
-    let mut output = value.to_string();
-    if !output.ends_with('\n') {
-        output.push('\n');
-    }
-    output
 }
 
 fn inspect_qualification(

@@ -13,12 +13,14 @@ use uuid::Uuid;
 use crate::commands::SetupArgs;
 use crate::commands::resolve_repo_root;
 use crate::support_surface::{
-    AGENTS_BLOCK, AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END, MANAGED_STOP_HOOK_STATUS, ManagedSkillFile,
-    OBSERVATIONAL_STOP_HOOK_FLAG, OBSERVATIONAL_STOP_HOOK_FLAG_CAMEL, SkillInstallMode,
-    SkillSurfaceInspection, SkillSurfaceStatus, default_skill_root,
+    AGENTS_BLOCK, AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END, AGENTS_BUILD_COMMAND_PLACEHOLDER,
+    AGENTS_LINT_COMMAND_PLACEHOLDER, AGENTS_TEST_COMMAND_PLACEHOLDER, AgentsScaffoldStatus,
+    MANAGED_STOP_HOOK_STATUS, ManagedSkillFile, OBSERVATIONAL_STOP_HOOK_FLAG,
+    OBSERVATIONAL_STOP_HOOK_FLAG_CAMEL, SkillInstallMode, SkillSurfaceInspection,
+    SkillSurfaceStatus, default_skill_root, inspect_agents_scaffold_details,
     inspect_skill_surface_with_source, is_managed_stop_handler, managed_skill_files,
-    resolve_source_skills_root, summarize_stop_authority_with_observational,
-    summarize_stop_handlers,
+    render_managed_agents_block, resolve_source_skills_root,
+    summarize_stop_authority_with_observational, summarize_stop_handlers,
 };
 const CONFIG_MODEL: &str = "gpt-5.4";
 const CONFIG_REVIEW_MODEL: &str = "gpt-5.4-mini";
@@ -240,6 +242,27 @@ pub fn run(args: SetupArgs) -> Result<()> {
                     } else {
                         skill_inspection.drifted_managed_files.join(", ")
                     }
+                );
+            }
+
+            planned_changes.extend(plan_copied_skill_changes(
+                &default_skill_root(&repo_root),
+                &managed_skill_files(&source_skill_root)?,
+            )?);
+            (
+                "installed",
+                Some(SkillInstallMode::CopiedSkills.as_str().to_string()),
+            )
+        }
+        SkillSurfaceStatus::InvalidBridge => {
+            if !args.force {
+                bail!(
+                    "skills.config bridge at {} is invalid ({}); rerun with --force to replace it with the managed copied skill surface",
+                    skill_inspection.discovery_root.display(),
+                    skill_inspection
+                        .bridge_error
+                        .as_deref()
+                        .unwrap_or("invalid bridge target")
                 );
             }
 
@@ -815,16 +838,35 @@ fn replace_or_append_managed_block(existing: &str, force: bool) -> Result<String
     let end_index = end_index + AGENTS_BLOCK_END.len();
     let before = existing[..begin_index].trim_end();
     let after = existing[end_index..].trim_start_matches(['\r', '\n']);
+    let scaffold = inspect_agents_scaffold_details(Some(existing));
+    let next_block = if scaffold.status == AgentsScaffoldStatus::Present {
+        render_managed_agents_block(
+            scaffold
+                .build_command
+                .as_deref()
+                .unwrap_or(AGENTS_BUILD_COMMAND_PLACEHOLDER),
+            scaffold
+                .test_command
+                .as_deref()
+                .unwrap_or(AGENTS_TEST_COMMAND_PLACEHOLDER),
+            scaffold
+                .lint_or_format_command
+                .as_deref()
+                .unwrap_or(AGENTS_LINT_COMMAND_PLACEHOLDER),
+        )
+    } else {
+        AGENTS_BLOCK.to_string()
+    };
 
     let mut output = String::new();
     if !before.is_empty() {
         output.push_str(before);
         output.push_str("\n\n");
     }
-    output.push_str(AGENTS_BLOCK.trim_end());
+    output.push_str(next_block.trim_end());
     if !after.is_empty() {
         output.push_str("\n\n");
-        output.push_str(after.trim_start());
+        output.push_str(after);
         output.push('\n');
     } else {
         output.push('\n');
@@ -1107,7 +1149,10 @@ fn strip_comment(line: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use super::{ConfigValue, build_hooks_json, shell_escape_arg, upsert_config_value};
+    use super::{
+        ConfigValue, build_hooks_json, replace_or_append_managed_block, shell_escape_arg,
+        upsert_config_value,
+    };
     use crate::support_surface::{
         MANAGED_STOP_HOOK_STATUS, OBSERVATIONAL_STOP_HOOK_FLAG, OBSERVATIONAL_STOP_HOOK_FLAG_CAMEL,
         is_managed_stop_handler, summarize_stop_authority_with_observational,
@@ -1282,5 +1327,37 @@ mod tests {
         let hook = &parsed["hooks"]["Stop"][0];
         assert!(hook.get(OBSERVATIONAL_STOP_HOOK_FLAG).is_none());
         assert!(hook.get(OBSERVATIONAL_STOP_HOOK_FLAG_CAMEL).is_none());
+    }
+
+    #[test]
+    fn replacing_managed_agents_block_preserves_indented_following_content() {
+        let existing = concat!(
+            "# Repo Instructions\n\n",
+            "<!-- codex1:begin -->\n",
+            "## Codex1\n",
+            "### Workflow Stance\n",
+            "- Use the native Codex skills surface for `clarify`, `plan`, `execute`, `review`, and `autopilot`.\n",
+            "- Keep mission truth in visible repo artifacts instead of hidden chat state.\n",
+            "- Replan stays internal unless the repo truth explicitly says otherwise.\n\n",
+            "### Quality Bar\n",
+            "- Work is complete only when the locked outcome, proof, review, and closeout contracts are all satisfied.\n",
+            "- Review is mandatory before mission completion.\n",
+            "- Hold the repo to production-grade changes with explicit validation and review-clean closeout.\n\n",
+            "### Repo Commands\n",
+            "- Build: cargo build -p codex1\n",
+            "- Test: cargo test -p codex1\n",
+            "- Lint or format: cargo fmt --all --check\n\n",
+            "### Artifact Conventions\n",
+            "- Mission packages live under `PLANS/<mission-id>/`.\n",
+            "- `OUTCOME-LOCK.md` is canonical for destination truth.\n",
+            "- `PROGRAM-BLUEPRINT.md` is canonical for route truth.\n",
+            "- `specs/*/SPEC.md` is canonical for one bounded execution slice.\n",
+            "<!-- codex1:end -->\n\n",
+            "    - keep this indentation\n"
+        );
+
+        let updated =
+            replace_or_append_managed_block(existing, false).expect("managed block should update");
+        assert!(updated.contains("\n\n    - keep this indentation\n"));
     }
 }

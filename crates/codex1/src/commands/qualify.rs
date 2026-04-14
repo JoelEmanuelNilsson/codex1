@@ -12,15 +12,16 @@ use codex1_core::{
     MissionPaths, OutcomeLockFrontmatter, ProgramBlueprintFrontmatter, ReviewBundle,
     WorkstreamSpecFrontmatter, WriterPacket,
 };
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use time::{OffsetDateTime, macros::format_description};
 use uuid::Uuid;
 
 use crate::commands::{QualifyArgs, resolve_repo_root};
 use crate::support_surface::{
-    AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END, SkillSurfaceStatus, compute_support_surface_signature,
-    extract_managed_block, inspect_skill_surface, summarize_stop_authority,
+    AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END, AgentsCommandStatus, AgentsScaffoldStatus,
+    SkillSurfaceStatus, compute_support_surface_signature, extract_managed_block,
+    inspect_agents_scaffold_details, inspect_skill_surface, summarize_stop_authority,
     summarize_stop_authority_with_observational,
 };
 
@@ -201,14 +202,16 @@ impl QualificationSummary {
         let native_multi_agent_proven = gates.iter().any(|gate| {
             gate.gate == "native_multi_agent_resume_flow" && gate.status == GateStatus::Pass
         });
+        let passed_all_required_gates = gates
+            .iter()
+            .filter(|gate| gate_is_required_for_prd(gate.gate))
+            .all(|gate| gate.status == GateStatus::Pass);
+
         Self {
             passed,
             failed,
             skipped,
-            passed_all_required_gates: gates
-                .iter()
-                .filter(|gate| gate_is_required_for_prd(gate.gate))
-                .all(|gate| gate.status == GateStatus::Pass),
+            passed_all_required_gates,
             qualification_scope: if failed == 0
                 && native_stop_proven
                 && native_resume_proven
@@ -218,13 +221,71 @@ impl QualificationSummary {
             } else {
                 None
             },
-            supported_build_qualified: false,
+            supported_build_qualified: failed == 0 && passed_all_required_gates,
         }
     }
 }
 
 fn gate_is_required_for_prd(gate: &str) -> bool {
     gate != "self_hosting_source_repo"
+}
+
+fn project_agents_scaffold_gate(agents_path: &Path, raw: Option<&str>) -> QualificationGate {
+    let inspection = inspect_agents_scaffold_details(raw);
+    let details = Some(json!({
+        "path": agents_path.display().to_string(),
+        "agents_state": inspection.status,
+        "command_status": inspection.command_status,
+        "build_command": inspection.build_command,
+        "test_command": inspection.test_command,
+        "lint_or_format_command": inspection.lint_or_format_command,
+    }));
+
+    match inspection.status {
+        AgentsScaffoldStatus::Present
+            if inspection.command_status == AgentsCommandStatus::Concrete =>
+        {
+            QualificationGate::pass(
+                "project_agents_scaffold_present",
+                "Repo support surfaces include the Codex1-managed AGENTS.md scaffold block with concrete repo commands.",
+                format!(
+                    "AGENTS.md contains the Codex1-managed scaffold block with concrete Build/Test/Lint commands in {}.",
+                    agents_path.display()
+                ),
+                details,
+            )
+        }
+        AgentsScaffoldStatus::Present => QualificationGate::fail(
+            "project_agents_scaffold_present",
+            "Repo support surfaces include the Codex1-managed AGENTS.md scaffold block with concrete repo commands.",
+            "AGENTS.md contains the managed scaffold block, but the Build/Test/Lint command lines are still placeholders or missing.",
+            details,
+        ),
+        AgentsScaffoldStatus::MissingFile => QualificationGate::fail(
+            "project_agents_scaffold_present",
+            "Repo support surfaces include the Codex1-managed AGENTS.md scaffold block with concrete repo commands.",
+            "Missing AGENTS.md.",
+            details,
+        ),
+        AgentsScaffoldStatus::MissingBlock => QualificationGate::fail(
+            "project_agents_scaffold_present",
+            "Repo support surfaces include the Codex1-managed AGENTS.md scaffold block with concrete repo commands.",
+            "AGENTS.md exists, but the Codex1-managed scaffold block is missing.",
+            details,
+        ),
+        AgentsScaffoldStatus::DriftedBlock => QualificationGate::fail(
+            "project_agents_scaffold_present",
+            "Repo support surfaces include the Codex1-managed AGENTS.md scaffold block with concrete repo commands.",
+            "AGENTS.md contains Codex1 markers, but the managed scaffold block has drifted.",
+            details,
+        ),
+        AgentsScaffoldStatus::MalformedMarkers => QualificationGate::fail(
+            "project_agents_scaffold_present",
+            "Repo support surfaces include the Codex1-managed AGENTS.md scaffold block with concrete repo commands.",
+            "AGENTS.md has malformed Codex1 markers.",
+            details,
+        ),
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -944,48 +1005,17 @@ fn project_config_gates(repo_root: &Path) -> Vec<QualificationGate> {
         None => {}
     }
 
-    match fs::read_to_string(&agents_path) {
-        Ok(contents) => {
-            let managed_block =
-                extract_managed_block(&contents, AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END);
-            if managed_block.is_some() {
-                gates.push(QualificationGate::pass(
-                    "project_agents_scaffold_present",
-                    "Repo support surfaces include the Codex1-managed AGENTS.md scaffold block.",
-                    format!(
-                        "Found the Codex1-managed AGENTS.md scaffold in {}.",
-                        agents_path.display()
-                    ),
-                    Some(json!({ "path": agents_path.display().to_string() })),
-                ));
-            } else {
-                gates.push(QualificationGate::fail(
-                    "project_agents_scaffold_present",
-                    "Repo support surfaces include the Codex1-managed AGENTS.md scaffold block.",
-                    "AGENTS.md exists, but the Codex1-managed scaffold block is missing.",
-                    Some(json!({ "path": agents_path.display().to_string() })),
-                ));
-            }
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            gates.push(QualificationGate::fail(
-                "project_agents_scaffold_present",
-                "Repo support surfaces include the Codex1-managed AGENTS.md scaffold block.",
-                "Missing AGENTS.md.",
-                Some(json!({ "path": agents_path.display().to_string() })),
-            ));
-        }
-        Err(error) => {
-            gates.push(QualificationGate::fail(
-                "project_agents_scaffold_present",
-                "Repo support surfaces include the Codex1-managed AGENTS.md scaffold block.",
-                "Could not read AGENTS.md.",
-                Some(json!({
-                    "path": agents_path.display().to_string(),
-                    "error": error.to_string(),
-                })),
-            ));
-        }
+    match read_optional_string(&agents_path) {
+        Ok(raw) => gates.push(project_agents_scaffold_gate(&agents_path, raw.as_deref())),
+        Err(error) => gates.push(QualificationGate::fail(
+            "project_agents_scaffold_present",
+            "Repo support surfaces include the Codex1-managed AGENTS.md scaffold block.",
+            "Could not read AGENTS.md.",
+            Some(json!({
+                "path": agents_path.display().to_string(),
+                "error": error.to_string(),
+            })),
+        )),
     }
 
     match inspect_skill_surface(repo_root) {
@@ -1007,6 +1037,25 @@ fn project_config_gates(repo_root: &Path) -> Vec<QualificationGate> {
                     "matched_managed_files": inspection.matched_managed_files,
                 })),
             ));
+        }
+        Ok(inspection) if inspection.status == SkillSurfaceStatus::InvalidBridge => {
+            gates.push(QualificationGate::fail(
+                "project_skill_surface_valid",
+                "Project support surfaces include a discoverable public skill surface.",
+                format!(
+                    "The configured `[[skills.config]]` bridge at {} is invalid: {}.",
+                    inspection.discovery_root.display(),
+                    inspection
+                        .bridge_error
+                        .as_deref()
+                        .unwrap_or("invalid bridge target")
+                ),
+                Some(json!({
+                    "path": inspection.discovery_root.display().to_string(),
+                    "install_mode": inspection.install_mode.map(|mode| mode.as_str()),
+                    "bridge_error": inspection.bridge_error,
+                })),
+            ))
         }
         Ok(inspection) => gates.push(QualificationGate::fail(
             "project_skill_surface_valid",
@@ -1030,6 +1079,7 @@ fn project_config_gates(repo_root: &Path) -> Vec<QualificationGate> {
                 "install_mode": inspection.install_mode.map(|mode| mode.as_str()),
                 "missing_required_public_skills": inspection.missing_required_public_skills,
                 "drifted_managed_files": inspection.drifted_managed_files,
+                "bridge_error": inspection.bridge_error,
             })),
         )),
         Err(error) => gates.push(QualificationGate::fail(
@@ -2695,9 +2745,11 @@ fn run_native_stop_hook_live_flow(live: bool) -> Result<QualificationGate> {
     let binary = qualification_binary()?;
     let sandbox = tempfile::tempdir().context("failed to create native stop-hook sandbox")?;
     let repo_root = sandbox.path().join("repo");
+    let codex_home_root = sandbox.path().join("codex-home");
     fs::create_dir_all(repo_root.join(".codex/hooks"))
         .context("failed to create native stop-hook repo surfaces")?;
     seed_native_codex_repo(&repo_root)?;
+    seed_native_codex_home(&repo_root, &codex_home_root)?;
     fs::write(
         repo_root.join(".codex/config.toml"),
         "model = \"gpt-5.4\"\n[features]\ncodex_hooks = true\n",
@@ -2769,6 +2821,7 @@ fn run_native_stop_hook_live_flow(live: bool) -> Result<QualificationGate> {
 
     let native = run_native_codex_prompt(
         &repo_root,
+        &codex_home_root,
         NativeCodexInvocation::Exec,
         "Reply with only STOP_PROBE.",
     )?;
@@ -2797,6 +2850,7 @@ fn run_native_stop_hook_live_flow(live: bool) -> Result<QualificationGate> {
             Some(json!({
                 "sandbox_root": sandbox.path().display().to_string(),
                 "repo_root": repo_root.display().to_string(),
+                "codex_home_root": codex_home_root.display().to_string(),
                 "init_step": init_step,
                 "native_stdout": trim_output(&native.stdout),
                 "native_stderr": trim_output(&native.stderr),
@@ -2813,6 +2867,7 @@ fn run_native_stop_hook_live_flow(live: bool) -> Result<QualificationGate> {
             Some(json!({
                 "sandbox_root": sandbox.path().display().to_string(),
                 "repo_root": repo_root.display().to_string(),
+                "codex_home_root": codex_home_root.display().to_string(),
                 "init_step": init_step,
                 "native_stdout": trim_output(&native.stdout),
                 "native_stderr": trim_output(&native.stderr),
@@ -2836,11 +2891,14 @@ fn run_native_exec_resume_flow(live: bool) -> Result<QualificationGate> {
 
     let sandbox = tempfile::tempdir().context("failed to create native exec-resume sandbox")?;
     let repo_root = sandbox.path().join("repo");
+    let codex_home_root = sandbox.path().join("codex-home");
     fs::create_dir_all(&repo_root).context("failed to create native exec-resume repo root")?;
     seed_native_codex_repo(&repo_root)?;
+    seed_native_codex_home(&repo_root, &codex_home_root)?;
 
     let first = run_native_codex_prompt(
         &repo_root,
+        &codex_home_root,
         NativeCodexInvocation::Exec,
         "Reply with only FIRST.",
     )?;
@@ -2850,6 +2908,7 @@ fn run_native_exec_resume_flow(live: bool) -> Result<QualificationGate> {
 
     let second = run_native_codex_prompt(
         &repo_root,
+        &codex_home_root,
         NativeCodexInvocation::ExecResume {
             thread_id: thread_id.clone(),
         },
@@ -2863,6 +2922,7 @@ fn run_native_exec_resume_flow(live: bool) -> Result<QualificationGate> {
     let details = Some(json!({
         "sandbox_root": sandbox.path().display().to_string(),
         "repo_root": repo_root.display().to_string(),
+        "codex_home_root": codex_home_root.display().to_string(),
         "thread_id": thread_id,
         "resumed_thread_id": resumed_thread_id,
         "first_stdout": trim_output(&first.stdout),
@@ -2898,22 +2958,33 @@ fn run_native_exec_resume_flow(live: bool) -> Result<QualificationGate> {
 }
 
 fn run_native_multi_agent_resume_flow(live: bool) -> Result<QualificationGate> {
+    const GATE: &str = "native_multi_agent_resume_flow";
+    const DESCRIPTION: &str = "The trusted Codex build exposes native child-agent tools and Codex1 reconciles their live snapshot honestly on resume.";
+
     if !live {
         return Ok(QualificationGate::skipped(
-            "native_multi_agent_resume_flow",
-            "The trusted Codex build exposes native child-agent tools and Codex1 reconciles their live snapshot honestly on resume.",
+            GATE,
+            DESCRIPTION,
             "Skipped because live Codex qualification was disabled for this run.",
             None,
         ));
     }
 
-    let binary = qualification_binary()?;
-    let sandbox = tempfile::tempdir().context("failed to create native multi-agent sandbox")?;
-    let repo_root = sandbox.path().join("repo");
-    fs::create_dir_all(&repo_root).context("failed to create native multi-agent repo root")?;
-    seed_native_codex_repo(&repo_root)?;
+    let result = (|| -> Result<QualificationGate> {
+        let binary = qualification_binary()?;
+        let sandbox = tempfile::tempdir().context("failed to create native multi-agent sandbox")?;
+        let repo_root = sandbox.path().join("repo");
+        let codex_home_root = sandbox.path().join("codex-home");
+        fs::create_dir_all(&repo_root).context("failed to create native multi-agent repo root")?;
+        seed_native_codex_repo(&repo_root)?;
+        seed_native_codex_home(&repo_root, &codex_home_root)?;
+        fs::write(
+            repo_root.join(".codex/config.toml"),
+            "model = \"gpt-5.4\"\n[agents]\nmax_threads = 16\nmax_depth = 1\n",
+        )
+        .context("failed to write native multi-agent config")?;
 
-    let prompt = r#"Use the native child-agent tools in this order.
+        let prompt = r#"Use the native child-agent tools in this order.
 Do not claim that you used a tool unless the tool call actually succeeded.
 This gate is primarily about proving live child inspection and honest resume reconciliation.
 1. spawn one child with task_name "qualify_child" and tell it to run shell command `sleep 20` and then reply with the single word PING.
@@ -2925,191 +2996,251 @@ This gate is primarily about proving live child inspection and honest resume rec
 7. call close_agent on qualify_child and then call list_agents one more time so you can report whether the child is still visible after close.
 8. reply with one JSON object only containing keys: used_spawn_agent, used_send_message, used_assign_task, used_followup_task, used_list_agents, used_wait_agent, used_close_agent, child_task_path, child_seen_before_wait, child_status_before_wait, child_seen_after_wait, child_status_after_wait, child_seen_after_close, child_status_after_close, wait_summary_present."#;
 
-    let native = run_native_codex_prompt(&repo_root, NativeCodexInvocation::Exec, prompt)?;
-    let native_summary: NativeMultiAgentSummary = parse_last_agent_message_json(&native.stdout)
-        .context("failed to parse native multi-agent summary from the final agent message")?;
+        let native = run_native_codex_prompt(
+            &repo_root,
+            &codex_home_root,
+            NativeCodexInvocation::Exec,
+            prompt,
+        )?;
+        let final_agent_message = last_agent_message_text(&native.stdout)?;
+        let native_summary = match parse_native_multi_agent_summary(&native.stdout) {
+            Ok(summary) => summary,
+            Err(error) => {
+                return Ok(native_multi_agent_gate_failure(
+                    "The native child-agent probe did not return a parseable JSON summary, so qualification recorded a failing gate instead of aborting.",
+                    Some(json!({
+                        "sandbox_root": sandbox.path().display().to_string(),
+                        "repo_root": repo_root.display().to_string(),
+                        "codex_home_root": codex_home_root.display().to_string(),
+                        "native_stdout": trim_output(&native.stdout),
+                        "native_stderr": trim_output(&native.stderr),
+                        "final_agent_message": final_agent_message,
+                        "parse_error": format!("{error:#}"),
+                        "failure_classification": "native_summary_parse_failed",
+                    })),
+                ));
+            }
+        };
 
-    let init_step = run_json_smoke_step(
-        "init_native_multi_agent_mission",
-        &binary,
-        &repo_root,
-        &[
-            "internal",
-            "init-mission",
-            "--repo-root",
-            repo_root.to_str().unwrap(),
-            "--input-json",
-            "-",
-            "--json",
-        ],
-        &json!({
-            "mission_id": "native-reconcile",
-            "title": "Native Reconcile",
-            "objective": "Prove native child lanes reconcile honestly on resume.",
-            "clarify_status": "ratified",
-            "lock_status": "locked"
-        }),
-    )?;
+        if native_summary.child_task_path.trim().is_empty() {
+            return Ok(native_multi_agent_gate_failure(
+                "The native child-agent probe omitted the child task path needed for honest resume reconciliation.",
+                Some(json!({
+                    "sandbox_root": sandbox.path().display().to_string(),
+                    "repo_root": repo_root.display().to_string(),
+                    "codex_home_root": codex_home_root.display().to_string(),
+                    "native_stdout": trim_output(&native.stdout),
+                    "native_stderr": trim_output(&native.stderr),
+                    "final_agent_message": final_agent_message,
+                    "native_summary": native_summary,
+                    "failure_classification": "child_task_path_missing",
+                })),
+            ));
+        }
 
-    let child_status = native_child_status_for_resume(&native_summary);
-    let write_closeout_step = run_json_smoke_step(
-        "write_native_child_closeout",
-        &binary,
-        &repo_root,
-        &[
-            "internal",
-            "append-closeout",
-            "--repo-root",
-            repo_root.to_str().unwrap(),
-            "--mission-id",
-            "native-reconcile",
-            "--input-json",
-            "-",
-            "--json",
-        ],
-        &json!({
-            "closeout_seq": 0,
-            "mission_id": "native-reconcile",
-            "phase": "execution",
-            "activity": "native_child_reconciliation_probe",
-            "verdict": "continue_required",
-            "terminality": "actionable_non_terminal",
-            "resume_mode": "continue",
-            "next_phase": "execution",
-            "next_action": "Reconcile expected child lanes before continuing execution.",
-            "target": "spec:native_reconcile",
-            "cycle_kind": "bounded_progress",
-            "reason_code": "native_multi_agent_probe",
-            "summary": "Qualification recorded a native child lane for resume reconciliation.",
-            "continuation_prompt": "Reconcile expected child lanes before continuing execution.",
-            "governing_revision": "native-child-probe",
-            "active_child_task_paths": [native_summary.child_task_path],
-            "artifact_fingerprints": {}
-        }),
-    )?;
+        let init_step = run_json_smoke_step(
+            "init_native_multi_agent_mission",
+            &binary,
+            &repo_root,
+            &[
+                "internal",
+                "init-mission",
+                "--repo-root",
+                repo_root.to_str().unwrap(),
+                "--input-json",
+                "-",
+                "--json",
+            ],
+            &json!({
+                "mission_id": "native-reconcile",
+                "title": "Native Reconcile",
+                "objective": "Prove native child lanes reconcile honestly on resume.",
+                "clarify_status": "ratified",
+                "lock_status": "locked"
+            }),
+        )?;
 
-    let live_child_lanes = match child_status {
-        Some(status) => vec![json!({
-            "task_path": native_summary.child_task_path,
-            "status": status,
-        })],
-        None => Vec::new(),
-    };
+        let child_status = native_child_status_for_resume(&native_summary);
+        let write_closeout_step = run_json_smoke_step(
+            "write_native_child_closeout",
+            &binary,
+            &repo_root,
+            &[
+                "internal",
+                "append-closeout",
+                "--repo-root",
+                repo_root.to_str().unwrap(),
+                "--mission-id",
+                "native-reconcile",
+                "--input-json",
+                "-",
+                "--json",
+            ],
+            &native_child_probe_closeout_payload(&native_summary),
+        )?;
 
-    let resolve_resume_step = run_json_smoke_step(
-        "resolve_native_child_resume",
-        &binary,
-        &repo_root,
-        &[
-            "internal",
-            "resolve-resume",
-            "--repo-root",
-            repo_root.to_str().unwrap(),
-            "--input-json",
-            "-",
-            "--json",
-        ],
-        &json!({
-            "mission_id": "native-reconcile",
-            "live_child_lanes": live_child_lanes,
-        }),
-    )?;
+        let live_child_lanes = match child_status {
+            Some(status) => vec![json!({
+                "task_path": native_summary.child_task_path,
+                "status": status,
+            })],
+            None => Vec::new(),
+        };
 
-    let resolve_report: Value = serde_json::from_str(&resolve_resume_step.stdout)
-        .context("failed to parse native child resume report")?;
-    let reconciliation_entries = resolve_report
-        .get("child_reconciliation")
-        .and_then(|value| value.get("entries"))
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let matching_entry = reconciliation_entries.iter().find(|entry| {
-        entry
-            .get("task_path")
+        let resolve_resume_step = run_json_smoke_step(
+            "resolve_native_child_resume",
+            &binary,
+            &repo_root,
+            &[
+                "internal",
+                "resolve-resume",
+                "--repo-root",
+                repo_root.to_str().unwrap(),
+                "--input-json",
+                "-",
+                "--json",
+            ],
+            &json!({
+                "mission_id": "native-reconcile",
+                "live_child_lanes": live_child_lanes,
+            }),
+        )?;
+
+        let resolve_report: Value = serde_json::from_str(&resolve_resume_step.stdout)
+            .context("failed to parse native child resume report")?;
+        let reconciliation_entries = resolve_report
+            .get("child_reconciliation")
+            .and_then(|value| value.get("entries"))
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let matching_entry = reconciliation_entries.iter().find(|entry| {
+            entry
+                .get("task_path")
+                .and_then(Value::as_str)
+                .is_some_and(|task_path| task_path == native_summary.child_task_path)
+        });
+        let observed_classification = matching_entry
+            .and_then(|entry| entry.get("classification"))
             .and_then(Value::as_str)
-            .is_some_and(|task_path| task_path == native_summary.child_task_path)
-    });
-    let observed_classification = matching_entry
-        .and_then(|entry| entry.get("classification"))
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned);
-    let expected_classification = match child_status {
-        Some("live_non_final") => Some("live_non_final"),
-        Some("final_success") => Some("final_success_unintegrated"),
-        Some("final_non_success") => Some("final_non_success"),
-        None => Some("missing"),
-        Some(_) => None,
-    };
-    let resume_status = resolve_report
-        .get("resume_status")
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned);
-    let saw_spawn_agent_event = jsonl_contains_collab_tool(&native.stdout, "spawn_agent");
-    let saw_send_message_event = jsonl_contains_collab_tool(&native.stdout, "send_message");
-    let saw_assign_task_event = jsonl_contains_collab_tool(&native.stdout, "assign_task");
-    let saw_followup_task_event = jsonl_contains_collab_tool(&native.stdout, "followup_task");
-    let saw_list_agents_event = jsonl_contains_collab_tool(&native.stdout, "list_agents");
-    let saw_wait_event = jsonl_contains_collab_tool(&native.stdout, "wait");
-    let saw_close_agent_event = jsonl_contains_collab_tool(&native.stdout, "close_agent");
-    let assessment = assess_native_multi_agent_gate(
-        native.status.success(),
-        &init_step,
-        &write_closeout_step,
-        &resolve_resume_step,
-        &native_summary,
-        NativeMultiAgentObservedTools {
-            saw_spawn_agent_event,
-            saw_send_message_event,
-            saw_assign_task_event,
-            saw_followup_task_event,
-            saw_list_agents_event,
-            saw_wait_event,
-            saw_close_agent_event,
-        },
-        expected_classification.as_deref(),
-        observed_classification.as_deref(),
-        resume_status.as_deref(),
-    );
+            .map(ToOwned::to_owned);
+        let expected_classification = match child_status {
+            Some("live_non_final") => Some("live_non_final"),
+            Some("final_success") => Some("final_success_unintegrated"),
+            Some("final_non_success") => Some("final_non_success"),
+            None => Some("missing"),
+            Some(_) => None,
+        };
+        let resume_status = resolve_report
+            .get("resume_status")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+        let saw_spawn_agent_event = jsonl_contains_collab_tool(&native.stdout, "spawn_agent");
+        let saw_send_message_event = jsonl_contains_collab_tool(&native.stdout, "send_message");
+        let saw_assign_task_event = jsonl_contains_collab_tool(&native.stdout, "assign_task");
+        let saw_followup_task_event = jsonl_contains_collab_tool(&native.stdout, "followup_task");
+        let saw_list_agents_event = jsonl_contains_collab_tool(&native.stdout, "list_agents");
+        let saw_wait_event = jsonl_contains_collab_tool(&native.stdout, "wait");
+        let saw_close_agent_event = jsonl_contains_collab_tool(&native.stdout, "close_agent");
+        let assessment = assess_native_multi_agent_gate(
+            native.status.success(),
+            &init_step,
+            &write_closeout_step,
+            &resolve_resume_step,
+            &native_summary,
+            NativeMultiAgentObservedTools {
+                saw_spawn_agent_event,
+                saw_send_message_event,
+                saw_assign_task_event,
+                saw_followup_task_event,
+                saw_list_agents_event,
+                saw_wait_event,
+                saw_close_agent_event,
+            },
+            expected_classification.as_deref(),
+            observed_classification.as_deref(),
+            resume_status.as_deref(),
+        );
 
-    let details = Some(json!({
-        "sandbox_root": sandbox.path().display().to_string(),
-        "repo_root": repo_root.display().to_string(),
-        "native_stdout": trim_output(&native.stdout),
-        "native_stderr": trim_output(&native.stderr),
-        "native_summary": native_summary,
-        "saw_spawn_agent_event": saw_spawn_agent_event,
-        "saw_send_message_event": saw_send_message_event,
-        "saw_assign_task_event": saw_assign_task_event,
-        "saw_followup_task_event": saw_followup_task_event,
-        "saw_list_agents_event": saw_list_agents_event,
-        "saw_wait_event": saw_wait_event,
-        "saw_close_agent_event": saw_close_agent_event,
-        "init_step": init_step,
-        "write_closeout_step": write_closeout_step,
-        "resolve_resume_step": resolve_resume_step,
-        "resume_status": resume_status,
-        "expected_classification": expected_classification,
-        "observed_classification": observed_classification,
-        "failure_classification": assessment.failure_classification,
-        "missing_required_tools": assessment.missing_required_tools,
-        "missing_evidence": assessment.missing_evidence,
-        "observed_optional_delivery_tools": assessment.observed_optional_delivery_tools,
-    }));
+        let details = Some(json!({
+            "sandbox_root": sandbox.path().display().to_string(),
+            "repo_root": repo_root.display().to_string(),
+            "codex_home_root": codex_home_root.display().to_string(),
+            "native_stdout": trim_output(&native.stdout),
+            "native_stderr": trim_output(&native.stderr),
+            "final_agent_message": final_agent_message,
+            "native_summary": native_summary,
+            "saw_spawn_agent_event": saw_spawn_agent_event,
+            "saw_send_message_event": saw_send_message_event,
+            "saw_assign_task_event": saw_assign_task_event,
+            "saw_followup_task_event": saw_followup_task_event,
+            "saw_list_agents_event": saw_list_agents_event,
+            "saw_wait_event": saw_wait_event,
+            "saw_close_agent_event": saw_close_agent_event,
+            "init_step": init_step,
+            "write_closeout_step": write_closeout_step,
+            "resolve_resume_step": resolve_resume_step,
+            "resume_status": resume_status,
+            "expected_classification": expected_classification,
+            "observed_classification": observed_classification,
+            "failure_classification": assessment.failure_classification,
+            "missing_required_tools": assessment.missing_required_tools,
+            "missing_evidence": assessment.missing_evidence,
+            "observed_optional_delivery_tools": assessment.observed_optional_delivery_tools,
+        }));
 
-    Ok(if assessment.success {
-        QualificationGate::pass(
-            "native_multi_agent_resume_flow",
-            "The trusted Codex build exposes enough native child-agent surface for live child inspection, and Codex1 reconciles that live snapshot honestly on resume.",
-            assessment.message,
-            details,
-        )
-    } else {
-        QualificationGate::fail(
-            "native_multi_agent_resume_flow",
-            "The trusted Codex build exposes enough native child-agent surface for live child inspection, and Codex1 reconciles that live snapshot honestly on resume.",
-            assessment.message,
-            details,
-        )
+        Ok(if assessment.success {
+            QualificationGate::pass(GATE, DESCRIPTION, assessment.message, details)
+        } else {
+            QualificationGate::fail(GATE, DESCRIPTION, assessment.message, details)
+        })
+    })();
+
+    Ok(match result {
+        Ok(gate) => gate,
+        Err(error) => native_multi_agent_gate_failure(
+            "The native child-agent probe could not complete, so qualification recorded a failing gate instead of aborting.",
+            Some(json!({
+                "error": format!("{error:#}"),
+                "failure_classification": "native_probe_setup_failed",
+            })),
+        ),
+    })
+}
+
+fn native_multi_agent_gate_failure(
+    message: impl Into<String>,
+    details: Option<Value>,
+) -> QualificationGate {
+    QualificationGate::fail(
+        "native_multi_agent_resume_flow",
+        "The trusted Codex build exposes native child-agent tools and Codex1 reconciles their live snapshot honestly on resume.",
+        message,
+        details,
+    )
+}
+
+fn native_child_probe_closeout_payload(summary: &NativeMultiAgentSummary) -> Value {
+    json!({
+        "closeout_seq": 0,
+        "mission_id": "native-reconcile",
+        "phase": "execution",
+        "activity": "native_child_reconciliation_probe",
+        "verdict": "continue_required",
+        "terminality": "actionable_non_terminal",
+        "resume_mode": "continue",
+        "next_phase": "execution",
+        "next_action": "Reconcile expected child lanes before continuing execution.",
+        "target": "spec:native_reconcile",
+        "cycle_kind": "bounded_progress",
+        "reason_code": "native_multi_agent_probe",
+        "summary": "Qualification recorded a native child lane for resume reconciliation.",
+        "continuation_prompt": "Reconcile expected child lanes before continuing execution.",
+        "governing_revision": "native-child-probe",
+        "active_child_task_paths": [summary.child_task_path],
+        "artifact_fingerprints": {
+            "qualification_probe": format!("native-child-probe:{}", summary.child_task_path),
+        }
     })
 }
 
@@ -3123,27 +3254,50 @@ fn qualification_binary() -> Result<PathBuf> {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct NativeMultiAgentSummary {
+    #[serde(default, deserialize_with = "bool_or_false")]
     used_spawn_agent: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "bool_or_false")]
     used_send_message: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "bool_or_false")]
     used_assign_task: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "bool_or_false")]
     used_followup_task: bool,
+    #[serde(default, deserialize_with = "bool_or_false")]
     used_list_agents: bool,
+    #[serde(default, deserialize_with = "bool_or_false")]
     used_wait_agent: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "bool_or_false")]
     used_close_agent: bool,
+    #[serde(default, deserialize_with = "string_or_empty")]
     child_task_path: String,
+    #[serde(default, deserialize_with = "bool_or_false")]
     child_seen_before_wait: bool,
-    child_status_before_wait: Value,
-    child_seen_after_wait: bool,
-    child_status_after_wait: Value,
     #[serde(default)]
+    child_status_before_wait: Value,
+    #[serde(default, deserialize_with = "bool_or_false")]
+    child_seen_after_wait: bool,
+    #[serde(default)]
+    child_status_after_wait: Value,
+    #[serde(default, deserialize_with = "bool_or_false")]
     child_seen_after_close: bool,
     #[serde(default)]
     child_status_after_close: Value,
+    #[serde(default, deserialize_with = "bool_or_false")]
     wait_summary_present: bool,
+}
+
+fn bool_or_false<'de, D>(deserializer: D) -> std::result::Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<bool>::deserialize(deserializer)?.unwrap_or(false))
+}
+
+fn string_or_empty<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -3339,38 +3493,44 @@ enum NativeCodexInvocation {
 }
 
 fn seed_native_codex_repo(repo_root: &Path) -> Result<()> {
+    fs::create_dir_all(repo_root).with_context(|| format!("create {}", repo_root.display()))?;
+    fs::create_dir_all(repo_root.join(".codex"))
+        .with_context(|| format!("create {}", repo_root.join(".codex").display()))?;
     fs::write(
         repo_root.join("README.md"),
         "# Native Qualification Sandbox\n\nTemporary repo for native Codex qualification.\n",
     )
     .context("failed to seed native qualification repo")?;
+    let status = Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(repo_root)
+        .status()
+        .context("failed to initialize native qualification git repo")?;
+    if !status.success() {
+        bail!("git init failed for {}", repo_root.display());
+    }
     Ok(())
 }
 
 fn run_native_codex_prompt(
     repo_root: &Path,
+    codex_home_root: &Path,
     invocation: NativeCodexInvocation,
     prompt: &str,
 ) -> Result<Output> {
     let mut command = Command::new("codex");
     match invocation {
         NativeCodexInvocation::Exec => {
-            command.args(["exec", "--json", "--skip-git-repo-check", "-"]);
+            command.args(["exec", "--json", "-"]);
         }
         NativeCodexInvocation::ExecResume { thread_id } => {
-            command.args([
-                "exec",
-                "resume",
-                "--json",
-                "--skip-git-repo-check",
-                &thread_id,
-                "-",
-            ]);
+            command.args(["exec", "resume", "--json", &thread_id, "-"]);
         }
     }
 
     let mut child = command
         .current_dir(repo_root)
+        .env("CODEX_HOME", codex_home_root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -3386,6 +3546,116 @@ fn run_native_codex_prompt(
     child
         .wait_with_output()
         .context("failed to collect native codex output")
+}
+
+fn seed_native_codex_home(repo_root: &Path, codex_home_root: &Path) -> Result<()> {
+    let source_codex_home = codex_home()?;
+    seed_native_codex_home_from(&source_codex_home, repo_root, codex_home_root)
+}
+
+fn seed_native_codex_home_from(
+    source_codex_home: &Path,
+    repo_root: &Path,
+    codex_home_root: &Path,
+) -> Result<()> {
+    fs::create_dir_all(codex_home_root)
+        .with_context(|| format!("create {}", codex_home_root.display()))?;
+
+    copy_directory_contents(source_codex_home, codex_home_root)?;
+
+    if !codex_home_root.join("auth.json").is_file() {
+        bail!(
+            "native Codex qualification requires {} so the sandbox can authenticate",
+            source_codex_home.join("auth.json").display()
+        );
+    }
+
+    let canonical_repo_root = fs::canonicalize(repo_root)
+        .with_context(|| format!("failed to canonicalize {}", repo_root.display()))?;
+    let existing_config = read_optional_string(&codex_home_root.join("config.toml"))?;
+    fs::write(
+        codex_home_root.join("config.toml"),
+        append_trusted_project_entry(existing_config.as_deref(), &canonical_repo_root),
+    )
+    .with_context(|| format!("seed {}", codex_home_root.join("config.toml").display()))?;
+
+    Ok(())
+}
+
+fn copy_directory_contents(source: &Path, target: &Path) -> Result<()> {
+    if !source.is_dir() {
+        bail!("{} is not a directory", source.display());
+    }
+
+    for entry in fs::read_dir(source).with_context(|| format!("read {}", source.display()))? {
+        let entry = entry.with_context(|| format!("read entry under {}", source.display()))?;
+        let entry_path = entry.path();
+        let destination = target.join(entry.file_name());
+        let metadata = fs::symlink_metadata(&entry_path)
+            .with_context(|| format!("stat {}", entry_path.display()))?;
+        if metadata.file_type().is_dir() {
+            fs::create_dir_all(&destination)
+                .with_context(|| format!("create {}", destination.display()))?;
+            copy_directory_contents(&entry_path, &destination)?;
+        } else if metadata.file_type().is_symlink() {
+            let link_target = fs::read_link(&entry_path)
+                .with_context(|| format!("read link {}", entry_path.display()))?;
+            create_symlink(&link_target, &destination)?;
+        } else {
+            if let Some(parent) = destination.parent() {
+                fs::create_dir_all(parent)
+                    .with_context(|| format!("create {}", parent.display()))?;
+            }
+            fs::copy(&entry_path, &destination).with_context(|| {
+                format!("copy {} -> {}", entry_path.display(), destination.display())
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(unix)]
+fn create_symlink(target: &Path, link: &Path) -> Result<()> {
+    if let Some(parent) = link.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    std::os::unix::fs::symlink(target, link)
+        .with_context(|| format!("symlink {} -> {}", link.display(), target.display()))
+}
+
+#[cfg(not(unix))]
+fn create_symlink(_target: &Path, _link: &Path) -> Result<()> {
+    Ok(())
+}
+
+fn append_trusted_project_entry(existing: Option<&str>, repo_root: &Path) -> String {
+    let marker = format!("[projects.\"{}\"]", repo_root.display());
+    let existing = existing.unwrap_or_default().trim_end();
+    if existing.contains(&marker) {
+        let mut output = existing.to_string();
+        if !output.ends_with('\n') {
+            output.push('\n');
+        }
+        return output;
+    }
+
+    let mut output = String::new();
+    if existing.is_empty() {
+        output.push_str("# qualification native sandbox\ntelemetry = false\n");
+    } else {
+        output.push_str(existing);
+        output.push('\n');
+    }
+
+    if !output.ends_with("\n\n") {
+        output.push('\n');
+    }
+    output.push_str(&format!(
+        "[projects.\"{}\"]\ntrust_level = \"trusted\"\n",
+        repo_root.display()
+    ));
+    output
 }
 
 fn parse_thread_id_from_jsonl(bytes: &[u8]) -> Result<Option<String>> {
@@ -3422,13 +3692,14 @@ fn last_agent_message_text(bytes: &[u8]) -> Result<Option<String>> {
     Ok(last)
 }
 
-fn parse_last_agent_message_json<T>(bytes: &[u8]) -> Result<T>
-where
-    T: for<'de> Deserialize<'de>,
-{
+fn parse_native_multi_agent_summary(bytes: &[u8]) -> Result<NativeMultiAgentSummary> {
     let text = last_agent_message_text(bytes)?
         .context("JSONL stream did not contain a final agent message")?;
-    serde_json::from_str(&text).context("failed to parse final agent message JSON")
+    parse_native_multi_agent_summary_text(&text)
+}
+
+fn parse_native_multi_agent_summary_text(text: &str) -> Result<NativeMultiAgentSummary> {
+    serde_json::from_str(text).context("failed to parse final agent message JSON")
 }
 
 fn jsonl_contains_collab_tool(bytes: &[u8], tool: &str) -> bool {
@@ -3738,28 +4009,63 @@ fn self_hosting_gate(repo_root: &Path, enabled: bool) -> QualificationGate {
             repo_root.join("crates/codex1-core/Cargo.toml"),
             repo_root.join(".codex/config.toml"),
             repo_root.join(".codex/hooks.json"),
-            repo_root.join("AGENTS.md"),
-            repo_root.join(".codex/skills/clarify/SKILL.md"),
         ];
         let missing: Vec<String> = expected
             .iter()
             .filter(|path| !path.exists())
             .map(|path| path.display().to_string())
             .collect();
+        let agents_path = repo_root.join("AGENTS.md");
+        let agents_raw = match read_optional_string(&agents_path) {
+            Ok(raw) => raw,
+            Err(error) => {
+                return QualificationGate::fail(
+                    "self_hosting_source_repo",
+                    "Self-hosting source repo qualification is explicitly requested and recorded.",
+                    "The source workspace AGENTS.md could not be read for self-hosting verification.",
+                    Some(json!({
+                        "path": agents_path.display().to_string(),
+                        "error": error.to_string(),
+                    })),
+                );
+            }
+        };
+        let agents_inspection = inspect_agents_scaffold_details(agents_raw.as_deref());
+        let skill_inspection = match inspect_skill_surface(repo_root) {
+            Ok(inspection) => inspection,
+            Err(error) => {
+                return QualificationGate::fail(
+                    "self_hosting_source_repo",
+                    "Self-hosting source repo qualification is explicitly requested and recorded.",
+                    "The source workspace skill surface could not be inspected for self-hosting verification.",
+                    Some(json!({
+                        "repo_root": repo_root.display().to_string(),
+                        "error": error.to_string(),
+                    })),
+                );
+            }
+        };
 
-        if missing.is_empty() {
+        if missing.is_empty()
+            && agents_inspection.status == AgentsScaffoldStatus::Present
+            && agents_inspection.command_status == AgentsCommandStatus::Concrete
+            && skill_inspection.status == SkillSurfaceStatus::ValidExisting
+        {
             QualificationGate::pass(
                 "self_hosting_source_repo",
                 "Self-hosting source repo qualification is explicitly requested and recorded.",
-                "Source-repo markers and managed Codex1 surfaces are present in the source workspace.",
+                "Source-repo markers and managed Codex1 surfaces are present and match the enforced support surface in the source workspace.",
                 Some(json!({
                     "cargo_manifest": cargo_manifest.display().to_string(),
                     "prd": prd.display().to_string(),
+                    "agents_state": agents_inspection.status,
+                    "agents_command_status": agents_inspection.command_status,
+                    "skill_surface_status": skill_inspection.status,
                     "managed_surfaces": [
                         repo_root.join(".codex/config.toml").display().to_string(),
                         repo_root.join(".codex/hooks.json").display().to_string(),
                         repo_root.join("AGENTS.md").display().to_string(),
-                        repo_root.join(".codex/skills/clarify/SKILL.md").display().to_string(),
+                        skill_inspection.discovery_root.display().to_string(),
                     ],
                 })),
             )
@@ -3767,9 +4073,14 @@ fn self_hosting_gate(repo_root: &Path, enabled: bool) -> QualificationGate {
             QualificationGate::fail(
                 "self_hosting_source_repo",
                 "Self-hosting source repo qualification is explicitly requested and recorded.",
-                "The source workspace is missing one or more required managed Codex1 surfaces.",
+                "The source workspace is missing, placeholder-filled, or has drifted one or more required managed Codex1 surfaces.",
                 Some(json!({
                     "missing_paths": missing,
+                    "agents_state": agents_inspection.status,
+                    "agents_command_status": agents_inspection.command_status,
+                    "skill_surface_status": skill_inspection.status,
+                    "missing_required_public_skills": skill_inspection.missing_required_public_skills,
+                    "drifted_managed_skill_files": skill_inspection.drifted_managed_files,
                     "suggested_invocation": format!(
                         "cargo run -p codex1 -- setup --repo-root {} --json",
                         repo_root.display()
@@ -4797,9 +5108,12 @@ mod tests {
         NativeMultiAgentObservedTools, NativeMultiAgentSummary, QualificationGate,
         QualificationReport, QualificationSummary, RequestedQualification, SmokeStep,
         assess_native_multi_agent_gate, count_stop_hooks, detect_codex_hooks_setting,
-        self_hosting_gate,
+        native_child_probe_closeout_payload, parse_native_multi_agent_summary_text,
+        project_agents_scaffold_gate, seed_native_codex_home_from, self_hosting_gate,
     };
+    use crate::support_surface::{AGENTS_BLOCK, managed_skill_files, resolve_source_skills_root};
     use serde_json::{Value, json};
+    use std::fs;
     use tempfile::TempDir;
     use time::OffsetDateTime;
 
@@ -4838,14 +5152,12 @@ features.codex_hooks = false
         assert_eq!(count_stop_hooks(&payload), 2);
     }
 
-    #[test]
-    fn self_hosting_gate_detects_source_repo_markers() {
-        let temp_dir = TempDir::new().expect("temp dir");
+    fn seed_source_repo_surface(temp_dir: &TempDir, agents_contents: &str) {
         std::fs::write(temp_dir.path().join("Cargo.toml"), "[workspace]\n").expect("Cargo.toml");
         std::fs::create_dir_all(temp_dir.path().join("docs")).expect("docs dir");
         std::fs::create_dir_all(temp_dir.path().join("crates/codex1")).expect("crate dir");
         std::fs::create_dir_all(temp_dir.path().join("crates/codex1-core")).expect("core dir");
-        std::fs::create_dir_all(temp_dir.path().join(".codex/skills/clarify")).expect("codex dir");
+        std::fs::create_dir_all(temp_dir.path().join(".codex")).expect("codex dir");
         std::fs::write(
             temp_dir.path().join("crates/codex1/Cargo.toml"),
             "[package]\nname = \"codex1\"\n",
@@ -4861,22 +5173,76 @@ features.codex_hooks = false
             "[features]\ncodex_hooks = true\n",
         )
         .expect("config");
-        std::fs::write(temp_dir.path().join(".codex/hooks.json"), "{\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"codex1 internal stop-hook\"}]}]}}").expect("hooks");
         std::fs::write(
-            temp_dir.path().join(".codex/skills/clarify/SKILL.md"),
-            "# Clarify\n",
+            temp_dir.path().join(".codex/hooks.json"),
+            "{\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"codex1 internal stop-hook\"}]}]}}",
         )
-        .expect("clarify skill");
-        std::fs::write(
-            temp_dir.path().join("AGENTS.md"),
-            "<!-- codex1:begin -->\n<!-- codex1:end -->\n",
-        )
-        .expect("agents");
+        .expect("hooks");
+        std::fs::write(temp_dir.path().join("AGENTS.md"), agents_contents).expect("agents");
         std::fs::write(temp_dir.path().join("docs/codex1-prd.md"), "# PRD\n").expect("prd");
+
+        let source_root = resolve_source_skills_root().expect("source skills root");
+        for managed in managed_skill_files(&source_root).expect("managed skill files") {
+            let target = temp_dir
+                .path()
+                .join(".codex/skills")
+                .join(&managed.relative_path);
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent).expect("skill parent");
+            }
+            std::fs::write(target, managed.contents).expect("skill contents");
+        }
+    }
+
+    #[test]
+    fn self_hosting_gate_detects_source_repo_markers() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        seed_source_repo_surface(
+            &temp_dir,
+            &AGENTS_BLOCK
+                .replace("{{BUILD_COMMAND}}", "cargo build -p codex1")
+                .replace("{{TEST_COMMAND}}", "cargo test -p codex1")
+                .replace("{{LINT_OR_FORMAT_COMMAND}}", "cargo fmt --all --check"),
+        );
 
         let gate = self_hosting_gate(temp_dir.path(), true);
         assert_eq!(gate.status, GateStatus::Pass);
-        assert!(gate.message.contains("managed Codex1 surfaces are present"));
+        assert!(gate.message.contains("match the enforced support surface"));
+    }
+
+    #[test]
+    fn self_hosting_gate_fails_on_drifted_agents_block() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        seed_source_repo_surface(
+            &temp_dir,
+            "<!-- codex1:begin -->\n## Codex1\n- drifted\n<!-- codex1:end -->\n",
+        );
+
+        let gate = self_hosting_gate(temp_dir.path(), true);
+        assert_eq!(gate.status, GateStatus::Fail);
+        assert!(gate.message.contains("placeholder-filled"));
+    }
+
+    #[test]
+    fn project_agents_scaffold_gate_fails_on_drifted_block() {
+        let gate = project_agents_scaffold_gate(
+            std::path::Path::new("/repo/AGENTS.md"),
+            Some("<!-- codex1:begin -->\n## Codex1\n- drifted\n<!-- codex1:end -->\n"),
+        );
+
+        assert_eq!(gate.status, GateStatus::Fail);
+        assert!(gate.message.contains("has drifted"));
+    }
+
+    #[test]
+    fn project_agents_scaffold_gate_fails_on_placeholder_commands() {
+        let gate = project_agents_scaffold_gate(
+            std::path::Path::new("/repo/AGENTS.md"),
+            Some(AGENTS_BLOCK),
+        );
+
+        assert_eq!(gate.status, GateStatus::Fail);
+        assert!(gate.message.contains("placeholders or missing"));
     }
 
     #[test]
@@ -4951,7 +5317,7 @@ features.codex_hooks = false
         let summary = QualificationSummary::from_gates(&gates);
         assert!(summary.passed_all_required_gates);
         assert_eq!(summary.qualification_scope, Some("scoped_supported_subset"));
-        assert!(!summary.supported_build_qualified);
+        assert!(summary.supported_build_qualified);
     }
 
     #[test]
@@ -4967,7 +5333,7 @@ features.codex_hooks = false
         let summary = QualificationSummary::from_gates(&gates);
         assert!(summary.passed_all_required_gates);
         assert_eq!(summary.qualification_scope, Some("scoped_supported_subset"));
-        assert!(!summary.supported_build_qualified);
+        assert!(summary.supported_build_qualified);
     }
 
     fn smoke_step(success: bool) -> SmokeStep {
@@ -5098,5 +5464,97 @@ features.codex_hooks = false
             assessment.failure_classification,
             Some("reconciliation_mismatch")
         );
+    }
+
+    #[test]
+    fn native_multi_agent_summary_parser_tolerates_null_optional_fields() {
+        let summary = parse_native_multi_agent_summary_text(
+            r#"{
+                "used_spawn_agent": true,
+                "used_list_agents": true,
+                "used_wait_agent": true,
+                "used_close_agent": null,
+                "child_task_path": "/root/qualify_child",
+                "child_seen_before_wait": true,
+                "child_status_before_wait": "running",
+                "child_seen_after_wait": true,
+                "child_status_after_wait": "running",
+                "child_seen_after_close": null,
+                "child_status_after_close": null,
+                "wait_summary_present": true
+            }"#,
+        )
+        .expect("summary should parse");
+
+        assert!(summary.used_spawn_agent);
+        assert!(summary.used_list_agents);
+        assert!(summary.used_wait_agent);
+        assert!(!summary.used_close_agent);
+        assert!(!summary.child_seen_after_close);
+        assert_eq!(summary.child_status_after_close, Value::Null);
+    }
+
+    #[test]
+    fn native_child_probe_closeout_payload_includes_artifact_fingerprints() {
+        let payload = native_child_probe_closeout_payload(&native_summary());
+        let fingerprints = payload
+            .get("artifact_fingerprints")
+            .and_then(Value::as_object)
+            .expect("payload should include artifact fingerprints");
+
+        assert!(!fingerprints.is_empty());
+        assert_eq!(
+            fingerprints.get("qualification_probe"),
+            Some(&json!("native-child-probe:/root/qualify_child"))
+        );
+    }
+
+    #[test]
+    fn seed_native_codex_home_preserves_profile_and_trusts_repo() {
+        let temp_dir = TempDir::new().expect("tempdir should succeed");
+        let source_codex_home = temp_dir.path().join("source-codex-home");
+        let repo_root = temp_dir.path().join("repo");
+        let target_codex_home = temp_dir.path().join("target-codex-home");
+
+        fs::create_dir_all(&source_codex_home).expect("source codex home should exist");
+        fs::create_dir_all(&repo_root).expect("repo root should exist");
+        fs::write(source_codex_home.join("auth.json"), "{\"token\":\"fake\"}")
+            .expect("auth file should be written");
+        fs::write(source_codex_home.join("installation_id"), "installation")
+            .expect("installation id should be written");
+        fs::create_dir_all(source_codex_home.join("profiles/default")).expect("profile dir");
+        fs::write(
+            source_codex_home.join("profiles/default/state.json"),
+            "{\"surface\":\"full\"}",
+        )
+        .expect("profile state should be written");
+        fs::write(
+            source_codex_home.join("config.toml"),
+            "model = \"gpt-5.4\"\n",
+        )
+        .expect("config should be written");
+
+        seed_native_codex_home_from(&source_codex_home, &repo_root, &target_codex_home)
+            .expect("native codex home should seed");
+
+        assert_eq!(
+            fs::read_to_string(target_codex_home.join("auth.json")).unwrap(),
+            "{\"token\":\"fake\"}"
+        );
+        assert_eq!(
+            fs::read_to_string(target_codex_home.join("installation_id")).unwrap(),
+            "installation"
+        );
+        assert_eq!(
+            fs::read_to_string(target_codex_home.join("profiles/default/state.json")).unwrap(),
+            "{\"surface\":\"full\"}"
+        );
+
+        let config = fs::read_to_string(target_codex_home.join("config.toml"))
+            .expect("trusted config should be written");
+        let canonical_repo_root = fs::canonicalize(&repo_root).unwrap();
+        assert!(config.contains("model = \"gpt-5.4\""));
+        assert!(config.contains("trust_level = \"trusted\""));
+        assert!(config.contains(&canonical_repo_root.display().to_string()));
     }
 }

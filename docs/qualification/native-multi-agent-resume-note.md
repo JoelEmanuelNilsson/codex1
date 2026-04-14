@@ -5,9 +5,13 @@ about native child-agent continuity in Codex1.
 
 ## Current evidence
 
-The latest qualification report currently fails
+The current versioned live qualification report fails
 `native_multi_agent_resume_flow` in
-[.codex1/qualification/latest.json](/Users/joel/codex1/.codex1/qualification/latest.json:430).
+[.codex1/qualification/reports/20260414T204235Z--0_120_0--5bd7c3f9.json](/Users/joel/codex1/.codex1/qualification/reports/20260414T204235Z--0_120_0--5bd7c3f9.json).
+
+That same latest live report now passes `native_stop_hook_live_flow`, so the
+earlier native stop-hook failure was a qualification-harness bootstrap problem,
+not the remaining blocker on the trusted build.
 
 That failure is real, but the evidence points more narrowly to a native
 support-surface proof gap than to a demonstrated bug in Codex1's parent-led
@@ -17,12 +21,15 @@ In the latest failing run:
 
 - the native proof used `spawn_agent`
 - the native proof used `wait_agent`
+- the native proof used `close_agent`
 - the native proof did not use `list_agents`
-- the native proof did not produce a meaningful live child snapshot before or
-  after wait
+- the native proof did produce a `final_success_unintegrated` child
+  classification inside the live reconciliation evidence
+- the native proof did produce wait-summary evidence, but still lacked the
+  explicit child-list snapshot this gate asks for
 
 See the recorded summary fields in
-[.codex1/qualification/latest.json](/Users/joel/codex1/.codex1/qualification/latest.json:444).
+[.codex1/qualification/reports/20260414T204235Z--0_120_0--5bd7c3f9.json](/Users/joel/codex1/.codex1/qualification/reports/20260414T204235Z--0_120_0--5bd7c3f9.json).
 
 ## Why this matters
 
@@ -52,15 +59,16 @@ The strongest current hypothesis is:
 
 1. the trusted build or environment did not expose the full expected native
    Multi-Agent V2 surface during the proof run, especially `list_agents`
-2. because the proof did not obtain a real live child snapshot, Codex1 had no
-   meaningful lane status to reconcile
+2. the proof obtained partial live child state through other tool events, but
+   not the explicit child-list snapshot and wait-summary evidence this gate
+   expects
 3. the failing gate therefore does not by itself prove that Ralph-side
    child-lane reconciliation is wrong
 
 This is consistent with:
 
 - the latest failing run in
-  [.codex1/qualification/latest.json](/Users/joel/codex1/.codex1/qualification/latest.json:430)
+  [.codex1/qualification/reports/20260414T204235Z--0_120_0--5bd7c3f9.json](/Users/joel/codex1/.codex1/qualification/reports/20260414T204235Z--0_120_0--5bd7c3f9.json)
 - earlier passing reports where `used_list_agents = true` and
   `wait_summary_present = true`, such as
   [.codex1/qualification/reports/20260413T101021Z--0_120_0--f8b62ac0.json](/Users/joel/codex1/.codex1/qualification/reports/20260413T101021Z--0_120_0--f8b62ac0.json:351)
@@ -78,31 +86,26 @@ claiming completion, which is the safer behavior.
 
 ## Secondary evidence to treat carefully
 
-The same failing report also shows a closeout-write error:
+Older live reports also captured a closeout-write failure before the
+resume-reconciliation step, and earlier live runs also failed the native
+stop-hook proof.
 
-- `internal write-closeout requires governing_revision`
-
-See
-[.codex1/qualification/latest.json](/Users/joel/codex1/.codex1/qualification/latest.json:473).
-
-Current source already includes `governing_revision` in the native child
-qualification closeout payload at
-[crates/codex1/src/commands/qualify.rs](/Users/joel/codex1/crates/codex1/src/commands/qualify.rs:2954).
-
-So that specific error should be treated as likely stale-binary or stale-report
-evidence until reproduced against the current source build.
+Current source now records the synthetic child-lane closeout with non-empty
+artifact fingerprints, mirrors the live Codex home profile instead of stripping
+it to auth-only state, and current live qualification also passes the native
+stop-hook gate after sandbox bootstrap hardening. The remaining failing
+classification in the current versioned live report is the missing
+`list_agents` proof surface, not the older closeout-write or stop-hook issues.
 
 ## Fix order
 
 The next investigation and fix order should be:
 
-1. rerun qualification on the current source build and confirm whether the
-   closeout-write error still reproduces
-2. verify whether the exact trusted build surfaces the expected native V2 child
+1. verify whether the exact trusted build surfaces the expected native V2 child
    tools, especially `list_agents`
-3. if `list_agents` is unavailable on that build, treat this as a supported-build
+2. if `list_agents` is unavailable on that build, treat this as a supported-build
    qualification gap rather than a Codex1 reconcile bug
-4. if the full native surface is available and the gate still fails, inspect the
+3. if the full native surface is available and the gate still fails, inspect the
    qualification prompt/expectation and then `resolve-resume` child
    classification against the observed live child snapshot
 

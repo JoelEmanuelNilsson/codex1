@@ -12,17 +12,21 @@ codex_hooks = true
 max_threads = 16
 max_depth = 1
 
-[profiles.codex1_helper]
+[codex1_orchestration]
+model = "gpt-5.4"
+reasoning_effort = "high"
+
+[codex1_review]
 model = "gpt-5.4-mini"
-model_reasoning_effort = "high"
+reasoning_effort = "high"
 
-[profiles.codex1_spark]
+[codex1_fast_parallel]
 model = "gpt-5.3-codex-spark"
-model_reasoning_effort = "high"
+reasoning_effort = "high"
 
-[profiles.codex1_coder]
+[codex1_hard_coding]
 model = "gpt-5.3-codex"
-model_reasoning_effort = "xhigh"
+reasoning_effort = "xhigh"
 
 # Uncomment only when setup installs skills outside the default .codex/skills
 # location and must bridge them explicitly.

@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::commands::{UninstallArgs, resolve_repo_root};
-use crate::support_surface::{AGENTS_BLOCK, AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END};
+use crate::support_surface::{
+    AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END, AgentsScaffoldStatus, inspect_agents_scaffold_details,
+};
 const CONFIG_MODEL: &str = "gpt-5.4";
 const CONFIG_REVIEW_MODEL: &str = "gpt-5.4-mini";
 const CONFIG_REASONING_EFFORT: &str = "high";
@@ -755,8 +757,8 @@ fn hook_command(value: &Value) -> Option<String> {
 }
 
 fn assert_managed_agents_block_stable(source: &str) -> Result<()> {
-    let managed = extract_managed_agents_block(source)?;
-    if ensure_trailing_newline(managed) != AGENTS_BLOCK {
+    let inspection = inspect_agents_scaffold_details(Some(source));
+    if inspection.status != AgentsScaffoldStatus::Present {
         bail!(
             "the managed AGENTS.md block drifted after setup; uninstall will not guess how to rewrite it"
         );
@@ -790,23 +792,9 @@ fn remove_managed_agents_block(source: &str) -> Result<String> {
         output.push_str("\n\n");
     }
     if !after.is_empty() {
-        output.push_str(after.trim_start());
+        output.push_str(after);
     }
     Ok(output)
-}
-
-fn extract_managed_agents_block(source: &str) -> Result<String> {
-    let begin_index = source
-        .find(AGENTS_BLOCK_BEGIN)
-        .ok_or_else(|| anyhow!("missing Codex1 begin marker"))?;
-    let end_index = source
-        .find(AGENTS_BLOCK_END)
-        .ok_or_else(|| anyhow!("missing Codex1 end marker"))?;
-    if begin_index > end_index {
-        bail!("Codex1 AGENTS.md markers are out of order");
-    }
-    let end_index = end_index + AGENTS_BLOCK_END.len();
-    Ok(source[begin_index..end_index].to_string())
 }
 
 fn default_backup_root() -> Result<PathBuf> {
@@ -1000,7 +988,10 @@ fn prune_empty_dir_chain(repo_root: &Path, start: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{absolute_root_path, latest_manifest_path, resolve_manifest_repo_path};
+    use super::{
+        absolute_root_path, latest_manifest_path, remove_managed_agents_block,
+        resolve_manifest_repo_path,
+    };
     use std::fs;
     use std::time::Duration;
     use tempfile::TempDir;
@@ -1049,5 +1040,18 @@ mod tests {
         let latest =
             latest_manifest_path(backups.path(), Some(&repo_root)).expect("select latest manifest");
         assert!(latest.ends_with("applied/manifest.json"));
+    }
+
+    #[test]
+    fn removing_managed_agents_block_preserves_indented_following_content() {
+        let source = concat!(
+            "# Repo Instructions\n\n",
+            "<!-- codex1:begin -->\nmanaged\n<!-- codex1:end -->\n\n",
+            "    - keep this indentation\n"
+        );
+
+        let updated =
+            remove_managed_agents_block(source).expect("managed block should be removed cleanly");
+        assert!(updated.contains("\n\n    - keep this indentation\n"));
     }
 }

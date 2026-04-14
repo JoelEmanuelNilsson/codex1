@@ -8,6 +8,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use toml::Value as TomlValue;
 use walkdir::WalkDir;
 
 pub const REQUIRED_PUBLIC_SKILLS: &[&str] = &["clarify", "plan", "execute", "review", "autopilot"];
@@ -25,7 +26,20 @@ pub const OBSERVATIONAL_STOP_HOOK_FLAG: &str = "codex1_observational";
 pub const OBSERVATIONAL_STOP_HOOK_FLAG_CAMEL: &str = "codex1Observational";
 pub const AGENTS_BLOCK_BEGIN: &str = "<!-- codex1:begin -->";
 pub const AGENTS_BLOCK_END: &str = "<!-- codex1:end -->";
-pub const AGENTS_BLOCK: &str = "<!-- codex1:begin -->\n## Codex1\n### Workflow Stance\n- Use the native Codex skills surface for `clarify`, `plan`, `execute`, `review`, and `autopilot`.\n- Keep mission truth in visible repo artifacts instead of hidden chat state.\n- Replan stays internal unless the repo truth explicitly says otherwise.\n\n### Quality Bar\n- Work is complete only when the locked outcome, proof, review, and closeout contracts are all satisfied.\n- Review is mandatory before mission completion.\n- Hold the repo to production-grade changes with explicit validation and review-clean closeout.\n\n### Repo Commands\n- Build: document the repo-specific build command before relying on autopilot.\n- Test: document the repo-specific test command before relying on autopilot.\n- Lint or format: document the repo-specific lint or format command before relying on autopilot.\n\n### Artifact Conventions\n- Mission packages live under `PLANS/<mission-id>/`.\n- `OUTCOME-LOCK.md` is canonical for destination truth.\n- `PROGRAM-BLUEPRINT.md` is canonical for route truth.\n- `specs/*/SPEC.md` is canonical for one bounded execution slice.\n<!-- codex1:end -->\n";
+pub const AGENTS_BUILD_COMMAND_PLACEHOLDER: &str = "{{BUILD_COMMAND}}";
+pub const AGENTS_TEST_COMMAND_PLACEHOLDER: &str = "{{TEST_COMMAND}}";
+pub const AGENTS_LINT_COMMAND_PLACEHOLDER: &str = "{{LINT_OR_FORMAT_COMMAND}}";
+pub const AGENTS_BLOCK: &str = "<!-- codex1:begin -->\n## Codex1\n### Workflow Stance\n- Use the native Codex skills surface for `clarify`, `plan`, `execute`, `review`, and `autopilot`.\n- Keep mission truth in visible repo artifacts instead of hidden chat state.\n- Replan stays internal unless the repo truth explicitly says otherwise.\n\n### Quality Bar\n- Work is complete only when the locked outcome, proof, review, and closeout contracts are all satisfied.\n- Review is mandatory before mission completion.\n- Hold the repo to production-grade changes with explicit validation and review-clean closeout.\n\n### Repo Commands\n- Build: {{BUILD_COMMAND}}\n- Test: {{TEST_COMMAND}}\n- Lint or format: {{LINT_OR_FORMAT_COMMAND}}\n\n### Artifact Conventions\n- Mission packages live under `PLANS/<mission-id>/`.\n- `OUTCOME-LOCK.md` is canonical for destination truth.\n- `PROGRAM-BLUEPRINT.md` is canonical for route truth.\n- `specs/*/SPEC.md` is canonical for one bounded execution slice.\n<!-- codex1:end -->\n";
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentsScaffoldStatus {
+    Present,
+    MissingFile,
+    MissingBlock,
+    DriftedBlock,
+    MalformedMarkers,
+}
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -51,6 +65,7 @@ pub enum SkillSurfaceStatus {
     Missing,
     ValidExisting,
     PartialOrDrifted,
+    InvalidBridge,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -63,6 +78,36 @@ pub struct SkillSurfaceInspection {
     pub missing_required_public_skills: Vec<String>,
     pub drifted_managed_files: Vec<String>,
     pub matched_managed_files: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bridge_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentsCommandStatus {
+    Missing,
+    Placeholder,
+    Concrete,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct AgentsScaffoldInspection {
+    pub status: AgentsScaffoldStatus,
+    pub build_command: Option<String>,
+    pub test_command: Option<String>,
+    pub lint_or_format_command: Option<String>,
+    pub command_status: AgentsCommandStatus,
+}
+
+pub fn render_managed_agents_block(
+    build_command: &str,
+    test_command: &str,
+    lint_or_format_command: &str,
+) -> String {
+    AGENTS_BLOCK
+        .replace(AGENTS_BUILD_COMMAND_PLACEHOLDER, build_command)
+        .replace(AGENTS_TEST_COMMAND_PLACEHOLDER, test_command)
+        .replace(AGENTS_LINT_COMMAND_PLACEHOLDER, lint_or_format_command)
 }
 
 #[derive(Debug, Clone)]
@@ -133,17 +178,76 @@ pub fn inspect_skill_surface(repo_root: &Path) -> Result<SkillSurfaceInspection>
     inspect_skill_surface_with_source(repo_root, &source_root)
 }
 
+pub fn inspect_agents_scaffold_details(raw: Option<&str>) -> AgentsScaffoldInspection {
+    let Some(raw) = raw else {
+        return AgentsScaffoldInspection {
+            status: AgentsScaffoldStatus::MissingFile,
+            build_command: None,
+            test_command: None,
+            lint_or_format_command: None,
+            command_status: AgentsCommandStatus::Missing,
+        };
+    };
+
+    let begin_count = raw.matches(AGENTS_BLOCK_BEGIN).count();
+    let end_count = raw.matches(AGENTS_BLOCK_END).count();
+    match (begin_count, end_count) {
+        (0, 0) => AgentsScaffoldInspection {
+            status: AgentsScaffoldStatus::MissingBlock,
+            build_command: None,
+            test_command: None,
+            lint_or_format_command: None,
+            command_status: AgentsCommandStatus::Missing,
+        },
+        (1, 1) => match extract_managed_block(raw, AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END) {
+            Some(block) => inspect_managed_agents_block(&block),
+            None => AgentsScaffoldInspection {
+                status: AgentsScaffoldStatus::MalformedMarkers,
+                build_command: None,
+                test_command: None,
+                lint_or_format_command: None,
+                command_status: AgentsCommandStatus::Missing,
+            },
+        },
+        _ => AgentsScaffoldInspection {
+            status: AgentsScaffoldStatus::MalformedMarkers,
+            build_command: None,
+            test_command: None,
+            lint_or_format_command: None,
+            command_status: AgentsCommandStatus::Missing,
+        },
+    }
+}
+
 pub fn inspect_skill_surface_with_source(
     repo_root: &Path,
     source_root: &Path,
 ) -> Result<SkillSurfaceInspection> {
     let root = default_skill_root(repo_root);
-    let (discovery_root, install_mode) = resolve_skill_surface_root(repo_root, &root)?;
+    let (discovery_root, install_mode, bridge_error) =
+        resolve_skill_surface_root(repo_root, &root)?;
     let managed_files = managed_skill_files(source_root)?;
     let source_relatives: Vec<PathBuf> = managed_files
         .iter()
         .map(|file| file.relative_path.clone())
         .collect();
+
+    if let Some(bridge_error) = bridge_error {
+        return Ok(SkillSurfaceInspection {
+            status: SkillSurfaceStatus::InvalidBridge,
+            root,
+            discovery_root,
+            install_mode,
+            source_root: source_root.to_path_buf(),
+            missing_required_public_skills: REQUIRED_PUBLIC_SKILLS
+                .iter()
+                .map(|skill| (*skill).to_string())
+                .collect(),
+            drifted_managed_files: Vec::new(),
+            matched_managed_files: 0,
+            bridge_error: Some(bridge_error),
+        });
+    }
 
     if !discovery_root.exists() {
         return Ok(SkillSurfaceInspection {
@@ -158,6 +262,7 @@ pub fn inspect_skill_surface_with_source(
                 .collect(),
             drifted_managed_files: Vec::new(),
             matched_managed_files: 0,
+            bridge_error: None,
         });
     }
 
@@ -204,15 +309,33 @@ pub fn inspect_skill_surface_with_source(
         missing_required_public_skills,
         drifted_managed_files,
         matched_managed_files,
+        bridge_error: None,
     })
 }
 
 fn resolve_skill_surface_root(
     repo_root: &Path,
     default_root: &Path,
-) -> Result<(PathBuf, Option<SkillInstallMode>)> {
-    if let Some(bridge_root) = resolve_skills_config_bridge_root(repo_root)? {
-        return Ok((bridge_root, Some(SkillInstallMode::SkillsConfigBridge)));
+) -> Result<(PathBuf, Option<SkillInstallMode>, Option<String>)> {
+    match resolve_skills_config_bridge_root(repo_root)? {
+        SkillsConfigBridgeResolution::Valid(bridge_root) => {
+            return Ok((
+                bridge_root,
+                Some(SkillInstallMode::SkillsConfigBridge),
+                None,
+            ));
+        }
+        SkillsConfigBridgeResolution::Invalid {
+            discovery_root,
+            reason,
+        } => {
+            return Ok((
+                discovery_root,
+                Some(SkillInstallMode::SkillsConfigBridge),
+                Some(reason),
+            ));
+        }
+        SkillsConfigBridgeResolution::NotConfigured => {}
     }
 
     if default_root.exists() {
@@ -223,66 +346,65 @@ fn resolve_skill_surface_root(
             Ok(_) => Some(SkillInstallMode::CopiedSkills),
             Err(_) => None,
         };
-        return Ok((default_root.to_path_buf(), install_mode));
+        return Ok((default_root.to_path_buf(), install_mode, None));
     }
 
-    Ok((default_root.to_path_buf(), None))
+    Ok((default_root.to_path_buf(), None, None))
 }
 
-fn resolve_skills_config_bridge_root(repo_root: &Path) -> Result<Option<PathBuf>> {
+enum SkillsConfigBridgeResolution {
+    NotConfigured,
+    Valid(PathBuf),
+    Invalid {
+        discovery_root: PathBuf,
+        reason: String,
+    },
+}
+
+fn resolve_skills_config_bridge_root(repo_root: &Path) -> Result<SkillsConfigBridgeResolution> {
     let config_path = repo_root.join(".codex/config.toml");
     let Ok(raw) = fs::read_to_string(&config_path) else {
-        return Ok(None);
+        return Ok(SkillsConfigBridgeResolution::NotConfigured);
+    };
+    let Ok(parsed) = raw.parse::<TomlValue>() else {
+        return Ok(SkillsConfigBridgeResolution::NotConfigured);
+    };
+    let Some(entries) = parsed
+        .get("skills")
+        .and_then(|value| value.get("config"))
+        .and_then(TomlValue::as_array)
+    else {
+        return Ok(SkillsConfigBridgeResolution::NotConfigured);
     };
 
-    let mut in_bridge = false;
-    let mut enabled = false;
-    let mut path = None::<String>;
-    for line in raw.lines() {
-        let trimmed = strip_comment(line).trim();
-        if trimmed.is_empty() {
+    for entry in entries {
+        let Some(table) = entry.as_table() else {
+            continue;
+        };
+        let enabled = table
+            .get("enabled")
+            .and_then(TomlValue::as_bool)
+            .unwrap_or(false);
+        if !enabled {
             continue;
         }
-        if trimmed.starts_with("[[") && trimmed.ends_with("]]") {
-            if in_bridge
-                && enabled
-                && let Some(path) = path.take()
-            {
-                return resolve_bridge_candidate(&config_path, repo_root, &path).map(Some);
-            }
-            in_bridge = trimmed == "[[skills.config]]";
-            enabled = false;
-            path = None;
+        let Some(path) = table.get("path").and_then(TomlValue::as_str) else {
             continue;
-        }
-        if !in_bridge {
-            continue;
-        }
-        if let Some(value) = parse_key_value(trimmed, "path") {
-            path = Some(value);
-        } else if let Some(value) = parse_key_value(trimmed, "enabled") {
-            enabled = value.eq_ignore_ascii_case("true");
-        }
+        };
+        return resolve_bridge_candidate(&config_path, repo_root, path);
     }
 
-    if in_bridge
-        && enabled
-        && let Some(path) = path
-    {
-        return resolve_bridge_candidate(&config_path, repo_root, &path).map(Some);
-    }
-
-    Ok(None)
+    Ok(SkillsConfigBridgeResolution::NotConfigured)
 }
 
 fn resolve_bridge_candidate(
     config_path: &Path,
     repo_root: &Path,
     raw_path: &str,
-) -> Result<PathBuf> {
+) -> Result<SkillsConfigBridgeResolution> {
     let candidate = PathBuf::from(raw_path);
     let candidates = if candidate.is_absolute() {
-        vec![candidate]
+        vec![candidate.clone()]
     } else {
         vec![
             config_path.parent().unwrap_or(repo_root).join(&candidate),
@@ -298,15 +420,28 @@ fn resolve_bridge_candidate(
                     candidate.display()
                 )
             })?;
-            validate_source_skills_root(&canonical)?;
-            return Ok(canonical);
+            return Ok(match validate_source_skills_root(&canonical) {
+                Ok(validated) => SkillsConfigBridgeResolution::Valid(validated),
+                Err(error) => SkillsConfigBridgeResolution::Invalid {
+                    discovery_root: canonical,
+                    reason: format!("{error:#}"),
+                },
+            });
         }
     }
 
-    bail!(
-        "skills.config bridge points to {}, but no valid Codex1 skill root was found",
-        raw_path
-    )
+    let hint = if candidate.is_absolute() {
+        candidate
+    } else {
+        config_path.parent().unwrap_or(repo_root).join(&candidate)
+    };
+    Ok(SkillsConfigBridgeResolution::Invalid {
+        discovery_root: hint,
+        reason: format!(
+            "skills.config bridge points to {}, but no valid Codex1 skill root was found",
+            raw_path
+        ),
+    })
 }
 
 pub fn managed_skill_files(source_root: &Path) -> Result<Vec<ManagedSkillFile>> {
@@ -622,22 +757,113 @@ pub fn extract_managed_block(contents: &str, begin: &str, end: &str) -> Option<S
     Some(contents[begin_index..end_index].to_string())
 }
 
-fn parse_key_value(line: &str, key: &str) -> Option<String> {
-    let trimmed = strip_comment(line).trim();
-    if trimmed.starts_with('#') || trimmed.starts_with('[') {
-        return None;
+fn ensure_trailing_newline(value: &str) -> String {
+    let mut output = value.to_string();
+    if !output.ends_with('\n') {
+        output.push('\n');
     }
-    let (candidate, value) = trimmed.split_once('=')?;
-    if candidate.trim() != key {
-        return None;
-    }
-    Some(value.trim().trim_matches('"').to_string())
+    output
 }
 
-fn strip_comment(line: &str) -> &str {
-    match line.split_once('#') {
-        Some((before, _)) => before,
-        None => line,
+fn inspect_managed_agents_block(block: &str) -> AgentsScaffoldInspection {
+    let normalized = ensure_trailing_newline(block);
+    let lines: Vec<&str> = normalized.lines().collect();
+    if lines.len() != 23 {
+        return AgentsScaffoldInspection {
+            status: AgentsScaffoldStatus::DriftedBlock,
+            build_command: None,
+            test_command: None,
+            lint_or_format_command: None,
+            command_status: AgentsCommandStatus::Missing,
+        };
+    }
+
+    let expected_static = [
+        (0, AGENTS_BLOCK_BEGIN),
+        (1, "## Codex1"),
+        (2, "### Workflow Stance"),
+        (
+            3,
+            "- Use the native Codex skills surface for `clarify`, `plan`, `execute`, `review`, and `autopilot`.",
+        ),
+        (
+            4,
+            "- Keep mission truth in visible repo artifacts instead of hidden chat state.",
+        ),
+        (
+            5,
+            "- Replan stays internal unless the repo truth explicitly says otherwise.",
+        ),
+        (6, ""),
+        (7, "### Quality Bar"),
+        (
+            8,
+            "- Work is complete only when the locked outcome, proof, review, and closeout contracts are all satisfied.",
+        ),
+        (9, "- Review is mandatory before mission completion."),
+        (
+            10,
+            "- Hold the repo to production-grade changes with explicit validation and review-clean closeout.",
+        ),
+        (11, ""),
+        (12, "### Repo Commands"),
+        (16, ""),
+        (17, "### Artifact Conventions"),
+        (18, "- Mission packages live under `PLANS/<mission-id>/`."),
+        (
+            19,
+            "- `OUTCOME-LOCK.md` is canonical for destination truth.",
+        ),
+        (20, "- `PROGRAM-BLUEPRINT.md` is canonical for route truth."),
+        (
+            21,
+            "- `specs/*/SPEC.md` is canonical for one bounded execution slice.",
+        ),
+        (22, AGENTS_BLOCK_END),
+    ];
+    for (index, expected) in expected_static {
+        if lines.get(index).copied() != Some(expected) {
+            return AgentsScaffoldInspection {
+                status: AgentsScaffoldStatus::DriftedBlock,
+                build_command: None,
+                test_command: None,
+                lint_or_format_command: None,
+                command_status: AgentsCommandStatus::Missing,
+            };
+        }
+    }
+
+    let build_command = lines[13].strip_prefix("- Build: ").map(ToOwned::to_owned);
+    let test_command = lines[14].strip_prefix("- Test: ").map(ToOwned::to_owned);
+    let lint_or_format_command = lines[15]
+        .strip_prefix("- Lint or format: ")
+        .map(ToOwned::to_owned);
+
+    let command_values = [
+        build_command.as_deref(),
+        test_command.as_deref(),
+        lint_or_format_command.as_deref(),
+    ];
+    let command_status = if command_values
+        .iter()
+        .any(|value| value.is_none() || value.is_some_and(|value| value.trim().is_empty()))
+    {
+        AgentsCommandStatus::Missing
+    } else if build_command.as_deref() == Some(AGENTS_BUILD_COMMAND_PLACEHOLDER)
+        || test_command.as_deref() == Some(AGENTS_TEST_COMMAND_PLACEHOLDER)
+        || lint_or_format_command.as_deref() == Some(AGENTS_LINT_COMMAND_PLACEHOLDER)
+    {
+        AgentsCommandStatus::Placeholder
+    } else {
+        AgentsCommandStatus::Concrete
+    };
+
+    AgentsScaffoldInspection {
+        status: AgentsScaffoldStatus::Present,
+        build_command,
+        test_command,
+        lint_or_format_command,
+        command_status,
     }
 }
 
@@ -702,9 +928,11 @@ mod tests {
     use walkdir::WalkDir;
 
     use super::{
-        MANAGED_SKILLS, MANAGED_STOP_HOOK_STATUS, SkillInstallMode, SkillSurfaceStatus,
-        compute_support_surface_signature, inspect_skill_surface_with_source,
-        is_managed_stop_handler, is_observational_stop_handler,
+        AGENTS_BLOCK, AGENTS_BUILD_COMMAND_PLACEHOLDER, AGENTS_LINT_COMMAND_PLACEHOLDER,
+        AGENTS_TEST_COMMAND_PLACEHOLDER, AgentsCommandStatus, AgentsScaffoldStatus, MANAGED_SKILLS,
+        MANAGED_STOP_HOOK_STATUS, SkillInstallMode, SkillSurfaceStatus,
+        compute_support_surface_signature, inspect_agents_scaffold_details,
+        inspect_skill_surface_with_source, is_managed_stop_handler, is_observational_stop_handler,
         summarize_stop_authority_with_observational,
     };
     use serde_json::json;
@@ -810,6 +1038,90 @@ mod tests {
             inspection.discovery_root,
             source.path().canonicalize().expect("canonical source")
         );
+    }
+
+    #[test]
+    fn detects_invalid_skills_config_bridge_without_aborting() {
+        let source = TempDir::new().expect("source temp dir");
+        let target = TempDir::new().expect("target temp dir");
+        seed_source_skills(source.path());
+
+        let codex_dir = target.path().join(".codex");
+        fs::create_dir_all(&codex_dir).expect("create .codex");
+        fs::write(
+            codex_dir.join("config.toml"),
+            "[[skills.config]]\npath = \"./missing-skills\"\nenabled = true\n",
+        )
+        .expect("write config");
+
+        let inspection =
+            inspect_skill_surface_with_source(target.path(), source.path()).expect("inspect");
+        assert_eq!(inspection.status, SkillSurfaceStatus::InvalidBridge);
+        assert_eq!(
+            inspection.install_mode,
+            Some(SkillInstallMode::SkillsConfigBridge)
+        );
+        assert!(inspection.bridge_error.is_some());
+    }
+
+    #[test]
+    fn skills_config_bridge_preserves_hash_in_quoted_path() {
+        let source = TempDir::new().expect("source temp dir");
+        let target = TempDir::new().expect("target temp dir");
+        let bridge_root = target.path().join("skills#v2");
+        seed_source_skills(source.path());
+        seed_source_skills(&bridge_root);
+
+        let codex_dir = target.path().join(".codex");
+        fs::create_dir_all(&codex_dir).expect("create .codex");
+        fs::write(
+            codex_dir.join("config.toml"),
+            format!(
+                "[[skills.config]]\npath = \"{}\"\nenabled = true\n",
+                bridge_root.display()
+            ),
+        )
+        .expect("write config");
+
+        let inspection =
+            inspect_skill_surface_with_source(target.path(), source.path()).expect("inspect");
+        assert_eq!(inspection.status, SkillSurfaceStatus::ValidExisting);
+        assert_eq!(
+            inspection.discovery_root,
+            bridge_root.canonicalize().expect("canonical bridge root")
+        );
+        assert_eq!(
+            inspection.install_mode,
+            Some(SkillInstallMode::SkillsConfigBridge)
+        );
+    }
+
+    #[test]
+    fn agents_scaffold_details_distinguish_placeholders_from_concrete_commands() {
+        let placeholder = inspect_agents_scaffold_details(Some(AGENTS_BLOCK));
+        assert_eq!(placeholder.status, AgentsScaffoldStatus::Present);
+        assert_eq!(placeholder.command_status, AgentsCommandStatus::Placeholder);
+        assert_eq!(
+            placeholder.build_command.as_deref(),
+            Some(AGENTS_BUILD_COMMAND_PLACEHOLDER)
+        );
+        assert_eq!(
+            placeholder.test_command.as_deref(),
+            Some(AGENTS_TEST_COMMAND_PLACEHOLDER)
+        );
+        assert_eq!(
+            placeholder.lint_or_format_command.as_deref(),
+            Some(AGENTS_LINT_COMMAND_PLACEHOLDER)
+        );
+
+        let concrete = inspect_agents_scaffold_details(Some(
+            &AGENTS_BLOCK
+                .replace(AGENTS_BUILD_COMMAND_PLACEHOLDER, "cargo build -p codex1")
+                .replace(AGENTS_TEST_COMMAND_PLACEHOLDER, "cargo test -p codex1")
+                .replace(AGENTS_LINT_COMMAND_PLACEHOLDER, "cargo fmt --all --check"),
+        ));
+        assert_eq!(concrete.status, AgentsScaffoldStatus::Present);
+        assert_eq!(concrete.command_status, AgentsCommandStatus::Concrete);
     }
 
     #[test]
