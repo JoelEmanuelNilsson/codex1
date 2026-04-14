@@ -99,6 +99,8 @@ fn internal_help_prefers_canonical_command_names() {
     assert!(stdout.contains("append-closeout"));
     assert!(stdout.contains("repair-state"));
     assert!(stdout.contains("validate-mission-artifacts"));
+    assert!(stdout.contains("validate-visible-artifacts"));
+    assert!(stdout.contains("validate-machine-state"));
     assert!(stdout.contains("validate-gates"));
     assert!(stdout.contains("validate-closeouts"));
     assert!(stdout.contains("latest-valid-closeout"));
@@ -509,6 +511,89 @@ fn gate_and_closeout_inspection_commands_report_current_mission_state() {
         latest["latest_closeout"]["mission_id"],
         Value::String(mission_id.to_string())
     );
+}
+
+#[test]
+fn artifact_validation_split_reports_visible_and_machine_truth() {
+    let repo = TempDir::new().expect("temp repo");
+
+    let mission_id = "artifact-validation-flow";
+    run_json(
+        repo.path(),
+        &["internal", "init-mission"],
+        json!({
+            "mission_id": mission_id,
+            "title": "Artifact Validation Flow",
+            "objective": "Exercise visible and machine validation split.",
+            "clarify_status": "ratified",
+            "lock_status": "locked"
+        }),
+    );
+
+    run_json(
+        repo.path(),
+        &["internal", "materialize-plan"],
+        json!({
+            "mission_id": mission_id,
+            "body_markdown": canonical_blueprint_body("Use visible and machine validators against the same mission."),
+            "plan_level": 5,
+            "problem_size": "S",
+            "status": "approved",
+            "proof_matrix": [{"claim_ref": "claim:default-proof", "statement": "The mission has a bounded route.", "required_evidence": ["RECEIPTS/test-output.txt"], "review_lenses": ["correctness"], "governing_contract_refs": ["blueprint"]}],
+            "decision_obligations": [],
+            "selected_target_ref": "spec:runtime_core",
+            "specs": [
+                {
+                    "spec_id": "runtime_core",
+                    "purpose": "Create a minimal visible and machine mission surface.",
+                    "artifact_status": "active",
+                    "packetization_status": "runnable",
+                    "execution_status": "not_started"
+                }
+            ]
+        }),
+    );
+
+    let visible = run_json(
+        repo.path(),
+        &[
+            "internal",
+            "validate-visible-artifacts",
+            "--mission-id",
+            mission_id,
+        ],
+        json!({}),
+    );
+    assert_eq!(visible["success"], true);
+    assert_eq!(visible["mission_id"], mission_id);
+
+    let machine = run_json(
+        repo.path(),
+        &[
+            "internal",
+            "validate-machine-state",
+            "--mission-id",
+            mission_id,
+        ],
+        json!({}),
+    );
+    assert_eq!(machine["success"], true);
+    assert_eq!(machine["mission_id"], mission_id);
+
+    let combined = run_json(
+        repo.path(),
+        &[
+            "internal",
+            "validate-mission-artifacts",
+            "--mission-id",
+            mission_id,
+        ],
+        json!({}),
+    );
+    assert_eq!(combined["success"], true);
+    assert_eq!(combined["mission_id"], mission_id);
+    assert_eq!(combined["visible_artifacts"]["success"], true);
+    assert_eq!(combined["machine_state"]["success"], true);
 }
 
 #[test]

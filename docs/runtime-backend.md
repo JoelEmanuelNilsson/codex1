@@ -65,6 +65,9 @@ Canonical -> legacy alias mappings introduced in Phase 1:
   - writes `.ralph/missions/<mission-id>/execution-graph.json` when the runnable frontier has non-trivial sequencing or a wave target, and removes stale graph state when planning collapses back to a trivial single-spec runnable frontier
   - opens or refreshes planning gate state, but does not pass planning completion by itself
   - appends a planning closeout
+  - the runtime now stages this internally as planning preparation, spec sync,
+    execution-graph sync, runtime gate/readme refresh, and closeout synthesis
+    while keeping the command surface stable
 
 ### Execution package flow
 
@@ -108,6 +111,9 @@ Canonical -> legacy alias mappings introduced in Phase 1:
   - updates per-spec `REVIEW.md` when the bundle is spec-local
   - updates the matching review gate
   - appends a review closeout
+  - the runtime now stages this internally as review validation, review-gate
+    update, visible artifact writeback, and closeout synthesis while keeping the
+    command surface stable
   - requires `waiting_request` when review disposition branches to `needs_user`
 
 ### Replan and contradiction flow
@@ -170,6 +176,17 @@ Canonical -> legacy alias mappings introduced in Phase 1:
   - rebuilds cached Ralph mission state from higher-authority files when the
     cached machine state has drifted or gone stale
 
+- `codex1 internal validate-visible-artifacts --mission-id <id>`
+  - validates visible mission truth under `PLANS/<mission-id>/`
+  - checks parseability of `MISSION-STATE.md`, `OUTCOME-LOCK.md`,
+    `PROGRAM-BLUEPRINT.md`, and visible `specs/*/SPEC.md`
+
+- `codex1 internal validate-machine-state --mission-id <id>`
+  - validates hidden Ralph mission truth under `.ralph/missions/<mission-id>/`
+  - checks execution-graph validity, gate and closeout structure, active-cycle
+    parseability, and whether cached `state.json` matches authoritative rebuild
+    from hidden mission files
+
 - `codex1 internal validate-gates --mission-id <id>`
   - validates and summarizes `gates.json` for one mission
 
@@ -185,7 +202,7 @@ Canonical -> legacy alias mappings introduced in Phase 1:
 - `execution-graph.json` is now the persisted machine graph for non-trivial sequencing.
 - Graph authoring and validation bind only to runnable frontier specs; active descoped or non-runnable specs do not force graph nodes.
 - Graph validation binds mission id, blueprint revision and fingerprint, active spec coverage, dependency topology, per-node scope declarations, and obligation coverage for each declared acceptance check.
-- `codex1 internal validate-mission-artifacts --mission-id <id>` now reports execution-graph drift alongside execution packages and review bundles so the hidden machine contract can be inspected directly.
+- `codex1 internal validate-mission-artifacts --mission-id <id>` remains the umbrella validator and now includes explicit `visible_artifacts` and `machine_state` subreports alongside the combined findings list.
   - legacy alias: `codex1 internal validate-artifacts --mission-id <id>`
 
 ## Usage notes

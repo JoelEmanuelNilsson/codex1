@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use codex1_core::{
-    ArtifactDocument, CloseoutRecord, ContradictionInput, EffectiveConfigReport,
+    ActiveCycleState, ArtifactDocument, CloseoutRecord, ContradictionInput, EffectiveConfigReport,
     ExecutionGraphValidationReport, ExecutionPackageInput, MissionBootstrapReport,
     MissionGateIndex, MissionInitInput, MissionPaths, MissionStateFrontmatter,
     OutcomeLockFrontmatter, PackageValidationReport, PlanningWriteInput,
@@ -17,7 +17,7 @@ use codex1_core::{
     WorkstreamSpecFrontmatter, WriterPacketInput, WriterPacketValidationReport,
     acknowledge_selection_request, acknowledge_waiting_request, append_contradiction,
     append_replan_log, compile_execution_package, compile_review_bundle, consume_selection_wait,
-    derive_writer_packet, initialize_mission, load_closeouts, open_selection_wait,
+    derive_writer_packet, initialize_mission, load_closeouts, load_state, open_selection_wait,
     rebuild_state_from_files, record_review_result, resolve_resume, resolve_selection_wait,
     resolve_stop_hook_output, validate_execution_graph, validate_execution_package,
     validate_review_bundle, validate_writer_packet, write_closeout, write_planning_artifacts,
@@ -49,6 +49,22 @@ enum InternalCommand {
         visible_alias = "validate-artifacts"
     )]
     ValidateArtifacts {
+        #[arg(long, value_name = "PATH")]
+        repo_root: Option<PathBuf>,
+        #[arg(long)]
+        mission_id: String,
+        #[arg(long, default_value_t = true)]
+        json: bool,
+    },
+    ValidateVisibleArtifacts {
+        #[arg(long, value_name = "PATH")]
+        repo_root: Option<PathBuf>,
+        #[arg(long)]
+        mission_id: String,
+        #[arg(long, default_value_t = true)]
+        json: bool,
+    },
+    ValidateMachineState {
         #[arg(long, value_name = "PATH")]
         repo_root: Option<PathBuf>,
         #[arg(long)]
@@ -263,6 +279,16 @@ pub fn run(args: InternalArgs) -> Result<()> {
             mission_id,
             json,
         } => run_validate_artifacts(repo_root, &mission_id, json),
+        InternalCommand::ValidateVisibleArtifacts {
+            repo_root,
+            mission_id,
+            json,
+        } => run_validate_visible_artifacts(repo_root, &mission_id, json),
+        InternalCommand::ValidateMachineState {
+            repo_root,
+            mission_id,
+            json,
+        } => run_validate_machine_state(repo_root, &mission_id, json),
         InternalCommand::ValidateGates {
             repo_root,
             mission_id,
@@ -425,6 +451,22 @@ struct LatestValidCloseoutReport {
     latest_closeout: Option<CloseoutRecord>,
 }
 
+#[derive(Debug, Serialize)]
+struct VisibleArtifactsValidationReport {
+    repo_root: PathBuf,
+    mission_id: String,
+    success: bool,
+    findings: Vec<ArtifactFinding>,
+}
+
+#[derive(Debug, Serialize)]
+struct MachineStateValidationReport {
+    repo_root: PathBuf,
+    mission_id: String,
+    success: bool,
+    findings: Vec<ArtifactFinding>,
+}
+
 fn run_stop_hook() -> Result<()> {
     let input: StopHookInput = read_stdin_json()?;
     let repo_root = PathBuf::from(input.cwd);
@@ -468,6 +510,34 @@ fn run_validate_artifacts(
     )
 }
 
+fn run_validate_visible_artifacts(
+    repo_root: Option<PathBuf>,
+    mission_id: &str,
+    json_output: bool,
+) -> Result<()> {
+    let repo_root = resolve_repo_root(repo_root)?;
+    let mission_paths = MissionPaths::new(&repo_root, mission_id.to_string());
+    let report = VisibleArtifactsValidationReport::run(&mission_paths)?;
+    emit(
+        json_output,
+        &serde_json::to_value(report).context("failed to serialize visible artifact validation")?,
+    )
+}
+
+fn run_validate_machine_state(
+    repo_root: Option<PathBuf>,
+    mission_id: &str,
+    json_output: bool,
+) -> Result<()> {
+    let repo_root = resolve_repo_root(repo_root)?;
+    let mission_paths = MissionPaths::new(&repo_root, mission_id.to_string());
+    let report = MachineStateValidationReport::run(&mission_paths)?;
+    emit(
+        json_output,
+        &serde_json::to_value(report).context("failed to serialize machine state validation")?,
+    )
+}
+
 fn run_validate_gates(
     repo_root: Option<PathBuf>,
     mission_id: &str,
@@ -475,68 +545,7 @@ fn run_validate_gates(
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
     let mission_paths = MissionPaths::new(&repo_root, mission_id.to_string());
-    let gates_path = mission_paths.gates_json();
-    let report = if !gates_path.is_file() {
-        GatesValidationReport {
-            repo_root,
-            mission_id: mission_id.to_string(),
-            gates_path,
-            exists: false,
-            valid: false,
-            current_phase: None,
-            gate_count: 0,
-            findings: vec!["missing gates.json".to_string()],
-        }
-    } else {
-        match fs::read(&gates_path)
-            .with_context(|| format!("failed to read {}", gates_path.display()))
-            .and_then(|bytes| {
-                serde_json::from_slice::<MissionGateIndex>(&bytes)
-                    .with_context(|| format!("failed to parse {}", gates_path.display()))
-            }) {
-            Ok(index) => {
-                let mut findings = Vec::new();
-                if index.mission_id != mission_id {
-                    findings.push(format!(
-                        "gates.json mission_id {} does not match requested mission {}",
-                        index.mission_id, mission_id
-                    ));
-                }
-                if index.current_phase.trim().is_empty() {
-                    findings.push("gates.json current_phase must not be empty".to_string());
-                }
-                let mut gate_ids = std::collections::BTreeSet::new();
-                for gate in &index.gates {
-                    if !gate_ids.insert(gate.gate_id.clone()) {
-                        findings.push(format!("duplicate gate_id {}", gate.gate_id));
-                    }
-                    if gate.target_ref.trim().is_empty() {
-                        findings.push(format!("gate {} has empty target_ref", gate.gate_id));
-                    }
-                }
-                GatesValidationReport {
-                    repo_root,
-                    mission_id: mission_id.to_string(),
-                    gates_path,
-                    exists: true,
-                    valid: findings.is_empty(),
-                    current_phase: Some(index.current_phase),
-                    gate_count: index.gates.len(),
-                    findings,
-                }
-            }
-            Err(error) => GatesValidationReport {
-                repo_root,
-                mission_id: mission_id.to_string(),
-                gates_path,
-                exists: true,
-                valid: false,
-                current_phase: None,
-                gate_count: 0,
-                findings: vec![error.to_string()],
-            },
-        }
-    };
+    let report = evaluate_gates_validation(&mission_paths)?;
     emit(
         json_output,
         &serde_json::to_value(report).context("failed to serialize gates validation")?,
@@ -550,47 +559,7 @@ fn run_validate_closeouts(
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
     let mission_paths = MissionPaths::new(&repo_root, mission_id.to_string());
-    let closeouts_path = mission_paths.closeouts_ndjson();
-    let report = if !closeouts_path.is_file() {
-        CloseoutsValidationReport {
-            repo_root,
-            mission_id: mission_id.to_string(),
-            closeouts_path,
-            exists: false,
-            valid: false,
-            closeout_count: 0,
-            latest_closeout_seq: None,
-            latest_closeout_id: None,
-            findings: vec!["missing closeouts.ndjson".to_string()],
-        }
-    } else {
-        match load_closeouts(&closeouts_path) {
-            Ok(closeouts) => CloseoutsValidationReport {
-                repo_root,
-                mission_id: mission_id.to_string(),
-                closeouts_path,
-                exists: true,
-                valid: true,
-                closeout_count: closeouts.len(),
-                latest_closeout_seq: closeouts.last().map(|record| record.closeout_seq),
-                latest_closeout_id: closeouts
-                    .last()
-                    .and_then(|record| record.closeout_id.clone()),
-                findings: Vec::new(),
-            },
-            Err(error) => CloseoutsValidationReport {
-                repo_root,
-                mission_id: mission_id.to_string(),
-                closeouts_path,
-                exists: true,
-                valid: false,
-                closeout_count: 0,
-                latest_closeout_seq: None,
-                latest_closeout_id: None,
-                findings: vec![error.to_string()],
-            },
-        }
-    };
+    let report = evaluate_closeouts_validation(&mission_paths)?;
     emit(
         json_output,
         &serde_json::to_value(report).context("failed to serialize closeouts validation")?,
@@ -1011,10 +980,12 @@ struct ArtifactValidationReport {
     repo_root: PathBuf,
     mission_id: String,
     success: bool,
+    visible_artifacts: VisibleArtifactsValidationReport,
+    machine_state: MachineStateValidationReport,
     findings: Vec<ArtifactFinding>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 struct ArtifactFinding {
     level: &'static str,
     path: PathBuf,
@@ -1022,6 +993,24 @@ struct ArtifactFinding {
 }
 
 impl ArtifactValidationReport {
+    fn run(paths: &MissionPaths) -> Result<Self> {
+        let visible_artifacts = VisibleArtifactsValidationReport::run(paths)?;
+        let machine_state = MachineStateValidationReport::run(paths)?;
+        let mut findings = visible_artifacts.findings.clone();
+        findings.extend(machine_state.findings.clone());
+
+        Ok(Self {
+            repo_root: paths.repo_root().clone(),
+            mission_id: paths.mission_id().to_string(),
+            success: visible_artifacts.success && machine_state.success,
+            visible_artifacts,
+            machine_state,
+            findings,
+        })
+    }
+}
+
+impl VisibleArtifactsValidationReport {
     fn run(paths: &MissionPaths) -> Result<Self> {
         let mut findings = Vec::new();
         validate_markdown::<MissionStateFrontmatter>(&paths.mission_state(), &mut findings);
@@ -1039,6 +1028,19 @@ impl ArtifactValidationReport {
             }
         }
 
+        Ok(Self {
+            repo_root: paths.repo_root().clone(),
+            mission_id: paths.mission_id().to_string(),
+            success: findings.iter().all(|finding| finding.level != "error"),
+            findings,
+        })
+    }
+}
+
+impl MachineStateValidationReport {
+    fn run(paths: &MissionPaths) -> Result<Self> {
+        let mut findings = Vec::new();
+
         match validate_execution_graph(paths) {
             Ok(report) => append_execution_graph_findings(paths, &report, &mut findings),
             Err(error) => findings.push(ArtifactFinding {
@@ -1048,12 +1050,126 @@ impl ArtifactValidationReport {
             }),
         }
 
+        append_gates_validation_findings(&evaluate_gates_validation(paths)?, &mut findings);
+        append_closeouts_validation_findings(&evaluate_closeouts_validation(paths)?, &mut findings);
+        append_state_validation_findings(paths, &mut findings)?;
+
         Ok(Self {
             repo_root: paths.repo_root().clone(),
             mission_id: paths.mission_id().to_string(),
             success: findings.iter().all(|finding| finding.level != "error"),
             findings,
         })
+    }
+}
+
+fn evaluate_gates_validation(paths: &MissionPaths) -> Result<GatesValidationReport> {
+    let gates_path = paths.gates_json();
+    if !gates_path.is_file() {
+        return Ok(GatesValidationReport {
+            repo_root: paths.repo_root().clone(),
+            mission_id: paths.mission_id().to_string(),
+            gates_path,
+            exists: false,
+            valid: false,
+            current_phase: None,
+            gate_count: 0,
+            findings: vec!["missing gates.json".to_string()],
+        });
+    }
+
+    match fs::read(&gates_path)
+        .with_context(|| format!("failed to read {}", gates_path.display()))
+        .and_then(|bytes| {
+            serde_json::from_slice::<MissionGateIndex>(&bytes)
+                .with_context(|| format!("failed to parse {}", gates_path.display()))
+        }) {
+        Ok(index) => {
+            let mut findings = Vec::new();
+            if index.mission_id != paths.mission_id() {
+                findings.push(format!(
+                    "gates.json mission_id {} does not match requested mission {}",
+                    index.mission_id,
+                    paths.mission_id()
+                ));
+            }
+            if index.current_phase.trim().is_empty() {
+                findings.push("gates.json current_phase must not be empty".to_string());
+            }
+            let mut gate_ids = std::collections::BTreeSet::new();
+            for gate in &index.gates {
+                if !gate_ids.insert(gate.gate_id.clone()) {
+                    findings.push(format!("duplicate gate_id {}", gate.gate_id));
+                }
+                if gate.target_ref.trim().is_empty() {
+                    findings.push(format!("gate {} has empty target_ref", gate.gate_id));
+                }
+            }
+            Ok(GatesValidationReport {
+                repo_root: paths.repo_root().clone(),
+                mission_id: paths.mission_id().to_string(),
+                gates_path,
+                exists: true,
+                valid: findings.is_empty(),
+                current_phase: Some(index.current_phase),
+                gate_count: index.gates.len(),
+                findings,
+            })
+        }
+        Err(error) => Ok(GatesValidationReport {
+            repo_root: paths.repo_root().clone(),
+            mission_id: paths.mission_id().to_string(),
+            gates_path,
+            exists: true,
+            valid: false,
+            current_phase: None,
+            gate_count: 0,
+            findings: vec![error.to_string()],
+        }),
+    }
+}
+
+fn evaluate_closeouts_validation(paths: &MissionPaths) -> Result<CloseoutsValidationReport> {
+    let closeouts_path = paths.closeouts_ndjson();
+    if !closeouts_path.is_file() {
+        return Ok(CloseoutsValidationReport {
+            repo_root: paths.repo_root().clone(),
+            mission_id: paths.mission_id().to_string(),
+            closeouts_path,
+            exists: false,
+            valid: false,
+            closeout_count: 0,
+            latest_closeout_seq: None,
+            latest_closeout_id: None,
+            findings: vec!["missing closeouts.ndjson".to_string()],
+        });
+    }
+
+    match load_closeouts(&closeouts_path) {
+        Ok(closeouts) => Ok(CloseoutsValidationReport {
+            repo_root: paths.repo_root().clone(),
+            mission_id: paths.mission_id().to_string(),
+            closeouts_path,
+            exists: true,
+            valid: true,
+            closeout_count: closeouts.len(),
+            latest_closeout_seq: closeouts.last().map(|record| record.closeout_seq),
+            latest_closeout_id: closeouts
+                .last()
+                .and_then(|record| record.closeout_id.clone()),
+            findings: Vec::new(),
+        }),
+        Err(error) => Ok(CloseoutsValidationReport {
+            repo_root: paths.repo_root().clone(),
+            mission_id: paths.mission_id().to_string(),
+            closeouts_path,
+            exists: true,
+            valid: false,
+            closeout_count: 0,
+            latest_closeout_seq: None,
+            latest_closeout_id: None,
+            findings: vec![error.to_string()],
+        }),
     }
 }
 
@@ -1070,6 +1186,95 @@ fn append_execution_graph_findings(
             message: finding.clone(),
         });
     }
+}
+
+fn append_gates_validation_findings(
+    report: &GatesValidationReport,
+    findings: &mut Vec<ArtifactFinding>,
+) {
+    let level = if report.valid { "info" } else { "error" };
+    for finding in &report.findings {
+        findings.push(ArtifactFinding {
+            level,
+            path: report.gates_path.clone(),
+            message: finding.clone(),
+        });
+    }
+}
+
+fn append_closeouts_validation_findings(
+    report: &CloseoutsValidationReport,
+    findings: &mut Vec<ArtifactFinding>,
+) {
+    let level = if report.valid { "info" } else { "error" };
+    for finding in &report.findings {
+        findings.push(ArtifactFinding {
+            level,
+            path: report.closeouts_path.clone(),
+            message: finding.clone(),
+        });
+    }
+}
+
+fn append_state_validation_findings(
+    paths: &MissionPaths,
+    findings: &mut Vec<ArtifactFinding>,
+) -> Result<()> {
+    let state_path = paths.state_json();
+    let cached_state = match load_state(&state_path) {
+        Ok(state) => state,
+        Err(error) => {
+            findings.push(ArtifactFinding {
+                level: "error",
+                path: state_path.clone(),
+                message: format!("failed to read cached machine state: {error}"),
+            });
+            None
+        }
+    };
+    let rebuilt_state = match rebuild_state_from_files(&paths.hidden_mission_root()) {
+        Ok(state) => state,
+        Err(error) => {
+            findings.push(ArtifactFinding {
+                level: "error",
+                path: paths.hidden_mission_root(),
+                message: format!(
+                    "failed to rebuild machine state from authoritative files: {error}"
+                ),
+            });
+            None
+        }
+    };
+
+    if cached_state != rebuilt_state {
+        findings.push(ArtifactFinding {
+            level: "error",
+            path: state_path.clone(),
+            message:
+                "cached state.json does not match authoritative rebuild from hidden mission files"
+                    .to_string(),
+        });
+    }
+
+    match fs::read(&paths.active_cycle()) {
+        Ok(bytes) => {
+            if let Err(error) = serde_json::from_slice::<ActiveCycleState>(&bytes) {
+                findings.push(ArtifactFinding {
+                    level: "error",
+                    path: paths.active_cycle(),
+                    message: format!("failed to parse active-cycle state: {error}"),
+                });
+            }
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => findings.push(ArtifactFinding {
+            level: "error",
+            path: paths.active_cycle(),
+            message: format!("failed to read active-cycle state: {error}"),
+        }),
+    }
+
+    Ok(())
 }
 
 fn validate_markdown<F>(path: &Path, findings: &mut Vec<ArtifactFinding>)

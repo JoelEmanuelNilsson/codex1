@@ -130,6 +130,14 @@ Primary candidates:
 
 Completed groundwork in the current wave:
 
+- split `materialize-plan` internals into planning preparation, spec sync,
+  execution-graph sync, runtime-state refresh, and closeout synthesis helpers
+  while keeping the command surface unchanged
+- split `record-review-outcome` internals into validation, gate-update,
+  visible-artifact writeback, and closeout synthesis helpers while keeping the
+  command surface unchanged
+- added `validate-visible-artifacts`
+- added `validate-machine-state`
 - added `validate-gates`
 - added `validate-closeouts`
 - added `latest-valid-closeout`

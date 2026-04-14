@@ -717,6 +717,26 @@ pub struct PlanningWriteReport {
     pub written_specs: Vec<IncludedSpecRef>,
 }
 
+#[derive(Debug, Clone)]
+struct PlanningWriteContext {
+    lock_revision: u64,
+    lock_body: String,
+    lock_fingerprint: Fingerprint,
+    blueprint_revision: u64,
+    blueprint_rendered: String,
+    blueprint_fingerprint: Fingerprint,
+    planning_contract_changed: bool,
+    normalized_execution_graph: Option<ExecutionGraphInput>,
+    prior_active_spec_ids: Vec<String>,
+    input_spec_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct PlanningSpecSyncResult {
+    written_specs: Vec<IncludedSpecRef>,
+    planning_contract_changed: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExecutionPackageInput {
     pub mission_id: String,
@@ -846,6 +866,28 @@ pub struct ReviewResultReport {
     pub review_id: String,
     pub blocking_findings: usize,
     pub updated_gate: GateKind,
+}
+
+#[derive(Debug, Clone)]
+struct ReviewOutcomeContext {
+    review_id: String,
+    bundle: ReviewBundle,
+    resolved_target_spec_id: Option<String>,
+    blocking_findings: usize,
+    review_passed: bool,
+    gate_kind: GateKind,
+}
+
+#[derive(Debug, Clone)]
+struct ReviewGateUpdate {
+    gates: MissionGateIndex,
+    updated_gate_id: String,
+}
+
+#[derive(Debug, Clone)]
+struct ReviewArtifactWriteResult {
+    closeout_spec_fingerprint: Option<Fingerprint>,
+    expected_outputs: Vec<String>,
 }
 
 const ALLOWED_REVIEW_FINDING_CLASSES: &[&str] =
@@ -1305,6 +1347,54 @@ pub fn write_planning_artifacts(
     paths: &MissionPaths,
     input: &PlanningWriteInput,
 ) -> Result<PlanningWriteReport> {
+    let context = prepare_planning_write_context(paths, input)?;
+    fs::write(paths.program_blueprint(), &context.blueprint_rendered)
+        .with_context(|| format!("failed to write {}", paths.program_blueprint().display()))?;
+    supersede_omitted_planning_specs(paths, &context)?;
+    let spec_sync = sync_planning_specs(paths, input, &context)?;
+    sync_planning_execution_graph(paths, &context)?;
+    refresh_planning_runtime_state(
+        paths,
+        input,
+        &context,
+        context.planning_contract_changed || spec_sync.planning_contract_changed,
+    )?;
+    let closeout = build_planning_closeout(paths, input, &context)?;
+    let mut expected_outputs = vec![paths.program_blueprint().display().to_string()];
+    if context.normalized_execution_graph.is_some() {
+        expected_outputs.push(paths.execution_graph().display().to_string());
+    }
+    expected_outputs.extend(
+        spec_sync
+            .written_specs
+            .iter()
+            .map(|spec| paths.spec_file(&spec.spec_id).display().to_string()),
+    );
+    let active_cycle = active_cycle_from_closeout(
+        &closeout,
+        Vec::new(),
+        vec![
+            "outcome_lock_locked".to_string(),
+            "planning_artifacts_rendered".to_string(),
+        ],
+        expected_outputs,
+        Vec::new(),
+        Vec::new(),
+    );
+    append_closeout_for_active_cycle(paths, &closeout, &active_cycle)?;
+
+    Ok(PlanningWriteReport {
+        mission_id: input.mission_id.clone(),
+        blueprint_revision: context.blueprint_revision,
+        blueprint_fingerprint: context.blueprint_fingerprint,
+        written_specs: spec_sync.written_specs,
+    })
+}
+
+fn prepare_planning_write_context(
+    paths: &MissionPaths,
+    input: &PlanningWriteInput,
+) -> Result<PlanningWriteContext> {
     ensure_paths_match_mission(paths, &input.mission_id)?;
     if !(1..=5).contains(&input.plan_level) {
         bail!("plan_level must be between 1 and 5");
@@ -1453,8 +1543,8 @@ pub fn write_planning_artifacts(
             risk_floor,
             problem_size: input.problem_size,
             status: input.status.unwrap_or(BlueprintStatus::Draft),
-            proof_matrix: normalized_proof_matrix.clone(),
-            decision_obligations: normalized_decision_obligations.clone(),
+            proof_matrix: normalized_proof_matrix,
+            decision_obligations: normalized_decision_obligations,
             selected_target_ref: input.selected_target_ref.clone(),
         },
         body: input.body_markdown.clone(),
@@ -1464,18 +1554,54 @@ pub fn write_planning_artifacts(
         &blueprint_doc,
         normalized_execution_graph.as_ref(),
     )?;
-    fs::write(paths.program_blueprint(), blueprint_rendered)
-        .with_context(|| format!("failed to write {}", paths.program_blueprint().display()))?;
 
-    let omitted_active_spec_ids = prior_active_spec_ids
-        .into_iter()
-        .filter(|spec_id| !input_spec_ids.iter().any(|candidate| candidate == spec_id))
+    Ok(PlanningWriteContext {
+        lock_revision: lock_doc.frontmatter.lock_revision,
+        lock_body: lock_doc.body,
+        lock_fingerprint,
+        blueprint_revision,
+        blueprint_rendered,
+        blueprint_fingerprint,
+        planning_contract_changed,
+        normalized_execution_graph,
+        prior_active_spec_ids,
+        input_spec_ids,
+    })
+}
+
+fn supersede_omitted_planning_specs(
+    paths: &MissionPaths,
+    context: &PlanningWriteContext,
+) -> Result<()> {
+    let omitted_active_spec_ids = context
+        .prior_active_spec_ids
+        .iter()
+        .filter(|spec_id| {
+            !context
+                .input_spec_ids
+                .iter()
+                .any(|candidate| candidate == *spec_id)
+        })
+        .cloned()
         .collect::<Vec<_>>();
     for spec_id in &omitted_active_spec_ids {
-        supersede_omitted_spec(paths, spec_id, blueprint_revision, &blueprint_fingerprint)?;
+        supersede_omitted_spec(
+            paths,
+            spec_id,
+            context.blueprint_revision,
+            &context.blueprint_fingerprint,
+        )?;
     }
+    Ok(())
+}
 
+fn sync_planning_specs(
+    paths: &MissionPaths,
+    input: &PlanningWriteInput,
+    context: &PlanningWriteContext,
+) -> Result<PlanningSpecSyncResult> {
     let mut written_specs = Vec::new();
+    let mut planning_contract_changed = false;
     for spec in &input.specs {
         let body = spec
             .body_markdown
@@ -1517,8 +1643,8 @@ pub fn write_planning_artifacts(
                 packetization_status,
                 execution_status,
                 owner_mode: spec.owner_mode.unwrap_or(OwnerMode::Solo),
-                blueprint_revision,
-                blueprint_fingerprint: Some(blueprint_fingerprint.clone()),
+                blueprint_revision: context.blueprint_revision,
+                blueprint_fingerprint: Some(context.blueprint_fingerprint.clone()),
                 spec_fingerprint: None,
                 replan_boundary: Some(spec.replan_boundary.clone().unwrap_or_default()),
             },
@@ -1560,13 +1686,22 @@ pub fn write_planning_artifacts(
             spec_fingerprint: parsed.fingerprint()?,
         });
     }
+    Ok(PlanningSpecSyncResult {
+        written_specs,
+        planning_contract_changed,
+    })
+}
 
-    let runnable_spec_ids = load_runnable_blueprint_spec_ids(paths, blueprint_revision)?;
-    if let Some(execution_graph_input) = normalized_execution_graph.as_ref() {
+fn sync_planning_execution_graph(
+    paths: &MissionPaths,
+    context: &PlanningWriteContext,
+) -> Result<()> {
+    let runnable_spec_ids = load_runnable_blueprint_spec_ids(paths, context.blueprint_revision)?;
+    if let Some(execution_graph_input) = context.normalized_execution_graph.as_ref() {
         let execution_graph = build_execution_graph(
             paths,
-            blueprint_revision,
-            &blueprint_fingerprint,
+            context.blueprint_revision,
+            &context.blueprint_fingerprint,
             execution_graph_input,
             &runnable_spec_ids,
         )?;
@@ -1579,9 +1714,17 @@ pub fn write_planning_artifacts(
             )
         })?;
     }
+    Ok(())
+}
 
+fn refresh_planning_runtime_state(
+    paths: &MissionPaths,
+    input: &PlanningWriteInput,
+    context: &PlanningWriteContext,
+    planning_contract_changed: bool,
+) -> Result<()> {
     let mut gates = load_gate_index(paths)?;
-    let planning_gate_id = planning_gate_id(&input.mission_id, blueprint_revision);
+    let planning_gate_id = planning_gate_id(&input.mission_id, context.blueprint_revision);
     invalidate_post_planning_history(
         &mut gates,
         &input.mission_id,
@@ -1595,8 +1738,8 @@ pub fn write_planning_artifacts(
             gate_kind: GateKind::PlanningCompletion,
             target_ref: format!("mission:{}", input.mission_id),
             governing_refs: vec![
-                format!("lock:{}", lock_doc.frontmatter.lock_revision),
-                format!("blueprint:{}", blueprint_revision),
+                format!("lock:{}", context.lock_revision),
+                format!("blueprint:{}", context.blueprint_revision),
             ],
             status: MissionGateStatus::Open,
             blocking: true,
@@ -1605,7 +1748,7 @@ pub fn write_planning_artifacts(
             evaluated_against_ref: None,
             evidence_refs: {
                 let mut refs = vec![paths.program_blueprint().display().to_string()];
-                if normalized_execution_graph.is_some() {
+                if context.normalized_execution_graph.is_some() {
                     refs.push(paths.execution_graph().display().to_string());
                 }
                 refs
@@ -1628,18 +1771,27 @@ pub fn write_planning_artifacts(
             paths.mission_id(),
             paths.mission_id(),
             target_ref,
-            extract_first_heading_or_sentence(&lock_doc.body)
+            extract_first_heading_or_sentence(&context.lock_body)
         );
         fs::write(paths.readme(), body)
             .with_context(|| format!("failed to write {}", paths.readme().display()))?;
     }
 
+    Ok(())
+}
+
+fn build_planning_closeout(
+    paths: &MissionPaths,
+    input: &PlanningWriteInput,
+    context: &PlanningWriteContext,
+) -> Result<CloseoutRecord> {
     let existing_closeouts = load_closeouts(&paths.closeouts_ndjson())?;
     let next_seq = existing_closeouts
         .last()
         .map_or(1, |record| record.closeout_seq + 1);
     let cycle_id = Uuid::new_v4().to_string();
-    let closeout = CloseoutRecord {
+
+    Ok(CloseoutRecord {
         closeout_id: Some(Uuid::new_v4().to_string()),
         closeout_seq: next_seq,
         mission_id: input.mission_id.clone(),
@@ -1665,13 +1817,16 @@ pub fn write_planning_artifacts(
         }),
         target: input.selected_target_ref.clone(),
         cycle_kind: Some(CycleKind::BoundedProgress),
-        lock_revision: Some(lock_doc.frontmatter.lock_revision),
-        lock_fingerprint: Some(lock_fingerprint.to_string()),
-        blueprint_revision: Some(blueprint_revision),
-        blueprint_fingerprint: Some(blueprint_fingerprint.to_string()),
-        governing_revision: Some(format!("blueprint:{}", blueprint_revision)),
+        lock_revision: Some(context.lock_revision),
+        lock_fingerprint: Some(context.lock_fingerprint.to_string()),
+        blueprint_revision: Some(context.blueprint_revision),
+        blueprint_fingerprint: Some(context.blueprint_fingerprint.to_string()),
+        governing_revision: Some(format!("blueprint:{}", context.blueprint_revision)),
         reason_code: Some("planning_artifacts_written".to_string()),
-        summary: Some(format!("Updated blueprint revision {}", blueprint_revision)),
+        summary: Some(format!(
+            "Updated blueprint revision {}",
+            context.blueprint_revision
+        )),
         continuation_prompt: Some(if input.selected_target_ref.is_some() {
             "Compile or refresh the execution package for the selected target.".to_string()
         } else {
@@ -1685,40 +1840,15 @@ pub fn write_planning_artifacts(
         request_emitted_at: None,
         active_child_task_paths: Vec::new(),
         artifact_fingerprints: BTreeMap::from([
-            ("outcome_lock".to_string(), lock_fingerprint.to_string()),
+            (
+                "outcome_lock".to_string(),
+                context.lock_fingerprint.to_string(),
+            ),
             (
                 "program_blueprint".to_string(),
-                blueprint_fingerprint.to_string(),
+                context.blueprint_fingerprint.to_string(),
             ),
         ]),
-    };
-    let mut expected_outputs = vec![paths.program_blueprint().display().to_string()];
-    if normalized_execution_graph.is_some() {
-        expected_outputs.push(paths.execution_graph().display().to_string());
-    }
-    expected_outputs.extend(
-        written_specs
-            .iter()
-            .map(|spec| paths.spec_file(&spec.spec_id).display().to_string()),
-    );
-    let active_cycle = active_cycle_from_closeout(
-        &closeout,
-        Vec::new(),
-        vec![
-            "outcome_lock_locked".to_string(),
-            "planning_artifacts_rendered".to_string(),
-        ],
-        expected_outputs,
-        Vec::new(),
-        Vec::new(),
-    );
-    append_closeout_for_active_cycle(paths, &closeout, &active_cycle)?;
-
-    Ok(PlanningWriteReport {
-        mission_id: input.mission_id.clone(),
-        blueprint_revision,
-        blueprint_fingerprint,
-        written_specs,
     })
 }
 
@@ -2692,6 +2822,35 @@ pub fn record_review_result(
     input: &ReviewResultInput,
 ) -> Result<ReviewResultReport> {
     ensure_paths_match_mission(paths, &input.mission_id)?;
+    let context = prepare_review_outcome_context(paths, input)?;
+    let gate_update = apply_review_gate_outcome(paths, input, &context)?;
+    let artifact_write = write_review_artifacts(paths, input, &context)?;
+    let closeout = build_review_closeout(paths, input, &context, &gate_update, &artifact_write)?;
+    let active_cycle = active_cycle_from_closeout(
+        &closeout,
+        Vec::new(),
+        vec![
+            "review_bundle_validated".to_string(),
+            "review_gate_updated".to_string(),
+        ],
+        artifact_write.expected_outputs,
+        vec![context.bundle.source_package_id.clone()],
+        vec![context.bundle.bundle_id.clone()],
+    );
+    append_closeout_for_active_cycle(paths, &closeout, &active_cycle)?;
+
+    Ok(ReviewResultReport {
+        mission_id: input.mission_id.clone(),
+        review_id: context.review_id,
+        blocking_findings: context.blocking_findings,
+        updated_gate: context.gate_kind,
+    })
+}
+
+fn prepare_review_outcome_context(
+    paths: &MissionPaths,
+    input: &ReviewResultInput,
+) -> Result<ReviewOutcomeContext> {
     if input.reviewer.trim().is_empty() {
         anyhow::bail!("review results must record a non-empty reviewer identity");
     }
@@ -2733,45 +2892,46 @@ pub fn record_review_result(
     if !clean_verdict && blocking_findings == 0 {
         anyhow::bail!("non-clean review results must include at least one blocking finding");
     }
-    let review_passed = blocking_findings == 0 && clean_verdict;
-    let review_id = Uuid::new_v4().to_string();
 
-    let gate_kind = match bundle.bundle_kind {
+    let gate_kind = match &bundle.bundle_kind {
         BundleKind::SpecReview => GateKind::BlockingReview,
         BundleKind::MissionClose => GateKind::MissionCloseReview,
     };
+
+    Ok(ReviewOutcomeContext {
+        review_id: Uuid::new_v4().to_string(),
+        bundle,
+        resolved_target_spec_id,
+        blocking_findings,
+        review_passed: blocking_findings == 0 && clean_verdict,
+        gate_kind,
+    })
+}
+
+fn apply_review_gate_outcome(
+    paths: &MissionPaths,
+    input: &ReviewResultInput,
+    context: &ReviewOutcomeContext,
+) -> Result<ReviewGateUpdate> {
     let mut gates = load_gate_index(paths)?;
     let mut updated_gate_id: Option<String> = None;
     for gate in &mut gates.gates {
-        if gate.evaluated_against_ref.as_deref() == Some(bundle.bundle_id.as_str()) {
+        if gate.evaluated_against_ref.as_deref() == Some(context.bundle.bundle_id.as_str()) {
             if gate.status != MissionGateStatus::Open {
                 anyhow::bail!(
                     "review bundle {} cannot be recorded because gate {} is not open",
-                    bundle.bundle_id,
+                    context.bundle.bundle_id,
                     gate.gate_id
                 );
             }
-            gate.status = if review_passed {
+            gate.status = if context.review_passed {
                 MissionGateStatus::Passed
             } else {
                 MissionGateStatus::Failed
             };
             gate.evaluated_at = Some(OffsetDateTime::now_utc());
             gate.evidence_refs.extend(input.evidence_refs.clone());
-            gate.failure_refs = if review_passed {
-                Vec::new()
-            } else {
-                let mut refs = input
-                    .findings
-                    .iter()
-                    .filter(|finding| finding.blocking)
-                    .map(|finding| finding.summary.clone())
-                    .collect::<Vec<_>>();
-                if refs.is_empty() {
-                    refs.push(format!("review_verdict:{}", input.verdict));
-                }
-                refs
-            };
+            gate.failure_refs = review_failure_refs(input, context.review_passed);
             updated_gate_id = Some(gate.gate_id.clone());
         }
     }
@@ -2779,6 +2939,17 @@ pub fn record_review_result(
     gates.updated_at = OffsetDateTime::now_utc();
     write_json(paths.gates_json(), &gates)?;
 
+    Ok(ReviewGateUpdate {
+        gates,
+        updated_gate_id,
+    })
+}
+
+fn write_review_artifacts(
+    paths: &MissionPaths,
+    input: &ReviewResultInput,
+    context: &ReviewOutcomeContext,
+) -> Result<ReviewArtifactWriteResult> {
     let existing_ledger = if paths.review_ledger().is_file() {
         Some(
             fs::read_to_string(paths.review_ledger())
@@ -2787,12 +2958,19 @@ pub fn record_review_result(
     } else {
         None
     };
-    let ledger = render_review_ledger(&review_id, input, &bundle, review_passed, existing_ledger);
+    let ledger = render_review_ledger(
+        &context.review_id,
+        input,
+        &context.bundle,
+        context.review_passed,
+        existing_ledger,
+    );
     fs::write(paths.review_ledger(), ledger)
         .with_context(|| format!("failed to write {}", paths.review_ledger().display()))?;
 
-    let mut closeout_spec_fingerprint = bundle.spec_fingerprint.clone();
-    if let Some(spec_id) = &resolved_target_spec_id {
+    let mut closeout_spec_fingerprint = context.bundle.spec_fingerprint.clone();
+    let mut expected_outputs = vec![paths.review_ledger().display().to_string()];
+    if let Some(spec_id) = &context.resolved_target_spec_id {
         let existing_review = if paths.review_file(spec_id).is_file() {
             Some(
                 fs::read_to_string(paths.review_file(spec_id)).with_context(|| {
@@ -2802,10 +2980,13 @@ pub fn record_review_result(
         } else {
             None
         };
-        let review_body = render_spec_review(&review_id, spec_id, input, existing_review);
+        let review_body = render_spec_review(&context.review_id, spec_id, input, existing_review);
         fs::write(paths.review_file(spec_id), review_body)
             .with_context(|| format!("failed to write {}", paths.review_file(spec_id).display()))?;
-        if review_passed {
+        expected_outputs.push(paths.review_file(spec_id).display().to_string());
+        expected_outputs.push(paths.spec_file(spec_id).display().to_string());
+
+        if context.review_passed {
             let mut spec_doc =
                 load_markdown::<WorkstreamSpecFrontmatter>(&paths.spec_file(spec_id))?;
             if spec_doc.frontmatter.execution_status != SpecExecutionStatus::Complete {
@@ -2824,46 +3005,38 @@ pub fn record_review_result(
         }
     }
 
+    Ok(ReviewArtifactWriteResult {
+        closeout_spec_fingerprint,
+        expected_outputs,
+    })
+}
+
+fn build_review_closeout(
+    paths: &MissionPaths,
+    input: &ReviewResultInput,
+    context: &ReviewOutcomeContext,
+    gate_update: &ReviewGateUpdate,
+    artifact_write: &ReviewArtifactWriteResult,
+) -> Result<CloseoutRecord> {
     let existing_closeouts = load_closeouts(&paths.closeouts_ndjson())?;
     let next_seq = existing_closeouts
         .last()
         .map_or(1, |record| record.closeout_seq + 1);
     let cycle_id = Uuid::new_v4().to_string();
 
-    let unresolved_gates = unresolved_blocking_gate_refs(&gates, Some(updated_gate_id.as_str()));
-    let mission_close_findings = if bundle.bundle_kind == BundleKind::MissionClose {
-        let mut findings = mission_close_eligibility_findings(paths, &bundle, &gates)?;
+    let unresolved_gates = unresolved_blocking_gate_refs(
+        &gate_update.gates,
+        Some(gate_update.updated_gate_id.as_str()),
+    );
+    let mission_close_findings = if context.bundle.bundle_kind == BundleKind::MissionClose {
+        let mut findings =
+            mission_close_eligibility_findings(paths, &context.bundle, &gate_update.gates)?;
         findings.extend(mission_close_contradiction_findings(paths)?);
         unique_strings(&findings)
     } else {
         Vec::new()
     };
-    let verdict = if review_passed {
-        if matches!(
-            input.next_required_branch,
-            Some(NextRequiredBranch::NeedsUser)
-        ) {
-            Verdict::NeedsUser
-        } else if bundle.bundle_kind == BundleKind::MissionClose
-            && unresolved_gates.is_empty()
-            && mission_close_findings.is_empty()
-        {
-            Verdict::Complete
-        } else {
-            Verdict::ContinueRequired
-        }
-    } else {
-        match input
-            .next_required_branch
-            .clone()
-            .unwrap_or(NextRequiredBranch::Repair)
-        {
-            NextRequiredBranch::Review => Verdict::ReviewRequired,
-            NextRequiredBranch::Replan => Verdict::ReplanRequired,
-            NextRequiredBranch::NeedsUser => Verdict::NeedsUser,
-            _ => Verdict::RepairRequired,
-        }
-    };
+    let verdict = review_result_verdict(input, context, &unresolved_gates, &mission_close_findings);
     if verdict == Verdict::NeedsUser && input.waiting_request.is_none() {
         anyhow::bail!("review needs_user dispositions must include waiting_request");
     }
@@ -2879,158 +3052,65 @@ pub fn record_review_result(
     let mut artifact_fingerprints = BTreeMap::from([
         (
             "outcome_lock".to_string(),
-            bundle.lock_fingerprint.to_string(),
+            context.bundle.lock_fingerprint.to_string(),
         ),
         (
             "program_blueprint".to_string(),
-            bundle.blueprint_fingerprint.to_string(),
+            context.bundle.blueprint_fingerprint.to_string(),
         ),
     ]);
     if let (Some(spec_id), Some(spec_fingerprint)) = (
-        resolved_target_spec_id.as_ref(),
-        closeout_spec_fingerprint.as_ref(),
+        context.resolved_target_spec_id.as_ref(),
+        artifact_write.closeout_spec_fingerprint.as_ref(),
     ) {
         artifact_fingerprints.insert(format!("spec:{spec_id}"), spec_fingerprint.to_string());
     }
-    let closeout = CloseoutRecord {
+
+    Ok(CloseoutRecord {
         closeout_id: Some(Uuid::new_v4().to_string()),
         closeout_seq: next_seq,
         mission_id: input.mission_id.clone(),
-        phase: review_phase_for_bundle(&bundle.bundle_kind).to_string(),
+        phase: review_phase_for_bundle(&context.bundle.bundle_kind).to_string(),
         activity: "review_disposition".to_string(),
         verdict: verdict.clone(),
         terminality,
         resume_mode,
-        next_phase: Some(if !review_passed {
-            match input
-                .next_required_branch
-                .clone()
-                .unwrap_or(NextRequiredBranch::Repair)
-            {
-                NextRequiredBranch::Review => "review",
-                NextRequiredBranch::Replan => "replan",
-                NextRequiredBranch::NeedsUser => review_phase_for_bundle(&bundle.bundle_kind),
-                _ => "execution",
-            }
-            .to_string()
-        } else {
-            match verdict {
-                Verdict::ReplanRequired => "replan",
-                Verdict::NeedsUser => review_phase_for_bundle(&bundle.bundle_kind),
-                Verdict::Complete => "complete",
-                Verdict::ReviewRequired => review_phase_for_bundle(&bundle.bundle_kind),
-                _ if matches!(
-                    input.next_required_branch,
-                    Some(NextRequiredBranch::MissionClose)
-                ) =>
-                {
-                    "mission_close"
-                }
-                _ if bundle.bundle_kind == BundleKind::MissionClose => "mission_close",
-                _ => "execution",
-            }
-            .to_string()
-        }),
-        next_action: if verdict == Verdict::NeedsUser {
-            input
-                .waiting_request
-                .as_ref()
-                .map(|waiting| waiting.canonical_request.clone())
-                .unwrap_or_else(|| "Await user input.".to_string())
-        } else if review_passed {
-            if bundle.bundle_kind == BundleKind::MissionClose
-                && unresolved_gates.is_empty()
-                && mission_close_findings.is_empty()
-            {
-                "Mission-close review passed; the mission may stop as complete.".to_string()
-            } else if bundle.bundle_kind == BundleKind::MissionClose {
-                let mut blockers = unresolved_gates.clone();
-                blockers.extend(mission_close_findings.clone());
-                format!(
-                    "Refresh unresolved mission-close blockers before closeout: {}.",
-                    blockers.join(", ")
-                )
-            } else if matches!(
-                input.next_required_branch,
-                Some(NextRequiredBranch::MissionClose)
-            ) {
-                "Review is clean; advance into mission-close review.".to_string()
-            } else {
-                "Continue from clean review results or move toward mission close review."
-                    .to_string()
-            }
-        } else {
-            format!(
-                "Review did not pass cleanly; address {} blocking review finding(s) or reconcile verdict {}.",
-                blocking_findings, input.verdict
-            )
-        },
-        target: resolved_target_spec_id
+        next_phase: Some(review_result_next_phase(input, context, &verdict)),
+        next_action: review_result_next_action(
+            input,
+            context,
+            &verdict,
+            &unresolved_gates,
+            &mission_close_findings,
+        ),
+        target: context
+            .resolved_target_spec_id
             .clone()
-            .map(|spec| format!("spec:{}", spec))
+            .map(|spec| format!("spec:{spec}"))
             .or_else(|| Some(format!("mission:{}", input.mission_id))),
         cycle_kind: Some(CycleKind::GateEvaluation),
-        lock_revision: Some(bundle.lock_revision),
-        lock_fingerprint: Some(bundle.lock_fingerprint.to_string()),
-        blueprint_revision: Some(bundle.blueprint_revision),
-        blueprint_fingerprint: Some(bundle.blueprint_fingerprint.to_string()),
-        governing_revision: Some(bundle.governing_revision.clone()),
-        reason_code: Some(
-            if review_passed {
-                if bundle.bundle_kind == BundleKind::MissionClose
-                    && unresolved_gates.is_empty()
-                    && mission_close_findings.is_empty()
-                {
-                    "mission_close_review_passed"
-                } else if bundle.bundle_kind == BundleKind::MissionClose {
-                    "mission_close_requires_fresh_gates"
-                } else if matches!(
-                    input.next_required_branch,
-                    Some(NextRequiredBranch::MissionClose)
-                ) {
-                    "review_clean_ready_for_mission_close"
-                } else {
-                    "review_clean"
-                }
-            } else {
-                "review_blocked"
-            }
-            .to_string(),
-        ),
+        lock_revision: Some(context.bundle.lock_revision),
+        lock_fingerprint: Some(context.bundle.lock_fingerprint.to_string()),
+        blueprint_revision: Some(context.bundle.blueprint_revision),
+        blueprint_fingerprint: Some(context.bundle.blueprint_fingerprint.to_string()),
+        governing_revision: Some(context.bundle.governing_revision.clone()),
+        reason_code: Some(review_result_reason_code(
+            input,
+            context,
+            &unresolved_gates,
+            &mission_close_findings,
+        )),
         summary: Some(format!(
             "Recorded review bundle {} with {} blocking finding(s)",
-            bundle.bundle_id, blocking_findings
+            context.bundle.bundle_id, context.blocking_findings
         )),
-        continuation_prompt: Some(if verdict == Verdict::NeedsUser {
-            input
-                .waiting_request
-                .as_ref()
-                .map(|waiting| waiting.canonical_request.clone())
-                .unwrap_or_else(|| "Await user input.".to_string())
-        } else if review_passed {
-            if bundle.bundle_kind == BundleKind::MissionClose
-                && unresolved_gates.is_empty()
-                && mission_close_findings.is_empty()
-            {
-                "Mission is complete.".to_string()
-            } else if bundle.bundle_kind == BundleKind::MissionClose {
-                let mut reasons = unresolved_gates.clone();
-                reasons.extend(mission_close_findings.clone());
-                format!(
-                    "Mission-close review is clean, but completion is still blocked by: {}.",
-                    reasons.join(", ")
-                )
-            } else if matches!(
-                input.next_required_branch,
-                Some(NextRequiredBranch::MissionClose)
-            ) {
-                "Prepare the integrated mission-close review bundle and close honestly.".to_string()
-            } else {
-                "Continue mission flow from a clean review state.".to_string()
-            }
-        } else {
-            "Do not close the mission; repair or replan is required.".to_string()
-        }),
+        continuation_prompt: Some(review_result_continuation_prompt(
+            input,
+            context,
+            &verdict,
+            &unresolved_gates,
+            &mission_close_findings,
+        )),
         cycle_id: Some(cycle_id),
         waiting_request_id,
         waiting_for: input
@@ -3048,30 +3128,6 @@ pub fn record_review_result(
         request_emitted_at: None,
         active_child_task_paths: Vec::new(),
         artifact_fingerprints,
-    };
-    let mut expected_outputs = vec![paths.review_ledger().display().to_string()];
-    if let Some(spec_id) = resolved_target_spec_id.as_ref() {
-        expected_outputs.push(paths.review_file(spec_id).display().to_string());
-        expected_outputs.push(paths.spec_file(spec_id).display().to_string());
-    }
-    let active_cycle = active_cycle_from_closeout(
-        &closeout,
-        Vec::new(),
-        vec![
-            "review_bundle_validated".to_string(),
-            "review_gate_updated".to_string(),
-        ],
-        expected_outputs,
-        vec![bundle.source_package_id.clone()],
-        vec![bundle.bundle_id.clone()],
-    );
-    append_closeout_for_active_cycle(paths, &closeout, &active_cycle)?;
-
-    Ok(ReviewResultReport {
-        mission_id: input.mission_id.clone(),
-        review_id,
-        blocking_findings,
-        updated_gate: gate_kind,
     })
 }
 
@@ -3098,6 +3154,207 @@ fn validate_review_finding_inputs(findings: &[ReviewFindingInput]) -> Result<()>
         }
     }
     Ok(())
+}
+
+fn review_failure_refs(input: &ReviewResultInput, review_passed: bool) -> Vec<String> {
+    if review_passed {
+        return Vec::new();
+    }
+
+    let mut refs = input
+        .findings
+        .iter()
+        .filter(|finding| finding.blocking)
+        .map(|finding| finding.summary.clone())
+        .collect::<Vec<_>>();
+    if refs.is_empty() {
+        refs.push(format!("review_verdict:{}", input.verdict));
+    }
+    refs
+}
+
+fn review_result_verdict(
+    input: &ReviewResultInput,
+    context: &ReviewOutcomeContext,
+    unresolved_gates: &[String],
+    mission_close_findings: &[String],
+) -> Verdict {
+    if context.review_passed {
+        if matches!(
+            input.next_required_branch,
+            Some(NextRequiredBranch::NeedsUser)
+        ) {
+            Verdict::NeedsUser
+        } else if context.bundle.bundle_kind == BundleKind::MissionClose
+            && unresolved_gates.is_empty()
+            && mission_close_findings.is_empty()
+        {
+            Verdict::Complete
+        } else {
+            Verdict::ContinueRequired
+        }
+    } else {
+        match input
+            .next_required_branch
+            .clone()
+            .unwrap_or(NextRequiredBranch::Repair)
+        {
+            NextRequiredBranch::Review => Verdict::ReviewRequired,
+            NextRequiredBranch::Replan => Verdict::ReplanRequired,
+            NextRequiredBranch::NeedsUser => Verdict::NeedsUser,
+            _ => Verdict::RepairRequired,
+        }
+    }
+}
+
+fn review_result_next_phase(
+    input: &ReviewResultInput,
+    context: &ReviewOutcomeContext,
+    verdict: &Verdict,
+) -> String {
+    if !context.review_passed {
+        return match input
+            .next_required_branch
+            .clone()
+            .unwrap_or(NextRequiredBranch::Repair)
+        {
+            NextRequiredBranch::Review => "review",
+            NextRequiredBranch::Replan => "replan",
+            NextRequiredBranch::NeedsUser => review_phase_for_bundle(&context.bundle.bundle_kind),
+            _ => "execution",
+        }
+        .to_string();
+    }
+
+    match verdict {
+        Verdict::ReplanRequired => "replan",
+        Verdict::NeedsUser => review_phase_for_bundle(&context.bundle.bundle_kind),
+        Verdict::Complete => "complete",
+        Verdict::ReviewRequired => review_phase_for_bundle(&context.bundle.bundle_kind),
+        _ if matches!(
+            input.next_required_branch,
+            Some(NextRequiredBranch::MissionClose)
+        ) =>
+        {
+            "mission_close"
+        }
+        _ if context.bundle.bundle_kind == BundleKind::MissionClose => "mission_close",
+        _ => "execution",
+    }
+    .to_string()
+}
+
+fn review_result_next_action(
+    input: &ReviewResultInput,
+    context: &ReviewOutcomeContext,
+    verdict: &Verdict,
+    unresolved_gates: &[String],
+    mission_close_findings: &[String],
+) -> String {
+    if *verdict == Verdict::NeedsUser {
+        return input
+            .waiting_request
+            .as_ref()
+            .map(|waiting| waiting.canonical_request.clone())
+            .unwrap_or_else(|| "Await user input.".to_string());
+    }
+
+    if context.review_passed {
+        if context.bundle.bundle_kind == BundleKind::MissionClose
+            && unresolved_gates.is_empty()
+            && mission_close_findings.is_empty()
+        {
+            "Mission-close review passed; the mission may stop as complete.".to_string()
+        } else if context.bundle.bundle_kind == BundleKind::MissionClose {
+            let mut blockers = unresolved_gates.to_vec();
+            blockers.extend(mission_close_findings.to_vec());
+            format!(
+                "Refresh unresolved mission-close blockers before closeout: {}.",
+                blockers.join(", ")
+            )
+        } else if matches!(
+            input.next_required_branch,
+            Some(NextRequiredBranch::MissionClose)
+        ) {
+            "Review is clean; advance into mission-close review.".to_string()
+        } else {
+            "Continue from clean review results or move toward mission close review.".to_string()
+        }
+    } else {
+        format!(
+            "Review did not pass cleanly; address {} blocking review finding(s) or reconcile verdict {}.",
+            context.blocking_findings, input.verdict
+        )
+    }
+}
+
+fn review_result_reason_code(
+    input: &ReviewResultInput,
+    context: &ReviewOutcomeContext,
+    unresolved_gates: &[String],
+    mission_close_findings: &[String],
+) -> String {
+    if context.review_passed {
+        if context.bundle.bundle_kind == BundleKind::MissionClose
+            && unresolved_gates.is_empty()
+            && mission_close_findings.is_empty()
+        {
+            "mission_close_review_passed"
+        } else if context.bundle.bundle_kind == BundleKind::MissionClose {
+            "mission_close_requires_fresh_gates"
+        } else if matches!(
+            input.next_required_branch,
+            Some(NextRequiredBranch::MissionClose)
+        ) {
+            "review_clean_ready_for_mission_close"
+        } else {
+            "review_clean"
+        }
+    } else {
+        "review_blocked"
+    }
+    .to_string()
+}
+
+fn review_result_continuation_prompt(
+    input: &ReviewResultInput,
+    context: &ReviewOutcomeContext,
+    verdict: &Verdict,
+    unresolved_gates: &[String],
+    mission_close_findings: &[String],
+) -> String {
+    if *verdict == Verdict::NeedsUser {
+        return input
+            .waiting_request
+            .as_ref()
+            .map(|waiting| waiting.canonical_request.clone())
+            .unwrap_or_else(|| "Await user input.".to_string());
+    }
+
+    if context.review_passed {
+        if context.bundle.bundle_kind == BundleKind::MissionClose
+            && unresolved_gates.is_empty()
+            && mission_close_findings.is_empty()
+        {
+            "Mission is complete.".to_string()
+        } else if context.bundle.bundle_kind == BundleKind::MissionClose {
+            let mut reasons = unresolved_gates.to_vec();
+            reasons.extend(mission_close_findings.to_vec());
+            format!(
+                "Mission-close review is clean, but completion is still blocked by: {}.",
+                reasons.join(", ")
+            )
+        } else if matches!(
+            input.next_required_branch,
+            Some(NextRequiredBranch::MissionClose)
+        ) {
+            "Prepare the integrated mission-close review bundle and close honestly.".to_string()
+        } else {
+            "Continue mission flow from a clean review state.".to_string()
+        }
+    } else {
+        "Do not close the mission; repair or replan is required.".to_string()
+    }
 }
 
 pub fn append_contradiction(
