@@ -1,0 +1,1 @@
+Error: /Users/joel/codex1 is not trusted by Codex. Mark it trusted first, or add [projects."/Users/joel/codex1"] trust_level = "trusted" to ~/.codex/config.toml.

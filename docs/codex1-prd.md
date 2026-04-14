@@ -22,6 +22,16 @@ We are not building OMX again in a cleaner codebase.
 
 We are building a **Codex-native harness for NASA's internal development team**.
 
+In the simplest possible product terms, the only goal that matters is this:
+
+- the user gives Codex1 the mission
+- Codex1 clarifies until the mission is crystal clear
+- Codex1 plans until the execution route is genuinely strong
+- Codex1 then keeps going under Ralph discipline until the work is actually done or honestly waiting on the user
+- this must happen inside native Codex CLI / Codex Desktop behavior, not through a wrapper runtime, sidecar daemon, or babysitter loop
+
+Everything else in this PRD exists only to make that loop trustworthy on very large, risky engineering work.
+
 That framing matters because it forces the right standard:
 
 - ambiguity is dangerous
@@ -247,7 +257,14 @@ The product promise is:
 4. execution must proceed from bounded contracts rather than invented architecture
 5. replanning must not lose the locked mission
 6. Codex returns to the user only when the mission contract or autonomy boundary truly requires it
-7. once clarify is complete, the mission can continue under Ralph discipline until it is actually done or honestly blocked
+7. once clarify is complete, Codex1 should be able to keep advancing the same mission under Ralph discipline until the work is actually done, honestly waiting on the user, or honestly blocked
+
+Plain-language interpretation:
+
+- the user should be able to start with `$clarify` or `$autopilot`, answer the necessary clarification questions, and then let Codex1 carry the mission forward
+- the harness should do the hard work of planning, packetizing, executing, reviewing, resuming, and orchestrating bounded subagents
+- the user should not have to manually babysit every continuation step on a huge refactor or feature once the mission is clarified enough to proceed
+- the product succeeds only if this continue-till-done loop works natively in Codex rather than in a separate orchestration product
 
 ### Anti-goals
 
@@ -3299,6 +3316,12 @@ This PRD is not acceptable if it allows a builder to plausibly conclude that the
 
 ## 15. Final Recommendation
 
+The final product test is simple:
+
+- a user should be able to enter native Codex, invoke Codex1, clarify the mission until it is truly clear, and then let Codex1 continue under Ralph until the mission is actually done or honestly waiting on the user
+- if that continue-till-done loop does not work reliably for large real-world work inside native Codex behavior, then the product has missed the point no matter how many helper commands, templates, or internal mechanisms exist
+- all helper surfaces, hidden state, validators, graphs, specs, packets, review bundles, and qualification gates are justified only insofar as they make that loop rigorous, resumable, and trustworthy
+
 Build Codex1 Harness V1 as a **skills-first, mission-centered, planning-first Codex-native harness** with:
 
 - one sacred Outcome Lock
@@ -3315,10 +3338,11 @@ The primary product win must come from:
 
 - stronger clarification
 - stronger planning
-- stronger artifact discipline
+- stronger execution packetization and subagent discipline
 - stronger proof and review discipline
 - better mission continuity
 - better native Codex workflow
+- a real continue-till-done Ralph loop that keeps advancing the mission without wrapper-runtime hacks
 
 Not from:
 
@@ -3326,5 +3350,6 @@ Not from:
 - orchestration sprawl
 - hidden workflow machinery
 - repo-local planning hacks
+- a second runtime that calls Codex from the outside and pretends to be the product
 
-That is the clean-slate V1 to build.
+That is the clean-slate V1 to build, and that continue-till-done native Codex loop is the main product outcome by which the whole harness should be judged.

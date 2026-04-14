@@ -1,0 +1,4 @@
+Error: read backup root /Users/joel/codex1/tmp.review.suFMr5/home/.codex1/backups
+
+Caused by:
+    No such file or directory (os error 2)

@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/joel/codex1/target/debug/codex1 internal stop-hook",
+            "statusMessage": "Codex1 Ralph stop hook",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}
