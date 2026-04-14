@@ -18,6 +18,26 @@ persist mission truth under `PLANS/` and `.ralph/`.
 
 All commands live under `codex1 internal ...` and support `--json`.
 
+## Migration status
+
+Phase 1 of the internal command taxonomy migration is active.
+
+- Canonical command names now follow the proposed family-oriented taxonomy.
+- Legacy command names remain supported as compatibility aliases.
+- Repo-owned callers may continue using legacy names during the migration, but
+  new docs and new skill wiring should prefer the canonical names below.
+
+Canonical -> legacy alias mappings introduced in Phase 1:
+
+- `materialize-plan` -> `write-blueprint`
+- `record-review-outcome` -> `record-review-result`
+- `append-replan-log` -> `write-replan-log`
+- `append-closeout` -> `write-closeout`
+- `repair-state` -> `rebuild-state`
+- `validate-mission-artifacts` -> `validate-artifacts`
+- `inspect-effective-config` -> `effective-config`
+- `clear-selection-wait` -> `consume-selection`
+
 ### Mission bootstrap
 
 - `codex1 internal init-mission`
@@ -29,7 +49,8 @@ All commands live under `codex1 internal ...` and support `--json`.
 
 ### Planning writeback
 
-- `codex1 internal write-blueprint`
+- `codex1 internal materialize-plan`
+  - legacy alias: `codex1 internal write-blueprint`
   - input: `PlanningWriteInput`
   - writes `PROGRAM-BLUEPRINT.md`
   - serializes machine planning truth for `risk_floor`, `proof_matrix`, and `decision_obligations` into blueprint frontmatter instead of leaving those contracts as prose-only notes
@@ -76,7 +97,8 @@ All commands live under `codex1 internal ...` and support `--json`.
 - `codex1 internal validate-review-bundle --mission-id <id> --bundle-id <id>`
   - checks the governing package, bundle completeness, mission-close visible truth, and review-gate freshness
 
-- `codex1 internal record-review-result`
+- `codex1 internal record-review-outcome`
+  - legacy alias: `codex1 internal record-review-result`
   - input: `ReviewResultInput`
   - updates `REVIEW-LEDGER.md`
   - updates per-spec `REVIEW.md` when the bundle is spec-local
@@ -90,12 +112,14 @@ All commands live under `codex1 internal ...` and support `--json`.
   - input: `ContradictionInput`
   - appends a structured contradiction to `.ralph/missions/<mission-id>/contradictions.ndjson`
 
-- `codex1 internal write-replan-log`
+- `codex1 internal append-replan-log`
+  - legacy alias: `codex1 internal write-replan-log`
   - input: `ReplanLogInput`
   - appends a visible entry to `PLANS/<mission-id>/REPLAN-LOG.md`
   - records preserved work, invalidated work, and evidence refs for non-local replans
 
-- `codex1 internal write-closeout --mission-id <id>`
+- `codex1 internal append-closeout --mission-id <id>`
+  - legacy alias: `codex1 internal write-closeout --mission-id <id>`
   - input: `CloseoutRecord`
   - appends one explicit non-terminal Ralph closeout and refreshes `state.json`
   - rejects terminal verdicts such as `complete` and `hard_blocked`; those must come from reviewed workflow-specific paths
@@ -122,7 +146,8 @@ All commands live under `codex1 internal ...` and support `--json`.
   - input: `SelectionAcknowledgementInput`
   - marks the current selection request as durably emitted without changing the selection choice
 
-- `codex1 internal consume-selection --mission-id <id>`
+- `codex1 internal clear-selection-wait --mission-id <id>`
+  - legacy alias: `codex1 internal consume-selection --mission-id <id>`
   - clears a previously resolved selection state after the chosen mission has been bound for resume
   - validates the selected mission before clearing so stale prompts are not silently consumed
 
@@ -130,12 +155,24 @@ All commands live under `codex1 internal ...` and support `--json`.
   - input: `WaitingRequestAcknowledgementInput`
   - appends a Ralph closeout that marks the current mission waiting request as durably emitted
 
+### Inspection and repair
+
+- `codex1 internal inspect-effective-config`
+  - legacy alias: `codex1 internal effective-config`
+  - emits the current effective supported-environment view for the target repo
+
+- `codex1 internal repair-state --mission-id <id>`
+  - legacy alias: `codex1 internal rebuild-state --mission-id <id>`
+  - rebuilds cached Ralph mission state from higher-authority files when the
+    cached machine state has drifted or gone stale
+
 ## Execution graph
 
 - `execution-graph.json` is now the persisted machine graph for non-trivial sequencing.
 - Graph authoring and validation bind only to runnable frontier specs; active descoped or non-runnable specs do not force graph nodes.
 - Graph validation binds mission id, blueprint revision and fingerprint, active spec coverage, dependency topology, per-node scope declarations, and obligation coverage for each declared acceptance check.
-- `codex1 internal validate-artifacts --mission-id <id>` now reports execution-graph drift alongside execution packages and review bundles so the hidden machine contract can be inspected directly.
+- `codex1 internal validate-mission-artifacts --mission-id <id>` now reports execution-graph drift alongside execution packages and review bundles so the hidden machine contract can be inspected directly.
+  - legacy alias: `codex1 internal validate-artifacts --mission-id <id>`
 
 ## Usage notes
 

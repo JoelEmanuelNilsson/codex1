@@ -35,6 +35,7 @@ pub struct InternalArgs {
 #[derive(Debug, Subcommand)]
 enum InternalCommand {
     StopHook,
+    #[command(name = "repair-state", visible_alias = "rebuild-state")]
     RebuildState {
         #[arg(long, value_name = "PATH")]
         repo_root: Option<PathBuf>,
@@ -43,6 +44,10 @@ enum InternalCommand {
         #[arg(long, default_value_t = true)]
         json: bool,
     },
+    #[command(
+        name = "validate-mission-artifacts",
+        visible_alias = "validate-artifacts"
+    )]
     ValidateArtifacts {
         #[arg(long, value_name = "PATH")]
         repo_root: Option<PathBuf>,
@@ -51,6 +56,7 @@ enum InternalCommand {
         #[arg(long, default_value_t = true)]
         json: bool,
     },
+    #[command(name = "inspect-effective-config", visible_alias = "effective-config")]
     EffectiveConfig {
         #[arg(long, value_name = "PATH")]
         repo_root: Option<PathBuf>,
@@ -65,6 +71,7 @@ enum InternalCommand {
         #[arg(long, default_value_t = true)]
         json: bool,
     },
+    #[command(name = "materialize-plan", visible_alias = "write-blueprint")]
     WriteBlueprint {
         #[arg(long, value_name = "PATH")]
         repo_root: Option<PathBuf>,
@@ -127,6 +134,7 @@ enum InternalCommand {
         #[arg(long, default_value_t = true)]
         json: bool,
     },
+    #[command(name = "record-review-outcome", visible_alias = "record-review-result")]
     RecordReviewResult {
         #[arg(long, value_name = "PATH")]
         repo_root: Option<PathBuf>,
@@ -143,6 +151,7 @@ enum InternalCommand {
         #[arg(long, default_value_t = true)]
         json: bool,
     },
+    #[command(name = "append-replan-log", visible_alias = "write-replan-log")]
     WriteReplanLog {
         #[arg(long, value_name = "PATH")]
         repo_root: Option<PathBuf>,
@@ -175,6 +184,7 @@ enum InternalCommand {
         #[arg(long, default_value_t = true)]
         json: bool,
     },
+    #[command(name = "clear-selection-wait", visible_alias = "consume-selection")]
     ConsumeSelection {
         #[arg(long, value_name = "PATH")]
         repo_root: Option<PathBuf>,
@@ -203,6 +213,7 @@ enum InternalCommand {
         #[arg(long, default_value_t = true)]
         json: bool,
     },
+    #[command(name = "append-closeout", visible_alias = "write-closeout")]
     WriteCloseout {
         #[arg(long, value_name = "PATH")]
         repo_root: Option<PathBuf>,

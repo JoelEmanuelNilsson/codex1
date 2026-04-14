@@ -79,6 +79,30 @@ fn run_stop_hook_raw(repo_root: &Path) -> std::process::Output {
         .expect("run stop-hook")
 }
 
+#[test]
+fn internal_help_prefers_canonical_command_names() {
+    let binary = assert_cmd::cargo::cargo_bin("codex1");
+    let output = Command::new(binary)
+        .args(["internal", "--help"])
+        .output()
+        .expect("run codex1 internal --help");
+
+    assert!(
+        output.status.success(),
+        "internal help failed with stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("materialize-plan"));
+    assert!(stdout.contains("record-review-outcome"));
+    assert!(stdout.contains("append-closeout"));
+    assert!(stdout.contains("repair-state"));
+    assert!(stdout.contains("validate-mission-artifacts"));
+    assert!(stdout.contains("inspect-effective-config"));
+    assert!(stdout.contains("clear-selection-wait"));
+}
+
 fn canonical_blueprint_body(route: &str) -> String {
     format!(
         "# Program Blueprint\n\n## Locked Mission Reference\n\n- Integration test mission truth is locked.\n\n## Truth Register Summary\n\n- Internal runtime commands persist the mission state.\n\n## System Model\n\n- Touched surfaces: visible planning artifacts and hidden runtime state.\n\n## Invariants And Protected Behaviors\n\n- Keep proof and review contracts explicit.\n\n## Proof Matrix\n\n- claim:default-proof\n\n## Decision Obligations\n\n- none\n\n## Selected Architecture\n\n{route}\n\n## Review Bundle Design\n\n- Mandatory review lenses: correctness, evidence_adequacy\n\n## Workstream Overview\n\n- runtime_core\n\n## Risks And Unknowns\n\n- Integration coverage should stay honest.\n\n## Replan Policy\n\n- Reopen planning if route truth or proof changes.\n"
@@ -383,6 +407,51 @@ fn internal_runtime_flow_creates_mission_package_and_review_contracts() {
     )
     .expect("parse Ralph state");
     assert_eq!(state["verdict"], "complete");
+}
+
+#[test]
+fn canonical_materialize_plan_command_works() {
+    let repo = TempDir::new().expect("temp repo");
+
+    let mission_id = "canonical-plan";
+    let init = run_json(
+        repo.path(),
+        &["internal", "init-mission"],
+        json!({
+            "mission_id": mission_id,
+            "title": "Canonical Plan Command",
+            "objective": "Exercise the canonical internal command names.",
+            "clarify_status": "ratified",
+            "lock_status": "locked"
+        }),
+    );
+    assert_eq!(init["mission_id"], mission_id);
+
+    let blueprint = run_json(
+        repo.path(),
+        &["internal", "materialize-plan"],
+        json!({
+            "mission_id": mission_id,
+            "body_markdown": canonical_blueprint_body("Use the canonical plan materialization command."),
+            "plan_level": 4,
+            "problem_size": "S",
+            "status": "approved",
+            "proof_matrix": [{"claim_ref": "claim:default-proof", "statement": "The canonical plan command writes planning truth.", "required_evidence": ["RECEIPTS/test-output.txt"], "review_lenses": ["correctness"], "governing_contract_refs": ["blueprint"]}],
+            "decision_obligations": [],
+            "selected_target_ref": "spec:runtime_core",
+            "specs": [
+                {
+                    "spec_id": "runtime_core",
+                    "purpose": "Create the first execution-safe workstream.",
+                    "artifact_status": "active",
+                    "packetization_status": "runnable",
+                    "execution_status": "packaged"
+                }
+            ]
+        }),
+    );
+
+    assert_eq!(blueprint["mission_id"], mission_id);
 }
 
 #[test]

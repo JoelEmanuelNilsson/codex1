@@ -7,6 +7,9 @@ It is intentionally a proposal, not a claim that the current repo has already
 finished this rename/split work. The current implemented surface remains
 described in [runtime-backend.md](./runtime-backend.md).
 
+The staged repo-owned rollout based on this proposal now lives in
+[internal-command-migration-plan.md](./internal-command-migration-plan.md).
+
 ## Goals
 
 - Keep the public product surface in skills: `$clarify`, `$plan`, `$execute`,
