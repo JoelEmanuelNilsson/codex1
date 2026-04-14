@@ -166,6 +166,16 @@ Canonical -> legacy alias mappings introduced in Phase 1:
   - rebuilds cached Ralph mission state from higher-authority files when the
     cached machine state has drifted or gone stale
 
+- `codex1 internal validate-gates --mission-id <id>`
+  - validates and summarizes `gates.json` for one mission
+
+- `codex1 internal validate-closeouts --mission-id <id>`
+  - validates and summarizes `closeouts.ndjson` for one mission
+
+- `codex1 internal latest-valid-closeout --mission-id <id>`
+  - resolves the latest schema-valid closeout after applying the same
+    truncated-tail tolerance as the Ralph loader
+
 ## Execution graph
 
 - `execution-graph.json` is now the persisted machine graph for non-trivial sequencing.

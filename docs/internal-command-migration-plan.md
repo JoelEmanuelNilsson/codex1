@@ -97,7 +97,7 @@ Exit criteria:
 
 ## Phase 3: Narrow Overloaded Commands
 
-Status: planned.
+Status: active groundwork.
 
 Scope:
 
@@ -127,6 +127,12 @@ Primary candidates:
 - `stop-hook`
   - keep as the only hook-facing adapter, but reduce internal branching by
     extracting a deterministic `resolve-stop-decision` helper
+
+Completed groundwork in the current wave:
+
+- added `validate-gates`
+- added `validate-closeouts`
+- added `latest-valid-closeout`
 
 Rule:
 

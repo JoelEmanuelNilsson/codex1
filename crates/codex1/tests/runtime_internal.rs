@@ -99,6 +99,9 @@ fn internal_help_prefers_canonical_command_names() {
     assert!(stdout.contains("append-closeout"));
     assert!(stdout.contains("repair-state"));
     assert!(stdout.contains("validate-mission-artifacts"));
+    assert!(stdout.contains("validate-gates"));
+    assert!(stdout.contains("validate-closeouts"));
+    assert!(stdout.contains("latest-valid-closeout"));
     assert!(stdout.contains("inspect-effective-config"));
     assert!(stdout.contains("clear-selection-wait"));
 }
@@ -452,6 +455,55 @@ fn canonical_materialize_plan_command_works() {
     );
 
     assert_eq!(blueprint["mission_id"], mission_id);
+}
+
+#[test]
+fn gate_and_closeout_inspection_commands_report_current_mission_state() {
+    let repo = TempDir::new().expect("temp repo");
+
+    let mission_id = "inspection-flow";
+    let init = run_json(
+        repo.path(),
+        &["internal", "init-mission"],
+        json!({
+            "mission_id": mission_id,
+            "title": "Inspection Flow",
+            "objective": "Exercise narrow gate and closeout inspection commands.",
+            "clarify_status": "ratified",
+            "lock_status": "locked"
+        }),
+    );
+    assert_eq!(init["mission_id"], mission_id);
+
+    let gates = run_json(
+        repo.path(),
+        &["internal", "validate-gates", "--mission-id", mission_id],
+        json!({}),
+    );
+    assert_eq!(gates["valid"], true);
+    assert_eq!(gates["mission_id"], mission_id);
+    assert!(gates["gate_count"].as_u64().unwrap_or(0) >= 1);
+
+    let closeouts = run_json(
+        repo.path(),
+        &["internal", "validate-closeouts", "--mission-id", mission_id],
+        json!({}),
+    );
+    assert_eq!(closeouts["valid"], true);
+    assert_eq!(closeouts["mission_id"], mission_id);
+    assert!(closeouts["closeout_count"].as_u64().unwrap_or(0) >= 1);
+
+    let latest = run_json(
+        repo.path(),
+        &["internal", "latest-valid-closeout", "--mission-id", mission_id],
+        json!({}),
+    );
+    assert_eq!(latest["mission_id"], mission_id);
+    assert_eq!(latest["closeout_count"], closeouts["closeout_count"]);
+    assert_eq!(
+        latest["latest_closeout"]["mission_id"],
+        Value::String(mission_id.to_string())
+    );
 }
 
 #[test]
