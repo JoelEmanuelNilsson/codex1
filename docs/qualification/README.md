@@ -6,7 +6,7 @@
 
 - Captures the live `codex --version` result when `--live` is enabled.
 - When `--live` is enabled, proves a native `codex exec` session can be resumed through `codex exec resume` on the exact trusted build under test.
-- When `--live` is enabled, proves the native child-agent surface can drive `spawn_agent`, queue-only child messaging, turn-triggering child delivery (`assign_task` or the surfaced alias), `list_agents`, `wait_agent`, and `close_agent`, then feeds the live child snapshot back into Codex1 resume reconciliation.
+- When `--live` is enabled, proves the native child-agent surface can drive the resume-critical inspection path (`spawn_agent`, `list_agents`, `wait_agent`, and `close_agent`), then feeds the live child snapshot back into Codex1 resume reconciliation. Queue-only and turn-triggering child-delivery tools are still recorded observationally when the trusted build surfaces them.
 - Verifies the target repo has project-scoped `.codex/config.toml` and `.codex/hooks.json`.
 - Verifies the target repo has the Codex1-managed `AGENTS.md` scaffold block.
 - Smoke-checks that `.codex/config.toml` enables `features.codex_hooks = true`.
@@ -28,6 +28,9 @@ The plain interactive `codex resume` TUI surface is still terminal-shaped and no
 
 - strong proof for support surfaces, helper repair/fail-safe behavior, runtime state, internal backend parity, waiting behavior, `codex exec resume`, and native child-agent tool usage on the current build
 - not yet a full pseudo-terminal automation proof of the interactive TUI resume experience
+
+For the current diagnosis of the remaining native child-agent qualification gap,
+see [native-multi-agent-resume-note.md](/Users/joel/codex1/docs/qualification/native-multi-agent-resume-note.md).
 
 ## Support-surface baseline
 

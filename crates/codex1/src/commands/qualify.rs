@@ -2913,7 +2913,9 @@ fn run_native_multi_agent_resume_flow(live: bool) -> Result<QualificationGate> {
     fs::create_dir_all(&repo_root).context("failed to create native multi-agent repo root")?;
     seed_native_codex_repo(&repo_root)?;
 
-    let prompt = r#"Use the native child-agent tools in this order:
+    let prompt = r#"Use the native child-agent tools in this order.
+Do not claim that you used a tool unless the tool call actually succeeded.
+This gate is primarily about proving live child inspection and honest resume reconciliation.
 1. spawn one child with task_name "qualify_child" and tell it to run shell command `sleep 20` and then reply with the single word PING.
 2. call list_agents and record the status for qualify_child.
 3. if the surface exposes queue-only child messaging, call send_message to send a short queued note to qualify_child and record that you used it.
@@ -3042,6 +3044,32 @@ fn run_native_multi_agent_resume_flow(live: bool) -> Result<QualificationGate> {
         .get("resume_status")
         .and_then(Value::as_str)
         .map(ToOwned::to_owned);
+    let saw_spawn_agent_event = jsonl_contains_collab_tool(&native.stdout, "spawn_agent");
+    let saw_send_message_event = jsonl_contains_collab_tool(&native.stdout, "send_message");
+    let saw_assign_task_event = jsonl_contains_collab_tool(&native.stdout, "assign_task");
+    let saw_followup_task_event = jsonl_contains_collab_tool(&native.stdout, "followup_task");
+    let saw_list_agents_event = jsonl_contains_collab_tool(&native.stdout, "list_agents");
+    let saw_wait_event = jsonl_contains_collab_tool(&native.stdout, "wait");
+    let saw_close_agent_event = jsonl_contains_collab_tool(&native.stdout, "close_agent");
+    let assessment = assess_native_multi_agent_gate(
+        native.status.success(),
+        &init_step,
+        &write_closeout_step,
+        &resolve_resume_step,
+        &native_summary,
+        NativeMultiAgentObservedTools {
+            saw_spawn_agent_event,
+            saw_send_message_event,
+            saw_assign_task_event,
+            saw_followup_task_event,
+            saw_list_agents_event,
+            saw_wait_event,
+            saw_close_agent_event,
+        },
+        expected_classification.as_deref(),
+        observed_classification.as_deref(),
+        resume_status.as_deref(),
+    );
 
     let details = Some(json!({
         "sandbox_root": sandbox.path().display().to_string(),
@@ -3049,55 +3077,37 @@ fn run_native_multi_agent_resume_flow(live: bool) -> Result<QualificationGate> {
         "native_stdout": trim_output(&native.stdout),
         "native_stderr": trim_output(&native.stderr),
         "native_summary": native_summary,
-        "saw_spawn_agent_event": jsonl_contains_collab_tool(&native.stdout, "spawn_agent"),
-        "saw_send_message_event": jsonl_contains_collab_tool(&native.stdout, "send_message"),
-        "saw_assign_task_event": jsonl_contains_collab_tool(&native.stdout, "assign_task"),
-        "saw_followup_task_event": jsonl_contains_collab_tool(&native.stdout, "followup_task"),
-        "saw_list_agents_event": jsonl_contains_collab_tool(&native.stdout, "list_agents"),
-        "saw_wait_event": jsonl_contains_collab_tool(&native.stdout, "wait"),
-        "saw_close_agent_event": jsonl_contains_collab_tool(&native.stdout, "close_agent"),
+        "saw_spawn_agent_event": saw_spawn_agent_event,
+        "saw_send_message_event": saw_send_message_event,
+        "saw_assign_task_event": saw_assign_task_event,
+        "saw_followup_task_event": saw_followup_task_event,
+        "saw_list_agents_event": saw_list_agents_event,
+        "saw_wait_event": saw_wait_event,
+        "saw_close_agent_event": saw_close_agent_event,
         "init_step": init_step,
         "write_closeout_step": write_closeout_step,
         "resolve_resume_step": resolve_resume_step,
         "resume_status": resume_status,
         "expected_classification": expected_classification,
         "observed_classification": observed_classification,
+        "failure_classification": assessment.failure_classification,
+        "missing_required_tools": assessment.missing_required_tools,
+        "missing_evidence": assessment.missing_evidence,
+        "observed_optional_delivery_tools": assessment.observed_optional_delivery_tools,
     }));
 
-    let success = native.status.success()
-        && init_step.success
-        && write_closeout_step.success
-        && resolve_resume_step.success
-        && native_summary.used_spawn_agent
-        && native_summary.used_send_message
-        && (native_summary.used_assign_task || native_summary.used_followup_task)
-        && native_summary.used_list_agents
-        && native_summary.used_wait_agent
-        && native_summary.used_close_agent
-        && native_summary.wait_summary_present
-        && native_summary.child_seen_before_wait
-        && jsonl_contains_collab_tool(&native.stdout, "spawn_agent")
-        && jsonl_contains_collab_tool(&native.stdout, "send_message")
-        && jsonl_contains_any_collab_tool(&native.stdout, &["assign_task", "followup_task"])
-        && jsonl_contains_collab_tool(&native.stdout, "list_agents")
-        && jsonl_contains_collab_tool(&native.stdout, "wait")
-        && jsonl_contains_collab_tool(&native.stdout, "close_agent")
-        && observed_classification.as_deref() == expected_classification
-        && resume_status.as_deref() != Some("complete")
-        && !native_summary.child_seen_after_close;
-
-    Ok(if success {
+    Ok(if assessment.success {
         QualificationGate::pass(
             "native_multi_agent_resume_flow",
-            "The trusted Codex build exposes the native child-agent contract and Codex1 reconciles the live child snapshot honestly on resume.",
-            "A live native child lane exercised spawn, queue/update delivery, wait, list, and close behavior, then Codex1 reconciled the live snapshot without false completion.",
+            "The trusted Codex build exposes enough native child-agent surface for live child inspection, and Codex1 reconciles that live snapshot honestly on resume.",
+            assessment.message,
             details,
         )
     } else {
         QualificationGate::fail(
             "native_multi_agent_resume_flow",
-            "The trusted Codex build exposes the native child-agent contract and Codex1 reconciles the live child snapshot honestly on resume.",
-            "The native child-agent proof did not preserve the expected contract-level tool sequence or reconciliation outcome.",
+            "The trusted Codex build exposes enough native child-agent surface for live child inspection, and Codex1 reconciles that live snapshot honestly on resume.",
+            assessment.message,
             details,
         )
     })
@@ -3134,6 +3144,193 @@ struct NativeMultiAgentSummary {
     #[serde(default)]
     child_status_after_close: Value,
     wait_summary_present: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct NativeMultiAgentObservedTools {
+    saw_spawn_agent_event: bool,
+    saw_send_message_event: bool,
+    saw_assign_task_event: bool,
+    saw_followup_task_event: bool,
+    saw_list_agents_event: bool,
+    saw_wait_event: bool,
+    saw_close_agent_event: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct NativeMultiAgentGateAssessment {
+    success: bool,
+    message: String,
+    failure_classification: Option<&'static str>,
+    missing_required_tools: Vec<&'static str>,
+    missing_evidence: Vec<&'static str>,
+    observed_optional_delivery_tools: Vec<&'static str>,
+}
+
+fn assess_native_multi_agent_gate(
+    native_success: bool,
+    init_step: &SmokeStep,
+    write_closeout_step: &SmokeStep,
+    resolve_resume_step: &SmokeStep,
+    native_summary: &NativeMultiAgentSummary,
+    observed_tools: NativeMultiAgentObservedTools,
+    expected_classification: Option<&str>,
+    observed_classification: Option<&str>,
+    resume_status: Option<&str>,
+) -> NativeMultiAgentGateAssessment {
+    let mut missing_required_tools = Vec::new();
+    if !(native_summary.used_spawn_agent && observed_tools.saw_spawn_agent_event) {
+        missing_required_tools.push("spawn_agent");
+    }
+    if !(native_summary.used_list_agents && observed_tools.saw_list_agents_event) {
+        missing_required_tools.push("list_agents");
+    }
+    if !(native_summary.used_wait_agent && observed_tools.saw_wait_event) {
+        missing_required_tools.push("wait_agent");
+    }
+    if !(native_summary.used_close_agent && observed_tools.saw_close_agent_event) {
+        missing_required_tools.push("close_agent");
+    }
+
+    let mut missing_evidence = Vec::new();
+    if !native_summary.child_seen_before_wait {
+        missing_evidence.push("pre_wait_child_snapshot");
+    }
+    if !native_summary.wait_summary_present {
+        missing_evidence.push("wait_mailbox_summary");
+    }
+    if observed_classification.is_none() {
+        missing_evidence.push("child_reconciliation_entry");
+    }
+
+    let mut observed_optional_delivery_tools = Vec::new();
+    if native_summary.used_send_message && observed_tools.saw_send_message_event {
+        observed_optional_delivery_tools.push("send_message");
+    }
+    if native_summary.used_assign_task && observed_tools.saw_assign_task_event {
+        observed_optional_delivery_tools.push("assign_task");
+    }
+    if native_summary.used_followup_task && observed_tools.saw_followup_task_event {
+        observed_optional_delivery_tools.push("followup_task");
+    }
+
+    if !native_success {
+        return NativeMultiAgentGateAssessment {
+            success: false,
+            message: "The native Codex child-agent probe did not complete successfully."
+                .to_string(),
+            failure_classification: Some("native_exec_failed"),
+            missing_required_tools,
+            missing_evidence,
+            observed_optional_delivery_tools,
+        };
+    }
+
+    if !init_step.success {
+        return NativeMultiAgentGateAssessment {
+            success: false,
+            message: "The native child-agent probe could not initialize the reconciliation mission scaffold.".to_string(),
+            failure_classification: Some("mission_init_failed"),
+            missing_required_tools,
+            missing_evidence,
+            observed_optional_delivery_tools,
+        };
+    }
+
+    if !write_closeout_step.success {
+        return NativeMultiAgentGateAssessment {
+            success: false,
+            message: "The native child-agent probe failed before resume reconciliation because the synthetic child-lane closeout could not be appended.".to_string(),
+            failure_classification: Some("closeout_write_failed"),
+            missing_required_tools,
+            missing_evidence,
+            observed_optional_delivery_tools,
+        };
+    }
+
+    if !resolve_resume_step.success {
+        return NativeMultiAgentGateAssessment {
+            success: false,
+            message: "The native child-agent probe did not complete the resume-resolution step needed for lane reconciliation.".to_string(),
+            failure_classification: Some("resolve_resume_failed"),
+            missing_required_tools,
+            missing_evidence,
+            observed_optional_delivery_tools,
+        };
+    }
+
+    if !missing_required_tools.is_empty() {
+        return NativeMultiAgentGateAssessment {
+            success: false,
+            message: format!(
+                "The trusted build did not surface or successfully exercise the live child-inspection tool set required for this gate: {}.",
+                missing_required_tools.join(", ")
+            ),
+            failure_classification: Some("required_tool_surface_gap"),
+            missing_required_tools,
+            missing_evidence,
+            observed_optional_delivery_tools,
+        };
+    }
+
+    if !missing_evidence.is_empty() {
+        return NativeMultiAgentGateAssessment {
+            success: false,
+            message: format!(
+                "The native child-agent probe did not produce the live child evidence required for honest resume reconciliation: {}.",
+                missing_evidence.join(", ")
+            ),
+            failure_classification: Some("live_snapshot_gap"),
+            missing_required_tools,
+            missing_evidence,
+            observed_optional_delivery_tools,
+        };
+    }
+
+    if observed_classification != expected_classification {
+        return NativeMultiAgentGateAssessment {
+            success: false,
+            message: format!(
+                "Codex1 reconciled the native child lane differently than the probe evidence implied (expected {:?}, observed {:?}).",
+                expected_classification, observed_classification
+            ),
+            failure_classification: Some("reconciliation_mismatch"),
+            missing_required_tools,
+            missing_evidence,
+            observed_optional_delivery_tools,
+        };
+    }
+
+    if resume_status == Some("complete") {
+        return NativeMultiAgentGateAssessment {
+            success: false,
+            message: "The resume report incorrectly surfaced terminal completion for a mission that should remain non-terminal during child-lane reconciliation.".to_string(),
+            failure_classification: Some("false_terminality"),
+            missing_required_tools,
+            missing_evidence,
+            observed_optional_delivery_tools,
+        };
+    }
+
+    if native_summary.child_seen_after_close {
+        return NativeMultiAgentGateAssessment {
+            success: false,
+            message: "The native child lane remained visible after close, so the cleanup edge of the probe was not proven.".to_string(),
+            failure_classification: Some("close_agent_cleanup_gap"),
+            missing_required_tools,
+            missing_evidence,
+            observed_optional_delivery_tools,
+        };
+    }
+
+    NativeMultiAgentGateAssessment {
+        success: true,
+        message: "A live native child lane exercised spawn, inspect, wait, and close behavior, then Codex1 reconciled the live snapshot without false completion.".to_string(),
+        failure_classification: None,
+        missing_required_tools,
+        missing_evidence,
+        observed_optional_delivery_tools,
+    }
 }
 
 enum NativeCodexInvocation {
@@ -3449,12 +3646,6 @@ fn trim_output(bytes: &[u8]) -> String {
         let truncated: String = output.chars().take(LIMIT).collect();
         format!("{truncated}...[truncated]")
     }
-}
-
-fn jsonl_contains_any_collab_tool(bytes: &[u8], tools: &[&str]) -> bool {
-    tools
-        .iter()
-        .any(|tool| jsonl_contains_collab_tool(bytes, tool))
 }
 
 fn snapshot_tree(root: &Path) -> Result<BTreeMap<String, SnapshotEntry>> {
@@ -4603,10 +4794,12 @@ fn emit_report(report: &QualificationReport, json_output: bool) -> Result<()> {
 mod tests {
     use super::{
         CodexBuildInfo, EvidencePaths, GateStatus, INTERNAL_CONTRACT_PARITY_GATE,
-        QualificationGate, QualificationReport, QualificationSummary, RequestedQualification,
-        count_stop_hooks, detect_codex_hooks_setting, self_hosting_gate,
+        NativeMultiAgentObservedTools, NativeMultiAgentSummary, QualificationGate,
+        QualificationReport, QualificationSummary, RequestedQualification, SmokeStep,
+        assess_native_multi_agent_gate, count_stop_hooks, detect_codex_hooks_setting,
+        self_hosting_gate,
     };
-    use serde_json::json;
+    use serde_json::{Value, json};
     use tempfile::TempDir;
     use time::OffsetDateTime;
 
@@ -4775,5 +4968,135 @@ features.codex_hooks = false
         assert!(summary.passed_all_required_gates);
         assert_eq!(summary.qualification_scope, Some("scoped_supported_subset"));
         assert!(!summary.supported_build_qualified);
+    }
+
+    fn smoke_step(success: bool) -> SmokeStep {
+        SmokeStep {
+            step: "test",
+            success,
+            exit_code: Some(if success { 0 } else { 1 }),
+            stdout: String::new(),
+            stderr: String::new(),
+        }
+    }
+
+    fn native_summary() -> NativeMultiAgentSummary {
+        NativeMultiAgentSummary {
+            used_spawn_agent: true,
+            used_send_message: false,
+            used_assign_task: false,
+            used_followup_task: false,
+            used_list_agents: true,
+            used_wait_agent: true,
+            used_close_agent: true,
+            child_task_path: "/root/qualify_child".to_string(),
+            child_seen_before_wait: true,
+            child_status_before_wait: json!("running"),
+            child_seen_after_wait: true,
+            child_status_after_wait: json!("running"),
+            child_seen_after_close: false,
+            child_status_after_close: Value::Null,
+            wait_summary_present: true,
+        }
+    }
+
+    fn observed_tools() -> NativeMultiAgentObservedTools {
+        NativeMultiAgentObservedTools {
+            saw_spawn_agent_event: true,
+            saw_send_message_event: false,
+            saw_assign_task_event: false,
+            saw_followup_task_event: false,
+            saw_list_agents_event: true,
+            saw_wait_event: true,
+            saw_close_agent_event: true,
+        }
+    }
+
+    #[test]
+    fn native_multi_agent_assessment_passes_with_resume_critical_surface() {
+        let assessment = assess_native_multi_agent_gate(
+            true,
+            &smoke_step(true),
+            &smoke_step(true),
+            &smoke_step(true),
+            &native_summary(),
+            observed_tools(),
+            Some("live_non_final"),
+            Some("live_non_final"),
+            Some("actionable_non_terminal"),
+        );
+
+        assert!(assessment.success);
+        assert_eq!(assessment.failure_classification, None);
+        assert!(assessment.missing_required_tools.is_empty());
+    }
+
+    #[test]
+    fn native_multi_agent_assessment_reports_required_tool_surface_gap() {
+        let mut summary = native_summary();
+        summary.used_list_agents = false;
+        let mut tools = observed_tools();
+        tools.saw_list_agents_event = false;
+
+        let assessment = assess_native_multi_agent_gate(
+            true,
+            &smoke_step(true),
+            &smoke_step(true),
+            &smoke_step(true),
+            &summary,
+            tools,
+            Some("missing"),
+            Some("missing"),
+            Some("actionable_non_terminal"),
+        );
+
+        assert!(!assessment.success);
+        assert_eq!(
+            assessment.failure_classification,
+            Some("required_tool_surface_gap")
+        );
+        assert!(assessment.missing_required_tools.contains(&"list_agents"));
+    }
+
+    #[test]
+    fn native_multi_agent_assessment_reports_closeout_write_failure_first() {
+        let assessment = assess_native_multi_agent_gate(
+            true,
+            &smoke_step(true),
+            &smoke_step(false),
+            &smoke_step(true),
+            &native_summary(),
+            observed_tools(),
+            Some("live_non_final"),
+            Some("live_non_final"),
+            Some("actionable_non_terminal"),
+        );
+
+        assert!(!assessment.success);
+        assert_eq!(
+            assessment.failure_classification,
+            Some("closeout_write_failed")
+        );
+    }
+
+    #[test]
+    fn native_multi_agent_assessment_reports_reconciliation_mismatch() {
+        let assessment = assess_native_multi_agent_gate(
+            true,
+            &smoke_step(true),
+            &smoke_step(true),
+            &smoke_step(true),
+            &native_summary(),
+            observed_tools(),
+            Some("live_non_final"),
+            Some("final_non_success"),
+            Some("actionable_non_terminal"),
+        );
+
+        assert!(!assessment.success);
+        assert_eq!(
+            assessment.failure_classification,
+            Some("reconciliation_mismatch")
+        );
     }
 }
