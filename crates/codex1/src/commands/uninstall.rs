@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use crate::commands::{UninstallArgs, resolve_repo_root};
 use crate::support_surface::{
-    AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END, AgentsScaffoldStatus, inspect_agents_scaffold_details,
+    AgentsScaffoldStatus, inspect_agents_scaffold_details, locate_managed_agents_block_span,
 };
 const CONFIG_MODEL: &str = "gpt-5.4";
 const CONFIG_REVIEW_MODEL: &str = "gpt-5.4-mini";
@@ -767,19 +767,10 @@ fn assert_managed_agents_block_stable(source: &str) -> Result<()> {
 }
 
 fn remove_managed_agents_block(source: &str) -> Result<String> {
-    let begin_index = source
-        .find(AGENTS_BLOCK_BEGIN)
+    let span = locate_managed_agents_block_span(source)
         .ok_or_else(|| anyhow!("the Codex1 AGENTS.md block is missing"))?;
-    let end_index = source
-        .find(AGENTS_BLOCK_END)
-        .ok_or_else(|| anyhow!("the Codex1 AGENTS.md block is missing its end marker"))?;
-    if begin_index > end_index {
-        bail!("the Codex1 AGENTS.md markers are out of order");
-    }
-
-    let end_index = end_index + AGENTS_BLOCK_END.len();
-    let before = source[..begin_index].trim_end();
-    let after = source[end_index..].trim_start_matches(['\r', '\n']);
+    let before = source[..span.begin_index].trim_end();
+    let after = source[span.end_index + span.end_marker.len()..].trim_start_matches(['\r', '\n']);
     if before.is_empty() && after.is_empty() {
         return Ok(String::new());
     }

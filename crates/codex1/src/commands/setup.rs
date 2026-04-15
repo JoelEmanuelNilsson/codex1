@@ -8,18 +8,20 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
+use toml::Value as TomlValue;
 use uuid::Uuid;
 
 use crate::commands::SetupArgs;
 use crate::commands::resolve_repo_root;
 use crate::support_surface::{
-    AGENTS_BLOCK, AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END, AGENTS_BUILD_COMMAND_PLACEHOLDER,
-    AGENTS_LINT_COMMAND_PLACEHOLDER, AGENTS_TEST_COMMAND_PLACEHOLDER, AgentsScaffoldStatus,
-    MANAGED_STOP_HOOK_STATUS, ManagedSkillFile, OBSERVATIONAL_STOP_HOOK_FLAG,
+    AGENTS_BUILD_COMMAND_PLACEHOLDER, AGENTS_LINT_COMMAND_PLACEHOLDER,
+    AGENTS_TEST_COMMAND_PLACEHOLDER, AgentsScaffoldStatus, MANAGED_STOP_HOOK_STATUS,
+    ManagedAgentsBlockSpan, ManagedSkillFile, OBSERVATIONAL_STOP_HOOK_FLAG,
     OBSERVATIONAL_STOP_HOOK_FLAG_CAMEL, SkillInstallMode, SkillSurfaceInspection,
     SkillSurfaceStatus, default_skill_root, inspect_agents_scaffold_details,
-    inspect_skill_surface_with_source, is_managed_stop_handler, managed_skill_files,
-    render_managed_agents_block, resolve_source_skills_root,
+    inspect_skill_surface_with_source, is_managed_stop_handler, locate_managed_agents_block_span,
+    managed_agents_block_is_malformed, managed_skill_files, render_managed_agents_block,
+    render_managed_agents_block_with_markers, resolve_source_skills_root,
     summarize_stop_authority_with_observational, summarize_stop_handlers,
 };
 const CONFIG_MODEL: &str = "gpt-5.4";
@@ -90,6 +92,23 @@ struct PlannedChange {
     next_contents: String,
 }
 
+#[derive(Debug, Clone)]
+struct RepoCommands {
+    build_command: String,
+    test_command: String,
+    lint_or_format_command: String,
+}
+
+impl RepoCommands {
+    fn placeholders() -> Self {
+        Self {
+            build_command: AGENTS_BUILD_COMMAND_PLACEHOLDER.to_string(),
+            test_command: AGENTS_TEST_COMMAND_PLACEHOLDER.to_string(),
+            lint_or_format_command: AGENTS_LINT_COMMAND_PLACEHOLDER.to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum ConfigValue<'a> {
     Bool(bool),
@@ -135,11 +154,24 @@ pub fn run(args: SetupArgs) -> Result<()> {
     let hooks_path = repo_root.join(".codex/hooks.json");
     let agents_path = repo_root.join("AGENTS.md");
     let managed_hook_command = managed_hook_command()?;
+    let repo_commands = infer_repo_commands(&repo_root);
 
     let mut planned_changes = Vec::new();
 
     let existing_config = read_optional_string(&config_path)?;
-    let next_config = build_project_config(existing_config.as_deref());
+    let replacing_skills_config_bridge = args.force
+        && matches!(
+            skill_inspection.status,
+            SkillSurfaceStatus::InvalidBridge | SkillSurfaceStatus::PartialOrDrifted
+        )
+        && matches!(
+            skill_inspection.install_mode,
+            Some(SkillInstallMode::SkillsConfigBridge)
+        );
+    let next_config = build_project_config(
+        existing_config.as_deref(),
+        replacing_skills_config_bridge,
+    );
     if existing_config.as_deref() != Some(next_config.as_str()) {
         planned_changes.push(PlannedChange {
             path: config_path,
@@ -188,7 +220,7 @@ pub fn run(args: SetupArgs) -> Result<()> {
     }
 
     let existing_agents = read_optional_string(&agents_path)?;
-    let next_agents = build_agents_doc(existing_agents.as_deref(), args.force)?;
+    let next_agents = build_agents_doc(existing_agents.as_deref(), &repo_commands)?;
     if existing_agents.as_deref() != Some(next_agents.as_str()) {
         planned_changes.push(PlannedChange {
             path: agents_path,
@@ -210,6 +242,7 @@ pub fn run(args: SetupArgs) -> Result<()> {
         });
     }
 
+    let mut reported_skill_surface_root = skill_inspection.discovery_root.clone();
     let (skill_surface_status, skill_install_mode) = match skill_inspection.status {
         SkillSurfaceStatus::Missing => {
             planned_changes.extend(plan_copied_skill_changes(
@@ -245,6 +278,7 @@ pub fn run(args: SetupArgs) -> Result<()> {
                 );
             }
 
+            reported_skill_surface_root = default_skill_root(&repo_root);
             planned_changes.extend(plan_copied_skill_changes(
                 &default_skill_root(&repo_root),
                 &managed_skill_files(&source_skill_root)?,
@@ -266,6 +300,7 @@ pub fn run(args: SetupArgs) -> Result<()> {
                 );
             }
 
+            reported_skill_surface_root = default_skill_root(&repo_root);
             planned_changes.extend(plan_copied_skill_changes(
                 &default_skill_root(&repo_root),
                 &managed_skill_files(&source_skill_root)?,
@@ -284,7 +319,7 @@ pub fn run(args: SetupArgs) -> Result<()> {
             backup_id: None,
             skill_surface_status,
             skill_install_mode,
-            skill_surface_root: Some(skill_inspection.discovery_root.display().to_string()),
+            skill_surface_root: Some(reported_skill_surface_root.display().to_string()),
             changed_paths: Vec::new(),
             notes: setup_notes(&skill_inspection, None, skill_surface_status),
         };
@@ -401,7 +436,7 @@ pub fn run(args: SetupArgs) -> Result<()> {
         backup_id: Some(backup_id),
         skill_surface_status,
         skill_install_mode,
-        skill_surface_root: Some(skill_inspection.discovery_root.display().to_string()),
+        skill_surface_root: Some(reported_skill_surface_root.display().to_string()),
         changed_paths: planned_changes
             .iter()
             .map(|change| ChangedPathReport {
@@ -485,8 +520,11 @@ fn is_repo_trusted(repo_root: &Path) -> Result<bool> {
     Ok(false)
 }
 
-fn build_project_config(existing: Option<&str>) -> String {
+fn build_project_config(existing: Option<&str>, clear_skills_config_bridges: bool) -> String {
     let mut text = existing.unwrap_or_default().to_string();
+    if clear_skills_config_bridges {
+        text = remove_skills_config_entries(&text);
+    }
     text = upsert_config_value(&text, None, "model", ConfigValue::String(CONFIG_MODEL));
     text = upsert_config_value(
         &text,
@@ -758,11 +796,19 @@ fn shell_escape_arg(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-fn build_agents_doc(existing: Option<&str>, force: bool) -> Result<String> {
+fn build_agents_doc(existing: Option<&str>, repo_commands: &RepoCommands) -> Result<String> {
     match existing {
-        None => Ok(AGENTS_BLOCK.to_string()),
-        Some(raw) => replace_or_append_managed_block(raw, force),
+        None => Ok(render_default_agents_block(repo_commands)),
+        Some(raw) => replace_or_append_managed_block(raw, repo_commands),
     }
+}
+
+fn render_default_agents_block(repo_commands: &RepoCommands) -> String {
+    render_managed_agents_block(
+        &repo_commands.build_command,
+        &repo_commands.test_command,
+        &repo_commands.lint_or_format_command,
+    )
 }
 
 fn plan_copied_skill_changes(
@@ -805,57 +851,49 @@ fn plan_copied_skill_changes(
     Ok(changes)
 }
 
-fn replace_or_append_managed_block(existing: &str, force: bool) -> Result<String> {
-    let begin_count = existing.matches(AGENTS_BLOCK_BEGIN).count();
-    let end_count = existing.matches(AGENTS_BLOCK_END).count();
-
-    if begin_count == 0 && end_count == 0 {
+fn replace_or_append_managed_block(existing: &str, repo_commands: &RepoCommands) -> Result<String> {
+    let Some(span) = locate_managed_agents_block_span(existing) else {
+        if managed_agents_block_is_malformed(existing) {
+            bail!(
+                "AGENTS.md contains malformed Codex1 managed markers; repair the shared file manually instead of overwriting the whole document"
+            );
+        }
         let mut output = existing.trim_end().to_string();
         if !output.is_empty() {
             output.push_str("\n\n");
         }
-        output.push_str(AGENTS_BLOCK);
+        output.push_str(&render_default_agents_block(repo_commands));
         return Ok(output);
-    }
-
-    if begin_count != 1 || end_count != 1 {
-        let _ = force;
-        bail!(
-            "AGENTS.md contains malformed Codex1 managed markers; repair the shared file manually instead of overwriting the whole document"
-        );
-    }
-
-    let Some(begin_index) = existing.find(AGENTS_BLOCK_BEGIN) else {
-        bail!("failed to find Codex1 begin marker in AGENTS.md");
     };
-    let Some(end_index) = existing.find(AGENTS_BLOCK_END) else {
-        bail!("failed to find Codex1 end marker in AGENTS.md");
-    };
-    if begin_index > end_index {
-        bail!("Codex1 markers are out of order in AGENTS.md");
-    }
-
-    let end_index = end_index + AGENTS_BLOCK_END.len();
-    let before = existing[..begin_index].trim_end();
-    let after = existing[end_index..].trim_start_matches(['\r', '\n']);
+    let before = existing[..span.begin_index].trim_end();
+    let after = existing[span.end_index + span.end_marker.len()..].trim_start_matches(['\r', '\n']);
     let scaffold = inspect_agents_scaffold_details(Some(existing));
     let next_block = if scaffold.status == AgentsScaffoldStatus::Present {
-        render_managed_agents_block(
-            scaffold
-                .build_command
-                .as_deref()
-                .unwrap_or(AGENTS_BUILD_COMMAND_PLACEHOLDER),
-            scaffold
-                .test_command
-                .as_deref()
-                .unwrap_or(AGENTS_TEST_COMMAND_PLACEHOLDER),
-            scaffold
-                .lint_or_format_command
-                .as_deref()
-                .unwrap_or(AGENTS_LINT_COMMAND_PLACEHOLDER),
+        render_block_for_markers(
+            span,
+            &select_agents_command(
+                scaffold.build_command.as_deref(),
+                AGENTS_BUILD_COMMAND_PLACEHOLDER,
+                &repo_commands.build_command,
+            ),
+            &select_agents_command(
+                scaffold.test_command.as_deref(),
+                AGENTS_TEST_COMMAND_PLACEHOLDER,
+                &repo_commands.test_command,
+            ),
+            &select_agents_command(
+                scaffold.lint_or_format_command.as_deref(),
+                AGENTS_LINT_COMMAND_PLACEHOLDER,
+                &repo_commands.lint_or_format_command,
+            ),
         )
     } else {
-        AGENTS_BLOCK.to_string()
+        render_block_for_markers(
+            span,
+            &repo_commands.build_command,
+            &repo_commands.test_command,
+            &repo_commands.lint_or_format_command,
+        )
     };
 
     let mut output = String::new();
@@ -874,12 +912,219 @@ fn replace_or_append_managed_block(existing: &str, force: bool) -> Result<String
     Ok(output)
 }
 
+fn render_block_for_markers(
+    span: ManagedAgentsBlockSpan,
+    build_command: &str,
+    test_command: &str,
+    lint_or_format_command: &str,
+) -> String {
+    render_managed_agents_block_with_markers(
+        span.begin_marker,
+        span.end_marker,
+        build_command,
+        test_command,
+        lint_or_format_command,
+    )
+}
+
+fn select_agents_command(current: Option<&str>, placeholder: &str, inferred: &str) -> String {
+    match current {
+        Some(value)
+            if !value.trim().is_empty()
+                && value != placeholder
+                && !is_legacy_unresolved_agents_command(value) =>
+        {
+            value.to_string()
+        }
+        _ => inferred.to_string(),
+    }
+}
+
+fn infer_repo_commands(repo_root: &Path) -> RepoCommands {
+    if repo_root.join("Cargo.toml").is_file() {
+        return infer_cargo_repo_commands(repo_root);
+    }
+
+    let package_json_path = repo_root.join("package.json");
+    if package_json_path.is_file() {
+        return infer_node_repo_commands(&package_json_path);
+    }
+
+    RepoCommands::placeholders()
+}
+
+fn infer_cargo_repo_commands(repo_root: &Path) -> RepoCommands {
+    let Some(package_name) = infer_cargo_package_name(repo_root) else {
+        return RepoCommands {
+            build_command: AGENTS_BUILD_COMMAND_PLACEHOLDER.to_string(),
+            test_command: AGENTS_TEST_COMMAND_PLACEHOLDER.to_string(),
+            lint_or_format_command: "cargo fmt --all --check".to_string(),
+        };
+    };
+
+    RepoCommands {
+        build_command: format!("cargo build -p {package_name}"),
+        test_command: format!("cargo test -p {package_name}"),
+        lint_or_format_command: "cargo fmt --all --check".to_string(),
+    }
+}
+
+fn infer_cargo_package_name(repo_root: &Path) -> Option<String> {
+    let cargo_toml_path = repo_root.join("Cargo.toml");
+    let raw = fs::read_to_string(&cargo_toml_path).ok()?;
+    let parsed = raw.parse::<TomlValue>().ok()?;
+
+    if let Some(package_name) = parsed
+        .get("package")
+        .and_then(|value| value.get("name"))
+        .and_then(TomlValue::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return Some(package_name.to_string());
+    }
+
+    let workspace = parsed.get("workspace")?;
+    if let Some(default_members) = workspace
+        .get("default-members")
+        .and_then(TomlValue::as_array)
+        .map(|members| members.iter().filter_map(TomlValue::as_str).collect::<Vec<_>>())
+        .filter(|members| members.len() == 1)
+        && let Some(package_name) = cargo_package_name_for_member(repo_root, default_members[0])
+    {
+        return Some(package_name);
+    }
+
+    let member_names = workspace
+        .get("members")
+        .and_then(TomlValue::as_array)
+        .map(|members| {
+            members
+                .iter()
+                .filter_map(TomlValue::as_str)
+                .filter_map(|member| {
+                    cargo_package_name_for_member(repo_root, member).map(|name| (member, name))
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if member_names.len() == 1 {
+        return Some(member_names[0].1.clone());
+    }
+
+    let repo_name = repo_root.file_name().and_then(|value| value.to_str())?;
+    member_names
+        .into_iter()
+        .find(|(member, package_name)| {
+            member.rsplit('/').next() == Some(repo_name) || package_name == repo_name
+        })
+        .map(|(_, package_name)| package_name)
+}
+
+fn cargo_package_name_for_member(repo_root: &Path, member: &str) -> Option<String> {
+    if member.contains('*') {
+        return None;
+    }
+    let manifest_path = repo_root.join(member).join("Cargo.toml");
+    let raw = fs::read_to_string(manifest_path).ok()?;
+    raw.parse::<TomlValue>()
+        .ok()?
+        .get("package")
+        .and_then(|value| value.get("name"))
+        .and_then(TomlValue::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn infer_node_repo_commands(package_json_path: &Path) -> RepoCommands {
+    let Ok(raw) = fs::read_to_string(package_json_path) else {
+        return RepoCommands::placeholders();
+    };
+    let Ok(parsed) = serde_json::from_str::<Value>(&raw) else {
+        return RepoCommands::placeholders();
+    };
+    let scripts = parsed
+        .get("scripts")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let Some(repo_root) = package_json_path.parent() else {
+        return RepoCommands::placeholders();
+    };
+    let runner = if repo_root.join("pnpm-lock.yaml").is_file() {
+        ScriptRunner::Pnpm
+    } else if repo_root.join("yarn.lock").is_file() {
+        ScriptRunner::Yarn
+    } else if repo_root.join("bun.lockb").is_file() || repo_root.join("bun.lock").is_file() {
+        ScriptRunner::Bun
+    } else {
+        ScriptRunner::Npm
+    };
+    RepoCommands {
+        build_command: command_for_script(&scripts, "build", runner)
+            .unwrap_or_else(|| AGENTS_BUILD_COMMAND_PLACEHOLDER.to_string()),
+        test_command: command_for_script(&scripts, "test", runner)
+            .unwrap_or_else(|| AGENTS_TEST_COMMAND_PLACEHOLDER.to_string()),
+        lint_or_format_command: command_for_script(&scripts, "lint", runner)
+            .or_else(|| command_for_script(&scripts, "format", runner))
+            .unwrap_or_else(|| AGENTS_LINT_COMMAND_PLACEHOLDER.to_string()),
+    }
+}
+
+fn command_for_script(
+    scripts: &serde_json::Map<String, Value>,
+    script: &str,
+    runner: ScriptRunner,
+) -> Option<String> {
+    scripts.contains_key(script).then(|| runner.command(script))
+}
+
+#[derive(Clone, Copy)]
+enum ScriptRunner {
+    Bun,
+    Npm,
+    Pnpm,
+    Yarn,
+}
+
+impl ScriptRunner {
+    fn command(self, script: &str) -> String {
+        match self {
+            Self::Bun => format!("bun run {script}"),
+            Self::Npm => format!("npm run {script}"),
+            Self::Pnpm => format!("pnpm {script}"),
+            Self::Yarn => format!("yarn {script}"),
+        }
+    }
+}
+
 fn read_optional_string(path: &Path) -> Result<Option<String>> {
     match fs::read_to_string(path) {
         Ok(contents) => Ok(Some(contents)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error).with_context(|| format!("read {}", path.display())),
     }
+}
+
+fn remove_skills_config_entries(source: &str) -> String {
+    let mut output = Vec::new();
+    let mut skipping = false;
+    for line in source.lines() {
+        match parse_toml_section_header(line) {
+            Some(header) if header.name == "skills.config" && header.array_table => {
+                skipping = true;
+                continue;
+            }
+            Some(_) if skipping => skipping = false,
+            _ => {}
+        }
+        if skipping {
+            continue;
+        }
+        output.push(line.to_string());
+    }
+    ensure_trailing_newline(output.join("\n"))
 }
 
 fn emit_report<T>(json: bool, report: &T, human: String) -> Result<()>
@@ -1133,28 +1378,83 @@ fn find_section_range(lines: &[String], target: &str) -> Option<(usize, usize)> 
 }
 
 fn is_section_header(line: &str) -> Option<&str> {
-    let trimmed = line.trim();
-    if trimmed.starts_with("[[") || !trimmed.starts_with('[') || !trimmed.ends_with(']') {
-        return None;
-    }
-    Some(trimmed.trim_start_matches('[').trim_end_matches(']'))
+    let header = parse_toml_section_header(line)?;
+    (!header.array_table).then_some(header.name)
 }
 
 fn strip_comment(line: &str) -> &str {
-    match line.split_once('#') {
-        Some((before, _)) => before,
-        None => line,
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut escaped = false;
+    for (index, ch) in line.char_indices() {
+        match ch {
+            '#' if !in_single && !in_double => return &line[..index],
+            '"' if !in_single && !escaped => in_double = !in_double,
+            '\'' if !in_double => in_single = !in_single,
+            '\\' if in_double => {
+                escaped = !escaped;
+                continue;
+            }
+            _ => {}
+        }
+        escaped = false;
     }
+    line
+}
+
+#[derive(Clone, Copy)]
+struct TomlSectionHeader<'a> {
+    name: &'a str,
+    array_table: bool,
+}
+
+fn parse_toml_section_header(line: &str) -> Option<TomlSectionHeader<'_>> {
+    let trimmed = strip_comment(line).trim();
+    if let Some(inner) = trimmed
+        .strip_prefix("[[")
+        .and_then(|value| value.strip_suffix("]]"))
+    {
+        return Some(TomlSectionHeader {
+            name: inner.trim(),
+            array_table: true,
+        });
+    }
+    trimmed
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(|name| TomlSectionHeader {
+            name,
+            array_table: false,
+        })
+}
+
+fn is_legacy_unresolved_agents_command(value: &str) -> bool {
+    matches!(
+        value.trim(),
+        "true # no dedicated build command detected"
+            | "true # no dedicated test command detected"
+            | "true # no dedicated lint-or-format command detected"
+            | "true # no build script detected"
+            | "true # no test script detected"
+            | "true # no lint-or-format script detected"
+    )
 }
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::{
-        ConfigValue, build_hooks_json, replace_or_append_managed_block, shell_escape_arg,
+        ConfigValue, RepoCommands, build_hooks_json, infer_repo_commands,
+        remove_skills_config_entries, replace_or_append_managed_block, shell_escape_arg,
         upsert_config_value,
     };
     use crate::support_surface::{
-        MANAGED_STOP_HOOK_STATUS, OBSERVATIONAL_STOP_HOOK_FLAG, OBSERVATIONAL_STOP_HOOK_FLAG_CAMEL,
+        AGENTS_BUILD_COMMAND_PLACEHOLDER, AGENTS_TEST_COMMAND_PLACEHOLDER,
+        LEGACY_AGENTS_BLOCK_BEGIN, LEGACY_AGENTS_BLOCK_END, MANAGED_STOP_HOOK_STATUS,
+        OBSERVATIONAL_STOP_HOOK_FLAG, OBSERVATIONAL_STOP_HOOK_FLAG_CAMEL,
         is_managed_stop_handler, summarize_stop_authority_with_observational,
         summarize_stop_handlers,
     };
@@ -1356,8 +1656,96 @@ mod tests {
             "    - keep this indentation\n"
         );
 
-        let updated =
-            replace_or_append_managed_block(existing, false).expect("managed block should update");
+        let updated = replace_or_append_managed_block(
+            existing,
+            &RepoCommands {
+                build_command: "cargo build -p codex1".to_string(),
+                test_command: "cargo test -p codex1".to_string(),
+                lint_or_format_command: "cargo fmt --all --check".to_string(),
+            },
+        )
+        .expect("managed block should update");
         assert!(updated.contains("\n\n    - keep this indentation\n"));
+    }
+
+    #[test]
+    fn replacing_legacy_managed_agents_block_does_not_append_a_second_block() {
+        let existing = crate::support_surface::AGENTS_BLOCK
+            .replace("<!-- codex1:begin -->", LEGACY_AGENTS_BLOCK_BEGIN)
+            .replace("<!-- codex1:end -->", LEGACY_AGENTS_BLOCK_END);
+        let updated = replace_or_append_managed_block(
+            &existing,
+            &RepoCommands::placeholders(),
+        )
+        .expect("legacy managed block should update");
+
+        assert_eq!(updated.matches(LEGACY_AGENTS_BLOCK_BEGIN).count(), 1);
+        assert_eq!(updated.matches("<!-- codex1:begin -->").count(), 0);
+        assert!(updated.contains(AGENTS_BUILD_COMMAND_PLACEHOLDER));
+    }
+
+    #[test]
+    fn remove_skills_config_entries_drops_all_bridge_tables() {
+        let source = concat!(
+            "model = \"gpt-5.4\"\n",
+            "[[skills.config]]\n",
+            "path = \"./missing\"\n",
+            "enabled = true\n\n",
+            "[[skills.config]] # disabled fallback\n",
+            "path = \"./disabled\"\n",
+            "enabled = false\n\n",
+            "[features] # keep this section\n",
+            "codex_hooks = true\n"
+        );
+
+        let updated = remove_skills_config_entries(source);
+        assert!(!updated.contains("[[skills.config]]"));
+        assert!(updated.contains("[features] # keep this section"));
+    }
+
+    #[test]
+    fn infer_repo_commands_falls_back_to_placeholders() {
+        let temp = TempDir::new().expect("temp dir");
+        let commands = infer_repo_commands(temp.path());
+        assert_eq!(commands.build_command, AGENTS_BUILD_COMMAND_PLACEHOLDER);
+        assert_eq!(commands.test_command, AGENTS_TEST_COMMAND_PLACEHOLDER);
+    }
+
+    #[test]
+    fn infer_repo_commands_uses_repo_specific_cargo_package() {
+        let temp = TempDir::new().expect("temp dir");
+        fs::write(
+            temp.path().join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/codex1\", \"crates/codex1-core\"]\ndefault-members = [\"crates/codex1\"]\n",
+        )
+        .expect("write root cargo");
+        let crate_dir = temp.path().join("crates/codex1");
+        fs::create_dir_all(&crate_dir).expect("create member dir");
+        fs::write(
+            crate_dir.join("Cargo.toml"),
+            "[package]\nname = \"codex1\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+        )
+        .expect("write member cargo");
+        let core_dir = temp.path().join("crates/codex1-core");
+        fs::create_dir_all(&core_dir).expect("create core dir");
+        fs::write(
+            core_dir.join("Cargo.toml"),
+            "[package]\nname = \"codex1-core\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+        )
+        .expect("write core cargo");
+
+        let commands = infer_repo_commands(temp.path());
+        assert_eq!(commands.build_command, "cargo build -p codex1");
+        assert_eq!(commands.test_command, "cargo test -p codex1");
+    }
+
+    #[test]
+    fn infer_repo_commands_ignores_malformed_package_json() {
+        let temp = TempDir::new().expect("temp dir");
+        fs::write(temp.path().join("package.json"), "{ nope ").expect("write package.json");
+
+        let commands = infer_repo_commands(temp.path());
+        assert_eq!(commands.build_command, AGENTS_BUILD_COMMAND_PLACEHOLDER);
+        assert_eq!(commands.test_command, AGENTS_TEST_COMMAND_PLACEHOLDER);
     }
 }

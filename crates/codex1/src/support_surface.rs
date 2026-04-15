@@ -26,10 +26,20 @@ pub const OBSERVATIONAL_STOP_HOOK_FLAG: &str = "codex1_observational";
 pub const OBSERVATIONAL_STOP_HOOK_FLAG_CAMEL: &str = "codex1Observational";
 pub const AGENTS_BLOCK_BEGIN: &str = "<!-- codex1:begin -->";
 pub const AGENTS_BLOCK_END: &str = "<!-- codex1:end -->";
+pub const LEGACY_AGENTS_BLOCK_BEGIN: &str = "<!-- CODEX1:BEGIN MANAGED BLOCK -->";
+pub const LEGACY_AGENTS_BLOCK_END: &str = "<!-- CODEX1:END MANAGED BLOCK -->";
 pub const AGENTS_BUILD_COMMAND_PLACEHOLDER: &str = "{{BUILD_COMMAND}}";
 pub const AGENTS_TEST_COMMAND_PLACEHOLDER: &str = "{{TEST_COMMAND}}";
 pub const AGENTS_LINT_COMMAND_PLACEHOLDER: &str = "{{LINT_OR_FORMAT_COMMAND}}";
 pub const AGENTS_BLOCK: &str = "<!-- codex1:begin -->\n## Codex1\n### Workflow Stance\n- Use the native Codex skills surface for `clarify`, `plan`, `execute`, `review`, and `autopilot`.\n- Keep mission truth in visible repo artifacts instead of hidden chat state.\n- Replan stays internal unless the repo truth explicitly says otherwise.\n\n### Quality Bar\n- Work is complete only when the locked outcome, proof, review, and closeout contracts are all satisfied.\n- Review is mandatory before mission completion.\n- Hold the repo to production-grade changes with explicit validation and review-clean closeout.\n\n### Repo Commands\n- Build: {{BUILD_COMMAND}}\n- Test: {{TEST_COMMAND}}\n- Lint or format: {{LINT_OR_FORMAT_COMMAND}}\n\n### Artifact Conventions\n- Mission packages live under `PLANS/<mission-id>/`.\n- `OUTCOME-LOCK.md` is canonical for destination truth.\n- `PROGRAM-BLUEPRINT.md` is canonical for route truth.\n- `specs/*/SPEC.md` is canonical for one bounded execution slice.\n<!-- codex1:end -->\n";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ManagedAgentsBlockSpan {
+    pub begin_marker: &'static str,
+    pub end_marker: &'static str,
+    pub begin_index: usize,
+    pub end_index: usize,
+}
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -104,7 +114,25 @@ pub fn render_managed_agents_block(
     test_command: &str,
     lint_or_format_command: &str,
 ) -> String {
+    render_managed_agents_block_with_markers(
+        AGENTS_BLOCK_BEGIN,
+        AGENTS_BLOCK_END,
+        build_command,
+        test_command,
+        lint_or_format_command,
+    )
+}
+
+pub fn render_managed_agents_block_with_markers(
+    begin_marker: &str,
+    end_marker: &str,
+    build_command: &str,
+    test_command: &str,
+    lint_or_format_command: &str,
+) -> String {
     AGENTS_BLOCK
+        .replace(AGENTS_BLOCK_BEGIN, begin_marker)
+        .replace(AGENTS_BLOCK_END, end_marker)
         .replace(AGENTS_BUILD_COMMAND_PLACEHOLDER, build_command)
         .replace(AGENTS_TEST_COMMAND_PLACEHOLDER, test_command)
         .replace(AGENTS_LINT_COMMAND_PLACEHOLDER, lint_or_format_command)
@@ -189,17 +217,8 @@ pub fn inspect_agents_scaffold_details(raw: Option<&str>) -> AgentsScaffoldInspe
         };
     };
 
-    let begin_count = raw.matches(AGENTS_BLOCK_BEGIN).count();
-    let end_count = raw.matches(AGENTS_BLOCK_END).count();
-    match (begin_count, end_count) {
-        (0, 0) => AgentsScaffoldInspection {
-            status: AgentsScaffoldStatus::MissingBlock,
-            build_command: None,
-            test_command: None,
-            lint_or_format_command: None,
-            command_status: AgentsCommandStatus::Missing,
-        },
-        (1, 1) => match extract_managed_block(raw, AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END) {
+    match locate_managed_agents_block_span(raw) {
+        Some(_) => match extract_managed_agents_block(raw) {
             Some(block) => inspect_managed_agents_block(&block),
             None => AgentsScaffoldInspection {
                 status: AgentsScaffoldStatus::MalformedMarkers,
@@ -209,8 +228,15 @@ pub fn inspect_agents_scaffold_details(raw: Option<&str>) -> AgentsScaffoldInspe
                 command_status: AgentsCommandStatus::Missing,
             },
         },
-        _ => AgentsScaffoldInspection {
+        None if managed_agents_block_is_malformed(raw) => AgentsScaffoldInspection {
             status: AgentsScaffoldStatus::MalformedMarkers,
+            build_command: None,
+            test_command: None,
+            lint_or_format_command: None,
+            command_status: AgentsCommandStatus::Missing,
+        },
+        None => AgentsScaffoldInspection {
+            status: AgentsScaffoldStatus::MissingBlock,
             build_command: None,
             test_command: None,
             lint_or_format_command: None,
@@ -367,6 +393,13 @@ fn resolve_skills_config_bridge_root(repo_root: &Path) -> Result<SkillsConfigBri
         return Ok(SkillsConfigBridgeResolution::NotConfigured);
     };
     let Ok(parsed) = raw.parse::<TomlValue>() else {
+        if contains_uncommented_skills_config_header(&raw) {
+            return Ok(SkillsConfigBridgeResolution::Invalid {
+                discovery_root: config_path.clone(),
+                reason: "failed to parse .codex/config.toml while reading [[skills.config]]"
+                    .to_string(),
+            });
+        }
         return Ok(SkillsConfigBridgeResolution::NotConfigured);
     };
     let Some(entries) = parsed
@@ -377,24 +410,59 @@ fn resolve_skills_config_bridge_root(repo_root: &Path) -> Result<SkillsConfigBri
         return Ok(SkillsConfigBridgeResolution::NotConfigured);
     };
 
+    let mut first_invalid = None;
     for entry in entries {
         let Some(table) = entry.as_table() else {
+            first_invalid.get_or_insert_with(|| SkillsConfigBridgeResolution::Invalid {
+                discovery_root: config_path.clone(),
+                reason: "each [[skills.config]] entry must be a TOML table".to_string(),
+            });
             continue;
         };
-        let enabled = table
-            .get("enabled")
-            .and_then(TomlValue::as_bool)
-            .unwrap_or(false);
-        if !enabled {
-            continue;
+        let path_value = table.get("path");
+        let enabled_value = table.get("enabled");
+        let path = path_value.and_then(TomlValue::as_str);
+        let enabled = enabled_value.and_then(TomlValue::as_bool);
+        match (path_value, enabled_value, path, enabled) {
+            (Some(_), Some(_), Some(path), Some(true)) => {
+                return resolve_bridge_candidate(&config_path, repo_root, path);
+            }
+            (Some(_), Some(_), Some(_), Some(false)) | (None, None, _, _) => {}
+            (Some(_), Some(_), None, Some(false)) | (None, Some(_), _, Some(false)) => {}
+            (Some(_), Some(_), None, _) => {
+                first_invalid.get_or_insert_with(|| SkillsConfigBridgeResolution::Invalid {
+                    discovery_root: config_path.clone(),
+                    reason: "skills.config path must be a string".to_string(),
+                });
+            }
+            (Some(_), Some(_), _, None) => {
+                first_invalid.get_or_insert_with(|| SkillsConfigBridgeResolution::Invalid {
+                    discovery_root: config_path.clone(),
+                    reason: "skills.config enabled must be a boolean".to_string(),
+                });
+            }
+            (Some(_), None, _, _) => {
+                first_invalid.get_or_insert_with(|| SkillsConfigBridgeResolution::Invalid {
+                    discovery_root: config_path.clone(),
+                    reason: "skills.config entry is missing enabled".to_string(),
+                });
+            }
+            (None, Some(_), _, Some(true)) => {
+                first_invalid.get_or_insert_with(|| SkillsConfigBridgeResolution::Invalid {
+                    discovery_root: config_path.clone(),
+                    reason: "enabled skills.config entry is missing path".to_string(),
+                });
+            }
+            (None, Some(_), _, None) => {
+                first_invalid.get_or_insert_with(|| SkillsConfigBridgeResolution::Invalid {
+                    discovery_root: config_path.clone(),
+                    reason: "skills.config enabled must be a boolean".to_string(),
+                });
+            }
         }
-        let Some(path) = table.get("path").and_then(TomlValue::as_str) else {
-            continue;
-        };
-        return resolve_bridge_candidate(&config_path, repo_root, path);
     }
 
-    Ok(SkillsConfigBridgeResolution::NotConfigured)
+    Ok(first_invalid.unwrap_or(SkillsConfigBridgeResolution::NotConfigured))
 }
 
 fn resolve_bridge_candidate(
@@ -442,6 +510,12 @@ fn resolve_bridge_candidate(
             raw_path
         ),
     })
+}
+
+fn contains_uncommented_skills_config_header(raw: &str) -> bool {
+    raw.lines()
+        .filter_map(parse_skills_config_header_line)
+        .any(|header| header == "[[skills.config]]")
 }
 
 pub fn managed_skill_files(source_root: &Path) -> Result<Vec<ManagedSkillFile>> {
@@ -747,14 +821,135 @@ fn split_shell_words(input: &str) -> Option<Vec<String>> {
     Some(words)
 }
 
-pub fn extract_managed_block(contents: &str, begin: &str, end: &str) -> Option<String> {
-    let begin_index = contents.find(begin)?;
-    let end_index = contents.find(end)?;
-    if end_index < begin_index {
-        return None;
+pub fn locate_managed_agents_block_span(contents: &str) -> Option<ManagedAgentsBlockSpan> {
+    match detect_managed_agents_block(contents) {
+        ManagedAgentsBlockDetection::Located(span) => Some(span),
+        ManagedAgentsBlockDetection::Missing | ManagedAgentsBlockDetection::Malformed => None,
     }
-    let end_index = end_index + end.len();
-    Some(contents[begin_index..end_index].to_string())
+}
+
+pub fn managed_agents_block_is_malformed(contents: &str) -> bool {
+    matches!(
+        detect_managed_agents_block(contents),
+        ManagedAgentsBlockDetection::Malformed
+    )
+}
+
+pub fn extract_managed_agents_block(contents: &str) -> Option<String> {
+    let span = locate_managed_agents_block_span(contents)?;
+    let block = contents[span.begin_index..span.end_index + span.end_marker.len()].to_string();
+    Some(
+        block
+            .replace(span.begin_marker, AGENTS_BLOCK_BEGIN)
+            .replace(span.end_marker, AGENTS_BLOCK_END),
+    )
+}
+
+enum ManagedAgentsBlockDetection {
+    Missing,
+    Located(ManagedAgentsBlockSpan),
+    Malformed,
+}
+
+fn detect_managed_agents_block(contents: &str) -> ManagedAgentsBlockDetection {
+    let current = locate_agents_block_span_with_markers(contents, AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END);
+    let legacy = locate_agents_block_span_with_markers(
+        contents,
+        LEGACY_AGENTS_BLOCK_BEGIN,
+        LEGACY_AGENTS_BLOCK_END,
+    );
+    match (current, legacy) {
+        (MarkerFamilyDetection::Missing, MarkerFamilyDetection::Missing) => {
+            ManagedAgentsBlockDetection::Missing
+        }
+        (MarkerFamilyDetection::Located(span), MarkerFamilyDetection::Missing)
+        | (MarkerFamilyDetection::Missing, MarkerFamilyDetection::Located(span)) => {
+            ManagedAgentsBlockDetection::Located(span)
+        }
+        _ => ManagedAgentsBlockDetection::Malformed,
+    }
+}
+
+fn locate_agents_block_span_with_markers(
+    contents: &str,
+    begin_marker: &'static str,
+    end_marker: &'static str,
+) -> MarkerFamilyDetection {
+    let mut begin_positions = Vec::new();
+    let mut end_positions = Vec::new();
+    let mut offset = 0;
+    let mut in_fence = false;
+    for line in contents.lines() {
+        let trimmed = line.trim();
+        if !in_fence {
+            if trimmed == begin_marker && let Some(relative) = line.find(begin_marker) {
+                begin_positions.push(offset + relative);
+            }
+            if trimmed == end_marker && let Some(relative) = line.find(end_marker) {
+                end_positions.push(offset + relative);
+            }
+        }
+        if trimmed.starts_with("```") {
+            in_fence = !in_fence;
+        }
+        offset += line.len() + 1;
+    }
+
+    match (begin_positions.as_slice(), end_positions.as_slice()) {
+        ([], []) => MarkerFamilyDetection::Missing,
+        ([begin_index], [end_index]) if begin_index < end_index => {
+            MarkerFamilyDetection::Located(ManagedAgentsBlockSpan {
+                begin_marker,
+                end_marker,
+                begin_index: *begin_index,
+                end_index: *end_index,
+            })
+        }
+        _ => MarkerFamilyDetection::Malformed,
+    }
+}
+
+enum MarkerFamilyDetection {
+    Missing,
+    Located(ManagedAgentsBlockSpan),
+    Malformed,
+}
+
+fn parse_skills_config_header_line(line: &str) -> Option<&str> {
+    let code = strip_toml_comment(line).trim();
+    (!code.is_empty()).then_some(code)
+}
+
+fn strip_toml_comment(line: &str) -> &str {
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut escaped = false;
+    for (index, ch) in line.char_indices() {
+        match ch {
+            '#' if !in_single && !in_double => return &line[..index],
+            '"' if !in_single && !escaped => in_double = !in_double,
+            '\'' if !in_double => in_single = !in_single,
+            '\\' if in_double => {
+                escaped = !escaped;
+                continue;
+            }
+            _ => {}
+        }
+        escaped = false;
+    }
+    line
+}
+
+fn is_legacy_unresolved_agents_command(value: &str) -> bool {
+    matches!(
+        value.trim(),
+        "true # no dedicated build command detected"
+            | "true # no dedicated test command detected"
+            | "true # no dedicated lint-or-format command detected"
+            | "true # no build script detected"
+            | "true # no test script detected"
+            | "true # no lint-or-format script detected"
+    )
 }
 
 fn ensure_trailing_newline(value: &str) -> String {
@@ -852,6 +1047,10 @@ fn inspect_managed_agents_block(block: &str) -> AgentsScaffoldInspection {
     } else if build_command.as_deref() == Some(AGENTS_BUILD_COMMAND_PLACEHOLDER)
         || test_command.as_deref() == Some(AGENTS_TEST_COMMAND_PLACEHOLDER)
         || lint_or_format_command.as_deref() == Some(AGENTS_LINT_COMMAND_PLACEHOLDER)
+        || command_values
+            .iter()
+            .flatten()
+            .any(|value| is_legacy_unresolved_agents_command(value))
     {
         AgentsCommandStatus::Placeholder
     } else {
@@ -929,7 +1128,8 @@ mod tests {
 
     use super::{
         AGENTS_BLOCK, AGENTS_BUILD_COMMAND_PLACEHOLDER, AGENTS_LINT_COMMAND_PLACEHOLDER,
-        AGENTS_TEST_COMMAND_PLACEHOLDER, AgentsCommandStatus, AgentsScaffoldStatus, MANAGED_SKILLS,
+        AGENTS_TEST_COMMAND_PLACEHOLDER, AgentsCommandStatus, AgentsScaffoldStatus,
+        LEGACY_AGENTS_BLOCK_BEGIN, LEGACY_AGENTS_BLOCK_END, MANAGED_SKILLS,
         MANAGED_STOP_HOOK_STATUS, SkillInstallMode, SkillSurfaceStatus,
         compute_support_surface_signature, inspect_agents_scaffold_details,
         inspect_skill_surface_with_source, is_managed_stop_handler, is_observational_stop_handler,
@@ -1065,6 +1265,94 @@ mod tests {
     }
 
     #[test]
+    fn detects_incomplete_skills_config_bridge_as_invalid() {
+        let source = TempDir::new().expect("source temp dir");
+        let target = TempDir::new().expect("target temp dir");
+        seed_source_skills(source.path());
+        seed_source_skills(&target.path().join(".codex/skills"));
+
+        let codex_dir = target.path().join(".codex");
+        fs::create_dir_all(&codex_dir).expect("create .codex");
+        fs::write(
+            codex_dir.join("config.toml"),
+            "[[skills.config]]\npath = \"./missing-skills\"\n",
+        )
+        .expect("write config");
+
+        let inspection =
+            inspect_skill_surface_with_source(target.path(), source.path()).expect("inspect");
+        assert_eq!(inspection.status, SkillSurfaceStatus::InvalidBridge);
+    }
+
+    #[test]
+    fn parse_errors_do_not_hide_uncommented_skills_config_bridge_headers() {
+        let source = TempDir::new().expect("source temp dir");
+        let target = TempDir::new().expect("target temp dir");
+        seed_source_skills(source.path());
+        seed_source_skills(&target.path().join(".codex/skills"));
+
+        let codex_dir = target.path().join(".codex");
+        fs::create_dir_all(&codex_dir).expect("create .codex");
+        fs::write(
+            codex_dir.join("config.toml"),
+            "[[skills.config]]\npath = \"./missing-skills\nenabled = true\n",
+        )
+        .expect("write config");
+
+        let inspection =
+            inspect_skill_surface_with_source(target.path(), source.path()).expect("inspect");
+        assert_eq!(inspection.status, SkillSurfaceStatus::InvalidBridge);
+    }
+
+    #[test]
+    fn parse_errors_do_not_hide_commented_skills_config_bridge_headers() {
+        let source = TempDir::new().expect("source temp dir");
+        let target = TempDir::new().expect("target temp dir");
+        seed_source_skills(source.path());
+        seed_source_skills(&target.path().join(".codex/skills"));
+
+        let codex_dir = target.path().join(".codex");
+        fs::create_dir_all(&codex_dir).expect("create .codex");
+        fs::write(
+            codex_dir.join("config.toml"),
+            "[[skills.config]] # keep\npath = \"./missing-skills\nenabled = true\n",
+        )
+        .expect("write config");
+
+        let inspection =
+            inspect_skill_surface_with_source(target.path(), source.path()).expect("inspect");
+        assert_eq!(inspection.status, SkillSurfaceStatus::InvalidBridge);
+    }
+
+    #[test]
+    fn valid_bridge_wins_after_earlier_invalid_entry() {
+        let source = TempDir::new().expect("source temp dir");
+        let target = TempDir::new().expect("target temp dir");
+        let bridge_root = target.path().join("shared-skills");
+        seed_source_skills(source.path());
+        seed_source_skills(&bridge_root);
+
+        let codex_dir = target.path().join(".codex");
+        fs::create_dir_all(&codex_dir).expect("create .codex");
+        fs::write(
+            codex_dir.join("config.toml"),
+            format!(
+                "[[skills.config]]\npath = 42\nenabled = true\n\n[[skills.config]]\npath = \"{}\"\nenabled = true\n",
+                bridge_root.display()
+            ),
+        )
+        .expect("write config");
+
+        let inspection =
+            inspect_skill_surface_with_source(target.path(), source.path()).expect("inspect");
+        assert_eq!(inspection.status, SkillSurfaceStatus::ValidExisting);
+        assert_eq!(
+            inspection.discovery_root,
+            bridge_root.canonicalize().expect("canonical bridge root")
+        );
+    }
+
+    #[test]
     fn skills_config_bridge_preserves_hash_in_quoted_path() {
         let source = TempDir::new().expect("source temp dir");
         let target = TempDir::new().expect("target temp dir");
@@ -1122,6 +1410,48 @@ mod tests {
         ));
         assert_eq!(concrete.status, AgentsScaffoldStatus::Present);
         assert_eq!(concrete.command_status, AgentsCommandStatus::Concrete);
+    }
+
+    #[test]
+    fn legacy_noop_agents_commands_stay_placeholder() {
+        let inspection = inspect_agents_scaffold_details(Some(
+            &AGENTS_BLOCK
+                .replace(
+                    AGENTS_BUILD_COMMAND_PLACEHOLDER,
+                    "true # no dedicated build command detected",
+                )
+                .replace(
+                    AGENTS_TEST_COMMAND_PLACEHOLDER,
+                    "true # no dedicated test command detected",
+                )
+                .replace(
+                    AGENTS_LINT_COMMAND_PLACEHOLDER,
+                    "true # no dedicated lint-or-format command detected",
+                ),
+        ));
+        assert_eq!(inspection.status, AgentsScaffoldStatus::Present);
+        assert_eq!(inspection.command_status, AgentsCommandStatus::Placeholder);
+    }
+
+    #[test]
+    fn agents_scaffold_details_accept_legacy_markers() {
+        let legacy_block = AGENTS_BLOCK
+            .replace("<!-- codex1:begin -->", LEGACY_AGENTS_BLOCK_BEGIN)
+            .replace("<!-- codex1:end -->", LEGACY_AGENTS_BLOCK_END);
+        let inspection = inspect_agents_scaffold_details(Some(&legacy_block));
+        assert_eq!(inspection.status, AgentsScaffoldStatus::Present);
+        assert_eq!(inspection.command_status, AgentsCommandStatus::Placeholder);
+    }
+
+    #[test]
+    fn legacy_marker_mentions_outside_current_block_do_not_break_detection() {
+        let contents = format!(
+            "{}\n\nMigration note: keep `{}` and `{}` in historical docs.\n",
+            AGENTS_BLOCK, LEGACY_AGENTS_BLOCK_BEGIN, LEGACY_AGENTS_BLOCK_END
+        );
+        let inspection = inspect_agents_scaffold_details(Some(&contents));
+        assert_eq!(inspection.status, AgentsScaffoldStatus::Present);
+        assert_eq!(inspection.command_status, AgentsCommandStatus::Placeholder);
     }
 
     #[test]

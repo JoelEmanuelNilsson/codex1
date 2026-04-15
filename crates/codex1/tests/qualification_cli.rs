@@ -345,6 +345,32 @@ fn doctor_marks_clean_setup_without_qualification_evidence_as_unsupported() {
 }
 
 #[test]
+fn setup_materializes_concrete_agents_commands_that_qualify_cleanly() {
+    let repo = TempDir::new().expect("temp repo");
+    let home = prepare_trusted_home(repo.path());
+    let binary = assert_cmd::cargo::cargo_bin("codex1");
+    fs::write(repo.path().join("README.md"), "# sandbox\n").expect("seed repo");
+
+    let setup = run_command_with_home(binary, repo.path(), home.path(), &["setup"]);
+    assert!(
+        setup.status.success(),
+        "setup should succeed: {}",
+        String::from_utf8_lossy(&setup.stderr)
+    );
+
+    let agents = fs::read_to_string(repo.path().join("AGENTS.md")).expect("read AGENTS.md");
+    assert!(agents.contains("true # no dedicated build command detected"));
+    assert!(!agents.contains("{{BUILD_COMMAND}}"));
+
+    let qualify = run_qualify_with_home(repo.path(), home.path());
+    assert!(
+        qualify.status.success(),
+        "qualification should pass after setup: {}",
+        String::from_utf8_lossy(&qualify.stderr)
+    );
+}
+
+#[test]
 fn setup_json_emits_preflight_to_stderr_before_final_report() {
     let repo = TempDir::new().expect("temp repo");
     let home = prepare_trusted_home(repo.path());
@@ -721,6 +747,36 @@ fn doctor_fails_when_agents_block_has_drifted() {
 }
 
 #[test]
+fn setup_updates_legacy_agents_block_in_place() {
+    let repo = TempDir::new().expect("temp repo");
+    let home = prepare_trusted_home(repo.path());
+    let binary = assert_cmd::cargo::cargo_bin("codex1");
+    fs::write(repo.path().join("README.md"), "# sandbox\n").expect("seed repo");
+    fs::write(
+        repo.path().join("AGENTS.md"),
+        "<!-- CODEX1:BEGIN MANAGED BLOCK -->\n## Codex1\n### Workflow Stance\n- Use the native Codex skills surface for `clarify`, `plan`, `execute`, `review`, and `autopilot`.\n- Keep mission truth in visible repo artifacts instead of hidden chat state.\n- Replan stays internal unless the repo truth explicitly says otherwise.\n\n### Quality Bar\n- Work is complete only when the locked outcome, proof, review, and closeout contracts are all satisfied.\n- Review is mandatory before mission completion.\n- Hold the repo to production-grade changes with explicit validation and review-clean closeout.\n\n### Repo Commands\n- Build: {{BUILD_COMMAND}}\n- Test: {{TEST_COMMAND}}\n- Lint or format: {{LINT_OR_FORMAT_COMMAND}}\n\n### Artifact Conventions\n- Mission packages live under `PLANS/<mission-id>/`.\n- `OUTCOME-LOCK.md` is canonical for destination truth.\n- `PROGRAM-BLUEPRINT.md` is canonical for route truth.\n- `specs/*/SPEC.md` is canonical for one bounded execution slice.\n<!-- CODEX1:END MANAGED BLOCK -->\n",
+    )
+    .expect("seed legacy AGENTS.md");
+
+    let setup = run_command_with_home(binary, repo.path(), home.path(), &["setup"]);
+    assert!(
+        setup.status.success(),
+        "setup should succeed on legacy AGENTS markers: {}",
+        String::from_utf8_lossy(&setup.stderr)
+    );
+
+    let agents = fs::read_to_string(repo.path().join("AGENTS.md")).expect("read AGENTS.md");
+    assert_eq!(
+        agents
+            .matches("<!-- CODEX1:BEGIN MANAGED BLOCK -->")
+            .count(),
+        1
+    );
+    assert_eq!(agents.matches("<!-- codex1:begin -->").count(), 0);
+    assert!(agents.contains("true # no dedicated build command detected"));
+}
+
+#[test]
 fn setup_force_rejects_malformed_agents_markers() {
     let repo = TempDir::new().expect("temp repo");
     let home = prepare_trusted_home(repo.path());
@@ -801,6 +857,44 @@ fn setup_and_qualification_allow_observational_user_stop_hooks() {
         .find(|gate| gate["gate"] == "cross_layer_stop_hook_authority")
         .expect("cross-layer gate");
     assert_eq!(gate["status"], "pass");
+}
+
+#[test]
+fn setup_force_clears_invalid_skills_config_bridge_and_reports_copied_surface() {
+    let repo = TempDir::new().expect("temp repo");
+    fs::write(repo.path().join("README.md"), "# sandbox\n").expect("seed repo");
+    fs::create_dir_all(repo.path().join(".codex")).expect("create .codex");
+    fs::write(
+        repo.path().join(".codex/config.toml"),
+        "[[skills.config]]\npath = \"./missing-skills\"\nenabled = true\n",
+    )
+    .expect("write invalid bridge config");
+    let home = prepare_trusted_home(repo.path());
+    let binary = assert_cmd::cargo::cargo_bin("codex1");
+
+    let setup = run_command_with_home(binary, repo.path(), home.path(), &["setup", "--force"]);
+    assert!(
+        setup.status.success(),
+        "setup --force should repair invalid bridge installs: {}",
+        String::from_utf8_lossy(&setup.stderr)
+    );
+    let setup_report = parse_report(&setup);
+    assert_eq!(
+        setup_report["skill_surface_root"],
+        fs::canonicalize(repo.path().join(".codex/skills"))
+            .expect("canonical skill root")
+            .display()
+            .to_string()
+    );
+
+    let config = fs::read_to_string(repo.path().join(".codex/config.toml")).expect("read config");
+    assert!(!config.contains("[[skills.config]]"));
+
+    let doctor = run_doctor(repo.path(), home.path());
+    assert!(doctor.status.success(), "doctor should emit JSON");
+    let report = parse_report(&doctor);
+    assert_eq!(report["skill_surface"]["status"], "pass");
+    assert_eq!(report["skill_surface"]["install_mode"], "copied_skills");
 }
 
 #[test]

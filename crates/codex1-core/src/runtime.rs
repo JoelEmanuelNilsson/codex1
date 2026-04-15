@@ -1522,6 +1522,7 @@ fn prepare_planning_write_context(
     validate_blueprint_body_contract(
         &input.body_markdown,
         input.status.unwrap_or(BlueprintStatus::Draft),
+        graph_required_hint,
     )?;
     if existing_proof_matrix != normalized_proof_matrix {
         planning_contract_changed = true;
@@ -2281,6 +2282,21 @@ pub fn derive_writer_packet(
 
     let spec_doc =
         load_markdown::<WorkstreamSpecFrontmatter>(&paths.spec_file(&input.target_spec_id))?;
+    let packet_scope = derive_writer_packet_scope(paths, &package, &input.target_spec_id)?;
+    if packet_scope.read_paths.is_empty() {
+        bail!(
+            "execution package {} does not authorize any bounded read scope for spec {}",
+            input.source_package_id,
+            input.target_spec_id
+        );
+    }
+    if packet_scope.write_paths.is_empty() {
+        bail!(
+            "execution package {} does not authorize any bounded write scope for spec {}",
+            input.source_package_id,
+            input.target_spec_id
+        );
+    }
     let packet = WriterPacket {
         packet_id: Uuid::new_v4().to_string(),
         mission_id: input.mission_id.clone(),
@@ -2288,8 +2304,8 @@ pub fn derive_writer_packet(
         target_spec_id: input.target_spec_id.clone(),
         blueprint_revision: package.blueprint_revision,
         spec_revision: spec_doc.frontmatter.spec_revision,
-        allowed_read_paths: package.read_scope.clone(),
-        allowed_write_paths: package.write_scope.clone(),
+        allowed_read_paths: packet_scope.read_paths,
+        allowed_write_paths: packet_scope.write_paths,
         proof_rows: package.proof_obligations.clone(),
         required_checks: unique_strings(&input.required_checks),
         review_lenses: unique_strings(&input.review_lenses),
@@ -2326,10 +2342,11 @@ pub fn validate_writer_packet(
     if spec_doc.frontmatter.spec_revision != packet.spec_revision {
         findings.push("writer_packet_spec_revision_mismatch".to_string());
     }
-    if packet.allowed_read_paths != package.read_scope {
+    let expected_scope = derive_writer_packet_scope(paths, &package, &packet.target_spec_id)?;
+    if packet.allowed_read_paths != expected_scope.read_paths {
         findings.push("writer_packet_read_scope_mismatch".to_string());
     }
-    if packet.allowed_write_paths != package.write_scope {
+    if packet.allowed_write_paths != expected_scope.write_paths {
         findings.push("writer_packet_write_scope_mismatch".to_string());
     }
     if packet.proof_rows != package.proof_obligations {
@@ -6225,32 +6242,55 @@ fn missing_markdown_sections(body: &str, required: &[&str]) -> Vec<String> {
         .collect()
 }
 
-fn validate_blueprint_body_contract(body: &str, status: BlueprintStatus) -> Result<()> {
+fn required_blueprint_sections(
+    require_execution_graph_and_safe_wave_rules: bool,
+) -> Vec<&'static str> {
+    let mut sections = vec![
+        "Locked Mission Reference",
+        "Truth Register Summary",
+        "System Model",
+        "Invariants And Protected Behaviors",
+        "Proof Matrix",
+        "Decision Obligations",
+        "In-Scope Work Inventory",
+        "Selected Architecture",
+        "Review Bundle Design",
+        "Workstream Overview",
+        "Risks And Unknowns",
+        "Decision Log",
+        "Replan Policy",
+    ];
+    if require_execution_graph_and_safe_wave_rules {
+        sections.push("Execution Graph and Safe-Wave Rules");
+    }
+    sections
+}
+
+fn markdown_section_has_list_items(body: &str, heading: &str) -> bool {
+    !markdown_section_list_items(body, heading).is_empty()
+}
+
+fn validate_blueprint_body_contract(
+    body: &str,
+    status: BlueprintStatus,
+    require_execution_graph_and_safe_wave_rules: bool,
+) -> Result<()> {
     if status != BlueprintStatus::Approved {
         return Ok(());
     }
 
-    let missing = missing_markdown_sections(
-        body,
-        &[
-            "Locked Mission Reference",
-            "Truth Register Summary",
-            "System Model",
-            "Invariants And Protected Behaviors",
-            "Proof Matrix",
-            "Decision Obligations",
-            "Selected Architecture",
-            "Review Bundle Design",
-            "Workstream Overview",
-            "Risks And Unknowns",
-            "Replan Policy",
-        ],
-    );
+    let required_sections = required_blueprint_sections(require_execution_graph_and_safe_wave_rules);
+    let missing = missing_markdown_sections(body, &required_sections);
     if !missing.is_empty() {
         bail!(
             "PROGRAM-BLUEPRINT.md is missing required canonical sections: {}",
             missing.join(", ")
         );
+    }
+    for heading in ["In-Scope Work Inventory", "Decision Log"] {
+        if !markdown_section_has_list_items(body, heading) {
+            bail!("PROGRAM-BLUEPRINT.md section {heading} must contain at least one bullet item");
+        }
     }
     Ok(())
 }
@@ -6720,6 +6760,21 @@ fn validate_execution_graph_for_blueprint(
             ));
         }
         let spec_doc = load_markdown::<WorkstreamSpecFrontmatter>(&paths.spec_file(&node.spec_id))?;
+        let declared_scope = spec_declared_path_scope(&spec_doc);
+        for read_path in scope_paths_outside_frontier(&node.read_paths, &declared_scope.read_paths) {
+            findings.push(format!(
+                "execution_graph_node_read_scope_outside_spec:{}:{}",
+                node.spec_id, read_path
+            ));
+        }
+        for write_path in
+            scope_paths_outside_frontier(&node.write_paths, &declared_scope.write_paths)
+        {
+            findings.push(format!(
+                "execution_graph_node_write_scope_outside_spec:{}:{}",
+                node.spec_id, write_path
+            ));
+        }
         if spec_doc.frontmatter.spec_revision != node.spec_revision {
             findings.push(format!(
                 "execution_graph_node_spec_revision_mismatch:{}",
@@ -6946,6 +7001,116 @@ fn derive_wave_specs_from_execution_graph(
     )
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct PathScope {
+    read_paths: Vec<String>,
+    write_paths: Vec<String>,
+}
+
+fn normalize_scope_paths(paths: &[String]) -> Vec<String> {
+    let mut normalized = paths
+        .iter()
+        .map(|path| normalize_scoped_path(path))
+        .filter(|path| !path.is_empty())
+        .collect::<Vec<_>>();
+    normalized.sort();
+    normalized.dedup();
+    normalized
+}
+
+fn scope_paths_within_frontier(scope: &[String], frontier: &[String]) -> Vec<String> {
+    let normalized_frontier = normalize_scope_paths(frontier);
+    normalize_scope_paths(scope)
+        .into_iter()
+        .filter(|path| {
+            normalized_frontier
+                .iter()
+                .any(|allowed| scoped_path_within(path, allowed))
+        })
+        .collect()
+}
+
+fn scope_paths_outside_frontier(scope: &[String], frontier: &[String]) -> Vec<String> {
+    let normalized_frontier = normalize_scope_paths(frontier);
+    normalize_scope_paths(scope)
+        .into_iter()
+        .filter(|path| {
+            !normalized_frontier
+                .iter()
+                .any(|allowed| scoped_path_within(path, allowed))
+        })
+        .collect()
+}
+
+fn scoped_path_within(candidate: &str, frontier: &str) -> bool {
+    let candidate = normalize_scoped_path(candidate);
+    let frontier = normalize_scoped_path(frontier);
+    candidate == frontier
+        || candidate
+            .strip_prefix(&frontier)
+            .is_some_and(|suffix| suffix.starts_with('/'))
+}
+
+fn union_path_scopes(scopes: &[PathScope]) -> PathScope {
+    PathScope {
+        read_paths: normalize_scope_paths(
+            &scopes
+                .iter()
+                .flat_map(|scope| scope.read_paths.clone())
+                .collect::<Vec<_>>(),
+        ),
+        write_paths: normalize_scope_paths(
+            &scopes
+                .iter()
+                .flat_map(|scope| scope.write_paths.clone())
+                .collect::<Vec<_>>(),
+        ),
+    }
+}
+
+fn spec_declared_path_scope(spec_doc: &ArtifactDocument<WorkstreamSpecFrontmatter>) -> PathScope {
+    PathScope {
+        read_paths: normalize_scope_paths(&markdown_section_list_items(&spec_doc.body, "Read Scope")),
+        write_paths: normalize_scope_paths(&markdown_section_list_items(&spec_doc.body, "Write Scope")),
+    }
+}
+
+fn execution_graph_node_path_scope(node: &ExecutionGraphNode) -> PathScope {
+    PathScope {
+        read_paths: normalize_scope_paths(&node.read_paths),
+        write_paths: normalize_scope_paths(&node.write_paths),
+    }
+}
+
+fn effective_spec_path_scope(
+    spec_doc: &ArtifactDocument<WorkstreamSpecFrontmatter>,
+    node: Option<&ExecutionGraphNode>,
+) -> PathScope {
+    node.map_or_else(
+        || spec_declared_path_scope(spec_doc),
+        execution_graph_node_path_scope,
+    )
+}
+
+fn derive_writer_packet_scope(
+    paths: &MissionPaths,
+    package: &ExecutionPackage,
+    target_spec_id: &str,
+) -> Result<PathScope> {
+    let spec_doc = load_markdown::<WorkstreamSpecFrontmatter>(&paths.spec_file(target_spec_id))?;
+    let execution_graph = load_execution_graph(paths)?;
+    let frontier = effective_spec_path_scope(
+        &spec_doc,
+        execution_graph
+            .as_ref()
+            .and_then(|graph| graph.nodes.iter().find(|node| node.spec_id == target_spec_id)),
+    );
+    Ok(PathScope {
+        read_paths: scope_paths_within_frontier(&package.read_scope, &frontier.read_paths),
+        write_paths: scope_paths_within_frontier(&package.write_scope, &frontier.write_paths),
+    })
+}
+
 fn normalize_scoped_path(path: &str) -> String {
     path.trim().trim_matches('/').to_ascii_lowercase()
 }
@@ -7154,27 +7319,21 @@ fn evaluate_execution_package_contract(
     let execution_graph = load_execution_graph(paths)?;
     let target_ref = gate_target_ref(target_type, target_id);
     let mut findings = Vec::new();
+    let graph_required = execution_graph_required(active_spec_ids.len(), selected_target_ref);
     let proof_matrix = normalize_proof_matrix(&blueprint_doc.frontmatter.proof_matrix);
     if let Err(error) = validate_proof_matrix(&proof_matrix) {
         findings.push(format!("blueprint_proof_matrix_invalid:{error}"));
     }
     for missing in missing_markdown_sections(
         &blueprint_doc.body,
-        &[
-            "Locked Mission Reference",
-            "Truth Register Summary",
-            "System Model",
-            "Invariants And Protected Behaviors",
-            "Proof Matrix",
-            "Decision Obligations",
-            "Selected Architecture",
-            "Review Bundle Design",
-            "Workstream Overview",
-            "Risks And Unknowns",
-            "Replan Policy",
-        ],
+        &required_blueprint_sections(graph_required),
     ) {
         findings.push(format!("blueprint_body_missing_section:{missing}"));
+    }
+    for heading in ["In-Scope Work Inventory", "Decision Log"] {
+        if !markdown_section_has_list_items(&blueprint_doc.body, heading) {
+            findings.push(format!("blueprint_body_empty_section:{heading}"));
+        }
     }
     let decision_obligations =
         normalize_decision_obligations(&blueprint_doc.frontmatter.decision_obligations);
@@ -7216,6 +7375,18 @@ fn evaluate_execution_package_contract(
         selected_target_ref,
     )?;
     findings.extend(graph_validation.findings);
+
+    let execution_graph_node_by_id = execution_graph
+        .as_ref()
+        .map(|graph| {
+            graph.nodes
+                .iter()
+                .map(|node| (node.spec_id.as_str(), node))
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+    let mut effective_scopes = Vec::new();
+    let mut effective_scope_by_spec_id = BTreeMap::new();
 
     if included_specs.is_empty() {
         findings.push("included_specs must not be empty".to_string());
@@ -7322,6 +7493,40 @@ fn evaluate_execution_package_contract(
                 context.included.spec_id
             ));
         }
+        let effective_scope = effective_spec_path_scope(
+            &spec_doc,
+            execution_graph_node_by_id
+                .get(context.included.spec_id.as_str())
+                .copied(),
+        );
+        effective_scopes.push(effective_scope.clone());
+        effective_scope_by_spec_id.insert(context.included.spec_id.clone(), effective_scope);
+    }
+
+    let package_scope_frontier = union_path_scopes(&effective_scopes);
+    for path in scope_paths_outside_frontier(read_scope, &package_scope_frontier.read_paths) {
+        findings.push(format!("package_read_scope_outside_frontier:{path}"));
+    }
+    for path in scope_paths_outside_frontier(write_scope, &package_scope_frontier.write_paths) {
+        findings.push(format!("package_write_scope_outside_frontier:{path}"));
+    }
+    for included_spec_id in included_spec_ids {
+        if let Some(scope) = effective_scope_by_spec_id.get(included_spec_id) {
+            if !scope.read_paths.is_empty()
+                && scope_paths_within_frontier(read_scope, &scope.read_paths).is_empty()
+            {
+                findings.push(format!(
+                    "package_read_scope_missing_for_included_spec:{included_spec_id}"
+                ));
+            }
+            if !scope.write_paths.is_empty()
+                && scope_paths_within_frontier(write_scope, &scope.write_paths).is_empty()
+            {
+                findings.push(format!(
+                    "package_write_scope_missing_for_included_spec:{included_spec_id}"
+                ));
+            }
+        }
     }
 
     if let Some(execution_graph) = execution_graph.as_ref() {
@@ -7403,6 +7608,14 @@ fn evaluate_execution_package_contract(
             if !included_specs.iter().any(|spec| spec.spec_id == target_id) {
                 findings.push(format!("target_spec_missing_from_package:{target_id}"));
             }
+            if let Some(scope) = effective_scope_by_spec_id.get(target_id) {
+                for path in scope_paths_outside_frontier(read_scope, &scope.read_paths) {
+                    findings.push(format!("package_read_scope_outside_target_spec:{path}"));
+                }
+                for path in scope_paths_outside_frontier(write_scope, &scope.write_paths) {
+                    findings.push(format!("package_write_scope_outside_target_spec:{path}"));
+                }
+            }
             if !wave_specs.is_empty() {
                 findings.push("spec_target_must_not_set_wave_specs".to_string());
             }
@@ -7421,6 +7634,27 @@ fn evaluate_execution_package_contract(
             }
             if wave_fingerprint.is_none() {
                 findings.push("wave_fingerprint_missing".to_string());
+            }
+            let normalized_wave_specs = normalize_wave_specs(wave_specs);
+            let wave_scope = PathScope {
+                read_paths: normalize_scope_paths(
+                    &normalized_wave_specs
+                        .iter()
+                        .flat_map(|spec| spec.read_paths.clone())
+                        .collect::<Vec<_>>(),
+                ),
+                write_paths: normalize_scope_paths(
+                    &normalized_wave_specs
+                        .iter()
+                        .flat_map(|spec| spec.write_paths.clone())
+                        .collect::<Vec<_>>(),
+                ),
+            };
+            if normalize_scope_paths(read_scope) != wave_scope.read_paths {
+                findings.push("wave_package_read_scope_mismatch".to_string());
+            }
+            if normalize_scope_paths(write_scope) != wave_scope.write_paths {
+                findings.push("wave_package_write_scope_mismatch".to_string());
             }
             findings.extend(validate_wave_safe_parallelism(
                 included_spec_ids,
@@ -7456,6 +7690,18 @@ fn evaluate_execution_package_contract(
             gate_id: "scope_declared".to_string(),
             passed: !read_scope.is_empty() && !write_scope.is_empty(),
             detail: "read and write scope are explicit".to_string(),
+        },
+        PackageGateCheck {
+            gate_id: "scope_bounded_to_frontier".to_string(),
+            passed: !findings.iter().any(|finding| {
+                finding.starts_with("package_read_scope_outside_")
+                    || finding.starts_with("package_write_scope_outside_")
+                    || finding.starts_with("package_read_scope_missing_for_included_spec:")
+                    || finding.starts_with("package_write_scope_missing_for_included_spec:")
+                    || finding == "wave_package_read_scope_mismatch"
+                    || finding == "wave_package_write_scope_mismatch"
+            }),
+            detail: "package scope stays inside the declared execution frontier".to_string(),
         },
         PackageGateCheck {
             gate_id: "proof_contract_declared".to_string(),
@@ -8001,8 +8247,9 @@ mod tests {
     };
     use crate::{
         ActiveCycleState, ChildLaneExpectation, ChildLaneIntegrationStatus, CloseoutRecord,
-        DecisionAffect, DecisionBlockingness, DecisionObligation, DecisionStatus, Fingerprint,
-        MissionPaths, ProofMatrixRow, ResumeMode, ResumeStatus, Terminality, Verdict, load_state,
+        DecisionAffect, DecisionBlockingness, DecisionObligation, DecisionStatus,
+        ExecutionPackageStatus, Fingerprint, MissionPaths, ProofMatrixRow, ResumeMode,
+        ResumeStatus, Terminality, Verdict, load_state,
     };
 
     fn execution_graph_node(
@@ -8100,9 +8347,21 @@ mod tests {
 
 - obligation:route-choice
 
+## In-Scope Work Inventory
+
+- runtime_core
+
 ## Selected Architecture
 
 Route truth.
+
+## Execution Graph and Safe-Wave Rules
+
+- Single-node routes may execute directly; multi-node routes must follow the declared graph frontier.
+
+## Decision Log
+
+- Chose the canonical runtime route because it keeps proof and review contracts visible.
 
 ## Review Bundle Design
 
@@ -11543,7 +11802,9 @@ Keep the implementation bounded and explicit.
                     WorkstreamSpecInput {
                         spec_id: "spec_api".to_string(),
                         purpose: "Implement the API slice".to_string(),
-                        body_markdown: Some(canonical_spec_body("Implement the API slice")),
+                        body_markdown: Some(
+                            "# Workstream Spec\n\n## Purpose\n\nImplement the API slice\n\n## In Scope\n\n- Execute the bounded integration slice.\n\n## Out Of Scope\n\n- Unrelated repo changes.\n\n## Dependencies\n\n- Outcome Lock and Program Blueprint stay current.\n\n## Touched Surfaces\n\n- Runtime backend.\n\n## Read Scope\n\n- src/api\n\n## Write Scope\n\n- src/api\n\n## Interfaces And Contracts Touched\n\n- internal command JSON contract\n\n## Implementation Shape\n\nKeep the workstream bounded and reviewable.\n\n## Proof-Of-Completion Expectations\n\n- cargo test -p api\n\n## Non-Breakage Expectations\n\n- Existing mission contracts still validate.\n\n## Review Lenses\n\n- correctness\n\n## Replan Boundary\n\n- Reopen planning on scope expansion.\n\n## Truth Basis Refs\n\n- PROGRAM-BLUEPRINT.md\n\n## Freshness Notes\n\n- Current for the integration test.\n\n## Support Files\n\n- `REVIEW.md`\n".to_string(),
+                        ),
                         artifact_status: Some(SpecArtifactStatus::Active),
                         packetization_status: Some(PacketizationStatus::Runnable),
                         execution_status: Some(SpecExecutionStatus::NotStarted),
@@ -12012,6 +12273,283 @@ Keep the implementation bounded and explicit.
                 .to_string()
                 .contains("mission id mismatch: mission paths target mission_alpha, but input requested mission_beta")
         );
+    }
+
+    #[test]
+    fn approved_blueprint_requires_inventory_and_decision_log_sections() {
+        let temp = TempDir::new().expect("temp dir");
+        let paths = MissionPaths::new(temp.path(), "mission_alpha");
+        initialize_mission(
+            &paths,
+            &MissionInitInput {
+                title: "Mission Alpha".to_string(),
+                objective: "Ship the alpha flow safely.".to_string(),
+                mission_id: None,
+                slug: None,
+                root_mission_id: None,
+                parent_mission_id: None,
+                clarify_status: Some(ClarifyStatus::Ratified),
+                lock_status: Some(LockStatus::Locked),
+                lock_posture: None,
+                mission_state_body: None,
+                outcome_lock_body: None,
+                readme_body: None,
+                waiting_request: None,
+                next_action: None,
+                summary: None,
+                reason_code: None,
+            },
+        )
+        .expect("mission bootstrap should work");
+
+        let error = write_planning_artifacts(
+            &paths,
+            &PlanningWriteInput {
+                mission_id: "mission_alpha".to_string(),
+                body_markdown: "# Program Blueprint\n\n## Locked Mission Reference\n\n- locked\n\n## Truth Register Summary\n\n- current\n\n## System Model\n\n- system\n\n## Invariants And Protected Behaviors\n\n- invariant\n\n## Proof Matrix\n\n- claim:default-proof\n\n## Decision Obligations\n\n- obligation:route\n\n## Selected Architecture\n\nRoute truth.\n\n## Review Bundle Design\n\n- correctness\n\n## Workstream Overview\n\n- runtime_core\n\n## Risks And Unknowns\n\n- risk\n\n## Replan Policy\n\n- reopen on contract change.\n".to_string(),
+                plan_level: 5,
+                problem_size: Some(ProblemSize::M),
+                status: Some(BlueprintStatus::Approved),
+                blueprint_revision: Some(1),
+                proof_matrix: default_proof_matrix(),
+                decision_obligations: Vec::new(),
+                specs: vec![WorkstreamSpecInput {
+                    spec_id: "spec_api".to_string(),
+                    purpose: "Implement the API slice".to_string(),
+                    body_markdown: Some(canonical_spec_body("Implement the API slice")),
+                    artifact_status: Some(SpecArtifactStatus::Active),
+                    packetization_status: Some(PacketizationStatus::Runnable),
+                    execution_status: Some(SpecExecutionStatus::NotStarted),
+                    owner_mode: None,
+                    replan_boundary: None,
+                }],
+                selected_target_ref: Some("spec:spec_api".to_string()),
+                execution_graph: None,
+                next_action: None,
+            },
+        )
+        .expect_err("approved blueprint should require canonical planning sections");
+        assert!(error.to_string().contains("In-Scope Work Inventory"));
+    }
+
+    #[test]
+    fn compile_execution_package_rejects_scope_outside_spec_frontier() {
+        let temp = TempDir::new().expect("temp dir");
+        let paths = MissionPaths::new(temp.path(), "mission_alpha");
+        initialize_mission(
+            &paths,
+            &MissionInitInput {
+                title: "Mission Alpha".to_string(),
+                objective: "Ship the alpha flow safely.".to_string(),
+                mission_id: None,
+                slug: None,
+                root_mission_id: None,
+                parent_mission_id: None,
+                clarify_status: Some(ClarifyStatus::Ratified),
+                lock_status: Some(LockStatus::Locked),
+                lock_posture: None,
+                mission_state_body: None,
+                outcome_lock_body: None,
+                readme_body: None,
+                waiting_request: None,
+                next_action: None,
+                summary: None,
+                reason_code: None,
+            },
+        )
+        .expect("mission bootstrap should work");
+        write_planning_artifacts(
+            &paths,
+            &PlanningWriteInput {
+                mission_id: "mission_alpha".to_string(),
+                body_markdown: canonical_blueprint_body(),
+                plan_level: 5,
+                problem_size: Some(ProblemSize::M),
+                status: Some(BlueprintStatus::Approved),
+                blueprint_revision: Some(1),
+                proof_matrix: default_proof_matrix(),
+                decision_obligations: Vec::new(),
+                specs: vec![WorkstreamSpecInput {
+                    spec_id: "spec_api".to_string(),
+                    purpose: "Implement the API slice".to_string(),
+                    body_markdown: Some(canonical_spec_body("Implement the API slice")),
+                    artifact_status: Some(SpecArtifactStatus::Active),
+                    packetization_status: Some(PacketizationStatus::Runnable),
+                    execution_status: Some(SpecExecutionStatus::NotStarted),
+                    owner_mode: None,
+                    replan_boundary: None,
+                }],
+                selected_target_ref: Some("spec:spec_api".to_string()),
+                execution_graph: None,
+                next_action: None,
+            },
+        )
+        .expect("planning writeback should work");
+
+        let package = compile_execution_package(
+            &paths,
+            &ExecutionPackageInput {
+                mission_id: "mission_alpha".to_string(),
+                target_type: TargetType::Spec,
+                target_id: "spec_api".to_string(),
+                included_spec_ids: vec!["spec_api".to_string()],
+                dependency_satisfaction_state: vec![DependencyCheck {
+                    name: "lock_current".to_string(),
+                    satisfied: true,
+                    detail: "current lock is ratified".to_string(),
+                }],
+                read_scope: vec!["src".to_string()],
+                write_scope: vec!["src".to_string()],
+                proof_obligations: vec!["cargo test".to_string()],
+                review_obligations: vec!["correctness".to_string()],
+                replan_boundary: None,
+                wave_context: None,
+                wave_fingerprint: None,
+                wave_specs: Vec::new(),
+                gate_checks: Vec::new(),
+            },
+        )
+        .expect("package compilation should still emit a failed package");
+
+        assert_eq!(package.status, ExecutionPackageStatus::Failed);
+        assert!(
+            package
+                .validation_failures
+                .iter()
+                .any(|finding| finding == "package_write_scope_outside_frontier:src")
+        );
+    }
+
+    #[test]
+    fn derive_writer_packet_clips_scope_to_target_spec_frontier() {
+        let temp = TempDir::new().expect("temp dir");
+        let paths = MissionPaths::new(temp.path(), "mission_alpha");
+        initialize_mission(
+            &paths,
+            &MissionInitInput {
+                title: "Mission Alpha".to_string(),
+                objective: "Ship the alpha flow safely.".to_string(),
+                mission_id: None,
+                slug: None,
+                root_mission_id: None,
+                parent_mission_id: None,
+                clarify_status: Some(ClarifyStatus::Ratified),
+                lock_status: Some(LockStatus::Locked),
+                lock_posture: None,
+                mission_state_body: None,
+                outcome_lock_body: None,
+                readme_body: None,
+                waiting_request: None,
+                next_action: None,
+                summary: None,
+                reason_code: None,
+            },
+        )
+        .expect("mission bootstrap should work");
+        write_planning_artifacts(
+            &paths,
+            &PlanningWriteInput {
+                mission_id: "mission_alpha".to_string(),
+                body_markdown: canonical_blueprint_body(),
+                plan_level: 5,
+                problem_size: Some(ProblemSize::M),
+                status: Some(BlueprintStatus::Approved),
+                blueprint_revision: Some(1),
+                proof_matrix: default_proof_matrix(),
+                decision_obligations: Vec::new(),
+                specs: vec![
+                    WorkstreamSpecInput {
+                        spec_id: "spec_api".to_string(),
+                        purpose: "Implement the API slice".to_string(),
+                        body_markdown: Some(
+                            "# Workstream Spec\n\n## Purpose\n\nImplement the API slice\n\n## In Scope\n\n- Execute the bounded integration slice.\n\n## Out Of Scope\n\n- Unrelated repo changes.\n\n## Dependencies\n\n- Outcome Lock and Program Blueprint stay current.\n\n## Touched Surfaces\n\n- Runtime backend.\n\n## Read Scope\n\n- src/api\n\n## Write Scope\n\n- src/api\n\n## Interfaces And Contracts Touched\n\n- internal command JSON contract\n\n## Implementation Shape\n\nKeep the workstream bounded and reviewable.\n\n## Proof-Of-Completion Expectations\n\n- cargo test -p api\n\n## Non-Breakage Expectations\n\n- Existing mission contracts still validate.\n\n## Review Lenses\n\n- correctness\n\n## Replan Boundary\n\n- Reopen planning on scope expansion.\n\n## Truth Basis Refs\n\n- PROGRAM-BLUEPRINT.md\n\n## Freshness Notes\n\n- Current for the integration test.\n\n## Support Files\n\n- `REVIEW.md`\n".to_string(),
+                        ),
+                        artifact_status: Some(SpecArtifactStatus::Active),
+                        packetization_status: Some(PacketizationStatus::Runnable),
+                        execution_status: Some(SpecExecutionStatus::NotStarted),
+                        owner_mode: None,
+                        replan_boundary: None,
+                    },
+                    WorkstreamSpecInput {
+                        spec_id: "spec_ui".to_string(),
+                        purpose: "Implement the UI slice".to_string(),
+                        body_markdown: Some(
+                            "# Workstream Spec\n\n## Purpose\n\nImplement the UI slice\n\n## In Scope\n\n- Execute the bounded integration slice.\n\n## Out Of Scope\n\n- Unrelated repo changes.\n\n## Dependencies\n\n- Outcome Lock and Program Blueprint stay current.\n\n## Touched Surfaces\n\n- Runtime backend.\n\n## Read Scope\n\n- src/ui\n\n## Write Scope\n\n- src/ui\n\n## Interfaces And Contracts Touched\n\n- internal command JSON contract\n\n## Implementation Shape\n\nKeep the workstream bounded and reviewable.\n\n## Proof-Of-Completion Expectations\n\n- cargo test -p ui\n\n## Non-Breakage Expectations\n\n- Existing mission contracts still validate.\n\n## Review Lenses\n\n- correctness\n\n## Replan Boundary\n\n- Reopen planning on scope expansion.\n\n## Truth Basis Refs\n\n- PROGRAM-BLUEPRINT.md\n\n## Freshness Notes\n\n- Current for the integration test.\n\n## Support Files\n\n- `REVIEW.md`\n".to_string(),
+                        ),
+                        artifact_status: Some(SpecArtifactStatus::Active),
+                        packetization_status: Some(PacketizationStatus::Runnable),
+                        execution_status: Some(SpecExecutionStatus::NotStarted),
+                        owner_mode: None,
+                        replan_boundary: None,
+                    },
+                ],
+                selected_target_ref: Some("mission:mission_alpha".to_string()),
+                execution_graph: Some(execution_graph_with_default_obligations(vec![
+                    execution_graph_node(
+                        "spec_api",
+                        &[],
+                        &["src/api"],
+                        &["src/api"],
+                        &["backend"],
+                        Some(WaveRiskClass::Normal),
+                        &["cargo test -p api"],
+                    ),
+                    execution_graph_node(
+                        "spec_ui",
+                        &[],
+                        &["src/ui"],
+                        &["src/ui"],
+                        &["frontend"],
+                        Some(WaveRiskClass::Normal),
+                        &["cargo test -p ui"],
+                    ),
+                ])),
+                next_action: None,
+            },
+        )
+        .expect("planning writeback should work");
+
+        let package = compile_execution_package(
+            &paths,
+            &ExecutionPackageInput {
+                mission_id: "mission_alpha".to_string(),
+                target_type: TargetType::Mission,
+                target_id: "mission_alpha".to_string(),
+                included_spec_ids: vec!["spec_api".to_string(), "spec_ui".to_string()],
+                dependency_satisfaction_state: vec![DependencyCheck {
+                    name: "lock_current".to_string(),
+                    satisfied: true,
+                    detail: "current lock is ratified".to_string(),
+                }],
+                read_scope: vec!["src/api".to_string(), "src/ui".to_string()],
+                write_scope: vec!["src/api".to_string(), "src/ui".to_string()],
+                proof_obligations: vec!["cargo test".to_string()],
+                review_obligations: vec!["correctness".to_string()],
+                replan_boundary: None,
+                wave_context: None,
+                wave_fingerprint: None,
+                wave_specs: Vec::new(),
+                gate_checks: Vec::new(),
+            },
+        )
+        .expect("package compilation should work");
+        assert_eq!(package.status, ExecutionPackageStatus::Passed);
+
+        let packet = derive_writer_packet(
+            &paths,
+            &WriterPacketInput {
+                mission_id: "mission_alpha".to_string(),
+                source_package_id: package.package_id,
+                target_spec_id: "spec_api".to_string(),
+                required_checks: vec!["cargo test -p api".to_string()],
+                review_lenses: vec!["correctness".to_string()],
+                explicitly_disallowed_decisions: Vec::new(),
+            },
+        )
+        .expect("writer packet derivation should work");
+
+        assert_eq!(packet.allowed_read_paths, vec!["src/api".to_string()]);
+        assert_eq!(packet.allowed_write_paths, vec!["src/api".to_string()]);
     }
 
     #[test]

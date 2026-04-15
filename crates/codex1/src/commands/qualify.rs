@@ -19,8 +19,8 @@ use uuid::Uuid;
 
 use crate::commands::{QualifyArgs, resolve_repo_root};
 use crate::support_surface::{
-    AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END, AgentsCommandStatus, AgentsScaffoldStatus,
-    SkillSurfaceStatus, compute_support_surface_signature, extract_managed_block,
+    AgentsCommandStatus, AgentsScaffoldStatus, SkillSurfaceStatus,
+    compute_support_surface_signature, extract_managed_agents_block,
     inspect_agents_scaffold_details, inspect_skill_surface, summarize_stop_authority,
     summarize_stop_authority_with_observational,
 };
@@ -49,9 +49,7 @@ pub fn run(args: QualifyArgs) -> Result<()> {
     let hooks_config = read_optional_string(&repo_root.join(".codex/hooks.json"))?;
     let agents_doc = read_optional_string(&repo_root.join("AGENTS.md"))?;
     let skill_inspection = inspect_skill_surface(&repo_root)?;
-    let managed_agents_block = agents_doc
-        .as_deref()
-        .and_then(|contents| extract_managed_block(contents, AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END));
+    let managed_agents_block = agents_doc.as_deref().and_then(extract_managed_agents_block);
     let support_surface_signature = compute_support_surface_signature(
         project_config.as_deref(),
         hooks_config.as_deref(),
@@ -4768,7 +4766,12 @@ fn parity_init_payload() -> Value {
 
 fn canonical_blueprint_body(route: &str, workstream_overview: &[&str]) -> String {
     format!(
-        "# Program Blueprint\n\n## Locked Mission Reference\n\n- Qualification mission truth is locked.\n\n## Truth Register Summary\n\n- The repo uses deterministic internal qualification commands.\n\n## System Model\n\n- Touched surfaces: runtime artifacts and review bundles.\n\n## Invariants And Protected Behaviors\n\n- Keep mission truth visible and review-gated.\n\n## Proof Matrix\n\n- claim:qualification-proof\n\n## Decision Obligations\n\n- obligation:qualification-route\n\n## Selected Architecture\n\n{route}\n\n## Review Bundle Design\n\n- Mandatory review lenses: correctness, evidence_adequacy\n\n## Workstream Overview\n\n{}\n\n## Risks And Unknowns\n\n- Qualification must not overstate what it proves.\n\n## Replan Policy\n\n- Reopen planning if the selected route or proof contract changes.\n",
+        "# Program Blueprint\n\n## Locked Mission Reference\n\n- Qualification mission truth is locked.\n\n## Truth Register Summary\n\n- The repo uses deterministic internal qualification commands.\n\n## System Model\n\n- Touched surfaces: runtime artifacts and review bundles.\n\n## Invariants And Protected Behaviors\n\n- Keep mission truth visible and review-gated.\n\n## Proof Matrix\n\n- claim:qualification-proof\n\n## Decision Obligations\n\n- obligation:qualification-route\n\n## In-Scope Work Inventory\n\n{}\n\n## Selected Architecture\n\n{route}\n\n## Execution Graph and Safe-Wave Rules\n\n- Single-node qualification routes may execute directly; multi-node routes must follow the declared graph frontier.\n\n## Decision Log\n\n- Chose the deterministic internal route so qualification proofs stay reproducible.\n\n## Review Bundle Design\n\n- Mandatory review lenses: correctness, evidence_adequacy\n\n## Workstream Overview\n\n{}\n\n## Risks And Unknowns\n\n- Qualification must not overstate what it proves.\n\n## Replan Policy\n\n- Reopen planning if the selected route or proof contract changes.\n",
+        workstream_overview
+            .iter()
+            .map(|spec_id| format!("- {spec_id}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
         workstream_overview
             .iter()
             .map(|spec_id| format!("- {spec_id}"))

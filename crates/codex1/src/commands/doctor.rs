@@ -11,9 +11,9 @@ use serde_json::Value;
 
 use crate::commands::{DoctorArgs, resolve_repo_root};
 use crate::support_surface::{
-    AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END, AgentsCommandStatus, AgentsScaffoldStatus,
-    SkillSurfaceInspection, SkillSurfaceStatus, compute_support_surface_signature,
-    extract_managed_block, inspect_agents_scaffold_details, inspect_skill_surface,
+    AgentsCommandStatus, AgentsScaffoldStatus, SkillSurfaceInspection, SkillSurfaceStatus,
+    compute_support_surface_signature, extract_managed_agents_block,
+    inspect_agents_scaffold_details, inspect_skill_surface,
     summarize_stop_authority_with_observational,
 };
 
@@ -470,9 +470,7 @@ pub fn run(args: DoctorArgs) -> Result<()> {
     let skill_surface = summarize_skill_surface(&skill_inspection);
     findings.push(render_skill_surface_finding(&skill_inspection));
 
-    let managed_agents_block = agents_doc
-        .as_deref()
-        .and_then(|contents| extract_managed_block(contents, AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END));
+    let managed_agents_block = agents_doc.as_deref().and_then(extract_managed_agents_block);
     let support_surface_signature = compute_support_surface_signature(
         project_config.as_deref(),
         hooks_config.as_deref(),
