@@ -526,7 +526,9 @@ It is:
 
 The local source also shows that persisted spawn-edge state tracks `open` versus `closed`.
 Closed descendants stay closed on resume.
-Open descendants may be reopened internally if the runtime supports it.
+Open descendants are reconciled by the parent from artifact truth plus live-lane
+inspection. If a lane is missing or stale, the safe Codex1 move is parent-led
+respawn or serialization back into the parent thread, not child-local resume.
 
 Sources:
 

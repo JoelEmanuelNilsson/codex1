@@ -1,4 +1,6 @@
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
+
+use crate::error::{CoreError, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MissionPaths {
@@ -7,12 +9,18 @@ pub struct MissionPaths {
 }
 
 impl MissionPaths {
+    pub fn try_new(repo_root: impl Into<PathBuf>, mission_id: impl Into<String>) -> Result<Self> {
+        let mission_id = mission_id.into();
+        validate_id_component("mission_id", &mission_id)?;
+        Ok(Self {
+            repo_root: repo_root.into(),
+            mission_id,
+        })
+    }
+
     #[must_use]
     pub fn new(repo_root: impl Into<PathBuf>, mission_id: impl Into<String>) -> Self {
-        Self {
-            repo_root: repo_root.into(),
-            mission_id: mission_id.into(),
-        }
+        Self::try_new(repo_root, mission_id).expect("mission_id must be a safe path component")
     }
 
     #[must_use]
@@ -82,7 +90,8 @@ impl MissionPaths {
 
     #[must_use]
     pub fn spec_root(&self, spec_id: &str) -> PathBuf {
-        self.specs_root().join(spec_id)
+        self.specs_root()
+            .join(checked_id_component("spec_id", spec_id))
     }
 
     #[must_use]
@@ -152,13 +161,16 @@ impl MissionPaths {
 
     #[must_use]
     pub fn execution_package(&self, package_id: &str) -> PathBuf {
-        self.execution_packages_dir()
-            .join(format!("{package_id}.json"))
+        self.execution_packages_dir().join(format!(
+            "{}.json",
+            checked_id_component("package_id", package_id)
+        ))
     }
 
     #[must_use]
     pub fn wave_manifest(&self, wave_id: &str) -> PathBuf {
-        self.waves_dir().join(format!("{wave_id}.json"))
+        self.waves_dir()
+            .join(format!("{}.json", checked_id_component("wave_id", wave_id)))
     }
 
     #[must_use]
@@ -173,7 +185,10 @@ impl MissionPaths {
 
     #[must_use]
     pub fn writer_packet(&self, packet_id: &str) -> PathBuf {
-        self.packets_dir().join(format!("{packet_id}.json"))
+        self.packets_dir().join(format!(
+            "{}.json",
+            checked_id_component("packet_id", packet_id)
+        ))
     }
 
     #[must_use]
@@ -183,7 +198,10 @@ impl MissionPaths {
 
     #[must_use]
     pub fn review_bundle(&self, bundle_id: &str) -> PathBuf {
-        self.bundles_dir().join(format!("{bundle_id}.json"))
+        self.bundles_dir().join(format!(
+            "{}.json",
+            checked_id_component("bundle_id", bundle_id)
+        ))
     }
 
     #[must_use]
@@ -202,11 +220,56 @@ impl MissionPaths {
     }
 }
 
+fn checked_id_component<'a>(label: &'static str, raw: &'a str) -> &'a str {
+    validate_id_component(label, raw).expect("path identifier must be a safe single component");
+    raw
+}
+
+pub fn validate_id_component(label: &'static str, raw: &str) -> Result<()> {
+    if raw.trim().is_empty() {
+        return Err(CoreError::Validation(format!("{label} must not be empty")));
+    }
+
+    let path = Path::new(raw);
+    if path.is_absolute() {
+        return Err(CoreError::Validation(format!(
+            "{label} must not be an absolute path"
+        )));
+    }
+
+    let mut saw_normal = false;
+    for component in path.components() {
+        match component {
+            Component::Normal(_) => {
+                saw_normal = true;
+            }
+            Component::CurDir | Component::ParentDir => {
+                return Err(CoreError::Validation(format!(
+                    "{label} must not contain navigation segments"
+                )));
+            }
+            Component::RootDir | Component::Prefix(_) => {
+                return Err(CoreError::Validation(format!(
+                    "{label} must not contain absolute path segments"
+                )));
+            }
+        }
+    }
+
+    if !saw_normal || path.components().count() != 1 {
+        return Err(CoreError::Validation(format!(
+            "{label} must be a single safe path component"
+        )));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
-    use super::MissionPaths;
+    use super::{MissionPaths, validate_id_component};
 
     #[test]
     fn resolves_expected_paths() {
@@ -229,5 +292,19 @@ mod tests {
             paths.selection_state(),
             PathBuf::from("/repo/.ralph/selection-state.json")
         );
+    }
+
+    #[test]
+    fn rejects_invalid_mission_ids() {
+        for mission_id in ["", "../escape", "nested/mission", "/abs"] {
+            assert!(MissionPaths::try_new("/repo", mission_id).is_err());
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_child_ids() {
+        for raw in ["../escape", "nested/spec", "/abs", ""] {
+            assert!(validate_id_component("spec_id", raw).is_err());
+        }
     }
 }

@@ -2,10 +2,15 @@
 
 `codex1 qualify-codex` currently evaluates these gate families:
 
+- `supported_platform`: verify the current host/build combination is inside the supported qualification envelope.
 - `codex_build_probe`: capture the exact `codex --version` output used during the run and fail the live build gate unless it matches the trusted Codex baseline `0.120.0`.
+- `trusted_repo`: verify the target repo is explicitly trusted by Codex.
+- `effective_config_baseline`: verify the trusted effective config resolves every required Codex1 baseline key to the required value.
 - `project_config_present`: verify the target repo has project-scoped `.codex/config.toml`.
 - `project_codex_hooks_enabled`: verify that project config enables `features.codex_hooks = true`.
 - `project_hooks_file_present`: verify the target repo has project-scoped `.codex/hooks.json`.
+- `user_hooks_file_valid`: verify user-level hooks config is parseable when present.
+- `cross_layer_stop_hook_authority`: verify the combined user/project Stop-hook surface still resolves to one authoritative Ralph pipeline while allowing observational hooks.
 - `project_stop_hook_authority`: verify exactly one authoritative Stop-hook pipeline is visible in the hooks config, while allowing additional observational Stop hooks.
 - `project_agents_scaffold_present`: verify the target repo has the Codex1-managed `AGENTS.md` scaffold block.
 - `project_skill_surface_valid`: verify the target repo has a valid discoverable skill surface through `copied_skills`, `linked_skills`, or `skills_config_bridge`.
@@ -15,6 +20,7 @@
 - `helper_drift_detection_flow`: drift a managed shared file after setup, then prove `doctor` surfaces the drift honestly and that `restore` / `uninstall` fail safe instead of guessing.
 - `runtime_backend_flow`: run the internal mission-runtime flow in an isolated temp repo and confirm that mission artifacts, graph-backed blueprint writeback, execution packages, writer packets, review bundles, contradiction records, resume-resolution outputs, and selection consume state are all persisted.
 - `waiting_stop_hook_flow`: prove that durable mission-waiting and resolver-created selection-wait states yield through the Stop hook with the canonical request exactly once before acknowledgement.
+- `native_stop_hook_live_flow`: prove the trusted build dispatches the repo-local Ralph Stop hook through a real native Codex run when live qualification is enabled.
 - `native_exec_resume_flow`: prove the exact trusted Codex build can create a machine-readable `codex exec` session and resume the same thread through `codex exec resume`.
 - `native_multi_agent_resume_flow`: prove the exact trusted Codex build can exercise the resume-critical native child-agent inspection path across `spawn_agent`, `list_agents`, `wait_agent`, and `close_agent`, then feed the resulting live child snapshot into Codex1 resume reconciliation without false completion. Queue-only child messaging and turn-triggering delivery are recorded observationally when the build surfaces them, but they are not the decisive pass/fail signal for this resume gate.
 - `manual_internal_contract_parity`: run the same mission truth through an explicit manual backend sequence and an autopilot-style backend composition, then confirm both paths converge to the same validated durable artifact summary.

@@ -484,7 +484,7 @@ fn run_rebuild_state(
     json_output: bool,
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
-    let mission_paths = MissionPaths::new(&repo_root, mission_id.to_string());
+    let mission_paths = MissionPaths::try_new(&repo_root, mission_id.to_string())?;
     let state = rebuild_state_from_files(&mission_paths.hidden_mission_root())?;
     emit(
         json_output,
@@ -502,7 +502,7 @@ fn run_validate_artifacts(
     json_output: bool,
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
-    let mission_paths = MissionPaths::new(&repo_root, mission_id.to_string());
+    let mission_paths = MissionPaths::try_new(&repo_root, mission_id.to_string())?;
     let report = ArtifactValidationReport::run(&mission_paths)?;
     emit(
         json_output,
@@ -516,7 +516,7 @@ fn run_validate_visible_artifacts(
     json_output: bool,
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
-    let mission_paths = MissionPaths::new(&repo_root, mission_id.to_string());
+    let mission_paths = MissionPaths::try_new(&repo_root, mission_id.to_string())?;
     let report = VisibleArtifactsValidationReport::run(&mission_paths)?;
     emit(
         json_output,
@@ -530,7 +530,7 @@ fn run_validate_machine_state(
     json_output: bool,
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
-    let mission_paths = MissionPaths::new(&repo_root, mission_id.to_string());
+    let mission_paths = MissionPaths::try_new(&repo_root, mission_id.to_string())?;
     let report = MachineStateValidationReport::run(&mission_paths)?;
     emit(
         json_output,
@@ -544,7 +544,7 @@ fn run_validate_gates(
     json_output: bool,
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
-    let mission_paths = MissionPaths::new(&repo_root, mission_id.to_string());
+    let mission_paths = MissionPaths::try_new(&repo_root, mission_id.to_string())?;
     let report = evaluate_gates_validation(&mission_paths)?;
     emit(
         json_output,
@@ -558,7 +558,7 @@ fn run_validate_closeouts(
     json_output: bool,
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
-    let mission_paths = MissionPaths::new(&repo_root, mission_id.to_string());
+    let mission_paths = MissionPaths::try_new(&repo_root, mission_id.to_string())?;
     let report = evaluate_closeouts_validation(&mission_paths)?;
     emit(
         json_output,
@@ -572,7 +572,7 @@ fn run_latest_valid_closeout(
     json_output: bool,
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
-    let mission_paths = MissionPaths::new(&repo_root, mission_id.to_string());
+    let mission_paths = MissionPaths::try_new(&repo_root, mission_id.to_string())?;
     let closeouts_path = mission_paths.closeouts_ndjson();
     let closeouts = load_closeouts(&closeouts_path)?;
     let report = LatestValidCloseoutReport {
@@ -605,7 +605,7 @@ fn run_init_mission(repo_root: Option<PathBuf>, input_json: &str, json_output: b
         .clone()
         .unwrap_or_else(|| derive_mission_id(&input.title));
     input.mission_id = Some(mission_id.clone());
-    let paths = MissionPaths::new(&repo_root, mission_id);
+    let paths = MissionPaths::try_new(&repo_root, mission_id)?;
     let report: MissionBootstrapReport = initialize_mission(&paths, &input)?;
     emit(
         json_output,
@@ -620,7 +620,7 @@ fn run_write_blueprint(
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
     let input: PlanningWriteInput = load_input_json(input_json)?;
-    let paths = MissionPaths::new(&repo_root, input.mission_id.clone());
+    let paths = MissionPaths::try_new(&repo_root, input.mission_id.clone())?;
     let report = write_planning_artifacts(&paths, &input)?;
     emit(
         json_output,
@@ -635,7 +635,7 @@ fn run_compile_execution_package(
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
     let input: ExecutionPackageInput = load_input_json(input_json)?;
-    let paths = MissionPaths::new(&repo_root, input.mission_id.clone());
+    let paths = MissionPaths::try_new(&repo_root, input.mission_id.clone())?;
     let package = compile_execution_package(&paths, &input)?;
     emit(
         json_output,
@@ -650,7 +650,7 @@ fn run_validate_execution_package(
     json_output: bool,
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
-    let paths = MissionPaths::new(&repo_root, mission_id.to_string());
+    let paths = MissionPaths::try_new(&repo_root, mission_id.to_string())?;
     let report: PackageValidationReport = validate_execution_package(&paths, package_id)?;
     emit(
         json_output,
@@ -665,7 +665,7 @@ fn run_compile_review_bundle(
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
     let input: ReviewBundleInput = load_input_json(input_json)?;
-    let paths = MissionPaths::new(&repo_root, input.mission_id.clone());
+    let paths = MissionPaths::try_new(&repo_root, input.mission_id.clone())?;
     let bundle = compile_review_bundle(&paths, &input)?;
     emit(
         json_output,
@@ -680,7 +680,7 @@ fn run_derive_writer_packet(
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
     let input: WriterPacketInput = load_input_json(input_json)?;
-    let paths = MissionPaths::new(&repo_root, input.mission_id.clone());
+    let paths = MissionPaths::try_new(&repo_root, input.mission_id.clone())?;
     let packet = derive_writer_packet(&paths, &input)?;
     emit(
         json_output,
@@ -695,7 +695,7 @@ fn run_validate_writer_packet(
     json_output: bool,
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
-    let paths = MissionPaths::new(&repo_root, mission_id.to_string());
+    let paths = MissionPaths::try_new(&repo_root, mission_id.to_string())?;
     let report: WriterPacketValidationReport = validate_writer_packet(&paths, packet_id)?;
     emit(
         json_output,
@@ -710,7 +710,7 @@ fn run_validate_review_bundle(
     json_output: bool,
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
-    let paths = MissionPaths::new(&repo_root, mission_id.to_string());
+    let paths = MissionPaths::try_new(&repo_root, mission_id.to_string())?;
     let report: ReviewBundleValidationReport = validate_review_bundle(&paths, bundle_id)?;
     emit(
         json_output,
@@ -725,7 +725,7 @@ fn run_record_review_result(
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
     let input: ReviewResultInput = load_input_json(input_json)?;
-    let paths = MissionPaths::new(&repo_root, input.mission_id.clone());
+    let paths = MissionPaths::try_new(&repo_root, input.mission_id.clone())?;
     let report = record_review_result(&paths, &input)?;
     emit(
         json_output,
@@ -740,7 +740,7 @@ fn run_record_contradiction(
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
     let input: ContradictionInput = load_input_json(input_json)?;
-    let paths = MissionPaths::new(&repo_root, input.mission_id.clone());
+    let paths = MissionPaths::try_new(&repo_root, input.mission_id.clone())?;
     let record = append_contradiction(&paths, &input)?;
     emit(
         json_output,
@@ -755,7 +755,7 @@ fn run_write_replan_log(
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
     let input: ReplanLogInput = load_input_json(input_json)?;
-    let paths = MissionPaths::new(&repo_root, input.mission_id.clone());
+    let paths = MissionPaths::try_new(&repo_root, input.mission_id.clone())?;
     let report = append_replan_log(&paths, &input)?;
     emit(
         json_output,
@@ -863,7 +863,7 @@ fn run_acknowledge_waiting_request(
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
     let input: WaitingRequestAcknowledgementInput = load_input_json(input_json)?;
-    let paths = MissionPaths::new(&repo_root, mission_id.to_string());
+    let paths = MissionPaths::try_new(&repo_root, mission_id.to_string())?;
     let closeout = acknowledge_waiting_request(&paths, &input)?;
     emit(
         json_output,
@@ -893,7 +893,7 @@ fn run_write_closeout(
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
     let input: CloseoutRecord = load_input_json(input_json)?;
-    let paths = MissionPaths::new(&repo_root, mission_id.to_string());
+    let paths = MissionPaths::try_new(&repo_root, mission_id.to_string())?;
     let closeout = write_closeout(&paths, input)?;
     emit(
         json_output,
@@ -1013,6 +1013,19 @@ impl ArtifactValidationReport {
 impl VisibleArtifactsValidationReport {
     fn run(paths: &MissionPaths) -> Result<Self> {
         let mut findings = Vec::new();
+        validate_text_artifact(
+            &paths.readme(),
+            &mut findings,
+            &[
+                "## Snapshot",
+                "Mission id:",
+                "Current phase:",
+                "Current verdict:",
+                "Next recommended action:",
+                "## Start Here",
+                "## Active Frontier",
+            ],
+        );
         validate_markdown::<MissionStateFrontmatter>(&paths.mission_state(), &mut findings);
         validate_markdown::<OutcomeLockFrontmatter>(&paths.outcome_lock(), &mut findings);
         validate_markdown::<ProgramBlueprintFrontmatter>(&paths.program_blueprint(), &mut findings);
@@ -1026,6 +1039,13 @@ impl VisibleArtifactsValidationReport {
                 let spec_file = entry.path().join("SPEC.md");
                 validate_markdown::<WorkstreamSpecFrontmatter>(&spec_file, &mut findings);
             }
+        }
+
+        if review_history_required(paths)? {
+            validate_text_artifact(&paths.review_ledger(), &mut findings, &["# ", "##"]);
+        }
+        if replan_history_required(paths)? {
+            validate_text_artifact(&paths.replan_log(), &mut findings, &["# ", "##"]);
         }
 
         Ok(Self {
@@ -1293,7 +1313,7 @@ where
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             findings.push(ArtifactFinding {
-                level: "warn",
+                level: "error",
                 path: path.to_path_buf(),
                 message: "artifact is missing".to_string(),
             });
@@ -1306,6 +1326,89 @@ where
             });
         }
     }
+}
+
+fn validate_text_artifact(
+    path: &Path,
+    findings: &mut Vec<ArtifactFinding>,
+    required_markers: &[&str],
+) {
+    match fs::read_to_string(path) {
+        Ok(contents) => {
+            if contents.trim().is_empty() {
+                findings.push(ArtifactFinding {
+                    level: "error",
+                    path: path.to_path_buf(),
+                    message: "artifact is empty".to_string(),
+                });
+            } else {
+                for marker in required_markers {
+                    if !contents.contains(marker) {
+                        findings.push(ArtifactFinding {
+                            level: "error",
+                            path: path.to_path_buf(),
+                            message: format!(
+                                "artifact is missing required content marker `{marker}`"
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            findings.push(ArtifactFinding {
+                level: "error",
+                path: path.to_path_buf(),
+                message: "artifact is missing".to_string(),
+            });
+        }
+        Err(error) => findings.push(ArtifactFinding {
+            level: "error",
+            path: path.to_path_buf(),
+            message: format!("failed to read artifact: {error}"),
+        }),
+    }
+}
+
+fn review_history_required(paths: &MissionPaths) -> Result<bool> {
+    Ok(load_closeouts(&paths.closeouts_ndjson())?
+        .into_iter()
+        .any(|closeout| closeout.activity == "review_disposition"))
+}
+
+fn replan_history_required(paths: &MissionPaths) -> Result<bool> {
+    let path = paths.contradictions_ndjson();
+    let Ok(contents) = fs::read_to_string(&path) else {
+        return Ok(false);
+    };
+
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let Some(layer) = value
+            .get("suggested_reopen_layer")
+            .and_then(|value| value.as_str())
+        else {
+            continue;
+        };
+        if !matches!(layer, "execution_package" | "blueprint" | "mission_lock") {
+            continue;
+        }
+        let status = value.get("status").and_then(|value| value.as_str());
+        if matches!(
+            status,
+            Some("accepted_for_replan" | "resolved" | "dismissed" | "triaged")
+        ) {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 fn inspect_effective_config(repo_root: &Path) -> Result<EffectiveConfigReport> {

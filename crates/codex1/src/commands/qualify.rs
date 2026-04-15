@@ -20,9 +20,9 @@ use uuid::Uuid;
 use crate::commands::{QualifyArgs, resolve_repo_root};
 use crate::support_surface::{
     AgentsCommandStatus, AgentsScaffoldStatus, SkillSurfaceStatus,
-    compute_support_surface_signature, extract_managed_agents_block,
-    inspect_agents_scaffold_details, inspect_skill_surface, summarize_stop_authority,
-    summarize_stop_authority_with_observational,
+    compute_support_surface_signature, detect_toml_bool, extract_managed_agents_block,
+    inspect_agents_scaffold_details, inspect_skill_surface, lookup_toml_value,
+    summarize_stop_authority, summarize_stop_authority_with_observational, toml_repo_is_trusted,
 };
 
 const REPORT_SCHEMA_VERSION: &str = "codex1.qualify.v1";
@@ -502,22 +502,7 @@ fn trusted_repo_gate(repo_root: &Path, user_config: Option<&str>) -> Qualificati
 }
 
 fn is_repo_trusted(repo_root: &Path, user_config: Option<&str>) -> bool {
-    let Some(raw) = user_config else {
-        return false;
-    };
-    let marker = format!("[projects.\"{}\"]", repo_root.display());
-    let mut in_project = false;
-    for line in raw.lines() {
-        let trimmed = strip_comment(line).trim();
-        if trimmed.starts_with('[') && trimmed.ends_with(']') {
-            in_project = trimmed == marker;
-            continue;
-        }
-        if in_project && trimmed == "trust_level = \"trusted\"" {
-            return true;
-        }
-    }
-    false
+    user_config.is_some_and(|raw| toml_repo_is_trusted(raw, repo_root))
 }
 
 fn effective_config_gates(
@@ -614,9 +599,9 @@ fn inspect_effective_config_key(
     key: &str,
     required_value: &str,
 ) -> (bool, &'static str, Option<String>) {
-    let user_value = user_config.and_then(|raw| lookup_config_value(raw, section, key));
+    let user_value = user_config.and_then(|raw| lookup_toml_value(raw, section, key));
     let project_value = if trusted_repo {
-        project_config.and_then(|raw| lookup_config_value(raw, section, key))
+        project_config.and_then(|raw| lookup_toml_value(raw, section, key))
     } else {
         None
     };
@@ -1091,105 +1076,8 @@ fn project_config_gates(repo_root: &Path) -> Vec<QualificationGate> {
     gates
 }
 
-fn lookup_config_value(source: &str, section: Option<&str>, key: &str) -> Option<String> {
-    let lines: Vec<&str> = source.lines().collect();
-    match section {
-        None => {
-            let stop = lines
-                .iter()
-                .position(|line| is_section_header(line).is_some())
-                .unwrap_or(lines.len());
-            for line in &lines[..stop] {
-                if let Some(value) = parse_key_value(line, key) {
-                    return Some(value);
-                }
-            }
-            None
-        }
-        Some(target) => {
-            let mut in_section = false;
-            for line in lines {
-                if let Some(section_name) = is_section_header(line) {
-                    in_section = section_name == target;
-                    continue;
-                }
-                if in_section && let Some(value) = parse_key_value(line, key) {
-                    return Some(value);
-                }
-                let dotted_key = format!("{target}.{key}");
-                if let Some(value) = parse_key_value(line, &dotted_key) {
-                    return Some(value);
-                }
-            }
-            None
-        }
-    }
-}
-
-fn parse_key_value(line: &str, key: &str) -> Option<String> {
-    let trimmed = strip_comment(line).trim();
-    if trimmed.starts_with('#') || trimmed.starts_with('[') {
-        return None;
-    }
-    let (candidate, value) = trimmed.split_once('=')?;
-    if candidate.trim() != key {
-        return None;
-    }
-    Some(value.trim().trim_matches('"').to_string())
-}
-
-fn is_section_header(line: &str) -> Option<&str> {
-    let trimmed = strip_comment(line).trim();
-    if trimmed.starts_with("[[") || !trimmed.starts_with('[') || !trimmed.ends_with(']') {
-        return None;
-    }
-    Some(trimmed.trim_start_matches('[').trim_end_matches(']'))
-}
-
 fn detect_codex_hooks_setting(contents: &str) -> Option<bool> {
-    let mut current_table: Option<&str> = None;
-
-    for raw_line in contents.lines() {
-        let line = strip_comment(raw_line).trim();
-        if line.is_empty() {
-            continue;
-        }
-
-        if line.starts_with('[') && line.ends_with(']') {
-            current_table = Some(line.trim_matches(['[', ']']).trim());
-            continue;
-        }
-
-        if let Some((key, value)) = line.split_once('=') {
-            let key = key.trim();
-            let value = value.trim();
-
-            if key == "features.codex_hooks" {
-                return parse_bool(value);
-            }
-
-            if current_table == Some("features") && key == "codex_hooks" {
-                return parse_bool(value);
-            }
-        }
-    }
-
-    None
-}
-
-fn strip_comment(line: &str) -> &str {
-    match line.split_once('#') {
-        Some((before, _)) => before,
-        None => line,
-    }
-}
-
-fn parse_bool(value: &str) -> Option<bool> {
-    match value.trim().trim_matches('"') {
-        "true" => Some(true),
-        "false" => Some(false),
-        _ => None,
-    }
+    detect_toml_bool(contents, Some("features"), "codex_hooks")
 }
 
 #[cfg(test)]
@@ -1814,6 +1702,12 @@ fn run_runtime_backend_flow() -> Result<QualificationGate> {
                 {
                     "spec_id": "runtime_core",
                     "purpose": "Create a runnable workstream.",
+                    "body_markdown": qualification_spec_body(
+                        "Create a runnable workstream.",
+                        &["src"],
+                        &["src"],
+                        &["cargo test"]
+                    ),
                     "artifact_status": "active",
                     "packetization_status": "runnable",
                     "execution_status": "packaged"
@@ -1821,6 +1715,12 @@ fn run_runtime_backend_flow() -> Result<QualificationGate> {
                 {
                     "spec_id": "runtime_support",
                     "purpose": "Carry supporting qualification work.",
+                    "body_markdown": qualification_spec_body(
+                        "Carry supporting qualification work.",
+                        &["docs"],
+                        &["docs"],
+                        &["qualify evidence"]
+                    ),
                     "artifact_status": "active",
                     "packetization_status": "runnable",
                     "execution_status": "not_started"
@@ -2075,6 +1975,12 @@ fn run_runtime_backend_flow() -> Result<QualificationGate> {
             "specs": [{
                 "spec_id": "runtime_core",
                 "purpose": "Create a runnable workstream.",
+                "body_markdown": qualification_spec_body(
+                    "Create a runnable workstream.",
+                    &["src"],
+                    &["src"],
+                    &["cargo test"]
+                ),
                 "artifact_status": "active",
                 "packetization_status": "runnable",
                 "execution_status": "packaged"
@@ -2572,6 +2478,11 @@ fn run_waiting_stop_hook_flow() -> Result<QualificationGate> {
     )?;
     let second_parsed: Value = serde_json::from_slice(&second_output.stdout)
         .context("failed to parse second stop-hook JSON")?;
+    let waiting_state_after_second_emit: Value = serde_json::from_slice(
+        &fs::read(repo_root.join(".ralph/missions/waiting-mission/state.json"))
+            .context("failed to reread waiting mission state")?,
+    )
+    .context("failed to parse waiting mission state after second emit")?;
 
     let second_waiting_step = run_json_smoke_step(
         "init_fallback_waiting_mission",
@@ -2663,6 +2574,11 @@ fn run_waiting_stop_hook_flow() -> Result<QualificationGate> {
     )?;
     let second_selection_parsed: Value = serde_json::from_slice(&second_selection_output.stdout)
         .context("failed to parse second selection stop-hook JSON")?;
+    let selection_state_after_second_emit: Value = serde_json::from_slice(
+        &fs::read(repo_root.join(".ralph/selection-state.json"))
+            .context("failed to reread selection state")?,
+    )
+    .context("failed to parse selection state after second emit")?;
 
     let success = init_step.success
         && output.status.success()
@@ -2682,6 +2598,14 @@ fn run_waiting_stop_hook_flow() -> Result<QualificationGate> {
             .get("systemMessage")
             .and_then(Value::as_str)
             .is_some_and(|text| text.contains("rollout posture"))
+        && waiting_state_after_second_emit
+            .get("waiting_request_id")
+            .and_then(Value::as_str)
+            == Some(waiting_request_id)
+        && waiting_state_after_second_emit
+            .get("request_emitted_at")
+            .and_then(Value::as_str)
+            .is_some()
         && selection_parsed
             .get("systemMessage")
             .and_then(Value::as_str)
@@ -2689,7 +2613,15 @@ fn run_waiting_stop_hook_flow() -> Result<QualificationGate> {
         && second_selection_parsed
             .get("systemMessage")
             .and_then(Value::as_str)
-            .is_some_and(|text| text.contains("Select the mission to resume"));
+            .is_some_and(|text| text.contains("Select the mission to resume"))
+        && selection_state_after_second_emit
+            .get("selection_request_id")
+            .and_then(Value::as_str)
+            == Some(selection_request_id)
+        && selection_state_after_second_emit
+            .get("request_emitted_at")
+            .and_then(Value::as_str)
+            .is_some();
 
     let details = Some(json!({
         "binary": binary.display().to_string(),
@@ -2705,12 +2637,14 @@ fn run_waiting_stop_hook_flow() -> Result<QualificationGate> {
         "second_stop_hook_stdout": trim_output(&second_output.stdout),
         "second_stop_hook_stderr": trim_output(&second_output.stderr),
         "second_parsed_stop_hook": second_parsed,
+        "waiting_state_after_second_emit": waiting_state_after_second_emit,
         "selection_stop_hook_stdout": trim_output(&selection_output.stdout),
         "selection_stop_hook_stderr": trim_output(&selection_output.stderr),
         "selection_parsed_stop_hook": selection_parsed,
         "second_selection_stop_hook_stdout": trim_output(&second_selection_output.stdout),
         "second_selection_stop_hook_stderr": trim_output(&second_selection_output.stderr),
         "second_selection_parsed_stop_hook": second_selection_parsed,
+        "selection_state_after_second_emit": selection_state_after_second_emit,
     }));
 
     Ok(if success {
@@ -2887,12 +2821,92 @@ fn run_native_exec_resume_flow(live: bool) -> Result<QualificationGate> {
         ));
     }
 
+    let binary = qualification_binary()?;
     let sandbox = tempfile::tempdir().context("failed to create native exec-resume sandbox")?;
     let repo_root = sandbox.path().join("repo");
     let codex_home_root = sandbox.path().join("codex-home");
-    fs::create_dir_all(&repo_root).context("failed to create native exec-resume repo root")?;
+    fs::create_dir_all(repo_root.join(".codex/hooks"))
+        .context("failed to create native exec-resume repo surfaces")?;
     seed_native_codex_repo(&repo_root)?;
     seed_native_codex_home(&repo_root, &codex_home_root)?;
+    fs::write(
+        repo_root.join(".codex/config.toml"),
+        "model = \"gpt-5.4\"\n[features]\ncodex_hooks = true\n",
+    )
+    .context("failed to write native exec-resume config")?;
+    let hook_script = repo_root.join(".codex/hooks/native-exec-resume-probe.sh");
+    fs::write(
+        &hook_script,
+        format!(
+            "#!/bin/sh\nset -eu\nstdin_file=\".codex/hooks/native-exec-resume.stdin.json\"\nstdout_file=\".codex/hooks/native-exec-resume.stdout.json\"\nstderr_file=\".codex/hooks/native-exec-resume.stderr.txt\"\ncat > \"$stdin_file\"\n\"{}\" internal stop-hook < \"$stdin_file\" > \"$stdout_file\" 2> \"$stderr_file\"\ncat \"$stdout_file\"\n",
+            binary.display()
+        ),
+    )
+    .context("failed to write native exec-resume probe script")?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = fs::metadata(&hook_script)
+            .context("failed to stat native exec-resume probe script")?
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&hook_script, permissions)
+            .context("failed to chmod native exec-resume probe script")?;
+    }
+    fs::write(
+        repo_root.join(".codex/hooks.json"),
+        r#"{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.codex/hooks/native-exec-resume-probe.sh",
+            "statusMessage": "Codex1 Ralph stop hook"
+          }
+        ]
+      }
+    ]
+  }
+}"#,
+    )
+    .context("failed to write native exec-resume hooks.json")?;
+    let init_step = run_json_smoke_step(
+        "init_native_exec_resume_waiting_mission",
+        &binary,
+        &repo_root,
+        &[
+            "internal",
+            "init-mission",
+            "--repo-root",
+            repo_root.to_str().unwrap(),
+            "--input-json",
+            "-",
+            "--json",
+        ],
+        &json!({
+            "mission_id": "native-exec-resume",
+            "title": "Native Exec Resume Waiting Mission",
+            "objective": "Prove native exec resume preserves Ralph waiting continuity.",
+            "waiting_request": {
+                "waiting_for": "human_decision",
+                "canonical_request": "Choose the rollout posture before resuming.",
+                "resume_condition": "The user chooses a rollout posture."
+            }
+        }),
+    )?;
+    let state_path = repo_root.join(".ralph/missions/native-exec-resume/state.json");
+    let expected_waiting_request = "Choose the rollout posture before resuming.";
+    let waiting_state_before: Value = serde_json::from_slice(
+        &fs::read(&state_path).context("failed to read initial native exec-resume state")?,
+    )
+    .context("failed to parse initial native exec-resume state")?;
+    let waiting_request_id_before = waiting_state_before
+        .get("waiting_request_id")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+        .context("native exec-resume state is missing waiting_request_id")?;
 
     let first = run_native_codex_prompt(
         &repo_root,
@@ -2903,6 +2917,11 @@ fn run_native_exec_resume_flow(live: bool) -> Result<QualificationGate> {
     let thread_id = parse_thread_id_from_jsonl(&first.stdout)?
         .context("native exec run did not emit thread.started")?;
     let first_message = last_agent_message_text(&first.stdout)?;
+    let first_hook_stdout =
+        fs::read_to_string(repo_root.join(".codex/hooks/native-exec-resume.stdout.json")).ok();
+    let first_parsed_hook_stdout = first_hook_stdout
+        .as_deref()
+        .and_then(|contents| serde_json::from_str::<Value>(contents).ok());
 
     let second = run_native_codex_prompt(
         &repo_root,
@@ -2916,11 +2935,25 @@ fn run_native_exec_resume_flow(live: bool) -> Result<QualificationGate> {
         .context("native exec resume run did not emit thread.started")?;
     let second_message = last_agent_message_text(&second.stdout)?;
     let same_thread = resumed_thread_id == thread_id;
+    let second_hook_stdout =
+        fs::read_to_string(repo_root.join(".codex/hooks/native-exec-resume.stdout.json")).ok();
+    let second_parsed_hook_stdout = second_hook_stdout
+        .as_deref()
+        .and_then(|contents| serde_json::from_str::<Value>(contents).ok());
+    let waiting_state_after: Value = serde_json::from_slice(
+        &fs::read(&state_path).context("failed to reread native exec-resume state")?,
+    )
+    .context("failed to parse native exec-resume state after resume")?;
+    let waiting_request_id_after = waiting_state_after
+        .get("waiting_request_id")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
 
     let details = Some(json!({
         "sandbox_root": sandbox.path().display().to_string(),
         "repo_root": repo_root.display().to_string(),
         "codex_home_root": codex_home_root.display().to_string(),
+        "init_step": init_step,
         "thread_id": thread_id,
         "resumed_thread_id": resumed_thread_id,
         "first_stdout": trim_output(&first.stdout),
@@ -2929,26 +2962,44 @@ fn run_native_exec_resume_flow(live: bool) -> Result<QualificationGate> {
         "second_stderr": trim_output(&second.stderr),
         "first_message": first_message,
         "second_message": second_message,
+        "first_hook_stdout": first_hook_stdout,
+        "second_hook_stdout": second_hook_stdout,
+        "first_parsed_hook_stdout": first_parsed_hook_stdout,
+        "second_parsed_hook_stdout": second_parsed_hook_stdout,
+        "waiting_state_before": waiting_state_before,
+        "waiting_state_after": waiting_state_after,
     }));
 
     Ok(
-        if first.status.success()
+        if init_step.success
+            && first.status.success()
             && second.status.success()
             && first_message.as_deref() == Some("FIRST")
             && second_message.as_deref() == Some("SECOND")
             && same_thread
+            && first_parsed_hook_stdout
+                .as_ref()
+                .and_then(|value| value.get("systemMessage"))
+                .and_then(Value::as_str)
+                == Some(expected_waiting_request)
+            && second_parsed_hook_stdout
+                .as_ref()
+                .and_then(|value| value.get("systemMessage"))
+                .and_then(Value::as_str)
+                == Some(expected_waiting_request)
+            && waiting_request_id_after.as_deref() == Some(waiting_request_id_before.as_str())
         {
             QualificationGate::pass(
                 "native_exec_resume_flow",
                 "The trusted Codex build can create an exec session and resume the same thread through `codex exec resume`.",
-                "The native Codex exec surface created a session and resumed the same thread successfully.",
+                "The native Codex exec surface resumed the same thread while preserving the same Ralph waiting mission and canonical waiting request.",
                 details,
             )
         } else {
             QualificationGate::fail(
                 "native_exec_resume_flow",
                 "The trusted Codex build can create an exec session and resume the same thread through `codex exec resume`.",
-                "The native Codex exec resume round-trip did not preserve the expected thread or outputs.",
+                "The native Codex exec resume round-trip did not preserve the expected thread, waiting mission, or canonical waiting request.",
                 details,
             )
         },
@@ -2992,7 +3043,7 @@ This gate is primarily about proving live child inspection and honest resume rec
 5. call wait_agent once with timeout_ms 5000.
 6. call list_agents again and record the status for qualify_child.
 7. call close_agent on qualify_child and then call list_agents one more time so you can report whether the child is still visible after close.
-8. reply with one JSON object only containing keys: used_spawn_agent, used_send_message, used_assign_task, used_followup_task, used_list_agents, used_wait_agent, used_close_agent, child_task_path, child_seen_before_wait, child_status_before_wait, child_seen_after_wait, child_status_after_wait, child_seen_after_close, child_status_after_close, wait_summary_present."#;
+8. reply with one JSON object only containing keys: used_spawn_agent, used_send_message, used_assign_task, used_followup_task, used_list_agents, used_wait_agent, used_close_agent, child_task_path, child_seen_before_wait, child_status_before_wait, child_seen_after_wait, child_status_after_wait, child_seen_after_close, child_status_after_close, wait_summary_present, list_agents_before_wait, list_agents_after_wait, list_agents_after_close."#;
 
         let native = run_native_codex_prompt(
             &repo_root,
@@ -3282,6 +3333,12 @@ struct NativeMultiAgentSummary {
     child_status_after_close: Value,
     #[serde(default, deserialize_with = "bool_or_false")]
     wait_summary_present: bool,
+    #[serde(default)]
+    list_agents_before_wait: Value,
+    #[serde(default)]
+    list_agents_after_wait: Value,
+    #[serde(default)]
+    list_agents_after_close: Value,
 }
 
 fn bool_or_false<'de, D>(deserializer: D) -> std::result::Result<bool, D::Error>
@@ -3345,8 +3402,11 @@ fn assess_native_multi_agent_gate(
     }
 
     let mut missing_evidence = Vec::new();
-    if !native_summary.child_seen_before_wait {
+    if !native_summary.child_seen_before_wait || native_summary.list_agents_before_wait.is_null() {
         missing_evidence.push("pre_wait_child_snapshot");
+    }
+    if !native_summary.child_seen_after_wait || native_summary.list_agents_after_wait.is_null() {
+        missing_evidence.push("post_wait_child_snapshot");
     }
     if !native_summary.wait_summary_present {
         missing_evidence.push("wait_mailbox_summary");
@@ -3739,10 +3799,29 @@ fn native_child_status_for_resume(summary: &NativeMultiAgentSummary) -> Option<&
         return None;
     }
 
-    match native_child_status_name(&summary.child_status_after_wait).as_deref() {
+    let status = status_for_task_path(&summary.list_agents_after_wait, &summary.child_task_path)
+        .or_else(|| native_child_status_name(&summary.child_status_after_wait));
+
+    match status.as_deref() {
         Some("pending_init") | Some("running") | Some("interrupted") => Some("live_non_final"),
         Some("completed") => Some("final_success"),
         Some("errored") | Some("shutdown") | Some("not_found") => Some("final_non_success"),
+        _ => None,
+    }
+}
+
+fn status_for_task_path(snapshot: &Value, task_path: &str) -> Option<String> {
+    match snapshot {
+        Value::Array(items) => items
+            .iter()
+            .find_map(|item| status_for_task_path(item, task_path)),
+        Value::Object(map) => {
+            if map.get("task_path").and_then(Value::as_str) == Some(task_path) {
+                return map.get("status").and_then(native_child_status_name);
+            }
+            map.values()
+                .find_map(|value| status_for_task_path(value, task_path))
+        }
         _ => None,
     }
 }
@@ -4248,8 +4327,10 @@ fn run_manual_parity_flow(binary: &Path, repo_root: &Path) -> Result<ParityFlowO
     }
 
     if steps.iter().all(|step| step.success) {
-        let package_id =
-            load_single_execution_package_id(&MissionPaths::new(repo_root, PARITY_MISSION_ID))?;
+        let package_id = load_single_execution_package_id(&MissionPaths::try_new(
+            repo_root,
+            PARITY_MISSION_ID,
+        )?)?;
         steps.push(run_json_smoke_step(
             "manual_compile_mission_close_bundle",
             binary,
@@ -4318,7 +4399,7 @@ fn run_manual_parity_flow(binary: &Path, repo_root: &Path) -> Result<ParityFlowO
 
 fn run_autopilot_parity_flow(binary: &Path, repo_root: &Path) -> Result<ParityFlowOutcome> {
     let mut steps = Vec::new();
-    let paths = MissionPaths::new(repo_root, PARITY_MISSION_ID);
+    let paths = MissionPaths::try_new(repo_root, PARITY_MISSION_ID)?;
 
     steps.push(run_json_smoke_step(
         "autopilot_init_mission",
@@ -4555,7 +4636,7 @@ fn parity_artifact_summary(
     repo_root: &Path,
     validate_success: bool,
 ) -> Result<ParityArtifactSummary> {
-    let paths = MissionPaths::new(repo_root, PARITY_MISSION_ID);
+    let paths = MissionPaths::try_new(repo_root, PARITY_MISSION_ID)?;
     let state: Value = serde_json::from_slice(
         &fs::read(paths.state_json())
             .with_context(|| format!("failed to read {}", paths.state_json().display()))?,
@@ -4780,6 +4861,32 @@ fn canonical_blueprint_body(route: &str, workstream_overview: &[&str]) -> String
     )
 }
 
+fn qualification_spec_body(
+    purpose: &str,
+    read_scope: &[&str],
+    write_scope: &[&str],
+    proof_expectations: &[&str],
+) -> String {
+    format!(
+        "# Workstream Spec\n\n## Purpose\n\n{purpose}\n\n## In Scope\n\n- Execute the bounded qualification slice.\n\n## Out Of Scope\n\n- Unrelated repo changes.\n\n## Dependencies\n\n- Outcome Lock and Program Blueprint stay current.\n\n## Touched Surfaces\n\n- Qualification runtime support.\n\n## Read Scope\n\n{}\n\n## Write Scope\n\n{}\n\n## Interfaces And Contracts Touched\n\n- qualification runtime contracts\n\n## Implementation Shape\n\nKeep the qualification slice explicit and reviewable.\n\n## Proof-Of-Completion Expectations\n\n{}\n\n## Non-Breakage Expectations\n\n- Existing mission contracts still validate.\n\n## Review Lenses\n\n- correctness\n- evidence_adequacy\n\n## Replan Boundary\n\n- Reopen planning on scope expansion.\n\n## Truth Basis Refs\n\n- PROGRAM-BLUEPRINT.md\n\n## Freshness Notes\n\n- Current for qualification smoke coverage.\n\n## Support Files\n\n- `REVIEW.md`\n",
+        read_scope
+            .iter()
+            .map(|path| format!("- {path}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        write_scope
+            .iter()
+            .map(|path| format!("- {path}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        proof_expectations
+            .iter()
+            .map(|item| format!("- {item}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+}
+
 fn parity_blueprint_payload() -> Value {
     json!({
         "mission_id": PARITY_MISSION_ID,
@@ -4816,6 +4923,12 @@ fn parity_blueprint_payload() -> Value {
         "specs": [{
             "spec_id": PARITY_SPEC_ID,
             "purpose": "Carry the parity mission through one bounded execution slice.",
+            "body_markdown": qualification_spec_body(
+                "Carry the parity mission through one bounded execution slice.",
+                &["src"],
+                &["src"],
+                &["cargo test"]
+            ),
             "artifact_status": "active",
             "packetization_status": "runnable",
             "execution_status": "not_started"
@@ -5366,6 +5479,15 @@ features.codex_hooks = false
             child_seen_after_close: false,
             child_status_after_close: Value::Null,
             wait_summary_present: true,
+            list_agents_before_wait: json!([{
+                "task_path": "/root/qualify_child",
+                "status": "running"
+            }]),
+            list_agents_after_wait: json!([{
+                "task_path": "/root/qualify_child",
+                "status": "running"
+            }]),
+            list_agents_after_close: json!([]),
         }
     }
 
@@ -5484,7 +5606,10 @@ features.codex_hooks = false
                 "child_status_after_wait": "running",
                 "child_seen_after_close": null,
                 "child_status_after_close": null,
-                "wait_summary_present": true
+                "wait_summary_present": true,
+                "list_agents_before_wait": null,
+                "list_agents_after_wait": null,
+                "list_agents_after_close": null
             }"#,
         )
         .expect("summary should parse");
@@ -5495,6 +5620,7 @@ features.codex_hooks = false
         assert!(!summary.used_close_agent);
         assert!(!summary.child_seen_after_close);
         assert_eq!(summary.child_status_after_close, Value::Null);
+        assert_eq!(summary.list_agents_after_wait, Value::Null);
     }
 
     #[test]

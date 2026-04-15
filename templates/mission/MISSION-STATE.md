@@ -2,7 +2,7 @@
 artifact: mission-state
 mission_id: "{{MISSION_ID}}"
 root_mission_id: "{{ROOT_MISSION_ID}}"
-parent_mission_id: "{{PARENT_MISSION_ID}}"
+parent_mission_id: {{PARENT_MISSION_ID}}
 version: 1
 clarify_status: "clarifying"
 slug: "{{MISSION_SLUG}}"

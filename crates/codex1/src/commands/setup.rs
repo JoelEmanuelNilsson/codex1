@@ -4,8 +4,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
+use codex1_core::Fingerprint;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use tempfile::NamedTempFile;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use toml::Value as TomlValue;
@@ -22,7 +24,7 @@ use crate::support_surface::{
     inspect_skill_surface_with_source, is_managed_stop_handler, locate_managed_agents_block_span,
     managed_agents_block_is_malformed, managed_skill_files, render_managed_agents_block,
     render_managed_agents_block_with_markers, resolve_source_skills_root,
-    summarize_stop_authority_with_observational, summarize_stop_handlers,
+    summarize_stop_authority_with_observational, summarize_stop_handlers, toml_repo_is_trusted,
 };
 const CONFIG_MODEL: &str = "gpt-5.4";
 const CONFIG_REVIEW_MODEL: &str = "gpt-5.4-mini";
@@ -168,10 +170,8 @@ pub fn run(args: SetupArgs) -> Result<()> {
             skill_inspection.install_mode,
             Some(SkillInstallMode::SkillsConfigBridge)
         );
-    let next_config = build_project_config(
-        existing_config.as_deref(),
-        replacing_skills_config_bridge,
-    );
+    let next_config =
+        build_project_config(existing_config.as_deref(), replacing_skills_config_bridge);
     if existing_config.as_deref() != Some(next_config.as_str()) {
         planned_changes.push(PlannedChange {
             path: config_path,
@@ -413,7 +413,7 @@ pub fn run(args: SetupArgs) -> Result<()> {
             fs::create_dir_all(parent)
                 .with_context(|| format!("create parent directory {}", parent.display()))?;
         }
-        if let Err(error) = fs::write(&change.path, &change.next_contents)
+        if let Err(error) = atomic_write_string(&change.path, &change.next_contents)
             .with_context(|| format!("write {}", change.path.display()))
         {
             rollback_setup_changes(
@@ -427,7 +427,16 @@ pub fn run(args: SetupArgs) -> Result<()> {
         }
         applied_indices.push(index);
         manifest.paths[index].applied = true;
-        write_manifest(&manifest_path, &manifest)?;
+        if let Err(error) = write_manifest(&manifest_path, &manifest) {
+            rollback_setup_changes(
+                &planned_changes,
+                &applied_indices,
+                &mut manifest,
+                &manifest_path,
+            )
+            .context("rollback setup changes after failed manifest write")?;
+            return Err(error);
+        }
     }
 
     let report = SetupReport {
@@ -503,21 +512,7 @@ fn is_repo_trusted(repo_root: &Path) -> Result<bool> {
     let Some(raw) = read_optional_string(&config_path)? else {
         return Ok(false);
     };
-
-    let marker = format!("[projects.\"{}\"]", repo_root.display());
-    let mut in_project = false;
-    for line in raw.lines() {
-        let trimmed = strip_comment(line).trim();
-        if trimmed.starts_with('[') && trimmed.ends_with(']') {
-            in_project = trimmed == marker;
-            continue;
-        }
-        if in_project && trimmed == "trust_level = \"trusted\"" {
-            return Ok(true);
-        }
-    }
-
-    Ok(false)
+    Ok(toml_repo_is_trusted(&raw, repo_root))
 }
 
 fn build_project_config(existing: Option<&str>, clear_skills_config_bridges: bool) -> String {
@@ -643,7 +638,9 @@ fn build_hooks_json(
         );
     }
     if stop_counts.authoritative() == 1 && managed_stop_handlers == 0 && !force {
-        return serde_json::to_string_pretty(&root).context("serialize preserved hooks.json");
+        bail!(
+            "hooks.json contains one authoritative Stop handler, but it is not the Codex1-managed Ralph pipeline; rerun codex1 setup --force to normalize it"
+        );
     }
     if stop_counts.authoritative() == 1 && managed_stop_handlers == 1 {
         let mut changed_existing_handler = false;
@@ -735,11 +732,7 @@ fn build_hooks_json(
         });
     }
 
-    let observational_groups = stop_groups
-        .iter()
-        .filter(|group| stop_group_is_observational(group))
-        .cloned()
-        .collect::<Vec<_>>();
+    let observational_groups = collect_observational_stop_groups(stop_groups);
     stop_groups.clear();
     stop_groups.push(serde_json::json!({
         "hooks": [{
@@ -763,6 +756,27 @@ fn stop_group_is_observational(value: &Value) -> bool {
     } else {
         crate::support_surface::is_observational_stop_handler(value)
     }
+}
+
+fn collect_observational_stop_groups(stop_groups: &[Value]) -> Vec<Value> {
+    let mut preserved = Vec::new();
+    for group in stop_groups {
+        if stop_group_is_observational(group) {
+            preserved.push(group.clone());
+            continue;
+        }
+        if let Some(hooks) = group.get("hooks").and_then(Value::as_array) {
+            let observational_hooks = hooks
+                .iter()
+                .filter(|hook| crate::support_surface::is_observational_stop_handler(hook))
+                .cloned()
+                .collect::<Vec<_>>();
+            if !observational_hooks.is_empty() {
+                preserved.push(serde_json::json!({ "hooks": observational_hooks }));
+            }
+        }
+    }
+    preserved
 }
 
 fn user_stop_hook_authority(path: &Path) -> Result<crate::support_surface::StopAuthorityCounts> {
@@ -932,7 +946,7 @@ fn select_agents_command(current: Option<&str>, placeholder: &str, inferred: &st
         Some(value)
             if !value.trim().is_empty()
                 && value != placeholder
-                && !is_legacy_unresolved_agents_command(value) =>
+                && !is_unresolved_agents_command(value) =>
         {
             value.to_string()
         }
@@ -988,7 +1002,12 @@ fn infer_cargo_package_name(repo_root: &Path) -> Option<String> {
     if let Some(default_members) = workspace
         .get("default-members")
         .and_then(TomlValue::as_array)
-        .map(|members| members.iter().filter_map(TomlValue::as_str).collect::<Vec<_>>())
+        .map(|members| {
+            members
+                .iter()
+                .filter_map(TomlValue::as_str)
+                .collect::<Vec<_>>()
+        })
         .filter(|members| members.len() == 1)
         && let Some(package_name) = cargo_package_name_for_member(repo_root, default_members[0])
     {
@@ -1259,17 +1278,32 @@ fn new_backup_id() -> Result<String> {
 }
 
 fn content_hash(text: &str) -> String {
-    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
-    for byte in text.as_bytes() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x1000_0000_01b3);
-    }
-    format!("{hash:016x}")
+    Fingerprint::from_bytes(text.as_bytes()).to_string()
 }
 
 fn write_manifest(path: &Path, manifest: &BackupManifest) -> Result<()> {
     let manifest_json = serde_json::to_string_pretty(manifest).context("serialize manifest")?;
-    fs::write(path, manifest_json).with_context(|| format!("write manifest to {}", path.display()))
+    atomic_write_string(path, &manifest_json)
+        .with_context(|| format!("write manifest to {}", path.display()))
+}
+
+fn atomic_write_string(path: &Path, contents: &str) -> Result<()> {
+    let parent = path
+        .parent()
+        .with_context(|| format!("{} has no parent directory", path.display()))?;
+    fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    let mut temp = NamedTempFile::new_in(parent)
+        .with_context(|| format!("create temp file in {}", parent.display()))?;
+    use std::io::Write as _;
+    temp.write_all(contents.as_bytes())
+        .with_context(|| format!("write temp file for {}", path.display()))?;
+    temp.as_file()
+        .sync_all()
+        .with_context(|| format!("fsync temp file for {}", path.display()))?;
+    temp.persist(path)
+        .map_err(|error| error.error)
+        .with_context(|| format!("persist {}", path.display()))?;
+    Ok(())
 }
 
 const fn default_manifest_applied() -> bool {
@@ -1430,7 +1464,7 @@ fn parse_toml_section_header(line: &str) -> Option<TomlSectionHeader<'_>> {
         })
 }
 
-fn is_legacy_unresolved_agents_command(value: &str) -> bool {
+fn is_unresolved_agents_command(value: &str) -> bool {
     matches!(
         value.trim(),
         "true # no dedicated build command detected"
@@ -1439,6 +1473,9 @@ fn is_legacy_unresolved_agents_command(value: &str) -> bool {
             | "true # no build script detected"
             | "true # no test script detected"
             | "true # no lint-or-format script detected"
+            | "true # codex1 fallback: build command not auto-detected"
+            | "true # codex1 fallback: test command not auto-detected"
+            | "true # codex1 fallback: lint-or-format command not auto-detected"
     )
 }
 
@@ -1454,9 +1491,8 @@ mod tests {
     use crate::support_surface::{
         AGENTS_BUILD_COMMAND_PLACEHOLDER, AGENTS_TEST_COMMAND_PLACEHOLDER,
         LEGACY_AGENTS_BLOCK_BEGIN, LEGACY_AGENTS_BLOCK_END, MANAGED_STOP_HOOK_STATUS,
-        OBSERVATIONAL_STOP_HOOK_FLAG, OBSERVATIONAL_STOP_HOOK_FLAG_CAMEL,
-        is_managed_stop_handler, summarize_stop_authority_with_observational,
-        summarize_stop_handlers,
+        OBSERVATIONAL_STOP_HOOK_FLAG, OBSERVATIONAL_STOP_HOOK_FLAG_CAMEL, is_managed_stop_handler,
+        summarize_stop_authority_with_observational, summarize_stop_handlers,
     };
     use serde_json::{Value, json};
     use tempfile::TempDir;
@@ -1550,12 +1586,13 @@ mod tests {
         })
         .to_string();
 
-        let normalized = build_hooks_json(Some(&existing), false, "codex1 internal stop-hook")
-            .expect("preserve existing aggregator");
-        let parsed: Value = serde_json::from_str(&normalized).expect("parse normalized hooks");
-        assert_eq!(
-            parsed["hooks"]["Stop"][0]["command"],
-            "./.codex/stop-hook-aggregator.sh"
+        let error = build_hooks_json(Some(&existing), false, "codex1 internal stop-hook")
+            .expect_err("non-managed authoritative aggregator should require normalization");
+        assert!(
+            error
+                .to_string()
+                .contains("not the Codex1-managed Ralph pipeline"),
+            "unexpected error: {error}"
         );
     }
 
@@ -1673,11 +1710,8 @@ mod tests {
         let existing = crate::support_surface::AGENTS_BLOCK
             .replace("<!-- codex1:begin -->", LEGACY_AGENTS_BLOCK_BEGIN)
             .replace("<!-- codex1:end -->", LEGACY_AGENTS_BLOCK_END);
-        let updated = replace_or_append_managed_block(
-            &existing,
-            &RepoCommands::placeholders(),
-        )
-        .expect("legacy managed block should update");
+        let updated = replace_or_append_managed_block(&existing, &RepoCommands::placeholders())
+            .expect("legacy managed block should update");
 
         assert_eq!(updated.matches(LEGACY_AGENTS_BLOCK_BEGIN).count(), 1);
         assert_eq!(updated.matches("<!-- codex1:begin -->").count(), 0);

@@ -23,7 +23,9 @@ Deterministic backend:
   record with `codex1 internal record-contradiction`
 - end every bounded cycle with `codex1 internal append-closeout` when a more
   specific helper did not already do it; that low-level helper is only for
-  non-terminal Ralph verdicts
+  non-terminal Ralph verdicts, and terminal `complete` / `hard_blocked`
+  outcomes still require a machine-checkable terminal closeout path rather than
+  prose-only finish language
 
 ## Target Resolution
 
@@ -49,7 +51,11 @@ mission," not "run the whole mission at once."
    - `NOTES.md`
    - `RECEIPTS/`
 5. Default to one writer at a time in the current workspace. Parallel write
-   work is allowed only when graph safety and path disjointness are explicit.
+   work is allowed only when graph safety is explicit, `write_paths` are
+   pairwise disjoint, no same-wave `write_paths` overlap another task's
+   `read_paths`, exclusive resources are disjoint, and no shared
+   schema/deploy/lockfile/global-config side effects remain. Unknown side
+   effects default back to singleton execution.
 6. If the target reaches a blocking review gate, route into `$review`.
 7. If repair stays inside the current contract, perform bounded repair and keep
    the package truth current.
@@ -80,3 +86,7 @@ mission," not "run the whole mission at once."
 
 Each execution cycle should leave an honest verdict plus refreshed proof,
 receipt, and review-preparation state for the selected target.
+
+Only `complete` and `hard_blocked` are terminal. `needs_user` is a durable
+waiting non-terminal, and post-review / post-repair / post-replan branches must
+continue inside the same Ralph-governed execution flow.

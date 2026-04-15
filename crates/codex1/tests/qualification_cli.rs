@@ -291,6 +291,41 @@ fn qualify_writes_latest_and_versioned_reports_on_successful_smoke_inputs() {
 }
 
 #[test]
+fn doctor_serializes_structured_qualification_metadata() {
+    let repo = TempDir::new().expect("temp repo");
+    let home = prepare_trusted_home(repo.path());
+    fs::write(repo.path().join("README.md"), "# sandbox\n").expect("seed repo");
+    write_minimal_supported_config(repo.path());
+    write_agents_scaffold(repo.path());
+    copy_source_skills(repo.path());
+
+    let qualify = run_qualify_with_home(repo.path(), home.path());
+    assert!(
+        qualify.status.success(),
+        "qualification should pass before doctor: {}",
+        String::from_utf8_lossy(&qualify.stderr)
+    );
+
+    let doctor = run_doctor(repo.path(), home.path());
+    assert!(
+        doctor.status.success(),
+        "doctor should succeed: {}",
+        String::from_utf8_lossy(&doctor.stderr)
+    );
+
+    let report = parse_report(&doctor);
+    assert!(report["qualification"].is_object());
+    assert!(
+        report["qualification"]["latest_report_path"]
+            .as_str()
+            .is_some_and(|path| path.ends_with(".codex1/qualification/latest.json"))
+    );
+    assert!(report["qualification"]["status"].is_string());
+    assert!(report["qualification"]["stale_for_build"].is_boolean());
+    assert!(report["qualification"]["stale_for_support_surface"].is_boolean());
+}
+
+#[test]
 fn qualify_fails_when_agents_scaffold_is_missing() {
     let repo = TempDir::new().expect("temp repo");
     fs::write(repo.path().join("README.md"), "# sandbox\n").expect("seed repo");
@@ -345,7 +380,7 @@ fn doctor_marks_clean_setup_without_qualification_evidence_as_unsupported() {
 }
 
 #[test]
-fn setup_materializes_concrete_agents_commands_that_qualify_cleanly() {
+fn setup_keeps_unknown_agents_commands_as_placeholders_and_blocks_qualification() {
     let repo = TempDir::new().expect("temp repo");
     let home = prepare_trusted_home(repo.path());
     let binary = assert_cmd::cargo::cargo_bin("codex1");
@@ -359,15 +394,20 @@ fn setup_materializes_concrete_agents_commands_that_qualify_cleanly() {
     );
 
     let agents = fs::read_to_string(repo.path().join("AGENTS.md")).expect("read AGENTS.md");
-    assert!(agents.contains("true # no dedicated build command detected"));
-    assert!(!agents.contains("{{BUILD_COMMAND}}"));
+    assert!(agents.contains("{{BUILD_COMMAND}}"));
+    assert!(agents.contains("{{TEST_COMMAND}}"));
 
     let qualify = run_qualify_with_home(repo.path(), home.path());
     assert!(
-        qualify.status.success(),
-        "qualification should pass after setup: {}",
+        !qualify.status.success(),
+        "qualification should fail honestly when setup cannot infer repo commands"
+    );
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&qualify.stdout),
         String::from_utf8_lossy(&qualify.stderr)
     );
+    assert!(combined.contains("placeholders or missing"));
 }
 
 #[test]
@@ -773,7 +813,8 @@ fn setup_updates_legacy_agents_block_in_place() {
         1
     );
     assert_eq!(agents.matches("<!-- codex1:begin -->").count(), 0);
-    assert!(agents.contains("true # no dedicated build command detected"));
+    assert!(agents.contains("{{BUILD_COMMAND}}"));
+    assert!(agents.contains("{{TEST_COMMAND}}"));
 }
 
 #[test]

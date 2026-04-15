@@ -1,5 +1,7 @@
 # Blueprint Support Files
 
+- Mission id: `{{MISSION_ID}}`
+
 Use this folder only when the mission is too large or too coupled for a single
 compact `PROGRAM-BLUEPRINT.md`.
 

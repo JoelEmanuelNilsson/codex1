@@ -115,12 +115,41 @@ fn canonical_blueprint_body(route: &str) -> String {
 }
 
 fn canonical_spec_body(purpose: &str) -> String {
-    canonical_spec_body_with_note(purpose, "Keep the workstream bounded and reviewable.")
+    canonical_spec_body_with_scope_and_note(
+        purpose,
+        &["crates/codex1", "crates/codex1-core"],
+        &["crates/codex1", "crates/codex1-core"],
+        "Keep the workstream bounded and reviewable.",
+    )
 }
 
 fn canonical_spec_body_with_note(purpose: &str, implementation_note: &str) -> String {
+    canonical_spec_body_with_scope_and_note(
+        purpose,
+        &["crates/codex1", "crates/codex1-core"],
+        &["crates/codex1", "crates/codex1-core"],
+        implementation_note,
+    )
+}
+
+fn canonical_spec_body_with_scope_and_note(
+    purpose: &str,
+    read_scope: &[&str],
+    write_scope: &[&str],
+    implementation_note: &str,
+) -> String {
     format!(
-        "# Workstream Spec\n\n## Purpose\n\n{purpose}\n\n## In Scope\n\n- Execute the bounded integration slice.\n\n## Out Of Scope\n\n- Unrelated repo changes.\n\n## Dependencies\n\n- Outcome Lock and Program Blueprint stay current.\n\n## Touched Surfaces\n\n- Runtime backend.\n\n## Read Scope\n\n- crates/codex1\n\n## Write Scope\n\n- crates/codex1\n\n## Interfaces And Contracts Touched\n\n- internal command JSON contract\n\n## Implementation Shape\n\n{implementation_note}\n\n## Proof-Of-Completion Expectations\n\n- cargo test\n\n## Non-Breakage Expectations\n\n- Existing mission contracts still validate.\n\n## Review Lenses\n\n- correctness\n\n## Replan Boundary\n\n- Reopen planning on scope expansion.\n\n## Truth Basis Refs\n\n- PROGRAM-BLUEPRINT.md\n\n## Freshness Notes\n\n- Current for the integration test.\n\n## Support Files\n\n- `REVIEW.md`\n"
+        "# Workstream Spec\n\n## Purpose\n\n{purpose}\n\n## In Scope\n\n- Execute the bounded integration slice.\n\n## Out Of Scope\n\n- Unrelated repo changes.\n\n## Dependencies\n\n- Outcome Lock and Program Blueprint stay current.\n\n## Touched Surfaces\n\n- Runtime backend.\n\n## Read Scope\n\n{}\n\n## Write Scope\n\n{}\n\n## Interfaces And Contracts Touched\n\n- internal command JSON contract\n\n## Implementation Shape\n\n{implementation_note}\n\n## Proof-Of-Completion Expectations\n\n- cargo test\n\n## Non-Breakage Expectations\n\n- Existing mission contracts still validate.\n\n## Review Lenses\n\n- correctness\n\n## Replan Boundary\n\n- Reopen planning on scope expansion.\n\n## Truth Basis Refs\n\n- PROGRAM-BLUEPRINT.md\n\n## Freshness Notes\n\n- Current for the integration test.\n\n## Support Files\n\n- `REVIEW.md`\n",
+        read_scope
+            .iter()
+            .map(|path| format!("- {path}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        write_scope
+            .iter()
+            .map(|path| format!("- {path}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
     )
 }
 
@@ -158,6 +187,7 @@ fn internal_runtime_flow_creates_mission_package_and_review_contracts() {
                 {
                     "spec_id": "runtime_core",
                     "purpose": "Create the first execution-safe workstream.",
+                    "body_markdown": canonical_spec_body("Create the first execution-safe workstream."),
                     "artifact_status": "active",
                     "packetization_status": "runnable",
                     "execution_status": "packaged"
@@ -448,6 +478,7 @@ fn canonical_materialize_plan_command_works() {
                 {
                     "spec_id": "runtime_core",
                     "purpose": "Create the first execution-safe workstream.",
+                    "body_markdown": canonical_spec_body("Create the first execution-safe workstream."),
                     "artifact_status": "active",
                     "packetization_status": "runnable",
                     "execution_status": "packaged"
@@ -546,6 +577,9 @@ fn artifact_validation_split_reports_visible_and_machine_truth() {
                 {
                     "spec_id": "runtime_core",
                     "purpose": "Create a minimal visible and machine mission surface.",
+                    "body_markdown": canonical_spec_body(
+                        "Create a minimal visible and machine mission surface.",
+                    ),
                     "artifact_status": "active",
                     "packetization_status": "runnable",
                     "execution_status": "not_started"
@@ -594,6 +628,50 @@ fn artifact_validation_split_reports_visible_and_machine_truth() {
     assert_eq!(combined["mission_id"], mission_id);
     assert_eq!(combined["visible_artifacts"]["success"], true);
     assert_eq!(combined["machine_state"]["success"], true);
+}
+
+#[test]
+fn visible_artifact_validation_fails_when_canonical_readme_is_missing() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "artifact-validation-missing-readme";
+    run_json(
+        repo.path(),
+        &["internal", "init-mission"],
+        json!({
+            "mission_id": mission_id,
+            "title": "Artifact Validation Missing README",
+            "objective": "Prove missing visible artifacts fail validation.",
+            "clarify_status": "ratified",
+            "lock_status": "locked"
+        }),
+    );
+
+    std::fs::remove_file(repo.path().join(format!("PLANS/{mission_id}/README.md")))
+        .expect("remove README");
+
+    let visible = run_json(
+        repo.path(),
+        &[
+            "internal",
+            "validate-visible-artifacts",
+            "--mission-id",
+            mission_id,
+        ],
+        json!({}),
+    );
+    assert_eq!(visible["success"], false);
+    assert!(
+        visible["findings"]
+            .as_array()
+            .expect("findings array")
+            .iter()
+            .any(|finding| {
+                finding["path"]
+                    .as_str()
+                    .is_some_and(|path| path.ends_with("/README.md"))
+                    && finding["level"] == "error"
+            })
+    );
 }
 
 #[test]
@@ -902,6 +980,7 @@ fn contradiction_driven_needs_user_keeps_wait_identity_and_yields_through_stop_h
             "governing_revision": "spec:spec_api:1",
             "status": "accepted_for_replan",
             "triage_decision": "reopen_execution_package",
+            "triaged_by": "codex",
             "machine_action": "yield_needs_user",
             "next_required_branch": "needs_user"
         }),
@@ -961,6 +1040,190 @@ fn contradiction_driven_needs_user_keeps_wait_identity_and_yields_through_stop_h
 }
 
 #[test]
+fn visible_artifact_validation_requires_replan_log_after_non_local_replan() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "artifact-validation-replan-log";
+    run_json(
+        repo.path(),
+        &["internal", "init-mission"],
+        json!({
+            "mission_id": mission_id,
+            "title": "Artifact Validation Replan Log",
+            "objective": "Require visible replan history after non-local reopen.",
+            "clarify_status": "ratified",
+            "lock_status": "locked"
+        }),
+    );
+
+    run_json(
+        repo.path(),
+        &["internal", "record-contradiction"],
+        json!({
+            "mission_id": mission_id,
+            "discovered_in_phase": "execution",
+            "discovered_by": "codex",
+            "target_type": "spec",
+            "target_id": "spec_api",
+            "evidence_refs": ["RECEIPTS/test.txt"],
+            "violated_assumption_or_contract": "The rollout needs a non-local reopen.",
+            "suggested_reopen_layer": "blueprint",
+            "reason_code": "non_local_replan",
+            "governing_revision": "spec:spec_api:1",
+            "status": "accepted_for_replan",
+            "triage_decision": "reopen_blueprint",
+            "triaged_by": "codex",
+            "machine_action": "force_replan",
+            "next_required_branch": "replan"
+        }),
+    );
+
+    let visible = run_json(
+        repo.path(),
+        &[
+            "internal",
+            "validate-visible-artifacts",
+            "--mission-id",
+            mission_id,
+        ],
+        json!({}),
+    );
+    assert_eq!(visible["success"], false);
+    assert!(
+        visible["findings"]
+            .as_array()
+            .expect("findings array")
+            .iter()
+            .any(|finding| {
+                finding["path"]
+                    .as_str()
+                    .is_some_and(|path| path.ends_with("/REPLAN-LOG.md"))
+                    && finding["level"] == "error"
+            })
+    );
+}
+
+#[test]
+fn visible_artifact_validation_requires_review_ledger_after_review_history() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "artifact-validation-review-ledger";
+    run_json(
+        repo.path(),
+        &["internal", "init-mission"],
+        json!({
+            "mission_id": mission_id,
+            "title": "Artifact Validation Review Ledger",
+            "objective": "Require readable review history after review disposition.",
+            "clarify_status": "ratified",
+            "lock_status": "locked"
+        }),
+    );
+    run_json(
+        repo.path(),
+        &["internal", "materialize-plan"],
+        json!({
+            "mission_id": mission_id,
+            "body_markdown": canonical_blueprint_body("Review history should require REVIEW-LEDGER."),
+            "plan_level": 5,
+            "problem_size": "S",
+            "status": "approved",
+            "proof_matrix": [{"claim_ref": "claim:default-proof", "statement": "The mission has a bounded route.", "required_evidence": ["RECEIPTS/test-output.txt"], "review_lenses": ["correctness"], "governing_contract_refs": ["blueprint"]}],
+            "decision_obligations": [],
+            "selected_target_ref": "spec:runtime_core",
+            "specs": [
+                {
+                    "spec_id": "runtime_core",
+                    "purpose": "Create review history.",
+                    "body_markdown": canonical_spec_body("Create review history."),
+                    "artifact_status": "active",
+                    "packetization_status": "runnable",
+                    "execution_status": "not_started"
+                }
+            ]
+        }),
+    );
+    let package = run_json(
+        repo.path(),
+        &["internal", "compile-execution-package"],
+        json!({
+            "mission_id": mission_id,
+            "target_type": "spec",
+            "target_id": "runtime_core",
+            "included_spec_ids": ["runtime_core"],
+            "dependency_satisfaction_state": [
+                {"name": "lock_current", "satisfied": true, "detail": "Outcome Lock revision is current."}
+            ],
+            "read_scope": ["crates/codex1", "crates/codex1-core"],
+            "write_scope": ["crates/codex1", "crates/codex1-core"],
+            "proof_obligations": ["cargo test"],
+            "review_obligations": ["correctness"]
+        }),
+    );
+    let package_id = package["package_id"].as_str().expect("package id");
+    let bundle = run_json(
+        repo.path(),
+        &["internal", "compile-review-bundle"],
+        json!({
+            "mission_id": mission_id,
+            "source_package_id": package_id,
+            "bundle_kind": "spec_review",
+            "mandatory_review_lenses": ["correctness"],
+            "target_spec_id": "runtime_core",
+            "proof_rows_under_review": ["cargo test"],
+            "receipts": ["RECEIPTS/test-output.txt"],
+            "changed_files_or_diff": ["crates/codex1/src/internal/mod.rs"],
+            "touched_interface_contracts": ["internal command JSON contract"]
+        }),
+    );
+    let bundle_id = bundle["bundle_id"].as_str().expect("bundle id");
+    run_json(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "integration-test",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": ["RECEIPTS/test-output.txt"],
+            "findings": [],
+            "disposition_notes": ["Review bundle is fresh and clean."],
+            "next_required_branch": "execution"
+        }),
+    );
+
+    std::fs::remove_file(
+        repo.path()
+            .join(format!("PLANS/{mission_id}/REVIEW-LEDGER.md")),
+    )
+    .expect("remove review ledger");
+
+    let visible = run_json(
+        repo.path(),
+        &[
+            "internal",
+            "validate-visible-artifacts",
+            "--mission-id",
+            mission_id,
+        ],
+        json!({}),
+    );
+    assert_eq!(visible["success"], false);
+    assert!(
+        visible["findings"]
+            .as_array()
+            .expect("findings array")
+            .iter()
+            .any(|finding| {
+                finding["path"]
+                    .as_str()
+                    .is_some_and(|path| path.ends_with("/REVIEW-LEDGER.md"))
+                    && finding["level"] == "error"
+            })
+    );
+}
+
+#[test]
 fn halt_hard_blocked_contradictions_stay_non_terminal_until_reviewed_closeout() {
     let repo = TempDir::new().expect("temp repo");
 
@@ -992,6 +1255,7 @@ fn halt_hard_blocked_contradictions_stay_non_terminal_until_reviewed_closeout() 
             "governing_revision": "spec:spec_api:1",
             "status": "accepted_for_replan",
             "triage_decision": "reopen_mission_lock",
+            "triaged_by": "codex",
             "machine_action": "halt_hard_blocked",
             "next_required_branch": "needs_user"
         }),
@@ -1139,6 +1403,12 @@ fn newer_packages_and_bundles_stale_older_artifacts() {
             "specs": [{
                 "spec_id": "runtime_core",
                 "purpose": "Exercise freshness.",
+                "body_markdown": canonical_spec_body_with_scope_and_note(
+                    "Exercise freshness.",
+                    &["src"],
+                    &["src"],
+                    "Keep the workstream bounded and reviewable."
+                ),
                 "artifact_status": "active",
                 "packetization_status": "runnable",
                 "execution_status": "packaged"
@@ -1428,6 +1698,12 @@ fn mission_close_bundle_requires_integrated_visible_truth() {
             "specs": [{
                 "spec_id": "runtime_core",
                 "purpose": "Initial purpose.",
+                "body_markdown": canonical_spec_body_with_scope_and_note(
+                    "Initial purpose.",
+                    &["src"],
+                    &["src"],
+                    "Keep the workstream bounded and reviewable."
+                ),
                 "artifact_status": "active",
                 "packetization_status": "runnable",
                 "execution_status": "packaged"

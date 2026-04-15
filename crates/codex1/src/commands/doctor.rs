@@ -13,8 +13,8 @@ use crate::commands::{DoctorArgs, resolve_repo_root};
 use crate::support_surface::{
     AgentsCommandStatus, AgentsScaffoldStatus, SkillSurfaceInspection, SkillSurfaceStatus,
     compute_support_surface_signature, extract_managed_agents_block,
-    inspect_agents_scaffold_details, inspect_skill_surface,
-    summarize_stop_authority_with_observational,
+    inspect_agents_scaffold_details, inspect_skill_surface, lookup_toml_value,
+    summarize_stop_authority_with_observational, toml_repo_is_trusted,
 };
 
 const CONFIG_MODEL: &str = "gpt-5.4";
@@ -32,6 +32,8 @@ pub struct DoctorReport {
     pub effective_config: Vec<EffectiveConfigEntry>,
     pub hook_summary: HookSummary,
     pub skill_surface: SkillSurfaceSummary,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qualification: Option<QualificationSummary>,
 }
 
 #[derive(Debug, Serialize)]
@@ -79,6 +81,12 @@ pub struct QualificationSummary {
     pub supported_build_qualified: bool,
     pub support_surface_signature: Option<String>,
     pub stale_relative_to_current_support_surface: bool,
+    pub stale_for_build: bool,
+    pub stale_for_support_surface: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recorded_codex_build: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_codex_build: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -334,7 +342,11 @@ pub fn run(args: DoctorArgs) -> Result<()> {
             remediation: Some("run codex1 setup to install the managed Stop hook".to_string()),
         },
         (true, true, authoritative, total, observational) if authoritative == 1 => DoctorFinding {
-            status: FindingStatus::Pass,
+            status: if hook_summary.managed_stop_handlers == 1 {
+                FindingStatus::Pass
+            } else {
+                FindingStatus::Warn
+            },
             check: "hooks_json".to_string(),
             message: if observational > 0 {
                 format!(
@@ -344,10 +356,16 @@ pub fn run(args: DoctorArgs) -> Result<()> {
                 "exactly one authoritative Stop handler is installed".to_string()
             } else {
                 format!(
-                    "exactly one authoritative Stop pipeline is installed via a non-Codex1 aggregator (total Stop hooks: {total})"
+                    "exactly one authoritative Stop pipeline is installed via a non-Codex1 aggregator (total Stop hooks: {total}); verify that this is the supported Ralph pipeline"
                 )
             },
-            remediation: None,
+            remediation: if hook_summary.managed_stop_handlers == 1 {
+                None
+            } else {
+                Some(
+                    "verify the repo Stop handler is the intended Ralph aggregator or rerun codex1 setup --force to normalize it".to_string(),
+                )
+            },
         },
         (true, true, _, total, observational) => DoctorFinding {
             status: FindingStatus::Fail,
@@ -479,8 +497,9 @@ pub fn run(args: DoctorArgs) -> Result<()> {
         &skill_inspection.discovery_root,
     )?;
     let mut qualification_supports_repo = false;
-    match inspect_qualification(&repo_root, &support_surface_signature) {
-        Ok(qualification) => findings.push(match qualification.as_ref() {
+    let qualification = match inspect_qualification(&repo_root, &support_surface_signature) {
+        Ok(qualification) => {
+            findings.push(match qualification.as_ref() {
             Some(summary)
                 if summary.status == "pass"
                     && !summary.stale_relative_to_current_support_surface =>
@@ -499,7 +518,23 @@ pub fn run(args: DoctorArgs) -> Result<()> {
             Some(summary) if summary.status == "pass" => DoctorFinding {
                 status: FindingStatus::Warn,
                 check: "qualification".to_string(),
-                message: "latest qualification passed, but its support-surface signature no longer matches the current repo state".to_string(),
+                message: if summary.stale_for_build && summary.stale_for_support_surface {
+                    "latest qualification passed, but both the tested Codex build and the repo support surface have drifted".to_string()
+                } else if summary.stale_for_build {
+                    format!(
+                        "latest qualification passed, but the current Codex build ({}) no longer matches the tested build ({})",
+                        summary
+                            .current_codex_build
+                            .as_deref()
+                            .unwrap_or("unknown"),
+                        summary
+                            .recorded_codex_build
+                            .as_deref()
+                            .unwrap_or("unknown")
+                    )
+                } else {
+                    "latest qualification passed, but its support-surface signature no longer matches the current repo state".to_string()
+                },
                 remediation: Some(
                     "rerun codex1 qualify-codex to refresh qualification evidence for the current support surface"
                         .to_string(),
@@ -537,20 +572,25 @@ pub fn run(args: DoctorArgs) -> Result<()> {
                     "run codex1 qualify-codex to generate qualification evidence".to_string(),
                 ),
             },
-        }),
-        Err(error) => findings.push(DoctorFinding {
-            status: FindingStatus::Warn,
-            check: "qualification".to_string(),
-            message: format!(
-                "latest qualification evidence is unreadable or malformed: {}",
-                error
-            ),
-            remediation: Some(
-                "repair or remove .codex1/qualification/latest.json, then rerun codex1 qualify-codex"
-                    .to_string(),
-            ),
-        }),
-    }
+            });
+            qualification
+        }
+        Err(error) => {
+            findings.push(DoctorFinding {
+                status: FindingStatus::Warn,
+                check: "qualification".to_string(),
+                message: format!(
+                    "latest qualification evidence is unreadable or malformed: {}",
+                    error
+                ),
+                remediation: Some(
+                    "repair or remove .codex1/qualification/latest.json, then rerun codex1 qualify-codex"
+                        .to_string(),
+                ),
+            });
+            None
+        }
+    };
 
     let supported = qualification_supports_repo
         && findings
@@ -563,6 +603,7 @@ pub fn run(args: DoctorArgs) -> Result<()> {
         effective_config,
         hook_summary,
         skill_surface,
+        qualification,
     };
 
     emit_report(args.common.json, &report, render_doctor_report(&report))
@@ -586,24 +627,7 @@ fn read_optional_string(path: &Path) -> Result<Option<String>> {
 }
 
 fn is_repo_trusted(repo_root: &Path, user_config: Option<&str>) -> bool {
-    let Some(raw) = user_config else {
-        return false;
-    };
-
-    let marker = format!("[projects.\"{}\"]", repo_root.display());
-    let mut in_project = false;
-    for line in raw.lines() {
-        let trimmed = strip_comment(line).trim();
-        if trimmed.starts_with('[') && trimmed.ends_with(']') {
-            in_project = trimmed == marker;
-            continue;
-        }
-        if in_project && trimmed == "trust_level = \"trusted\"" {
-            return true;
-        }
-    }
-
-    false
+    user_config.is_some_and(|raw| toml_repo_is_trusted(raw, repo_root))
 }
 
 fn inspect_config_key(
@@ -619,9 +643,9 @@ fn inspect_config_key(
     let full_key = section
         .map(|section| format!("{section}.{key}"))
         .unwrap_or_else(|| key.to_string());
-    let user_value = user_config.and_then(|raw| lookup_config_value(raw, section, key));
+    let user_value = user_config.and_then(|raw| lookup_toml_value(raw, section, key));
     let project_value = if trusted_repo {
-        project_config.and_then(|raw| lookup_config_value(raw, section, key))
+        project_config.and_then(|raw| lookup_toml_value(raw, section, key))
     } else {
         None
     };
@@ -640,7 +664,9 @@ fn inspect_config_key(
 
     let status = match effective_value.as_deref() {
         Some(value) if value == required_value => {
-            if prefer_project && source_layer != "project" {
+            if source_layer == "runtime_flag" {
+                FindingStatus::Pass
+            } else if prefer_project && source_layer != "project" {
                 FindingStatus::Warn
             } else {
                 FindingStatus::Pass
@@ -671,70 +697,6 @@ fn parse_runtime_overrides(raw: &[String]) -> Result<BTreeMap<String, String>> {
         overrides.insert(key.to_string(), value.trim().to_string());
     }
     Ok(overrides)
-}
-
-fn lookup_config_value(source: &str, section: Option<&str>, key: &str) -> Option<String> {
-    let lines: Vec<&str> = source.lines().collect();
-    match section {
-        None => {
-            let stop = lines
-                .iter()
-                .position(|line| is_section_header(line).is_some())
-                .unwrap_or(lines.len());
-            for line in &lines[..stop] {
-                if let Some(value) = parse_key_value(line, key) {
-                    return Some(value);
-                }
-            }
-            None
-        }
-        Some(target) => {
-            let mut in_section = false;
-            for line in lines {
-                if let Some(section_name) = is_section_header(line) {
-                    in_section = section_name == target;
-                    continue;
-                }
-                if in_section {
-                    if let Some(value) = parse_key_value(line, key) {
-                        return Some(value);
-                    }
-                }
-                let dotted_key = format!("{target}.{key}");
-                if let Some(value) = parse_key_value(line, &dotted_key) {
-                    return Some(value);
-                }
-            }
-            None
-        }
-    }
-}
-
-fn parse_key_value(line: &str, key: &str) -> Option<String> {
-    let trimmed = strip_comment(line).trim();
-    if trimmed.starts_with('#') || trimmed.starts_with('[') {
-        return None;
-    }
-    let (candidate, value) = trimmed.split_once('=')?;
-    if candidate.trim() != key {
-        return None;
-    }
-    Some(value.trim().trim_matches('"').to_string())
-}
-
-fn is_section_header(line: &str) -> Option<&str> {
-    let trimmed = strip_comment(line).trim();
-    if trimmed.starts_with("[[") || !trimmed.starts_with('[') || !trimmed.ends_with(']') {
-        return None;
-    }
-    Some(trimmed.trim_start_matches('[').trim_end_matches(']'))
-}
-
-fn strip_comment(line: &str) -> &str {
-    match line.split_once('#') {
-        Some((before, _)) => before,
-        None => line,
-    }
 }
 
 fn inspect_hooks(path: &Path, raw: Option<&str>) -> Result<HookSummary> {
@@ -917,6 +879,8 @@ fn inspect_qualification(
         recorded_codex_build.as_deref(),
         current_codex_build.as_deref(),
     );
+    let stale_for_support_surface =
+        support_surface_signature.as_deref() != Some(current_support_surface_signature);
 
     Ok(Some(QualificationSummary {
         latest_report_path: latest_path.display().to_string(),
@@ -925,10 +889,12 @@ fn inspect_qualification(
         skipped_gates,
         qualification_scope,
         supported_build_qualified,
-        stale_relative_to_current_support_surface: support_surface_signature.as_deref()
-            != Some(current_support_surface_signature)
-            || stale_for_build,
+        stale_relative_to_current_support_surface: stale_for_support_surface || stale_for_build,
+        stale_for_build,
+        stale_for_support_surface,
         support_surface_signature,
+        recorded_codex_build,
+        current_codex_build,
     }))
 }
 
@@ -957,7 +923,7 @@ fn is_stale_for_current_build(
 ) -> bool {
     match (recorded_codex_build, current_codex_build) {
         (Some(recorded), Some(current)) => recorded != current,
-        _ => false,
+        _ => true,
     }
 }
 
@@ -1042,6 +1008,18 @@ fn render_doctor_report(report: &DoctorReport) -> String {
             report.skill_surface.drifted_managed_files.join(", ")
         },
     );
+    if let Some(qualification) = &report.qualification {
+        let _ = writeln!(
+            &mut output,
+            "qualification: status={}, report={}, failed_gates={}, skipped_gates={}, stale_for_build={}, stale_for_support_surface={}",
+            qualification.status,
+            qualification.latest_report_path,
+            qualification.failed_gates,
+            qualification.skipped_gates,
+            yes_no(qualification.stale_for_build),
+            yes_no(qualification.stale_for_support_surface),
+        );
+    }
     output.trim_end().to_string()
 }
 
@@ -1137,9 +1115,6 @@ mod tests {
             Some("codex 1.2.3"),
             Some("codex 1.2.3")
         ));
-        assert!(!super::is_stale_for_current_build(
-            Some("codex 1.2.3"),
-            None
-        ));
+        assert!(super::is_stale_for_current_build(Some("codex 1.2.3"), None));
     }
 }

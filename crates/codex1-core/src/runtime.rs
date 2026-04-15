@@ -1024,6 +1024,7 @@ pub enum ActiveCycleStatus {
     None,
     Interrupted,
     StaleMatchingCloseout,
+    StaleSupersededCycle,
     Contradictory,
 }
 
@@ -1864,7 +1865,8 @@ pub fn compile_execution_package(
     let blueprint_doc = load_markdown::<ProgramBlueprintFrontmatter>(&paths.program_blueprint())?;
     let lock_fingerprint = lock_doc.fingerprint()?;
     let blueprint_fingerprint = current_blueprint_contract_fingerprint(paths, &blueprint_doc)?;
-    let dependency_snapshot_fingerprint = fingerprint_json(&input.dependency_satisfaction_state)?;
+    let dependency_snapshot_fingerprint =
+        dependency_snapshot_fingerprint(paths, &input.dependency_satisfaction_state)?;
     let execution_graph = load_execution_graph(paths)?;
     let normalized_wave_specs = if input.target_type == TargetType::Wave
         && input.wave_specs.is_empty()
@@ -1970,7 +1972,7 @@ pub fn compile_execution_package(
         gate_checks: evaluation.gate_checks,
         validation_failures: evaluation.findings.clone(),
         validated_at: OffsetDateTime::now_utc(),
-        status,
+        status: status.clone(),
     };
     if let Some((wave_manifest, _)) = wave_contract.as_ref() {
         write_json(paths.wave_manifest(&wave_manifest.wave_id), &wave_manifest)?;
@@ -2139,6 +2141,75 @@ pub fn compile_execution_package(
     Ok(package)
 }
 
+fn default_dependency_governing_ref(name: &str) -> Option<String> {
+    match name {
+        "lock_current" => Some("outcome_lock".to_string()),
+        "blueprint_current" => Some("program_blueprint".to_string()),
+        _ => None,
+    }
+}
+
+fn current_dependency_fingerprint(
+    paths: &MissionPaths,
+    governing_ref: &str,
+) -> Result<Option<Fingerprint>> {
+    match governing_ref {
+        "outcome_lock" => Ok(Some(
+            load_markdown::<crate::artifacts::OutcomeLockFrontmatter>(&paths.outcome_lock())?
+                .fingerprint()?,
+        )),
+        "program_blueprint" => {
+            let blueprint_doc =
+                load_markdown::<ProgramBlueprintFrontmatter>(&paths.program_blueprint())?;
+            Ok(Some(current_blueprint_contract_fingerprint(
+                paths,
+                &blueprint_doc,
+            )?))
+        }
+        ref_name if ref_name.starts_with("spec:") => {
+            let spec_id = ref_name.trim_start_matches("spec:");
+            Ok(Some(
+                load_markdown::<WorkstreamSpecFrontmatter>(&paths.spec_file(spec_id))?
+                    .fingerprint()?,
+            ))
+        }
+        _ => Ok(None),
+    }
+}
+
+#[derive(Serialize)]
+struct DependencyFingerprintBinding {
+    name: String,
+    satisfied: bool,
+    detail: String,
+    governing_ref: String,
+    governing_fingerprint: String,
+}
+
+fn dependency_snapshot_fingerprint(
+    paths: &MissionPaths,
+    dependencies: &[DependencyCheck],
+) -> Result<Fingerprint> {
+    let bindings = dependencies
+        .iter()
+        .map(|dependency| {
+            let governing_ref = default_dependency_governing_ref(&dependency.name)
+                .unwrap_or_else(|| format!("unbound:{}", dependency.name));
+            let governing_fingerprint = current_dependency_fingerprint(paths, &governing_ref)?
+                .map(|fingerprint| fingerprint.to_string())
+                .unwrap_or_else(|| "unbound".to_string());
+            Ok(DependencyFingerprintBinding {
+                name: dependency.name.clone(),
+                satisfied: dependency.satisfied,
+                detail: dependency.detail.clone(),
+                governing_ref,
+                governing_fingerprint,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    fingerprint_json(&bindings)
+}
+
 pub fn validate_execution_package(
     paths: &MissionPaths,
     package_id: &str,
@@ -2181,6 +2252,9 @@ pub fn validate_execution_package(
         Some(&package.gate_checks),
     )?;
     let mut findings = evaluation.findings;
+    if package.mission_id != paths.mission_id() {
+        findings.push("package_mission_id_mismatch".to_string());
+    }
 
     if package.status != ExecutionPackageStatus::Passed {
         findings.push(format!(
@@ -2203,10 +2277,50 @@ pub fn validate_execution_package(
     if resolved_replan_boundary.as_ref() != Some(&package.replan_boundary) {
         findings.push("package_replan_boundary_invalid".to_string());
     }
-    if fingerprint_json(&package.dependency_satisfaction_state)?
+    if dependency_snapshot_fingerprint(paths, &package.dependency_satisfaction_state)?
         != package.dependency_snapshot_fingerprint
     {
         findings.push("dependency_snapshot_fingerprint_mismatch".to_string());
+    }
+    for dependency in &package.dependency_satisfaction_state {
+        let Some(governing_ref) = default_dependency_governing_ref(&dependency.name) else {
+            findings.push(format!(
+                "dependency_governing_ref_missing:{}",
+                dependency.name
+            ));
+            continue;
+        };
+        match current_dependency_fingerprint(paths, &governing_ref)? {
+            Some(_) => {}
+            None => findings.push(format!(
+                "dependency_governing_ref_unknown:{}",
+                dependency.name
+            )),
+        }
+    }
+    if package.target_type == TargetType::Wave {
+        let wave_manifest_path = paths.wave_manifest(&package.target_id);
+        if !wave_manifest_path.is_file() {
+            findings.push("wave_manifest_missing".to_string());
+        } else {
+            let manifest: WaveManifest = load_json(&wave_manifest_path)?;
+            let manifest_fingerprint = Fingerprint::from_json(&manifest)?;
+            if package.wave_fingerprint.as_ref() != Some(&manifest_fingerprint) {
+                findings.push("wave_manifest_fingerprint_mismatch".to_string());
+            }
+            if manifest.included_specs != package.included_specs {
+                findings.push("wave_manifest_included_specs_mismatch".to_string());
+            }
+            if manifest.read_scope != package.read_scope {
+                findings.push("wave_manifest_read_scope_mismatch".to_string());
+            }
+            if manifest.write_scope != package.write_scope {
+                findings.push("wave_manifest_write_scope_mismatch".to_string());
+            }
+            if manifest.wave_specs != normalize_wave_specs(&package.wave_specs) {
+                findings.push("wave_manifest_wave_specs_mismatch".to_string());
+            }
+        }
     }
     for included in &package.included_specs {
         let spec_doc =
@@ -2379,6 +2493,14 @@ pub fn compile_review_bundle(
 ) -> Result<ReviewBundle> {
     ensure_paths_match_mission(paths, &input.mission_id)?;
     let package: ExecutionPackage = load_json(&paths.execution_package(&input.source_package_id))?;
+    if package.mission_id != input.mission_id {
+        bail!(
+            "execution package {} belongs to mission {}, not {}",
+            input.source_package_id,
+            package.mission_id,
+            input.mission_id
+        );
+    }
     let bundle = match input.bundle_kind {
         BundleKind::SpecReview => {
             let package_validation = validate_execution_package(paths, &input.source_package_id)?;
@@ -2564,6 +2686,15 @@ pub fn validate_review_bundle(
     let gates = load_gate_index(paths)?;
     let package: ExecutionPackage = load_json(&paths.execution_package(&bundle.source_package_id))?;
     let mut findings = Vec::new();
+    if bundle.mission_id != paths.mission_id() {
+        findings.push("bundle_mission_id_mismatch".to_string());
+    }
+    if package.mission_id != paths.mission_id() {
+        findings.push("package_mission_id_mismatch".to_string());
+    }
+    if bundle.mission_id != package.mission_id {
+        findings.push("bundle_package_mission_id_mismatch".to_string());
+    }
     if bundle.mandatory_review_lenses.is_empty() {
         findings.push("mandatory_review_lenses_missing".to_string());
     }
@@ -2997,7 +3128,13 @@ fn write_review_artifacts(
         } else {
             None
         };
-        let review_body = render_spec_review(&context.review_id, spec_id, input, existing_review);
+        let review_body = render_spec_review(
+            &context.review_id,
+            spec_id,
+            input,
+            &context.bundle,
+            existing_review,
+        );
         fs::write(paths.review_file(spec_id), review_body)
             .with_context(|| format!("failed to write {}", paths.review_file(spec_id).display()))?;
         expected_outputs.push(paths.review_file(spec_id).display().to_string());
@@ -3410,6 +3547,12 @@ pub fn append_contradiction(
         }
         ContradictionStatus::Open => {}
     }
+    if !matches!(status, ContradictionStatus::Open)
+        && (input.triage_decision.is_none()
+            || input.triaged_by.as_deref().is_none_or(str::is_empty))
+    {
+        bail!("non-open contradictions require triage_decision and triaged_by");
+    }
     if matches!(
         input.suggested_reopen_layer,
         ReopenLayer::Blueprint | ReopenLayer::MissionLock
@@ -3436,10 +3579,10 @@ pub fn append_contradiction(
         violated_assumption_or_contract: input.violated_assumption_or_contract.clone(),
         suggested_reopen_layer: input.suggested_reopen_layer.clone(),
         reason_code: input.reason_code.clone(),
-        status,
+        status: status.clone(),
         governing_revision: input.governing_revision.clone(),
         triage_decision: input.triage_decision.clone(),
-        triaged_at: input.triage_decision.as_ref().map(|_| now),
+        triaged_at: (!matches!(status, ContradictionStatus::Open)).then_some(now),
         triaged_by: input.triaged_by.clone(),
         machine_action: input.machine_action.clone(),
         next_required_branch: input.next_required_branch.clone(),
@@ -3704,12 +3847,25 @@ pub fn resolve_resume(repo_root: &Path, input: &ResolveResumeInput) -> Result<Re
                     });
                 }
                 1 => {
-                    return Ok(selection_wait_report(
-                        selection_state.canonical_selection_request,
-                        SelectionOutcome::PreservedSelectionWait,
-                        SelectionStateAction::Preserved,
-                        state_repairs_applied,
-                    ));
+                    let selection_request_id = selection_state.selection_request_id.clone();
+                    let mut report = resolve_selected_mission(
+                        repo_root,
+                        &current_candidates[0].0,
+                        SelectionOutcome::AutoBoundSingleCandidate,
+                        SelectionStateAction::Superseded,
+                        &input.live_child_lanes,
+                        &mut state_repairs_applied,
+                    )?;
+                    supersede_selection_wait(
+                        &ralph_root,
+                        &SelectionConsumptionInput {
+                            selection_request_id,
+                        },
+                    )?;
+                    state_repairs_applied
+                        .push("collapsed_selection_state_to_single_candidate".to_string());
+                    report.state_repairs_applied = state_repairs_applied.clone();
+                    return Ok(report);
                 }
                 _ => {}
             }
@@ -3719,6 +3875,17 @@ pub fn resolve_resume(repo_root: &Path, input: &ResolveResumeInput) -> Result<Re
                 SelectionStateAction::Preserved,
                 state_repairs_applied,
             ));
+        } else if selection_state.selected_mission_id.is_some()
+            && selection_state.resolved_at.is_none()
+            && selection_state.cleared_at.is_none()
+        {
+            supersede_selection_wait(
+                &ralph_root,
+                &SelectionConsumptionInput {
+                    selection_request_id: selection_state.selection_request_id,
+                },
+            )?;
+            state_repairs_applied.push("cleared_selection_state_missing_resolved_at".to_string());
         } else if let Some(selected_mission_id) = selection_state.selected_mission_id.clone()
             && selection_state.cleared_at.is_none()
         {
@@ -4053,12 +4220,28 @@ fn contradiction_resume_override(record: &ContradictionRecord) -> Option<ResumeS
                     record.contradiction_id, record.violated_assumption_or_contract
                 ),
             ),
-            Some(MachineAction::ForceReplan)
-            | Some(MachineAction::ContinueLocalExecution)
-            | None => (
+            Some(MachineAction::ForceReplan) | None => (
                 ResumeStatus::ContradictoryState,
                 Verdict::ReplanRequired,
                 Some("replan".to_string()),
+                "unresolved_contradiction_force_replan".to_string(),
+                None,
+                None,
+                format!(
+                    "Replan after contradiction {}: {}.",
+                    record.contradiction_id, record.violated_assumption_or_contract
+                ),
+            ),
+            Some(MachineAction::ContinueLocalExecution) => (
+                ResumeStatus::ContradictoryState,
+                Verdict::ReplanRequired,
+                Some(
+                    match record.suggested_reopen_layer {
+                        ReopenLayer::ExecutionPackage => "execution_package",
+                        _ => "replan",
+                    }
+                    .to_string(),
+                ),
                 "unresolved_contradiction_force_replan".to_string(),
                 None,
                 None,
@@ -4102,7 +4285,7 @@ fn resolve_selected_mission(
     live_child_lanes: &[LiveChildLaneSnapshot],
     state_repairs_applied: &mut Vec<String>,
 ) -> Result<ResolveResumeReport> {
-    let paths = MissionPaths::new(repo_root, mission_id.to_string());
+    let paths = MissionPaths::try_new(repo_root, mission_id.to_string())?;
     let closeouts = load_closeouts(&paths.closeouts_ndjson())?;
     let latest_closeout = closeouts
         .last()
@@ -4119,7 +4302,10 @@ fn resolve_selected_mission(
         _ => classify_active_cycle(active_cycle.as_ref(), &latest_closeout),
     };
 
-    if active_cycle_status == ActiveCycleStatus::StaleMatchingCloseout {
+    if matches!(
+        active_cycle_status,
+        ActiveCycleStatus::StaleMatchingCloseout | ActiveCycleStatus::StaleSupersededCycle
+    ) {
         fs::remove_file(paths.active_cycle()).with_context(|| {
             format!("failed to remove stale {}", paths.active_cycle().display())
         })?;
@@ -4168,28 +4354,14 @@ fn resolve_selected_mission(
                 override_state.next_action.clone(),
                 true,
             )
-        } else if !fingerprint_findings.is_empty() {
-            let override_state = ResumeStateOverride {
-                resume_status: ResumeStatus::ContradictoryState,
-                verdict: Verdict::ReplanRequired,
-                next_phase: Some("replan".to_string()),
-                next_action: format!(
-                    "Repair governing artifact drift before resume: {}.",
+        } else if let Some(mut override_state) = contradiction_override {
+            if !fingerprint_findings.is_empty() {
+                override_state.next_action = format!(
+                    "{} Governing artifact drift is also present: {}.",
+                    override_state.next_action,
                     fingerprint_findings.join(", ")
-                ),
-                reason_code: "governing_artifact_drift".to_string(),
-                waiting_for: None,
-                canonical_waiting_request: None,
-                resume_condition: None,
-            };
-            effective_state = apply_resume_state_override(&rebuilt_state, &override_state);
-            (
-                override_state.resume_status,
-                override_state.next_phase.clone(),
-                override_state.next_action.clone(),
-                true,
-            )
-        } else if let Some(override_state) = contradiction_override {
+                );
+            }
             effective_state = apply_resume_state_override(&rebuilt_state, &override_state);
             preserve_cached_waiting_identity(
                 &mut effective_state,
@@ -4202,13 +4374,16 @@ fn resolve_selected_mission(
                 override_state.next_action.clone(),
                 true,
             )
-        } else if let Some(next_action) = review_gate_override {
+        } else if !fingerprint_findings.is_empty() {
             let override_state = ResumeStateOverride {
-                resume_status: ResumeStatus::ActionableNonTerminal,
-                verdict: Verdict::ReviewRequired,
-                next_phase: Some("review".to_string()),
-                next_action,
-                reason_code: "open_review_gate".to_string(),
+                resume_status: ResumeStatus::ContradictoryState,
+                verdict: Verdict::ReplanRequired,
+                next_phase: Some("replan".to_string()),
+                next_action: format!(
+                    "Repair governing artifact drift before resume: {}.",
+                    fingerprint_findings.join(", ")
+                ),
+                reason_code: "governing_artifact_drift".to_string(),
                 waiting_for: None,
                 canonical_waiting_request: None,
                 resume_condition: None,
@@ -4239,6 +4414,24 @@ fn resolve_selected_mission(
                     .clone()
                     .unwrap_or_else(|| rebuilt_state.next_action.clone()),
                 false,
+            )
+        } else if let Some(next_action) = review_gate_override {
+            let override_state = ResumeStateOverride {
+                resume_status: ResumeStatus::ActionableNonTerminal,
+                verdict: Verdict::ReviewRequired,
+                next_phase: Some("review".to_string()),
+                next_action,
+                reason_code: "open_review_gate".to_string(),
+                waiting_for: None,
+                canonical_waiting_request: None,
+                resume_condition: None,
+            };
+            effective_state = apply_resume_state_override(&rebuilt_state, &override_state);
+            (
+                override_state.resume_status,
+                override_state.next_phase.clone(),
+                override_state.next_action.clone(),
+                true,
             )
         } else if active_cycle_status == ActiveCycleStatus::Interrupted {
             (
@@ -4334,7 +4527,7 @@ fn stop_output_from_resume_report(
                 .selected_mission_id
                 .clone()
                 .context("resolved waiting mission did not bind a mission id")?;
-            let paths = MissionPaths::new(repo_root, mission_id);
+            let paths = MissionPaths::try_new(repo_root, mission_id)?;
             let state = load_state(&paths.state_json())?
                 .context("waiting mission resolved without mission state")?;
             if state.request_emitted_at.is_none()
@@ -4371,7 +4564,7 @@ fn stop_output_from_resume_report(
                 .selected_mission_id
                 .clone()
                 .context("resolved terminal mission did not bind a mission id")?;
-            let paths = MissionPaths::new(repo_root, mission_id);
+            let paths = MissionPaths::try_new(repo_root, mission_id)?;
             if latest_closeout_is_terminal(&paths)? {
                 Ok(StopHookOutput {
                     continue_processing: true,
@@ -4435,7 +4628,13 @@ fn classify_active_cycle(
         Some(closeout_cycle_id) if closeout_cycle_id == active_cycle.cycle_id => {
             ActiveCycleStatus::StaleMatchingCloseout
         }
-        _ => ActiveCycleStatus::Interrupted,
+        _ if active_cycle
+            .opened_after_closeout_seq
+            .is_none_or(|opened_after| opened_after >= latest_closeout.closeout_seq) =>
+        {
+            ActiveCycleStatus::Interrupted
+        }
+        _ => ActiveCycleStatus::StaleSupersededCycle,
     }
 }
 
@@ -5004,6 +5203,7 @@ fn default_readme_body(
 }
 
 fn default_spec_body(paths: &MissionPaths, spec_id: &str, purpose: &str) -> String {
+    let scope_hint = default_spec_scope_hint(spec_id);
     render_template_body_or_fallback(
         paths,
         "specs/SPEC.md",
@@ -5011,14 +5211,126 @@ fn default_spec_body(paths: &MissionPaths, spec_id: &str, purpose: &str) -> Stri
             ("MISSION_ID", paths.mission_id().to_string()),
             ("SPEC_ID", spec_id.to_string()),
             ("SPEC_PURPOSE", purpose.to_string()),
+            (
+                "IN_SCOPE_1",
+                format!("Execute the bounded `{spec_id}` slice."),
+            ),
+            (
+                "IN_SCOPE_2",
+                "Keep the workstream inside the declared scope frontier.".to_string(),
+            ),
+            (
+                "IN_SCOPE_3",
+                "Leave unrelated repo surfaces untouched.".to_string(),
+            ),
+            (
+                "OUT_OF_SCOPE_1",
+                "Unrelated feature work outside this bounded slice.".to_string(),
+            ),
+            (
+                "OUT_OF_SCOPE_2",
+                "Silent scope expansion without replanning.".to_string(),
+            ),
+            (
+                "OUT_OF_SCOPE_3",
+                "Undeclared proof or review contract changes.".to_string(),
+            ),
+            (
+                "DEPENDENCY_1",
+                "Outcome Lock and Program Blueprint stay current.".to_string(),
+            ),
+            (
+                "DEPENDENCY_2",
+                "The current execution package remains fresh.".to_string(),
+            ),
+            (
+                "DEPENDENCY_3",
+                "Review obligations stay aligned with the selected route.".to_string(),
+            ),
+            ("TOUCHED_SURFACE_1", scope_hint.clone()),
+            (
+                "TOUCHED_SURFACE_2",
+                format!("PLANS/{}/specs/{spec_id}", paths.mission_id()),
+            ),
+            (
+                "TOUCHED_SURFACE_3",
+                "Mission review/proof support files.".to_string(),
+            ),
+            ("READ_PATH_1", scope_hint.clone()),
+            ("READ_PATH_2", scope_hint.clone()),
+            ("READ_PATH_3", scope_hint.clone()),
+            ("WRITE_PATH_1", scope_hint.clone()),
+            ("WRITE_PATH_2", scope_hint.clone()),
+            ("WRITE_PATH_3", scope_hint.clone()),
+            (
+                "INTERFACE_1",
+                format!("{spec_id} visible and hidden contracts"),
+            ),
+            (
+                "INTERFACE_2",
+                "Execution package and review bundle bindings".to_string(),
+            ),
+            ("INTERFACE_3", "Mission closeout continuity".to_string()),
+            (
+                "IMPLEMENTATION_SHAPE",
+                "Keep the implementation bounded, explicit, and reviewable.".to_string(),
+            ),
+            ("PROOF_EXPECTATION_1", "cargo test".to_string()),
+            (
+                "PROOF_EXPECTATION_2",
+                "Validate the selected bounded slice directly.".to_string(),
+            ),
+            (
+                "PROOF_EXPECTATION_3",
+                "Preserve existing non-breakage guarantees.".to_string(),
+            ),
+            (
+                "NON_BREAKAGE_EXPECTATION_1",
+                "Existing mission contracts still validate.".to_string(),
+            ),
+            (
+                "NON_BREAKAGE_EXPECTATION_2",
+                "No unrelated surfaces drift silently.".to_string(),
+            ),
+            (
+                "NON_BREAKAGE_EXPECTATION_3",
+                "Review evidence remains attributable.".to_string(),
+            ),
+            ("REVIEW_LENS_1", "correctness".to_string()),
+            ("REVIEW_LENS_2", "evidence_adequacy".to_string()),
+            ("REVIEW_LENS_3", "scope_conformance".to_string()),
+            ("TRUTH_BASIS_REF_1", "OUTCOME-LOCK.md".to_string()),
+            ("TRUTH_BASIS_REF_2", "PROGRAM-BLUEPRINT.md".to_string()),
+            ("TRUTH_BASIS_REF_3", format!("specs/{spec_id}/REVIEW.md")),
+            (
+                "FRESHNESS_NOTE_1",
+                "Generated from the current mission planning context.".to_string(),
+            ),
+            (
+                "FRESHNESS_NOTE_2",
+                "Refresh on scope, proof, or review contract change.".to_string(),
+            ),
         ],
         "Fill in during planning",
         || {
             format!(
-                "# Workstream Spec\n\n## Purpose\n\n{purpose}\n\n## In Scope\n\n- Fill in with the selected planning slice.\n\n## Out Of Scope\n\n- State what this spec must not absorb silently.\n"
+                "# Workstream Spec\n\n## Purpose\n\n{purpose}\n\n## In Scope\n\n- Fill in with the selected planning slice.\n\n## Out Of Scope\n\n- State what this spec must not absorb silently.\n\n## Dependencies\n\n- Fill in during planning\n\n## Touched Surfaces\n\n- Fill in during planning\n\n## Read Scope\n\n- Fill in during planning\n\n## Write Scope\n\n- Fill in during planning\n\n## Interfaces And Contracts Touched\n\n- Fill in during planning\n\n## Implementation Shape\n\nFill in during planning\n\n## Proof-Of-Completion Expectations\n\n- Fill in during planning\n\n## Non-Breakage Expectations\n\n- Fill in during planning\n\n## Review Lenses\n\n- Fill in during planning\n\n## Replan Boundary\n\n- Fill in during planning\n\n## Truth Basis Refs\n\n- Fill in during planning\n\n## Freshness Notes\n\n- Fill in during planning\n\n## Support Files\n\n- `REVIEW.md`\n- `NOTES.md`\n- `RECEIPTS/`\n"
             )
         },
     )
+}
+
+fn default_spec_scope_hint(spec_id: &str) -> String {
+    let trimmed = spec_id
+        .strip_prefix("spec_")
+        .or_else(|| spec_id.strip_prefix("spec-"))
+        .unwrap_or(spec_id)
+        .trim_matches(|ch: char| ch == '_' || ch == '-');
+    if trimmed.is_empty() {
+        return "src".to_string();
+    }
+
+    format!("src/{}", trimmed.replace(['_', '-'], "/"))
 }
 
 fn default_spec_review_body(paths: &MissionPaths, spec_id: &str) -> String {
@@ -5029,17 +5341,33 @@ fn default_spec_review_body(paths: &MissionPaths, spec_id: &str) -> String {
             ("MISSION_ID", paths.mission_id().to_string()),
             ("SPEC_ID", spec_id.to_string()),
             ("REVIEW_BUNDLE_ID", "pending".to_string()),
+            ("REVIEW_BUNDLE_KIND", "pending".to_string()),
+            ("SOURCE_PACKAGE_ID", "pending".to_string()),
+            ("SPEC_REVIEW_GOVERNING_REFS", "pending".to_string()),
+            ("LOCK_FINGERPRINT", "pending".to_string()),
+            ("BLUEPRINT_FINGERPRINT", "pending".to_string()),
+            ("SPEC_REVISION", "pending".to_string()),
+            ("SPEC_FINGERPRINT", "pending".to_string()),
+            ("MANDATORY_REVIEW_LENSES", "pending".to_string()),
+            ("PROOF_ROWS_UNDER_REVIEW", "pending".to_string()),
+            ("REVIEW_RECEIPTS", "pending".to_string()),
+            ("CHANGED_FILES_OR_DIFF", "pending".to_string()),
+            ("TOUCHED_INTERFACE_CONTRACTS", "pending".to_string()),
+            ("REVIEW_BUNDLE_FRESHNESS", "pending".to_string()),
         ],
         "No review events recorded yet.",
         || "# Spec Review Notes\n\nNo review events recorded yet.\n".to_string(),
     )
 }
 
-fn default_spec_notes_body(paths: &MissionPaths, _spec_id: &str) -> String {
+fn default_spec_notes_body(paths: &MissionPaths, spec_id: &str) -> String {
     render_raw_template_or_fallback(
         paths,
         "specs/NOTES.md",
-        &[],
+        &[
+            ("MISSION_ID", paths.mission_id().to_string()),
+            ("SPEC_ID", spec_id.to_string()),
+        ],
         "No local notes recorded yet.",
         || "# Spec Notes\n\nNo local notes recorded yet.\n".to_string(),
     )
@@ -5049,7 +5377,10 @@ fn default_receipts_readme_body(paths: &MissionPaths, spec_id: &str) -> String {
     render_raw_template_or_fallback(
         paths,
         "specs/RECEIPTS/README.md",
-        &[("SPEC_ID", spec_id.to_string())],
+        &[
+            ("MISSION_ID", paths.mission_id().to_string()),
+            ("SPEC_ID", spec_id.to_string()),
+        ],
         "TBD",
         || "# Receipts\n\nStore proof receipts here.\n".to_string(),
     )
@@ -5059,7 +5390,7 @@ fn default_review_ledger_body(paths: &MissionPaths) -> String {
     render_raw_template_or_fallback(
         paths,
         "REVIEW-LEDGER.md",
-        &[],
+        &[("MISSION_ID", paths.mission_id().to_string())],
         "No review events recorded yet.",
         || "# Review Ledger\n\nNo review events recorded yet.\n".to_string(),
     )
@@ -5069,7 +5400,7 @@ fn default_replan_log_body(paths: &MissionPaths) -> String {
     render_raw_template_or_fallback(
         paths,
         "REPLAN-LOG.md",
-        &[],
+        &[("MISSION_ID", paths.mission_id().to_string())],
         "No replan events recorded yet.",
         || "# Replan Log\n\nNo replan events recorded yet.\n".to_string(),
     )
@@ -5190,13 +5521,29 @@ fn render_review_ledger(
     };
     let mission_close_section = if bundle.bundle_kind == BundleKind::MissionClose {
         format!(
-            "\n## Mission-Close Review\n\n- Bundle id: `{}`\n- Verdict: {}\n- Cross-spec claims checked: {}\n- Open finding summary: {}\n- Deferred or descoped follow-ons: {}\n- Deferred or descoped work represented honestly: {}\n",
+            "\n## Mission-Close Review\n\n- Mission id: `{}`\n- Bundle id: `{}`\n- Source package id: `{}`\n- Governing refs: lock:{} ({}) ; blueprint:{} ({})\n- Verdict: {}\n- Mission-level proof rows checked: {}\n- Cross-spec claims checked: {}\n- Visible artifact refs: {}\n- Open finding summary: {}\n- Deferred or descoped follow-ons: {}\n- Deferred or descoped work represented honestly: {}\n",
+            bundle.mission_id,
             bundle.bundle_id,
+            bundle.source_package_id,
+            bundle.lock_revision,
+            bundle.lock_fingerprint,
+            bundle.blueprint_revision,
+            bundle.blueprint_fingerprint,
             input.verdict,
+            if bundle.mission_level_proof_rows.is_empty() {
+                "none".to_string()
+            } else {
+                bundle.mission_level_proof_rows.join(", ")
+            },
             if bundle.cross_spec_claim_refs.is_empty() {
                 "none".to_string()
             } else {
                 bundle.cross_spec_claim_refs.join(", ")
+            },
+            if bundle.visible_artifact_refs.is_empty() {
+                "none".to_string()
+            } else {
+                bundle.visible_artifact_refs.join(", ")
             },
             if bundle.open_finding_summary.is_empty() {
                 "none".to_string()
@@ -5215,9 +5562,12 @@ fn render_review_ledger(
     };
 
     let entry = format!(
-        "## Review Event `{review_id}`\n\n### Open Blocking Findings\n\n| Finding id | Scope | Class | Summary | Owner | Next action |\n| --- | --- | --- | --- | --- | --- |\n{open_blocking}\n\n### Review Event Summary\n\n| Review id | Reviewer | Kind | Governing refs | Verdict | Blocking findings | Evidence refs |\n| --- | --- | --- | --- | --- | --- | --- |\n| {review_id} | {} | {:?} | {} | {} | {} | {} |\n\n### Findings\n\n| Class | Summary | Blocking | Evidence refs | Disposition |\n| --- | --- | --- | --- | --- |\n{all_findings}\n\n### Dispositions\n\n{}{mission_close_section}",
+        "## Review Event `{review_id}`\n\n### Open Blocking Findings\n\n| Finding id | Scope | Class | Summary | Owner | Next action |\n| --- | --- | --- | --- | --- | --- |\n{open_blocking}\n\n### Review Event Summary\n\n| Review id | Mission id | Reviewer | Kind | Bundle id | Source package id | Governing refs | Verdict | Blocking findings | Evidence refs |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n| {review_id} | {} | {} | {:?} | {} | {} | {} | {} | {} | {} |\n\n### Findings\n\n| Class | Summary | Blocking | Evidence refs | Disposition |\n| --- | --- | --- | --- | --- |\n{all_findings}\n\n### Dispositions\n\n{}{mission_close_section}",
+        bundle.mission_id,
         input.reviewer,
         bundle.bundle_kind,
+        bundle.bundle_id,
+        bundle.source_package_id,
         if input.governing_refs.is_empty() {
             bundle.governing_revision.clone()
         } else {
@@ -5235,10 +5585,11 @@ fn render_spec_review(
     review_id: &str,
     spec_id: &str,
     input: &ReviewResultInput,
+    bundle: &ReviewBundle,
     existing: Option<String>,
 ) -> String {
     let events = format!(
-        "| {} | spec_review | {} | {} | {} |",
+        "| {} | spec_review | {} | {} | {} | {} | {} | {} | {} |",
         review_id,
         input.reviewer,
         if input.governing_refs.is_empty() {
@@ -5246,6 +5597,10 @@ fn render_spec_review(
         } else {
             input.governing_refs.join(", ")
         },
+        bundle.bundle_id,
+        bundle.source_package_id,
+        bundle.lock_fingerprint,
+        bundle.blueprint_fingerprint,
         input.verdict,
     );
     let findings = if input.findings.is_empty() {
@@ -5276,8 +5631,8 @@ fn render_spec_review(
             .join("\n")
     };
     let entry = format!(
-        "## Review Event `{review_id}`\n\n### Spec\n\n- Spec id: `{}`\n\n### Review Events\n\n| Review id | Kind | Reviewer | Governing refs | Verdict |\n| --- | --- | --- | --- | --- |\n{}\n\n### Findings\n\n| Class | Summary | Blocking | Evidence refs | Disposition |\n| --- | --- | --- | --- | --- |\n{}\n",
-        spec_id, events, findings,
+        "## Review Event `{review_id}`\n\n### Spec\n\n- Mission id: `{}`\n- Spec id: `{}`\n- Bundle id: `{}`\n- Source package id: `{}`\n\n### Review Events\n\n| Review id | Kind | Reviewer | Governing refs | Bundle id | Source package id | Lock fp | Blueprint fp | Verdict |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n{}\n\n### Findings\n\n| Class | Summary | Blocking | Evidence refs | Disposition |\n| --- | --- | --- | --- | --- |\n{}\n",
+        bundle.mission_id, spec_id, bundle.bundle_id, bundle.source_package_id, events, findings,
     );
     append_review_history(existing, "# Spec Review Notes", &entry)
 }
@@ -5347,7 +5702,15 @@ fn load_gate_index(paths: &MissionPaths) -> Result<MissionGateIndex> {
 }
 
 fn append_gate(index: &mut MissionGateIndex, gate: MissionGateRecord) {
-    index.gates.push(gate);
+    if let Some(existing) = index
+        .gates
+        .iter_mut()
+        .find(|existing| existing.gate_id == gate.gate_id)
+    {
+        *existing = gate;
+    } else {
+        index.gates.push(gate);
+    }
 }
 
 fn supersede_matching_gates(
@@ -5534,6 +5897,7 @@ fn active_cycle_from_closeout(
         closeout.target.clone(),
         expected_child_lanes,
     );
+    active_cycle.opened_after_closeout_seq = Some(closeout.closeout_seq.saturating_sub(1));
     active_cycle.cycle_kind = closeout.cycle_kind.clone();
     active_cycle.activity = Some(closeout.activity.clone());
     active_cycle.lock_revision = closeout.lock_revision;
@@ -6214,6 +6578,124 @@ fn markdown_section_list_items(body: &str, heading: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn markdown_section_table_rows(body: &str, heading: &str) -> Vec<Vec<String>> {
+    markdown_level_two_sections(body)
+        .get(&normalize_markdown_heading(heading))
+        .map(|section| {
+            section
+                .lines()
+                .filter_map(parse_markdown_table_row)
+                .filter(|row| !markdown_table_row_is_separator(row))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_markdown_table_row(line: &str) -> Option<Vec<String>> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with('|') || !trimmed.ends_with('|') {
+        return None;
+    }
+    Some(
+        trimmed
+            .trim_matches('|')
+            .split('|')
+            .map(|cell| cell.trim().to_string())
+            .collect(),
+    )
+}
+
+fn markdown_table_row_is_separator(row: &[String]) -> bool {
+    !row.is_empty()
+        && row
+            .iter()
+            .all(|cell| !cell.is_empty() && cell.chars().all(|ch| matches!(ch, '-' | ':' | ' ')))
+}
+
+fn is_placeholder_artifact_text(value: &str) -> bool {
+    let normalized = value.trim().to_ascii_lowercase();
+    normalized.is_empty()
+        || normalized == "tbd"
+        || normalized == "todo"
+        || normalized == "n/a"
+        || normalized == "fill in during planning"
+        || normalized == "tbd during clarify"
+        || normalized.starts_with("{{")
+        || normalized.ends_with("}}")
+}
+
+fn markdown_table_row_matches_header(row: &[String], expected: &[&str]) -> bool {
+    row.len() == expected.len()
+        && row
+            .iter()
+            .zip(expected.iter())
+            .all(|(cell, expected)| cell.eq_ignore_ascii_case(expected))
+}
+
+fn blueprint_section_has_meaningful_entries(body: &str, heading: &str) -> bool {
+    if markdown_section_list_items(body, heading)
+        .into_iter()
+        .any(|item| !is_placeholder_artifact_text(&item))
+    {
+        return true;
+    }
+
+    match heading {
+        "In-Scope Work Inventory" => {
+            markdown_section_table_rows(body, heading)
+                .into_iter()
+                .any(|row| {
+                    !markdown_table_row_matches_header(
+                        &row,
+                        &[
+                            "Work item",
+                            "Class",
+                            "Why it exists",
+                            "Finish in this mission?",
+                        ],
+                    ) && row
+                        .first()
+                        .is_some_and(|cell| !is_placeholder_artifact_text(cell))
+                })
+        }
+        "Decision Log" => markdown_section_table_rows(body, heading)
+            .into_iter()
+            .any(|row| {
+                !markdown_table_row_matches_header(
+                    &row,
+                    &[
+                        "Decision id",
+                        "Statement",
+                        "Rationale",
+                        "Evidence refs",
+                        "Adopted in revision",
+                    ],
+                ) && row
+                    .get(1)
+                    .is_some_and(|cell| !is_placeholder_artifact_text(cell))
+                    && row
+                        .get(2)
+                        .is_some_and(|cell| !is_placeholder_artifact_text(cell))
+            }),
+        _ => false,
+    }
+}
+
+fn invalid_scope_paths(paths: &[String]) -> Vec<String> {
+    let mut invalid = paths
+        .iter()
+        .map(|path| path.trim())
+        .filter(|path| {
+            !path.is_empty()
+                && (is_placeholder_artifact_text(path) || normalize_scoped_path(path).is_empty())
+        })
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    invalid.sort();
+    invalid.dedup();
+    invalid
+}
+
 fn markdown_section_labeled_values(body: &str, heading: &str, label: &str) -> Vec<String> {
     markdown_section_list_items(body, heading)
         .into_iter()
@@ -6266,10 +6748,6 @@ fn required_blueprint_sections(
     sections
 }
 
-fn markdown_section_has_list_items(body: &str, heading: &str) -> bool {
-    !markdown_section_list_items(body, heading).is_empty()
-}
-
 fn validate_blueprint_body_contract(
     body: &str,
     status: BlueprintStatus,
@@ -6279,7 +6757,8 @@ fn validate_blueprint_body_contract(
         return Ok(());
     }
 
-    let required_sections = required_blueprint_sections(require_execution_graph_and_safe_wave_rules);
+    let required_sections =
+        required_blueprint_sections(require_execution_graph_and_safe_wave_rules);
     let missing = missing_markdown_sections(body, &required_sections);
     if !missing.is_empty() {
         bail!(
@@ -6288,8 +6767,10 @@ fn validate_blueprint_body_contract(
         );
     }
     for heading in ["In-Scope Work Inventory", "Decision Log"] {
-        if !markdown_section_has_list_items(body, heading) {
-            bail!("PROGRAM-BLUEPRINT.md section {heading} must contain at least one bullet item");
+        if !blueprint_section_has_meaningful_entries(body, heading) {
+            bail!(
+                "PROGRAM-BLUEPRINT.md section {heading} must contain at least one meaningful planning entry"
+            );
         }
     }
     Ok(())
@@ -6329,6 +6810,31 @@ fn validate_spec_body_contract(spec_id: &str, body: &str, purpose: &str) -> Resu
             "SPEC.md for {} must include its declared purpose in the visible artifact body",
             spec_id
         );
+    }
+    for (heading, paths) in [
+        (
+            "Read Scope",
+            markdown_section_list_items(body, "Read Scope"),
+        ),
+        (
+            "Write Scope",
+            markdown_section_list_items(body, "Write Scope"),
+        ),
+    ] {
+        if paths.is_empty() {
+            bail!(
+                "SPEC.md for {} section {heading} must contain at least one path",
+                spec_id
+            );
+        }
+        let invalid = invalid_scope_paths(&paths);
+        if !invalid.is_empty() {
+            bail!(
+                "SPEC.md for {} section {heading} contains invalid scoped path entries: {}",
+                spec_id,
+                invalid.join(", ")
+            );
+        }
     }
     Ok(())
 }
@@ -6759,9 +7265,22 @@ fn validate_execution_graph_for_blueprint(
                 node.spec_id
             ));
         }
+        for path in invalid_scope_paths(&node.read_paths) {
+            findings.push(format!(
+                "execution_graph_node_invalid_read_scope_path:{}:{}",
+                node.spec_id, path
+            ));
+        }
+        for path in invalid_scope_paths(&node.write_paths) {
+            findings.push(format!(
+                "execution_graph_node_invalid_write_scope_path:{}:{}",
+                node.spec_id, path
+            ));
+        }
         let spec_doc = load_markdown::<WorkstreamSpecFrontmatter>(&paths.spec_file(&node.spec_id))?;
         let declared_scope = spec_declared_path_scope(&spec_doc);
-        for read_path in scope_paths_outside_frontier(&node.read_paths, &declared_scope.read_paths) {
+        for read_path in scope_paths_outside_frontier(&node.read_paths, &declared_scope.read_paths)
+        {
             findings.push(format!(
                 "execution_graph_node_read_scope_outside_spec:{}:{}",
                 node.spec_id, read_path
@@ -7070,8 +7589,14 @@ fn union_path_scopes(scopes: &[PathScope]) -> PathScope {
 
 fn spec_declared_path_scope(spec_doc: &ArtifactDocument<WorkstreamSpecFrontmatter>) -> PathScope {
     PathScope {
-        read_paths: normalize_scope_paths(&markdown_section_list_items(&spec_doc.body, "Read Scope")),
-        write_paths: normalize_scope_paths(&markdown_section_list_items(&spec_doc.body, "Write Scope")),
+        read_paths: normalize_scope_paths(&markdown_section_list_items(
+            &spec_doc.body,
+            "Read Scope",
+        )),
+        write_paths: normalize_scope_paths(&markdown_section_list_items(
+            &spec_doc.body,
+            "Write Scope",
+        )),
     }
 }
 
@@ -7101,9 +7626,12 @@ fn derive_writer_packet_scope(
     let execution_graph = load_execution_graph(paths)?;
     let frontier = effective_spec_path_scope(
         &spec_doc,
-        execution_graph
-            .as_ref()
-            .and_then(|graph| graph.nodes.iter().find(|node| node.spec_id == target_spec_id)),
+        execution_graph.as_ref().and_then(|graph| {
+            graph
+                .nodes
+                .iter()
+                .find(|node| node.spec_id == target_spec_id)
+        }),
     );
     Ok(PathScope {
         read_paths: scope_paths_within_frontier(&package.read_scope, &frontier.read_paths),
@@ -7112,7 +7640,26 @@ fn derive_writer_packet_scope(
 }
 
 fn normalize_scoped_path(path: &str) -> String {
-    path.trim().trim_matches('/').to_ascii_lowercase()
+    let trimmed = path.trim();
+    if trimmed.is_empty() || trimmed.contains('\\') || trimmed.starts_with('/') {
+        return String::new();
+    }
+
+    let without_edges = trimmed.trim_matches('/');
+    if without_edges.is_empty() {
+        return String::new();
+    }
+
+    let mut normalized = Vec::new();
+    for segment in without_edges.split('/') {
+        let segment = segment.trim();
+        if segment.is_empty() || segment == "." || segment == ".." || segment.ends_with(':') {
+            return String::new();
+        }
+        normalized.push(segment.to_ascii_lowercase());
+    }
+
+    normalized.join("/")
 }
 
 fn scoped_paths_overlap(left: &str, right: &str) -> bool {
@@ -7331,7 +7878,7 @@ fn evaluate_execution_package_contract(
         findings.push(format!("blueprint_body_missing_section:{missing}"));
     }
     for heading in ["In-Scope Work Inventory", "Decision Log"] {
-        if !markdown_section_has_list_items(&blueprint_doc.body, heading) {
+        if !blueprint_section_has_meaningful_entries(&blueprint_doc.body, heading) {
             findings.push(format!("blueprint_body_empty_section:{heading}"));
         }
     }
@@ -7379,7 +7926,8 @@ fn evaluate_execution_package_contract(
     let execution_graph_node_by_id = execution_graph
         .as_ref()
         .map(|graph| {
-            graph.nodes
+            graph
+                .nodes
                 .iter()
                 .map(|node| (node.spec_id.as_str(), node))
                 .collect::<BTreeMap<_, _>>()
@@ -7405,6 +7953,12 @@ fn evaluate_execution_package_contract(
     }
     if review_obligations.is_empty() {
         findings.push("review_obligations must not be empty".to_string());
+    }
+    for path in invalid_scope_paths(read_scope) {
+        findings.push(format!("package_invalid_read_scope_path:{path}"));
+    }
+    for path in invalid_scope_paths(write_scope) {
+        findings.push(format!("package_invalid_write_scope_path:{path}"));
     }
 
     match selected_target_ref {
@@ -7432,12 +7986,20 @@ fn evaluate_execution_package_contract(
         if !dependency.satisfied {
             findings.push(format!("dependency_unsatisfied:{}", dependency.name));
         }
+        if default_dependency_governing_ref(&dependency.name).is_none() {
+            findings.push(format!(
+                "dependency_governing_ref_missing:{}",
+                dependency.name
+            ));
+        }
     }
 
     for context in &spec_contexts {
         let spec_doc = load_markdown::<WorkstreamSpecFrontmatter>(
             &paths.spec_file(&context.included.spec_id),
         )?;
+        let declared_read_paths = markdown_section_list_items(&spec_doc.body, "Read Scope");
+        let declared_write_paths = markdown_section_list_items(&spec_doc.body, "Write Scope");
         for missing in missing_markdown_sections(
             &spec_doc.body,
             &[
@@ -7462,6 +8024,30 @@ fn evaluate_execution_package_contract(
             findings.push(format!(
                 "spec_body_missing_section:{}:{}",
                 context.included.spec_id, missing
+            ));
+        }
+        if declared_read_paths.is_empty() {
+            findings.push(format!(
+                "spec_body_empty_section:{}:Read Scope",
+                context.included.spec_id
+            ));
+        }
+        if declared_write_paths.is_empty() {
+            findings.push(format!(
+                "spec_body_empty_section:{}:Write Scope",
+                context.included.spec_id
+            ));
+        }
+        for path in invalid_scope_paths(&declared_read_paths) {
+            findings.push(format!(
+                "spec_invalid_read_scope_path:{}:{}",
+                context.included.spec_id, path
+            ));
+        }
+        for path in invalid_scope_paths(&declared_write_paths) {
+            findings.push(format!(
+                "spec_invalid_write_scope_path:{}:{}",
+                context.included.spec_id, path
             ));
         }
         if context.artifact_status != SpecArtifactStatus::Active {
@@ -7512,18 +8098,14 @@ fn evaluate_execution_package_contract(
     }
     for included_spec_id in included_spec_ids {
         if let Some(scope) = effective_scope_by_spec_id.get(included_spec_id) {
-            if !scope.read_paths.is_empty()
-                && scope_paths_within_frontier(read_scope, &scope.read_paths).is_empty()
-            {
+            for path in scope_paths_outside_frontier(&scope.read_paths, read_scope) {
                 findings.push(format!(
-                    "package_read_scope_missing_for_included_spec:{included_spec_id}"
+                    "package_read_scope_missing_for_included_spec:{included_spec_id}:{path}"
                 ));
             }
-            if !scope.write_paths.is_empty()
-                && scope_paths_within_frontier(write_scope, &scope.write_paths).is_empty()
-            {
+            for path in scope_paths_outside_frontier(&scope.write_paths, write_scope) {
                 findings.push(format!(
-                    "package_write_scope_missing_for_included_spec:{included_spec_id}"
+                    "package_write_scope_missing_for_included_spec:{included_spec_id}:{path}"
                 ));
             }
         }
@@ -7681,10 +8263,11 @@ fn evaluate_execution_package_contract(
         PackageGateCheck {
             gate_id: "dependency_truth_current".to_string(),
             passed: !dependency_satisfaction_state.is_empty()
-                && dependency_satisfaction_state
-                    .iter()
-                    .all(|dep| dep.satisfied),
-            detail: "dependency satisfaction is explicit and fully satisfied".to_string(),
+                && dependency_satisfaction_state.iter().all(|dep| {
+                    dep.satisfied && default_dependency_governing_ref(&dep.name).is_some()
+                }),
+            detail: "dependency satisfaction is explicit, revision-bearing, and fully satisfied"
+                .to_string(),
         },
         PackageGateCheck {
             gate_id: "scope_declared".to_string(),
@@ -8382,7 +8965,81 @@ Route truth.
         .to_string()
     }
 
+    fn table_blueprint_body() -> String {
+        "# Program Blueprint
+
+## Locked Mission Reference
+
+- Mission id: `mission_alpha`
+
+## Truth Register Summary
+
+- Locked facts are reflected here.
+
+## System Model
+
+- Touched surfaces: API and storage.
+
+## Invariants And Protected Behaviors
+
+- Keep the locked outcome honest.
+
+## Proof Matrix
+
+- claim:default-proof
+
+## Decision Obligations
+
+- obligation:route-choice
+
+## In-Scope Work Inventory
+
+| Work item | Class | Why it exists | Finish in this mission? |
+| --- | --- | --- | --- |
+| runtime_core | runnable_frontier | It carries the current mission target. | yes |
+
+## Selected Architecture
+
+Route truth.
+
+## Execution Graph and Safe-Wave Rules
+
+- Single-node routes may execute directly; multi-node routes must follow the declared graph frontier.
+
+## Decision Log
+
+| Decision id | Statement | Rationale | Evidence refs | Adopted in revision |
+| --- | --- | --- | --- | --- |
+| D1 | Keep the runtime route bounded. | It preserves proof and review clarity. | RECEIPTS/test.txt | 1 |
+
+## Review Bundle Design
+
+- Mandatory review lenses: correctness, security_review
+
+## Workstream Overview
+
+- api
+
+## Risks And Unknowns
+
+- Rollout coupling remains explicit.
+
+## Replan Policy
+
+- Reopen planning if scope or proof changes.
+"
+        .to_string()
+    }
+
     fn canonical_spec_body(purpose: &str) -> String {
+        canonical_spec_body_with_scope(purpose, &["src/api"], &["src/api"])
+    }
+
+    fn canonical_spec_body_with_scope(
+        purpose: &str,
+        read_scope: &[&str],
+        write_scope: &[&str],
+    ) -> String {
         format!(
             "# Workstream Spec
 
@@ -8408,11 +9065,11 @@ Route truth.
 
 ## Read Scope
 
-- src/api.rs
+{}
 
 ## Write Scope
 
-- src/api.rs
+{}
 
 ## Interfaces And Contracts Touched
 
@@ -8449,7 +9106,17 @@ Keep the implementation bounded and explicit.
 ## Support Files
 
 - `REVIEW.md`
-"
+",
+            read_scope
+                .iter()
+                .map(|path| format!("- {path}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            write_scope
+                .iter()
+                .map(|path| format!("- {path}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
         )
     }
 
@@ -8731,7 +9398,11 @@ Keep the implementation bounded and explicit.
                     WorkstreamSpecInput {
                         spec_id: "spec_api".to_string(),
                         purpose: "Implement the API slice".to_string(),
-                        body_markdown: None,
+                        body_markdown: Some(canonical_spec_body_with_scope(
+                            "Implement the API slice",
+                            &["src/api"],
+                            &["src/shared"],
+                        )),
                         artifact_status: Some(SpecArtifactStatus::Active),
                         packetization_status: Some(PacketizationStatus::Runnable),
                         execution_status: Some(SpecExecutionStatus::Packaged),
@@ -8741,7 +9412,11 @@ Keep the implementation bounded and explicit.
                     WorkstreamSpecInput {
                         spec_id: "spec_ui".to_string(),
                         purpose: "Implement the UI slice".to_string(),
-                        body_markdown: None,
+                        body_markdown: Some(canonical_spec_body_with_scope(
+                            "Implement the UI slice",
+                            &["src/ui"],
+                            &["src/shared"],
+                        )),
                         artifact_status: Some(SpecArtifactStatus::Active),
                         packetization_status: Some(PacketizationStatus::Runnable),
                         execution_status: Some(SpecExecutionStatus::Packaged),
@@ -8844,9 +9519,9 @@ Keep the implementation bounded and explicit.
             target: Some("spec:spec_api".to_string()),
             cycle_kind: Some(super::CycleKind::GateEvaluation),
             lock_revision: Some(3),
-            lock_fingerprint: Some("lock-fp".to_string()),
+            lock_fingerprint: Some(Fingerprint::from_bytes(b"lock-fp").to_string()),
             blueprint_revision: Some(5),
-            blueprint_fingerprint: Some("blueprint-fp".to_string()),
+            blueprint_fingerprint: Some(Fingerprint::from_bytes(b"blueprint-fp").to_string()),
             governing_revision: Some("bundle:bundle_123".to_string()),
             reason_code: Some("review_required".to_string()),
             summary: Some("Review is required before execution can continue.".to_string()),
@@ -8894,11 +9569,14 @@ Keep the implementation bounded and explicit.
             Some("spec:spec_api")
         );
         assert_eq!(active_cycle.lock_revision, Some(3));
-        assert_eq!(active_cycle.lock_fingerprint.as_deref(), Some("lock-fp"));
+        assert_eq!(
+            active_cycle.lock_fingerprint.as_deref(),
+            Some(Fingerprint::from_bytes(b"lock-fp").as_str())
+        );
         assert_eq!(active_cycle.blueprint_revision, Some(5));
         assert_eq!(
             active_cycle.blueprint_fingerprint.as_deref(),
-            Some("blueprint-fp")
+            Some(Fingerprint::from_bytes(b"blueprint-fp").as_str())
         );
         assert_eq!(
             active_cycle.governing_revision.as_deref(),
@@ -9415,6 +10093,80 @@ Keep the implementation bounded and explicit.
     }
 
     #[test]
+    fn resolve_resume_clears_selection_state_missing_resolved_at() {
+        let temp = TempDir::new().expect("temp dir");
+        let repo_root = temp.path();
+        let paths = MissionPaths::new(repo_root, "mission_alpha");
+        initialize_mission(
+            &paths,
+            &MissionInitInput {
+                title: "Mission Alpha".to_string(),
+                objective: "Ship the alpha flow safely.".to_string(),
+                mission_id: None,
+                slug: None,
+                root_mission_id: None,
+                parent_mission_id: None,
+                clarify_status: Some(ClarifyStatus::Ratified),
+                lock_status: Some(LockStatus::Locked),
+                lock_posture: None,
+                mission_state_body: None,
+                outcome_lock_body: None,
+                readme_body: None,
+                waiting_request: None,
+                next_action: None,
+                summary: None,
+                reason_code: None,
+            },
+        )
+        .expect("mission bootstrap should work");
+
+        let selection = open_selection_wait(
+            &repo_root.join(".ralph"),
+            &SelectionStateInput {
+                candidate_mission_ids: vec![
+                    "mission_alpha".to_string(),
+                    "mission_beta".to_string(),
+                ],
+                canonical_selection_request: "Select the mission to resume.".to_string(),
+            },
+        )
+        .expect("selection wait should open");
+        let mut corrupted = selection.clone();
+        corrupted.selected_mission_id = Some("mission_alpha".to_string());
+        corrupted.resolved_at = None;
+        write_json(repo_root.join(".ralph/selection-state.json"), &corrupted)
+            .expect("rewrite corrupted selection state");
+
+        let report = resolve_resume(
+            repo_root,
+            &ResolveResumeInput {
+                mission_id: None,
+                live_child_lanes: Vec::new(),
+            },
+        )
+        .expect("resume should clear the invalid selection state and re-resolve");
+        assert_eq!(
+            report.selection_outcome,
+            SelectionOutcome::AutoBoundSingleCandidate
+        );
+        assert!(
+            report
+                .state_repairs_applied
+                .iter()
+                .any(|repair| repair == "cleared_selection_state_missing_resolved_at")
+        );
+
+        let preserved: super::SelectionState =
+            super::load_json(repo_root.join(".ralph/selection-state.json"))
+                .expect("selection state should still parse");
+        assert_eq!(
+            preserved.selected_mission_id.as_deref(),
+            Some("mission_alpha")
+        );
+        assert!(preserved.cleared_at.is_some());
+    }
+
+    #[test]
     fn selection_wait_rejects_impossible_candidate_sets() {
         let temp = TempDir::new().expect("temp dir");
         let error = open_selection_wait(
@@ -9916,13 +10668,13 @@ Keep the implementation bounded and explicit.
         .expect("resume resolution should work");
         assert_eq!(
             report.selection_outcome,
-            SelectionOutcome::PreservedSelectionWait
+            SelectionOutcome::AutoBoundSingleCandidate
         );
         assert_eq!(
             report.selection_state_action,
-            SelectionStateAction::Preserved
+            SelectionStateAction::Superseded
         );
-        assert_eq!(report.selected_mission_id, None);
+        assert_eq!(report.selected_mission_id.as_deref(), Some("mission_alpha"));
 
         let preserved_state: super::SelectionState = serde_json::from_slice(
             &std::fs::read(repo_root.join(".ralph/selection-state.json"))
@@ -9933,7 +10685,7 @@ Keep the implementation bounded and explicit.
             preserved_state.selection_request_id,
             selection.selection_request_id
         );
-        assert!(preserved_state.cleared_at.is_none());
+        assert!(preserved_state.cleared_at.is_some());
     }
 
     #[test]
@@ -10055,6 +10807,143 @@ Keep the implementation bounded and explicit.
                 .findings
                 .iter()
                 .any(|finding| finding == "review_obligation_missing_from_bundle:security_review")
+        );
+    }
+
+    #[test]
+    fn validation_rejects_tampered_package_and_bundle_mission_identity() {
+        let temp = TempDir::new().expect("temp dir");
+        let paths = MissionPaths::new(temp.path(), "mission_alpha");
+        initialize_mission(
+            &paths,
+            &MissionInitInput {
+                title: "Mission Alpha".to_string(),
+                objective: "Ship the alpha flow safely.".to_string(),
+                mission_id: None,
+                slug: None,
+                root_mission_id: None,
+                parent_mission_id: None,
+                clarify_status: Some(ClarifyStatus::Ratified),
+                lock_status: Some(LockStatus::Locked),
+                lock_posture: None,
+                mission_state_body: None,
+                outcome_lock_body: None,
+                readme_body: None,
+                waiting_request: None,
+                next_action: None,
+                summary: None,
+                reason_code: None,
+            },
+        )
+        .expect("mission bootstrap should work");
+        write_planning_artifacts(
+            &paths,
+            &PlanningWriteInput {
+                mission_id: "mission_alpha".to_string(),
+                body_markdown: canonical_blueprint_body(),
+                plan_level: 5,
+                problem_size: Some(ProblemSize::M),
+                status: Some(BlueprintStatus::Approved),
+                blueprint_revision: Some(1),
+                proof_matrix: default_proof_matrix(),
+                decision_obligations: Vec::new(),
+                specs: vec![WorkstreamSpecInput {
+                    spec_id: "spec_api".to_string(),
+                    purpose: "Implement the API slice".to_string(),
+                    body_markdown: Some(canonical_spec_body("Implement the API slice")),
+                    artifact_status: Some(SpecArtifactStatus::Active),
+                    packetization_status: Some(PacketizationStatus::Runnable),
+                    execution_status: Some(SpecExecutionStatus::NotStarted),
+                    owner_mode: None,
+                    replan_boundary: None,
+                }],
+                selected_target_ref: Some("spec:spec_api".to_string()),
+                execution_graph: None,
+                next_action: None,
+            },
+        )
+        .expect("planning writeback should work");
+        let package = compile_execution_package(
+            &paths,
+            &ExecutionPackageInput {
+                mission_id: "mission_alpha".to_string(),
+                target_type: TargetType::Spec,
+                target_id: "spec_api".to_string(),
+                included_spec_ids: vec!["spec_api".to_string()],
+                dependency_satisfaction_state: vec![DependencyCheck {
+                    name: "lock_current".to_string(),
+                    satisfied: true,
+                    detail: "current lock is ratified".to_string(),
+                }],
+                read_scope: vec!["src/api".to_string()],
+                write_scope: vec!["src/api".to_string()],
+                proof_obligations: vec!["cargo test".to_string()],
+                review_obligations: vec!["security_review".to_string()],
+                replan_boundary: None,
+                wave_context: None,
+                wave_fingerprint: None,
+                wave_specs: Vec::new(),
+                gate_checks: Vec::new(),
+            },
+        )
+        .expect("package compilation should work");
+
+        let mut tampered_package: ExecutionPackage =
+            super::load_json(paths.execution_package(&package.package_id)).expect("load package");
+        tampered_package.mission_id = "mission_beta".to_string();
+        write_json(
+            paths.execution_package(&package.package_id),
+            &tampered_package,
+        )
+        .expect("rewrite tampered package");
+
+        let validation = validate_execution_package(&paths, &package.package_id)
+            .expect("package validation should work");
+        assert!(!validation.valid);
+        assert!(
+            validation
+                .findings
+                .iter()
+                .any(|finding| finding == "package_mission_id_mismatch")
+        );
+
+        write_json(paths.execution_package(&package.package_id), &package)
+            .expect("restore package");
+        let bundle = compile_review_bundle(
+            &paths,
+            &ReviewBundleInput {
+                mission_id: "mission_alpha".to_string(),
+                source_package_id: package.package_id.clone(),
+                bundle_kind: BundleKind::SpecReview,
+                mandatory_review_lenses: vec!["correctness".to_string()],
+                target_spec_id: Some("spec_api".to_string()),
+                proof_rows_under_review: vec!["cargo test".to_string()],
+                receipts: vec!["RECEIPTS/test.txt".to_string()],
+                changed_files_or_diff: vec!["src/api/mod.rs".to_string()],
+                touched_interface_contracts: vec!["ApiService".to_string()],
+                mission_level_proof_rows: Vec::new(),
+                cross_spec_claim_refs: Vec::new(),
+                visible_artifact_refs: Vec::new(),
+                deferred_descoped_follow_on_refs: Vec::new(),
+                open_finding_summary: Vec::new(),
+            },
+        )
+        .expect("review bundle compilation should work");
+
+        let mut tampered_bundle: super::ReviewBundle =
+            super::load_json(paths.review_bundle(&bundle.bundle_id)).expect("load bundle");
+        tampered_bundle.mission_id = "mission_beta".to_string();
+        write_json(paths.review_bundle(&bundle.bundle_id), &tampered_bundle)
+            .expect("rewrite tampered bundle");
+
+        let bundle_validation = validate_review_bundle(&paths, &bundle.bundle_id)
+            .expect("bundle validation should work");
+        assert!(!bundle_validation.valid);
+        assert!(
+            bundle_validation
+                .findings
+                .iter()
+                .any(|finding| finding == "bundle_mission_id_mismatch")
         );
     }
 
@@ -10920,7 +11809,7 @@ Keep the implementation bounded and explicit.
                 target: Some("mission:mission_alpha".to_string()),
                 cycle_kind: Some(super::CycleKind::WaitingHandshake),
                 lock_revision: Some(1),
-                lock_fingerprint: Some("lock".to_string()),
+                lock_fingerprint: Some(Fingerprint::from_bytes(b"lock").to_string()),
                 blueprint_revision: None,
                 blueprint_fingerprint: None,
                 governing_revision: Some("lock:1".to_string()),
@@ -10936,7 +11825,7 @@ Keep the implementation bounded and explicit.
                 active_child_task_paths: Vec::new(),
                 artifact_fingerprints: BTreeMap::from([(
                     "mission-state".to_string(),
-                    "mission-state-fp".to_string(),
+                    Fingerprint::from_bytes(b"mission-state-fp").to_string(),
                 )]),
             },
         )
@@ -12333,6 +13222,310 @@ Keep the implementation bounded and explicit.
     }
 
     #[test]
+    fn approved_blueprint_accepts_table_based_inventory_and_decision_log_sections() {
+        let temp = TempDir::new().expect("temp dir");
+        let paths = MissionPaths::new(temp.path(), "mission_alpha");
+        initialize_mission(
+            &paths,
+            &MissionInitInput {
+                title: "Mission Alpha".to_string(),
+                objective: "Ship the alpha flow safely.".to_string(),
+                mission_id: None,
+                slug: None,
+                root_mission_id: None,
+                parent_mission_id: None,
+                clarify_status: Some(ClarifyStatus::Ratified),
+                lock_status: Some(LockStatus::Locked),
+                lock_posture: None,
+                mission_state_body: None,
+                outcome_lock_body: None,
+                readme_body: None,
+                waiting_request: None,
+                next_action: None,
+                summary: None,
+                reason_code: None,
+            },
+        )
+        .expect("mission bootstrap should work");
+
+        write_planning_artifacts(
+            &paths,
+            &PlanningWriteInput {
+                mission_id: "mission_alpha".to_string(),
+                body_markdown: table_blueprint_body(),
+                plan_level: 5,
+                problem_size: Some(ProblemSize::M),
+                status: Some(BlueprintStatus::Approved),
+                blueprint_revision: Some(1),
+                proof_matrix: default_proof_matrix(),
+                decision_obligations: Vec::new(),
+                specs: vec![WorkstreamSpecInput {
+                    spec_id: "spec_api".to_string(),
+                    purpose: "Implement the API slice".to_string(),
+                    body_markdown: Some(canonical_spec_body("Implement the API slice")),
+                    artifact_status: Some(SpecArtifactStatus::Active),
+                    packetization_status: Some(PacketizationStatus::Runnable),
+                    execution_status: Some(SpecExecutionStatus::NotStarted),
+                    owner_mode: None,
+                    replan_boundary: None,
+                }],
+                selected_target_ref: Some("spec:spec_api".to_string()),
+                execution_graph: None,
+                next_action: None,
+            },
+        )
+        .expect("approved blueprint tables should be accepted");
+    }
+
+    #[test]
+    fn approved_blueprint_rejects_header_only_inventory_and_decision_log_tables() {
+        let temp = TempDir::new().expect("temp dir");
+        let paths = MissionPaths::new(temp.path(), "mission_alpha");
+        initialize_mission(
+            &paths,
+            &MissionInitInput {
+                title: "Mission Alpha".to_string(),
+                objective: "Ship the alpha flow safely.".to_string(),
+                mission_id: None,
+                slug: None,
+                root_mission_id: None,
+                parent_mission_id: None,
+                clarify_status: Some(ClarifyStatus::Ratified),
+                lock_status: Some(LockStatus::Locked),
+                lock_posture: None,
+                mission_state_body: None,
+                outcome_lock_body: None,
+                readme_body: None,
+                waiting_request: None,
+                next_action: None,
+                summary: None,
+                reason_code: None,
+            },
+        )
+        .expect("mission bootstrap should work");
+
+        let error = write_planning_artifacts(
+            &paths,
+            &PlanningWriteInput {
+                mission_id: "mission_alpha".to_string(),
+                body_markdown: "# Program Blueprint\n\n## Locked Mission Reference\n\n- Mission id: `mission_alpha`\n\n## Truth Register Summary\n\n- Locked facts are reflected here.\n\n## System Model\n\n- Touched surfaces: API and storage.\n\n## Invariants And Protected Behaviors\n\n- Keep the locked outcome honest.\n\n## Proof Matrix\n\n- claim:default-proof\n\n## Decision Obligations\n\n- obligation:route-choice\n\n## In-Scope Work Inventory\n\n| Work item | Class | Why it exists | Finish in this mission? |\n| --- | --- | --- | --- |\n\n## Selected Architecture\n\nRoute truth.\n\n## Execution Graph and Safe-Wave Rules\n\n- Single-node routes may execute directly.\n\n## Decision Log\n\n| Decision id | Statement | Rationale | Evidence refs | Adopted in revision |\n| --- | --- | --- | --- | --- |\n\n## Review Bundle Design\n\n- Mandatory review lenses: correctness\n\n## Workstream Overview\n\n- api\n\n## Risks And Unknowns\n\n- Rollout coupling remains explicit.\n\n## Replan Policy\n\n- Reopen planning if scope or proof changes.\n".to_string(),
+                plan_level: 5,
+                problem_size: Some(ProblemSize::M),
+                status: Some(BlueprintStatus::Approved),
+                blueprint_revision: Some(1),
+                proof_matrix: default_proof_matrix(),
+                decision_obligations: Vec::new(),
+                specs: vec![WorkstreamSpecInput {
+                    spec_id: "spec_api".to_string(),
+                    purpose: "Implement the API slice".to_string(),
+                    body_markdown: Some(canonical_spec_body("Implement the API slice")),
+                    artifact_status: Some(SpecArtifactStatus::Active),
+                    packetization_status: Some(PacketizationStatus::Runnable),
+                    execution_status: Some(SpecExecutionStatus::NotStarted),
+                    owner_mode: None,
+                    replan_boundary: None,
+                }],
+                selected_target_ref: Some("spec:spec_api".to_string()),
+                execution_graph: None,
+                next_action: None,
+            },
+        )
+        .expect_err("header-only planning tables should be rejected");
+
+        assert!(
+            error
+                .to_string()
+                .contains("must contain at least one meaningful planning entry")
+        );
+    }
+
+    #[test]
+    fn spec_body_requires_non_empty_scope_sections() {
+        let temp = TempDir::new().expect("temp dir");
+        let paths = MissionPaths::new(temp.path(), "mission_alpha");
+        initialize_mission(
+            &paths,
+            &MissionInitInput {
+                title: "Mission Alpha".to_string(),
+                objective: "Ship the alpha flow safely.".to_string(),
+                mission_id: None,
+                slug: None,
+                root_mission_id: None,
+                parent_mission_id: None,
+                clarify_status: Some(ClarifyStatus::Ratified),
+                lock_status: Some(LockStatus::Locked),
+                lock_posture: None,
+                mission_state_body: None,
+                outcome_lock_body: None,
+                readme_body: None,
+                waiting_request: None,
+                next_action: None,
+                summary: None,
+                reason_code: None,
+            },
+        )
+        .expect("mission bootstrap should work");
+
+        let error = write_planning_artifacts(
+            &paths,
+            &PlanningWriteInput {
+                mission_id: "mission_alpha".to_string(),
+                body_markdown: canonical_blueprint_body(),
+                plan_level: 5,
+                problem_size: Some(ProblemSize::M),
+                status: Some(BlueprintStatus::Approved),
+                blueprint_revision: Some(1),
+                proof_matrix: default_proof_matrix(),
+                decision_obligations: Vec::new(),
+                specs: vec![WorkstreamSpecInput {
+                    spec_id: "spec_api".to_string(),
+                    purpose: "Implement the API slice".to_string(),
+                    body_markdown: Some(canonical_spec_body_with_scope(
+                        "Implement the API slice",
+                        &[],
+                        &[],
+                    )),
+                    artifact_status: Some(SpecArtifactStatus::Active),
+                    packetization_status: Some(PacketizationStatus::Runnable),
+                    execution_status: Some(SpecExecutionStatus::NotStarted),
+                    owner_mode: None,
+                    replan_boundary: None,
+                }],
+                selected_target_ref: Some("spec:spec_api".to_string()),
+                execution_graph: None,
+                next_action: None,
+            },
+        )
+        .expect_err("specs without explicit scope should be rejected");
+
+        assert!(error.to_string().contains("Read Scope"));
+    }
+
+    #[test]
+    fn spec_body_rejects_invalid_scope_paths() {
+        let temp = TempDir::new().expect("temp dir");
+        let paths = MissionPaths::new(temp.path(), "mission_alpha");
+        initialize_mission(
+            &paths,
+            &MissionInitInput {
+                title: "Mission Alpha".to_string(),
+                objective: "Ship the alpha flow safely.".to_string(),
+                mission_id: None,
+                slug: None,
+                root_mission_id: None,
+                parent_mission_id: None,
+                clarify_status: Some(ClarifyStatus::Ratified),
+                lock_status: Some(LockStatus::Locked),
+                lock_posture: None,
+                mission_state_body: None,
+                outcome_lock_body: None,
+                readme_body: None,
+                waiting_request: None,
+                next_action: None,
+                summary: None,
+                reason_code: None,
+            },
+        )
+        .expect("mission bootstrap should work");
+
+        let error = write_planning_artifacts(
+            &paths,
+            &PlanningWriteInput {
+                mission_id: "mission_alpha".to_string(),
+                body_markdown: canonical_blueprint_body(),
+                plan_level: 5,
+                problem_size: Some(ProblemSize::M),
+                status: Some(BlueprintStatus::Approved),
+                blueprint_revision: Some(1),
+                proof_matrix: default_proof_matrix(),
+                decision_obligations: Vec::new(),
+                specs: vec![WorkstreamSpecInput {
+                    spec_id: "spec_api".to_string(),
+                    purpose: "Implement the API slice".to_string(),
+                    body_markdown: Some(canonical_spec_body_with_scope(
+                        "Implement the API slice",
+                        &["src/api/../secrets"],
+                        &["src/api.rs"],
+                    )),
+                    artifact_status: Some(SpecArtifactStatus::Active),
+                    packetization_status: Some(PacketizationStatus::Runnable),
+                    execution_status: Some(SpecExecutionStatus::NotStarted),
+                    owner_mode: None,
+                    replan_boundary: None,
+                }],
+                selected_target_ref: Some("spec:spec_api".to_string()),
+                execution_graph: None,
+                next_action: None,
+            },
+        )
+        .expect_err("specs with escaping scope paths should be rejected");
+
+        assert!(error.to_string().contains("invalid scoped path"));
+    }
+
+    #[test]
+    fn spec_body_rejects_placeholder_scope_paths() {
+        let temp = TempDir::new().expect("temp dir");
+        let paths = MissionPaths::new(temp.path(), "mission_alpha");
+        initialize_mission(
+            &paths,
+            &MissionInitInput {
+                title: "Mission Alpha".to_string(),
+                objective: "Ship the alpha flow safely.".to_string(),
+                mission_id: None,
+                slug: None,
+                root_mission_id: None,
+                parent_mission_id: None,
+                clarify_status: Some(ClarifyStatus::Ratified),
+                lock_status: Some(LockStatus::Locked),
+                lock_posture: None,
+                mission_state_body: None,
+                outcome_lock_body: None,
+                readme_body: None,
+                waiting_request: None,
+                next_action: None,
+                summary: None,
+                reason_code: None,
+            },
+        )
+        .expect("mission bootstrap should work");
+
+        let error = write_planning_artifacts(
+            &paths,
+            &PlanningWriteInput {
+                mission_id: "mission_alpha".to_string(),
+                body_markdown: canonical_blueprint_body(),
+                plan_level: 5,
+                problem_size: Some(ProblemSize::M),
+                status: Some(BlueprintStatus::Approved),
+                blueprint_revision: Some(1),
+                proof_matrix: default_proof_matrix(),
+                decision_obligations: Vec::new(),
+                specs: vec![WorkstreamSpecInput {
+                    spec_id: "spec_api".to_string(),
+                    purpose: "Implement the API slice".to_string(),
+                    body_markdown: Some(canonical_spec_body_with_scope(
+                        "Implement the API slice",
+                        &["{{READ_PATH_1}}"],
+                        &["Fill in during planning"],
+                    )),
+                    artifact_status: Some(SpecArtifactStatus::Active),
+                    packetization_status: Some(PacketizationStatus::Runnable),
+                    execution_status: Some(SpecExecutionStatus::NotStarted),
+                    owner_mode: None,
+                    replan_boundary: None,
+                }],
+                selected_target_ref: Some("spec:spec_api".to_string()),
+                execution_graph: None,
+                next_action: None,
+            },
+        )
+        .expect_err("placeholder scope entries should be rejected");
+
+        assert!(error.to_string().contains("invalid scoped path"));
+    }
+
+    #[test]
     fn compile_execution_package_rejects_scope_outside_spec_frontier() {
         let temp = TempDir::new().expect("temp dir");
         let paths = MissionPaths::new(temp.path(), "mission_alpha");
@@ -12417,6 +13610,186 @@ Keep the implementation bounded and explicit.
                 .validation_failures
                 .iter()
                 .any(|finding| finding == "package_write_scope_outside_frontier:src")
+        );
+    }
+
+    #[test]
+    fn compile_execution_package_rejects_partial_included_spec_scope_coverage() {
+        let temp = TempDir::new().expect("temp dir");
+        let paths = MissionPaths::new(temp.path(), "mission_alpha");
+        initialize_mission(
+            &paths,
+            &MissionInitInput {
+                title: "Mission Alpha".to_string(),
+                objective: "Ship the alpha flow safely.".to_string(),
+                mission_id: None,
+                slug: None,
+                root_mission_id: None,
+                parent_mission_id: None,
+                clarify_status: Some(ClarifyStatus::Ratified),
+                lock_status: Some(LockStatus::Locked),
+                lock_posture: None,
+                mission_state_body: None,
+                outcome_lock_body: None,
+                readme_body: None,
+                waiting_request: None,
+                next_action: None,
+                summary: None,
+                reason_code: None,
+            },
+        )
+        .expect("mission bootstrap should work");
+        write_planning_artifacts(
+            &paths,
+            &PlanningWriteInput {
+                mission_id: "mission_alpha".to_string(),
+                body_markdown: canonical_blueprint_body(),
+                plan_level: 5,
+                problem_size: Some(ProblemSize::M),
+                status: Some(BlueprintStatus::Approved),
+                blueprint_revision: Some(1),
+                proof_matrix: default_proof_matrix(),
+                decision_obligations: Vec::new(),
+                specs: vec![WorkstreamSpecInput {
+                    spec_id: "spec_api".to_string(),
+                    purpose: "Implement the API slice".to_string(),
+                    body_markdown: Some(canonical_spec_body_with_scope(
+                        "Implement the API slice",
+                        &["src/api.rs", "src/api_types.rs"],
+                        &["src/api.rs", "src/api_types.rs"],
+                    )),
+                    artifact_status: Some(SpecArtifactStatus::Active),
+                    packetization_status: Some(PacketizationStatus::Runnable),
+                    execution_status: Some(SpecExecutionStatus::NotStarted),
+                    owner_mode: None,
+                    replan_boundary: None,
+                }],
+                selected_target_ref: Some("spec:spec_api".to_string()),
+                execution_graph: None,
+                next_action: None,
+            },
+        )
+        .expect("planning writeback should work");
+
+        let package = compile_execution_package(
+            &paths,
+            &ExecutionPackageInput {
+                mission_id: "mission_alpha".to_string(),
+                target_type: TargetType::Spec,
+                target_id: "spec_api".to_string(),
+                included_spec_ids: vec!["spec_api".to_string()],
+                dependency_satisfaction_state: vec![DependencyCheck {
+                    name: "lock_current".to_string(),
+                    satisfied: true,
+                    detail: "current lock is ratified".to_string(),
+                }],
+                read_scope: vec!["src/api.rs".to_string()],
+                write_scope: vec!["src/api.rs".to_string()],
+                proof_obligations: vec!["cargo test".to_string()],
+                review_obligations: vec!["correctness".to_string()],
+                replan_boundary: None,
+                wave_context: None,
+                wave_fingerprint: None,
+                wave_specs: Vec::new(),
+                gate_checks: Vec::new(),
+            },
+        )
+        .expect("package compilation should still return a failed package");
+
+        assert_eq!(package.status, ExecutionPackageStatus::Failed);
+        assert!(package.validation_failures.iter().any(|finding| {
+            finding == "package_read_scope_missing_for_included_spec:spec_api:src/api_types.rs"
+        }));
+        assert!(package.validation_failures.iter().any(|finding| {
+            finding == "package_write_scope_missing_for_included_spec:spec_api:src/api_types.rs"
+        }));
+    }
+
+    #[test]
+    fn compile_execution_package_rejects_invalid_package_scope_paths() {
+        let temp = TempDir::new().expect("temp dir");
+        let paths = MissionPaths::new(temp.path(), "mission_alpha");
+        initialize_mission(
+            &paths,
+            &MissionInitInput {
+                title: "Mission Alpha".to_string(),
+                objective: "Ship the alpha flow safely.".to_string(),
+                mission_id: None,
+                slug: None,
+                root_mission_id: None,
+                parent_mission_id: None,
+                clarify_status: Some(ClarifyStatus::Ratified),
+                lock_status: Some(LockStatus::Locked),
+                lock_posture: None,
+                mission_state_body: None,
+                outcome_lock_body: None,
+                readme_body: None,
+                waiting_request: None,
+                next_action: None,
+                summary: None,
+                reason_code: None,
+            },
+        )
+        .expect("mission bootstrap should work");
+        write_planning_artifacts(
+            &paths,
+            &PlanningWriteInput {
+                mission_id: "mission_alpha".to_string(),
+                body_markdown: canonical_blueprint_body(),
+                plan_level: 5,
+                problem_size: Some(ProblemSize::M),
+                status: Some(BlueprintStatus::Approved),
+                blueprint_revision: Some(1),
+                proof_matrix: default_proof_matrix(),
+                decision_obligations: Vec::new(),
+                specs: vec![WorkstreamSpecInput {
+                    spec_id: "spec_api".to_string(),
+                    purpose: "Implement the API slice".to_string(),
+                    body_markdown: Some(canonical_spec_body("Implement the API slice")),
+                    artifact_status: Some(SpecArtifactStatus::Active),
+                    packetization_status: Some(PacketizationStatus::Runnable),
+                    execution_status: Some(SpecExecutionStatus::NotStarted),
+                    owner_mode: None,
+                    replan_boundary: None,
+                }],
+                selected_target_ref: Some("spec:spec_api".to_string()),
+                execution_graph: None,
+                next_action: None,
+            },
+        )
+        .expect("planning writeback should work");
+
+        let package = compile_execution_package(
+            &paths,
+            &ExecutionPackageInput {
+                mission_id: "mission_alpha".to_string(),
+                target_type: TargetType::Spec,
+                target_id: "spec_api".to_string(),
+                included_spec_ids: vec!["spec_api".to_string()],
+                dependency_satisfaction_state: vec![DependencyCheck {
+                    name: "lock_current".to_string(),
+                    satisfied: true,
+                    detail: "current lock is ratified".to_string(),
+                }],
+                read_scope: vec!["src/api/../secrets".to_string()],
+                write_scope: vec!["src/api.rs".to_string()],
+                proof_obligations: vec!["cargo test".to_string()],
+                review_obligations: vec!["correctness".to_string()],
+                replan_boundary: None,
+                wave_context: None,
+                wave_fingerprint: None,
+                wave_specs: Vec::new(),
+                gate_checks: Vec::new(),
+            },
+        )
+        .expect("package compilation should still return a failed package");
+
+        assert_eq!(package.status, ExecutionPackageStatus::Failed);
+        assert!(
+            package
+                .validation_failures
+                .iter()
+                .any(|finding| { finding == "package_invalid_read_scope_path:src/api/../secrets" })
         );
     }
 

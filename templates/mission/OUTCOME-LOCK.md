@@ -2,7 +2,7 @@
 artifact: outcome-lock
 mission_id: "{{MISSION_ID}}"
 root_mission_id: "{{ROOT_MISSION_ID}}"
-parent_mission_id: "{{PARENT_MISSION_ID}}"
+parent_mission_id: {{PARENT_MISSION_ID}}
 version: 1
 lock_revision: 1
 status: "draft"
@@ -50,6 +50,17 @@ slug: "{{MISSION_SLUG}}"
 
 - Codex may decide later without asking: {{AUTONOMOUS_DECISIONS}}
 - Codex must ask before deciding: {{USER_ONLY_DECISIONS}}
+
+## Locked Field Discipline
+
+The fields above for objective, done-when criteria, protected surfaces,
+unacceptable tradeoffs, non-goals, autonomy boundary, and reopen conditions are
+locked fields. Change them only through an explicit reopen or superseding lock
+revision, never by silent mutation.
+
+Baseline facts and rollout or migration constraints are also revision-gated:
+extend them only through an explicit lock revision when new truth materially
+changes the destination contract.
 
 ## Baseline Current Facts
 

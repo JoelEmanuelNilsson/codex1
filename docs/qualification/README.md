@@ -8,15 +8,18 @@
 - When `--live` is enabled, proves a native `codex exec` session can be resumed through `codex exec resume` on the exact trusted build under test.
 - When `--live` is enabled, proves the native child-agent surface can drive the resume-critical inspection path (`spawn_agent`, `list_agents`, `wait_agent`, and `close_agent`), then feeds the live child snapshot back into Codex1 resume reconciliation. Queue-only and turn-triggering child-delivery tools are still recorded observationally when the trusted build surfaces them.
 - Verifies the target repo has project-scoped `.codex/config.toml` and `.codex/hooks.json`.
+- Verifies the target repo is trusted by Codex and that the effective trusted config resolves the required baseline keys honestly.
 - Verifies the target repo has the Codex1-managed `AGENTS.md` scaffold block.
 - Smoke-checks that `.codex/config.toml` enables `features.codex_hooks = true`.
 - Smoke-checks that `.codex/hooks.json` exposes exactly one authoritative Stop-hook pipeline while tolerating observational Stop hooks.
+- Verifies the combined user/project Stop-hook surface still resolves to one authoritative Ralph pipeline.
 - Verifies the target repo has a discoverable skill surface through `copied_skills`, `linked_skills`, or `skills_config_bridge`.
 - Runs an isolated temp-repo flow through `setup`, `doctor`, `restore`, and `uninstall`, then checks the sandbox repo and temporary user `.codex` baseline were restored.
 - Runs helper-flow smoke commands under an isolated sandbox `HOME` / `CODEX_HOME` so outer user config does not leak into qualification.
 - Proves helper repair/fail-safe behavior for multi-Stop conflict rejection plus `--force` normalization, repair from a deliberately partial support surface representative of interrupted setup, and drift detection on managed shared files.
 - Runs an isolated temp-repo mission-runtime flow through mission bootstrap, canonical blueprint/spec writeback, execution-package compilation, writer-packet derivation, review-bundle compilation, contradiction logging, resume-resolution, and selection consumption.
 - Proves that a durable `needs_user` mission and a resolver-created resume-selection wait both yield through the Stop hook, and that the acknowledgement handshake preserves request identity across idempotent re-emission.
+- When `--live` is enabled, proves the trusted build dispatches the real native Stop hook through Codex rather than only the internal adapter.
 - Proves internal backend parity by running the same mission truth through an explicit manual backend sequence and an autopilot-style backend composition, then comparing their validated durable artifact summaries.
 - Verifies a real self-hosting source-repo gate when the target repo looks like the `codex1` source workspace.
 

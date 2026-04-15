@@ -94,4 +94,6 @@ A good planning cycle leaves:
 - one canonical `PROGRAM-BLUEPRINT.md`
 - execution-grade frontier specs under `specs/`
 - an updated mission `README.md`
-- an explicit next verdict: continue, needs user, hard blocked, or replan
+- the exact next selected target plus its passed execution-package gate state
+- an explicit next verdict such as `continue_required`, `needs_user`,
+  `hard_blocked`, or `replan_required`

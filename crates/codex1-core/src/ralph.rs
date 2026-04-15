@@ -8,6 +8,8 @@ use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
+use crate::fingerprint::Fingerprint;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Verdict {
@@ -150,6 +152,8 @@ pub struct ActiveCycleState {
     pub mission_id: String,
     pub phase: String,
     #[serde(default)]
+    pub opened_after_closeout_seq: Option<u64>,
+    #[serde(default)]
     pub cycle_kind: Option<CycleKind>,
     #[serde(default)]
     pub activity: Option<String>,
@@ -196,6 +200,7 @@ impl ActiveCycleState {
             cycle_id,
             mission_id,
             phase,
+            opened_after_closeout_seq: None,
             cycle_kind: None,
             activity: None,
             current_target,
@@ -355,6 +360,24 @@ pub fn validate_closeout(record: &CloseoutRecord) -> Result<()> {
     if record.artifact_fingerprints.is_empty() {
         bail!("closeout artifact_fingerprints must not be empty");
     }
+    for (label, value) in [
+        ("lock_fingerprint", record.lock_fingerprint.as_deref()),
+        (
+            "blueprint_fingerprint",
+            record.blueprint_fingerprint.as_deref(),
+        ),
+    ] {
+        if let Some(value) = value {
+            Fingerprint::parse(value)
+                .map_err(anyhow::Error::new)
+                .with_context(|| format!("closeout {label} is invalid"))?;
+        }
+    }
+    for (artifact, value) in &record.artifact_fingerprints {
+        Fingerprint::parse(value)
+            .map_err(anyhow::Error::new)
+            .with_context(|| format!("closeout artifact_fingerprints[{artifact}] is invalid"))?;
+    }
     match record.verdict {
         Verdict::Complete | Verdict::HardBlocked => {
             if record.terminality != Terminality::Terminal {
@@ -362,6 +385,13 @@ pub fn validate_closeout(record: &CloseoutRecord) -> Result<()> {
             }
             if record.resume_mode != ResumeMode::AllowStop {
                 bail!("terminal verdict must use allow_stop resume mode");
+            }
+            if record
+                .next_phase
+                .as_deref()
+                .is_some_and(|phase| phase != "complete")
+            {
+                bail!("terminal closeouts may only use next_phase `complete` or null");
             }
         }
         Verdict::NeedsUser => {
@@ -433,6 +463,12 @@ pub fn rebuild_state_from_closeouts(
     let interrupted_cycle = active_cycle.filter(|cycle| {
         cycle.mission_id == latest.mission_id
             && latest.cycle_id.as_deref() != Some(cycle.cycle_id.as_str())
+            && cycle
+                .opened_after_closeout_seq
+                .is_none_or(|opened_after| opened_after >= latest.closeout_seq)
+            && !closeouts
+                .iter()
+                .any(|record| record.cycle_id.as_deref() == Some(cycle.cycle_id.as_str()))
     });
 
     Ok(RalphState {
@@ -478,9 +514,7 @@ pub fn rebuild_state_from_closeouts(
         last_valid_closeout_seq: latest.closeout_seq,
         last_valid_closeout_ref: latest.closeout_id.clone(),
         last_applied_closeout_seq: latest.closeout_seq,
-        active_cycle_id: active_cycle
-            .filter(|cycle| cycle.mission_id == latest.mission_id)
-            .map(|cycle| cycle.cycle_id.clone()),
+        active_cycle_id: interrupted_cycle.map(|cycle| cycle.cycle_id.clone()),
         waiting_request_id: interrupted_cycle
             .is_some()
             .then_some(None)
@@ -716,6 +750,27 @@ pub fn append_closeout_and_rebuild_state(
     file.lock_exclusive()
         .with_context(|| format!("failed to lock {}", closeouts_path.display()))?;
     let mut closeouts = load_closeouts(&closeouts_path)?;
+    if let Some(existing) = closeouts.last()
+        && existing.closeout_id == closeout.closeout_id
+        && existing.cycle_id == closeout.cycle_id
+        && existing.closeout_seq == closeout.closeout_seq
+    {
+        let next_state = rebuild_state_from_closeouts(&closeouts, None)?;
+        let state_path = mission_dir.join("state.json");
+        atomic_write_json(
+            &state_path,
+            &next_state,
+            "failed to serialize Ralph state for atomic write",
+        )?;
+        let active_cycle_path = mission_dir.join("active-cycle.json");
+        if active_cycle_path.exists() {
+            atomic_remove_file(&active_cycle_path)?;
+        }
+        fsync_dir(mission_dir)?;
+        file.unlock()
+            .with_context(|| format!("failed to unlock {}", closeouts_path.display()))?;
+        return Ok(next_state);
+    }
     let expected_seq = closeouts.last().map_or(1, |record| record.closeout_seq + 1);
     if closeout.closeout_seq != expected_seq {
         bail!(
@@ -725,10 +780,13 @@ pub fn append_closeout_and_rebuild_state(
             closeout.closeout_seq
         );
     }
-    if let Some(active_cycle) = active_cycle
-        && active_cycle.mission_id != closeout.mission_id
-    {
-        bail!("active cycle mission does not match closeout mission");
+    if let Some(active_cycle) = active_cycle {
+        if active_cycle.mission_id != closeout.mission_id {
+            bail!("active cycle mission does not match closeout mission");
+        }
+        if closeout.cycle_id.as_deref() != Some(active_cycle.cycle_id.as_str()) {
+            bail!("active cycle id does not match closeout cycle id");
+        }
     }
     closeouts.push(closeout.clone());
     validate_closeout_history(&closeouts, &closeouts_path)?;
@@ -942,6 +1000,8 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
+    use crate::fingerprint::Fingerprint;
+
     use super::{
         ActiveCycleState, CloseoutRecord, ResumeMode, Terminality, Verdict,
         append_closeout_and_rebuild_state, determine_stop_decision, load_closeouts,
@@ -953,6 +1013,11 @@ mod tests {
         terminality: Terminality,
         resume_mode: ResumeMode,
     ) -> CloseoutRecord {
+        let next_phase = if matches!(verdict, Verdict::Complete | Verdict::HardBlocked) {
+            Some("complete".to_string())
+        } else {
+            Some("review".to_string())
+        };
         CloseoutRecord {
             closeout_id: Some("closeout-1".to_string()),
             closeout_seq: 1,
@@ -962,14 +1027,14 @@ mod tests {
             verdict,
             terminality,
             resume_mode,
-            next_phase: Some("review".to_string()),
+            next_phase,
             next_action: "run review".to_string(),
             target: Some("mission:mission-1".to_string()),
             cycle_kind: Some(super::CycleKind::BoundedProgress),
             lock_revision: Some(1),
-            lock_fingerprint: Some("lock-fp".to_string()),
+            lock_fingerprint: Some(Fingerprint::from_bytes(b"lock-fp").to_string()),
             blueprint_revision: Some(1),
-            blueprint_fingerprint: Some("blueprint-fp".to_string()),
+            blueprint_fingerprint: Some(Fingerprint::from_bytes(b"blueprint-fp").to_string()),
             governing_revision: Some("blueprint:1".to_string()),
             reason_code: Some("test_closeout".to_string()),
             summary: Some("test summary".to_string()),
@@ -983,7 +1048,7 @@ mod tests {
             active_child_task_paths: vec!["/root/explorer".to_string()],
             artifact_fingerprints: BTreeMap::from([(
                 "mission-state".to_string(),
-                "mission-state-fp".to_string(),
+                Fingerprint::from_bytes(b"mission-state-fp").to_string(),
             )]),
         }
     }
@@ -1175,6 +1240,61 @@ mod tests {
             .expect("rebuild should work")
             .expect("state should exist");
         assert_eq!(rebuilt.verdict, Verdict::Complete);
-        assert_eq!(rebuilt.active_cycle_id, Some("cycle-1".to_string()));
+        assert_eq!(rebuilt.active_cycle_id, None);
+    }
+
+    #[test]
+    fn terminal_closeouts_reject_non_terminal_next_phase() {
+        let mut record = closeout(
+            Verdict::Complete,
+            Terminality::Terminal,
+            ResumeMode::AllowStop,
+        );
+        record.next_phase = Some("review".to_string());
+
+        let error =
+            super::validate_closeout(&record).expect_err("terminal next_phase must be constrained");
+        assert!(
+            error
+                .to_string()
+                .contains("terminal closeouts may only use next_phase")
+        );
+    }
+
+    #[test]
+    fn superseded_older_active_cycle_does_not_override_newer_terminal_closeout() {
+        let mut first = closeout(
+            Verdict::ReviewRequired,
+            Terminality::ActionableNonTerminal,
+            ResumeMode::Continue,
+        );
+        first.closeout_id = Some("closeout-1".to_string());
+        first.closeout_seq = 1;
+        first.cycle_id = Some("cycle-1".to_string());
+        first.next_phase = Some("review".to_string());
+
+        let mut latest = closeout(
+            Verdict::Complete,
+            Terminality::Terminal,
+            ResumeMode::AllowStop,
+        );
+        latest.closeout_id = Some("closeout-2".to_string());
+        latest.closeout_seq = 2;
+        latest.cycle_id = Some("cycle-2".to_string());
+        latest.next_phase = Some("complete".to_string());
+
+        let mut stale_cycle = ActiveCycleState::new(
+            "cycle-1".to_string(),
+            "mission-1".to_string(),
+            "review".to_string(),
+            Some("mission:mission-1".to_string()),
+            Vec::new(),
+        );
+        stale_cycle.opened_after_closeout_seq = Some(0);
+
+        let rebuilt = super::rebuild_state_from_closeouts(&[first, latest], Some(&stale_cycle))
+            .expect("rebuild should prefer newer terminal closeout");
+        assert_eq!(rebuilt.verdict, Verdict::Complete);
+        assert_eq!(rebuilt.active_cycle_id, None);
     }
 }

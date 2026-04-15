@@ -148,6 +148,78 @@ pub fn default_skill_root(repo_root: &Path) -> PathBuf {
     repo_root.join(".codex/skills")
 }
 
+pub fn lookup_toml_value(source: &str, section: Option<&str>, key: &str) -> Option<String> {
+    let parsed = source.parse::<TomlValue>().ok()?;
+    let value = lookup_toml_value_ref(&parsed, section, key)?;
+    render_toml_scalar(value)
+}
+
+pub fn detect_toml_bool(source: &str, section: Option<&str>, key: &str) -> Option<bool> {
+    let parsed = source.parse::<TomlValue>().ok()?;
+    lookup_toml_value_ref(&parsed, section, key).and_then(TomlValue::as_bool)
+}
+
+pub fn toml_repo_is_trusted(source: &str, repo_root: &Path) -> bool {
+    let Ok(parsed) = source.parse::<TomlValue>() else {
+        return false;
+    };
+    parsed
+        .as_table()
+        .and_then(|table| table.get("projects"))
+        .and_then(TomlValue::as_table)
+        .is_some_and(|projects| {
+            projects.iter().any(|(project_path, project)| {
+                project
+                    .as_table()
+                    .and_then(|table| table.get("trust_level"))
+                    .and_then(TomlValue::as_str)
+                    == Some("trusted")
+                    && trusted_project_path_matches(project_path, repo_root)
+            })
+        })
+}
+
+fn trusted_project_path_matches(project_path: &str, repo_root: &Path) -> bool {
+    if project_path == repo_root.display().to_string() {
+        return true;
+    }
+
+    let candidate = Path::new(project_path);
+    if !candidate.is_absolute() {
+        return false;
+    }
+
+    match fs::canonicalize(candidate) {
+        Ok(canonical) => canonical == repo_root,
+        Err(_) => false,
+    }
+}
+
+fn lookup_toml_value_ref<'a>(
+    parsed: &'a TomlValue,
+    section: Option<&str>,
+    key: &str,
+) -> Option<&'a TomlValue> {
+    let mut current = parsed.as_table()?;
+    if let Some(section) = section {
+        for segment in section.split('.') {
+            current = current.get(segment)?.as_table()?;
+        }
+    }
+    current.get(key)
+}
+
+fn render_toml_scalar(value: &TomlValue) -> Option<String> {
+    match value {
+        TomlValue::String(value) => Some(value.clone()),
+        TomlValue::Integer(value) => Some(value.to_string()),
+        TomlValue::Float(value) => Some(value.to_string()),
+        TomlValue::Boolean(value) => Some(value.to_string()),
+        TomlValue::Datetime(value) => Some(value.to_string()),
+        _ => None,
+    }
+}
+
 pub fn resolve_source_skills_root() -> Result<PathBuf> {
     if let Some(explicit) = env::var_os("CODEX1_SKILLS_ROOT") {
         let candidate = fs::canonicalize(PathBuf::from(explicit))
@@ -838,11 +910,12 @@ pub fn managed_agents_block_is_malformed(contents: &str) -> bool {
 pub fn extract_managed_agents_block(contents: &str) -> Option<String> {
     let span = locate_managed_agents_block_span(contents)?;
     let block = contents[span.begin_index..span.end_index + span.end_marker.len()].to_string();
-    Some(
-        block
+    Some(ensure_trailing_newline(
+        &block
+            .replace("\r\n", "\n")
             .replace(span.begin_marker, AGENTS_BLOCK_BEGIN)
             .replace(span.end_marker, AGENTS_BLOCK_END),
-    )
+    ))
 }
 
 enum ManagedAgentsBlockDetection {
@@ -852,7 +925,8 @@ enum ManagedAgentsBlockDetection {
 }
 
 fn detect_managed_agents_block(contents: &str) -> ManagedAgentsBlockDetection {
-    let current = locate_agents_block_span_with_markers(contents, AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END);
+    let current =
+        locate_agents_block_span_with_markers(contents, AGENTS_BLOCK_BEGIN, AGENTS_BLOCK_END);
     let legacy = locate_agents_block_span_with_markers(
         contents,
         LEGACY_AGENTS_BLOCK_BEGIN,
@@ -879,20 +953,31 @@ fn locate_agents_block_span_with_markers(
     let mut end_positions = Vec::new();
     let mut offset = 0;
     let mut in_fence = false;
-    for line in contents.lines() {
+    for line in contents.split_inclusive('\n') {
+        let line = line.trim_end_matches(['\r', '\n']);
         let trimmed = line.trim();
         if !in_fence {
-            if trimmed == begin_marker && let Some(relative) = line.find(begin_marker) {
+            if trimmed == begin_marker
+                && let Some(relative) = line.find(begin_marker)
+            {
                 begin_positions.push(offset + relative);
             }
-            if trimmed == end_marker && let Some(relative) = line.find(end_marker) {
+            if trimmed == end_marker
+                && let Some(relative) = line.find(end_marker)
+            {
                 end_positions.push(offset + relative);
             }
         }
         if trimmed.starts_with("```") {
             in_fence = !in_fence;
         }
-        offset += line.len() + 1;
+        offset += line.len();
+        if contents.as_bytes().get(offset) == Some(&b'\r') {
+            offset += 1;
+        }
+        if contents.as_bytes().get(offset) == Some(&b'\n') {
+            offset += 1;
+        }
     }
 
     match (begin_positions.as_slice(), end_positions.as_slice()) {
@@ -940,7 +1025,7 @@ fn strip_toml_comment(line: &str) -> &str {
     line
 }
 
-fn is_legacy_unresolved_agents_command(value: &str) -> bool {
+fn is_unresolved_agents_command(value: &str) -> bool {
     matches!(
         value.trim(),
         "true # no dedicated build command detected"
@@ -949,6 +1034,9 @@ fn is_legacy_unresolved_agents_command(value: &str) -> bool {
             | "true # no build script detected"
             | "true # no test script detected"
             | "true # no lint-or-format script detected"
+            | "true # codex1 fallback: build command not auto-detected"
+            | "true # codex1 fallback: test command not auto-detected"
+            | "true # codex1 fallback: lint-or-format command not auto-detected"
     )
 }
 
@@ -1050,7 +1138,7 @@ fn inspect_managed_agents_block(block: &str) -> AgentsScaffoldInspection {
         || command_values
             .iter()
             .flatten()
-            .any(|value| is_legacy_unresolved_agents_command(value))
+            .any(|value| is_unresolved_agents_command(value))
     {
         AgentsCommandStatus::Placeholder
     } else {
@@ -1131,8 +1219,9 @@ mod tests {
         AGENTS_TEST_COMMAND_PLACEHOLDER, AgentsCommandStatus, AgentsScaffoldStatus,
         LEGACY_AGENTS_BLOCK_BEGIN, LEGACY_AGENTS_BLOCK_END, MANAGED_SKILLS,
         MANAGED_STOP_HOOK_STATUS, SkillInstallMode, SkillSurfaceStatus,
-        compute_support_surface_signature, inspect_agents_scaffold_details,
-        inspect_skill_surface_with_source, is_managed_stop_handler, is_observational_stop_handler,
+        compute_support_surface_signature, extract_managed_agents_block,
+        inspect_agents_scaffold_details, inspect_skill_surface_with_source,
+        is_managed_stop_handler, is_observational_stop_handler,
         summarize_stop_authority_with_observational,
     };
     use serde_json::json;
@@ -1434,6 +1523,27 @@ mod tests {
     }
 
     #[test]
+    fn codex1_fallback_agents_commands_stay_placeholder() {
+        let inspection = inspect_agents_scaffold_details(Some(
+            &AGENTS_BLOCK
+                .replace(
+                    AGENTS_BUILD_COMMAND_PLACEHOLDER,
+                    "true # codex1 fallback: build command not auto-detected",
+                )
+                .replace(
+                    AGENTS_TEST_COMMAND_PLACEHOLDER,
+                    "true # codex1 fallback: test command not auto-detected",
+                )
+                .replace(
+                    AGENTS_LINT_COMMAND_PLACEHOLDER,
+                    "true # codex1 fallback: lint-or-format command not auto-detected",
+                ),
+        ));
+        assert_eq!(inspection.status, AgentsScaffoldStatus::Present);
+        assert_eq!(inspection.command_status, AgentsCommandStatus::Placeholder);
+    }
+
+    #[test]
     fn agents_scaffold_details_accept_legacy_markers() {
         let legacy_block = AGENTS_BLOCK
             .replace("<!-- codex1:begin -->", LEGACY_AGENTS_BLOCK_BEGIN)
@@ -1452,6 +1562,13 @@ mod tests {
         let inspection = inspect_agents_scaffold_details(Some(&contents));
         assert_eq!(inspection.status, AgentsScaffoldStatus::Present);
         assert_eq!(inspection.command_status, AgentsCommandStatus::Placeholder);
+    }
+
+    #[test]
+    fn extract_managed_agents_block_handles_crlf_line_endings() {
+        let crlf = AGENTS_BLOCK.replace('\n', "\r\n");
+        let extracted = extract_managed_agents_block(&crlf).expect("extract managed block");
+        assert_eq!(extracted, AGENTS_BLOCK);
     }
 
     #[test]

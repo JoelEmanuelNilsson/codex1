@@ -16,7 +16,11 @@ persist mission truth under `PLANS/` and `.ralph/`.
 
 ## Command surface
 
-All commands live under `codex1 internal ...` and support `--json`.
+The support CLI also exposes top-level helper commands such as `codex1 setup`,
+`doctor`, `qualify-codex`, `restore`, and `uninstall`.
+
+The deterministic backend commands described here live under
+`codex1 internal ...` and support `--json`.
 
 `codex1 internal stop-hook` remains the single hook-facing adapter, but the
 artifact-driven stop decision now lives in `codex1-core` so the CLI crate does
@@ -178,6 +182,7 @@ Canonical -> legacy alias mappings introduced in Phase 1:
 
 - `codex1 internal validate-visible-artifacts --mission-id <id>`
   - validates visible mission truth under `PLANS/<mission-id>/`
+  - checks readability/summary presence of `README.md`
   - checks parseability of `MISSION-STATE.md`, `OUTCOME-LOCK.md`,
     `PROGRAM-BLUEPRINT.md`, and visible `specs/*/SPEC.md`
 

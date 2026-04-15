@@ -24,8 +24,9 @@ Bootstrap from these repo-owned templates when you create or refresh artifacts:
 Deterministic backend:
 
 - call `codex1 internal init-mission` to create or refresh the mission package
-- keep reasoning in the skill, but let the command own artifact writeback,
-  gates, and the clarify closeout
+- keep reasoning and judgment in the skill, and let the command persist
+  artifact writeback, gates, and the clarify closeout from that skill-owned
+  truth
 - see `docs/runtime-backend.md` for the machine-side contract
 
 ## Workflow
@@ -88,7 +89,9 @@ Probe rules:
 ## Return Shape
 
 If the lock is not ready and only the user can resolve the next blocker,
-leave durable waiting state plus one precise question.
+leave durable `needs_user` waiting state plus one precise question, the reason
+the blocker is genuinely human-owned, and the canonical waiting request needed
+for later resume.
 
 If the lock is ready, leave:
 

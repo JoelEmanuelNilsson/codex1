@@ -1,5 +1,8 @@
 # {{MISSION_TITLE}}
 
+This file is summary-only. If it ever drifts from the canonical artifacts below,
+the canonical artifacts win.
+
 ## Snapshot
 
 - Mission id: `{{MISSION_ID}}`
@@ -23,7 +26,7 @@
 
 - Selected target: `{{CURRENT_TARGET}}`
 - Why it is next: {{WHY_THIS_IS_NEXT}}
-- Expected proof or review gate: {{NEXT_GATE}}
+- Expected proof, review, or package gate: {{NEXT_GATE}}
 
 ## Current Risks Or Blockers
 
