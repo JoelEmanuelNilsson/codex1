@@ -99,13 +99,16 @@ pub enum NextActionKind {
     InvalidState,
 }
 
-/// Project the given state and DAG into a Wave-1 status envelope.
+/// Project the given state and DAG into a status envelope.
 #[must_use]
 #[allow(clippy::too_many_lines)] // Envelope construction is linear and reads better
                                  // as one function than split into helpers.
 pub fn project_status(state: &State, dag: &Dag) -> StatusEnvelope {
+    // Wave 4: active is derived from `mode != None`. When active, Ralph must
+    // block stop unless the loop is paused (discussion mode).
+    let active = !matches!(state.parent_loop.mode, ParentLoopMode::None);
     let parent_loop = ParentLoopView {
-        active: false,
+        active,
         mode: state.parent_loop.mode,
         paused: state.parent_loop.paused,
     };
@@ -118,10 +121,7 @@ pub fn project_status(state: &State, dag: &Dag) -> StatusEnvelope {
             terminality: Terminality::NonTerminal,
             verdict: Verdict::InvalidState,
             parent_loop,
-            stop_policy: StopPolicy {
-                allow_stop: true,
-                reason: "invalid_state".into(),
-            },
+            stop_policy: derive_stop_policy(active, state.parent_loop.paused, Verdict::InvalidState),
             next_action: NextAction {
                 kind: NextActionKind::InvalidState,
                 task_id: None,
@@ -147,10 +147,7 @@ pub fn project_status(state: &State, dag: &Dag) -> StatusEnvelope {
             terminality: Terminality::Terminal,
             verdict: Verdict::Complete,
             parent_loop,
-            stop_policy: StopPolicy {
-                allow_stop: true,
-                reason: "complete".into(),
-            },
+            stop_policy: derive_stop_policy(active, state.parent_loop.paused, Verdict::Complete),
             next_action: NextAction {
                 kind: NextActionKind::Complete,
                 task_id: None,
@@ -187,10 +184,7 @@ pub fn project_status(state: &State, dag: &Dag) -> StatusEnvelope {
             terminality: Terminality::NonTerminal,
             verdict: Verdict::ContinueRequired,
             parent_loop,
-            stop_policy: StopPolicy {
-                allow_stop: true,
-                reason: "no_active_loop".into(),
-            },
+            stop_policy: derive_stop_policy(active, state.parent_loop.paused, Verdict::ContinueRequired),
             next_action: NextAction {
                 kind: NextActionKind::StartTask,
                 task_id: Some(first_task.clone()),
@@ -220,10 +214,7 @@ pub fn project_status(state: &State, dag: &Dag) -> StatusEnvelope {
             terminality: Terminality::NonTerminal,
             verdict: Verdict::ContinueRequired,
             parent_loop,
-            stop_policy: StopPolicy {
-                allow_stop: true,
-                reason: "no_active_loop".into(),
-            },
+            stop_policy: derive_stop_policy(active, state.parent_loop.paused, Verdict::ContinueRequired),
             next_action: NextAction {
                 kind: NextActionKind::ReviewOpen,
                 task_id: Some(first_review.clone()),
@@ -258,10 +249,7 @@ pub fn project_status(state: &State, dag: &Dag) -> StatusEnvelope {
         terminality: Terminality::NonTerminal,
         verdict,
         parent_loop,
-        stop_policy: StopPolicy {
-            allow_stop: true,
-            reason: "no_active_loop".into(),
-        },
+        stop_policy: derive_stop_policy(active, state.parent_loop.paused, verdict),
         next_action: NextAction {
             kind: NextActionKind::UserDecision,
             task_id: None,
@@ -328,6 +316,38 @@ fn mission_is_complete(state: &State, dag: &Dag) -> bool {
         .filter(|s| *s != TaskStatus::Superseded)
         .collect();
     !non_sup.is_empty() && non_sup.iter().all(|s| s.is_terminal())
+}
+
+/// Derive `stop_policy` from (active, paused, verdict).
+///
+/// Rules:
+/// - Active parent loop & not paused → block stop (Ralph invariant).
+/// - Active parent loop & paused → allow stop (discussion mode).
+/// - No active loop & verdict `Complete` → allow stop with `"complete"`.
+/// - No active loop & verdict `InvalidState` → allow stop with `"invalid_state"`.
+/// - Otherwise → allow stop with `"no_active_loop"`.
+fn derive_stop_policy(active: bool, paused: bool, verdict: Verdict) -> StopPolicy {
+    if active && !paused {
+        return StopPolicy {
+            allow_stop: false,
+            reason: "active_parent_loop".into(),
+        };
+    }
+    if active && paused {
+        return StopPolicy {
+            allow_stop: true,
+            reason: "discussion_pause".into(),
+        };
+    }
+    let reason = match verdict {
+        Verdict::Complete => "complete",
+        Verdict::InvalidState => "invalid_state",
+        _ => "no_active_loop",
+    };
+    StopPolicy {
+        allow_stop: true,
+        reason: reason.into(),
+    }
 }
 
 fn collect_review_required(state: &State) -> Vec<String> {

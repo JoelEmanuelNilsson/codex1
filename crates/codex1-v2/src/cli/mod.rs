@@ -10,6 +10,7 @@
 #![allow(dead_code)]
 
 pub(crate) mod init;
+pub(crate) mod parent_loop;
 pub(crate) mod plan;
 pub(crate) mod replan;
 pub(crate) mod review;
@@ -85,6 +86,39 @@ pub enum Commands {
     /// Replan subcommands.
     #[command(subcommand)]
     Replan(ReplanCommand),
+    /// Parent-loop subcommands: activate, deactivate, pause, resume.
+    #[command(name = "parent-loop", subcommand)]
+    ParentLoop(ParentLoopCommand),
+}
+
+/// `codex1 parent-loop <subcommand>`.
+#[derive(Debug, Subcommand)]
+pub enum ParentLoopCommand {
+    /// Mark a parent loop as active with the given mode. Ralph then blocks
+    /// stop until `pause` or `deactivate` is invoked.
+    Activate {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+        /// One of `execute | review | autopilot | close`.
+        #[arg(long, value_name = "MODE")]
+        mode: String,
+    },
+    /// Mark the parent loop as inactive (mode reset to `none`).
+    Deactivate {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+    },
+    /// Pause the active loop — Ralph will then allow stop with reason
+    /// `discussion_pause`.
+    Pause {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+    },
+    /// Resume a paused parent loop.
+    Resume {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+    },
 }
 
 /// `codex1 review <subcommand>`.
@@ -239,6 +273,18 @@ pub fn run(cli: &Cli) -> i32 {
         }
         Commands::Replan(ReplanCommand::Check { mission }) => {
             replan::cmd_replan_check(cli, mission)
+        }
+        Commands::ParentLoop(ParentLoopCommand::Activate { mission, mode }) => {
+            parent_loop::cmd_activate(cli, mission, mode)
+        }
+        Commands::ParentLoop(ParentLoopCommand::Deactivate { mission }) => {
+            parent_loop::cmd_deactivate(cli, mission)
+        }
+        Commands::ParentLoop(ParentLoopCommand::Pause { mission }) => {
+            parent_loop::cmd_pause(cli, mission)
+        }
+        Commands::ParentLoop(ParentLoopCommand::Resume { mission }) => {
+            parent_loop::cmd_resume(cli, mission)
         }
     }
 }
