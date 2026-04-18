@@ -1,0 +1,314 @@
+//! clap-based CLI dispatch.
+//!
+//! Parses arguments into a [`Cli`] and dispatches to per-command modules.
+//! Global flags (`--json`, `--repo-root`) are parsed here and passed through
+//! to every command. Repo-root resolution policy: `--repo-root <path>`
+//! explicit or cwd; **no git-walk-up**.
+
+// The per-command modules fill in their bodies in T11 (init, validate) and
+// T12 (status, plan, task). T10's job is the dispatch surface.
+#![allow(dead_code)]
+
+pub(crate) mod init;
+pub(crate) mod plan;
+pub(crate) mod status;
+pub(crate) mod task;
+pub(crate) mod validate;
+
+use std::io::Write;
+use std::path::{Path, PathBuf};
+
+use clap::{Parser, Subcommand};
+use serde_json::Value;
+
+use crate::envelope;
+use crate::error::CliError;
+use crate::mission::resolve_repo_root;
+
+/// Top-level CLI.
+#[derive(Debug, Parser)]
+#[command(
+    name = "codex1-v2",
+    version,
+    about = "Codex1 V2 — skills-first harness + CLI contract kernel"
+)]
+pub struct Cli {
+    /// Emit JSON on stdout. Diagnostics still go to stderr.
+    #[arg(long, global = true)]
+    pub json: bool,
+
+    /// Explicit repo root. Defaults to cwd. No git-walk-up.
+    #[arg(long, global = true, value_name = "PATH")]
+    pub repo_root: Option<PathBuf>,
+
+    #[command(subcommand)]
+    pub command: Commands,
+}
+
+/// Top-level subcommands (Wave 1 surface).
+#[derive(Debug, Subcommand)]
+pub enum Commands {
+    /// Initialise a new mission directory under PLANS/<mission>/.
+    Init {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+        #[arg(long, value_name = "TITLE")]
+        title: String,
+    },
+    /// Superset validation: lock + blueprint + DAG + state consistency.
+    Validate {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+    },
+    /// Emit the status envelope (Ralph consumes this one command only).
+    Status {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+    },
+    /// Plan subcommands.
+    #[command(subcommand)]
+    Plan(PlanCommand),
+    /// Task subcommands.
+    #[command(subcommand)]
+    Task(TaskCommand),
+}
+
+/// `codex1 plan <subcommand>`.
+#[derive(Debug, Subcommand)]
+pub enum PlanCommand {
+    /// DAG-only validation (ID format, cycles, deps, duplicates, schema).
+    Check {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+    },
+    /// Derive wave schedule from DAG + STATE.
+    Waves {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+    },
+}
+
+/// `codex1 task <subcommand>`.
+#[derive(Debug, Subcommand)]
+pub enum TaskCommand {
+    /// First eligible task per wave derivation (lowest id).
+    Next {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+    },
+}
+
+/// Run the parsed CLI and return the process exit code.
+#[must_use]
+pub fn run(cli: &Cli) -> i32 {
+    match &cli.command {
+        Commands::Init { mission, title } => init::cmd_init(cli, mission, title),
+        Commands::Validate { mission } => validate::cmd_validate(cli, mission),
+        Commands::Status { mission } => status::cmd_status(cli, mission),
+        Commands::Plan(PlanCommand::Check { mission }) => plan::cmd_plan_check(cli, mission),
+        Commands::Plan(PlanCommand::Waves { mission }) => plan::cmd_plan_waves(cli, mission),
+        Commands::Task(TaskCommand::Next { mission }) => task::cmd_task_next(cli, mission),
+    }
+}
+
+/// Resolve the repo root from the global `--repo-root` or cwd.
+pub fn resolve_repo(cli: &Cli) -> Result<PathBuf, CliError> {
+    resolve_repo_root(cli.repo_root.as_deref())
+}
+
+/// Emit a successful command result.
+///
+/// If `cli.json` is set, writes the envelope JSON to stdout on one line.
+/// Otherwise writes a short human summary taken from the `message` key (if
+/// present) or the full JSON as a fallback.
+#[must_use]
+pub fn emit_success(cli: &Cli, envelope: &Value) -> i32 {
+    if cli.json {
+        writeln_stdout(&envelope::to_string(envelope));
+    } else if let Some(msg) = envelope.get("message").and_then(Value::as_str) {
+        writeln_stdout(msg);
+    } else {
+        writeln_stdout(&envelope::to_string(envelope));
+    }
+    0
+}
+
+/// Emit an error and return its exit code.
+#[must_use]
+pub fn emit_error(cli: &Cli, err: &CliError) -> i32 {
+    let env = envelope::error(err);
+    if cli.json {
+        writeln_stdout(&envelope::to_string(&env));
+    } else {
+        let msg = format!("error [{}]: {}", err.code(), err);
+        writeln_stderr(&msg);
+        if let Some(hint) = err.hint() {
+            writeln_stderr(&format!("hint: {hint}"));
+        }
+    }
+    err.exit_code()
+}
+
+/// Current time as RFC-3339 UTC.
+#[must_use]
+pub(crate) fn now_rfc3339() -> String {
+    use time::format_description::well_known::Rfc3339;
+    time::OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
+}
+
+fn writeln_stdout(s: &str) {
+    let stdout = std::io::stdout();
+    let mut handle = stdout.lock();
+    let _ = writeln!(handle, "{s}");
+}
+
+fn writeln_stderr(s: &str) {
+    let stderr = std::io::stderr();
+    let mut handle = stderr.lock();
+    let _ = writeln!(handle, "{s}");
+}
+
+/// Helper used by per-command stubs until T11/T12 land their bodies.
+pub(crate) fn not_implemented(cli: &Cli, command: &str) -> i32 {
+    let err = CliError::Internal {
+        message: format!("command {command:?} not yet implemented in this wave"),
+    };
+    emit_error(cli, &err)
+}
+
+/// Build a Cli from an args slice (useful in tests and in main).
+#[must_use]
+pub fn parse_args<I, T>(args: I) -> Cli
+where
+    I: IntoIterator<Item = T>,
+    T: Into<std::ffi::OsString> + Clone,
+{
+    Cli::parse_from(args)
+}
+
+/// Return the `mission_dir` path under the resolved repo root, without
+/// creating it. Used by non-mutating commands.
+pub fn mission_dir(repo_root: &Path, mission_id: &str) -> Result<PathBuf, CliError> {
+    let paths = crate::mission::resolve_mission(repo_root, mission_id)?;
+    Ok(paths.mission_dir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Cli, Commands, PlanCommand, TaskCommand};
+    use clap::Parser;
+
+    #[test]
+    fn top_level_help_lists_subcommands() {
+        let out = Cli::try_parse_from(["codex1-v2", "--help"]).unwrap_err();
+        let s = out.to_string();
+        for cmd in ["init", "validate", "status", "plan", "task"] {
+            assert!(s.contains(cmd), "help should list {cmd}: {s}");
+        }
+    }
+
+    #[test]
+    fn init_requires_mission_and_title() {
+        let r = Cli::try_parse_from(["codex1-v2", "init"]);
+        assert!(r.is_err());
+        let r = Cli::try_parse_from(["codex1-v2", "init", "--mission", "abc"]);
+        assert!(r.is_err());
+        let r = Cli::try_parse_from([
+            "codex1-v2", "init", "--mission", "abc", "--title", "Foo",
+        ]);
+        assert!(r.is_ok());
+    }
+
+    #[test]
+    fn global_flags_work_on_any_subcommand() {
+        let cli = Cli::try_parse_from([
+            "codex1-v2",
+            "--json",
+            "status",
+            "--mission",
+            "m1",
+        ])
+        .unwrap();
+        assert!(cli.json);
+        match cli.command {
+            Commands::Status { mission } => assert_eq!(mission, "m1"),
+            other => panic!("expected Status, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn repo_root_accepted() {
+        let cli = Cli::try_parse_from([
+            "codex1-v2",
+            "--repo-root",
+            "/tmp/repo",
+            "status",
+            "--mission",
+            "m1",
+        ])
+        .unwrap();
+        assert_eq!(
+            cli.repo_root.as_ref().unwrap().display().to_string(),
+            "/tmp/repo"
+        );
+    }
+
+    #[test]
+    fn plan_check_parses() {
+        let cli = Cli::try_parse_from([
+            "codex1-v2", "plan", "check", "--mission", "m1",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Plan(PlanCommand::Check { mission }) => {
+                assert_eq!(mission, "m1");
+            }
+            other => panic!("expected plan check, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn plan_waves_parses() {
+        let cli = Cli::try_parse_from([
+            "codex1-v2", "plan", "waves", "--mission", "m1",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Plan(PlanCommand::Waves { mission }) => {
+                assert_eq!(mission, "m1");
+            }
+            other => panic!("expected plan waves, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn task_next_parses() {
+        let cli = Cli::try_parse_from([
+            "codex1-v2", "task", "next", "--mission", "m1",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Task(TaskCommand::Next { mission }) => {
+                assert_eq!(mission, "m1");
+            }
+            other => panic!("expected task next, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unknown_subcommand_rejected() {
+        let r = Cli::try_parse_from(["codex1-v2", "frobnicate"]);
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn validate_requires_mission() {
+        assert!(Cli::try_parse_from(["codex1-v2", "validate"]).is_err());
+        assert!(Cli::try_parse_from([
+            "codex1-v2", "validate", "--mission", "m1",
+        ])
+        .is_ok());
+    }
+}
