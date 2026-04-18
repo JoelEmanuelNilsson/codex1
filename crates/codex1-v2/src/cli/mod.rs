@@ -11,6 +11,8 @@
 
 pub(crate) mod init;
 pub(crate) mod plan;
+pub(crate) mod replan;
+pub(crate) mod review;
 pub(crate) mod status;
 pub(crate) mod task;
 pub(crate) mod validate;
@@ -77,6 +79,72 @@ pub enum Commands {
     /// Task subcommands.
     #[command(subcommand)]
     Task(TaskCommand),
+    /// Review subcommands.
+    #[command(subcommand)]
+    Review(ReviewCommand),
+    /// Replan subcommands.
+    #[command(subcommand)]
+    Replan(ReplanCommand),
+}
+
+/// `codex1 review <subcommand>`.
+#[derive(Debug, Subcommand)]
+pub enum ReviewCommand {
+    /// Open a review bundle for a task with the listed profiles.
+    Open {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+        #[arg(long, value_name = "TASK")]
+        task: String,
+        /// Comma-separated profile list (e.g. `code_bug_correctness,local_spec_intent`).
+        #[arg(long, value_name = "PROFILES")]
+        profiles: String,
+    },
+    /// Submit a reviewer output to a bundle.
+    Submit {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+        #[arg(long, value_name = "BUNDLE")]
+        bundle: String,
+        /// JSON file produced by the reviewer (path relative to repo root).
+        #[arg(long, value_name = "PATH")]
+        input: PathBuf,
+    },
+    /// Read the cleanliness status of a bundle.
+    Status {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+        #[arg(long, value_name = "BUNDLE")]
+        bundle: String,
+    },
+    /// Close a bundle — transitions the task `review_owed` →
+    /// `review_clean` (clean) or `review_failed` (blocking findings).
+    Close {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+        #[arg(long, value_name = "BUNDLE")]
+        bundle: String,
+    },
+}
+
+/// `codex1 replan <subcommand>`.
+#[derive(Debug, Subcommand)]
+pub enum ReplanCommand {
+    /// Record a replan event with a reason code.
+    Record {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+        #[arg(long, value_name = "CODE")]
+        reason: String,
+        /// Comma-separated task ids this replan supersedes (optional).
+        #[arg(long, value_name = "IDS")]
+        supersedes: Option<String>,
+    },
+    /// Check for mandatory replan triggers.
+    Check {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+    },
 }
 
 /// `codex1 plan <subcommand>`.
@@ -84,6 +152,11 @@ pub enum Commands {
 pub enum PlanCommand {
     /// DAG-only validation (ID format, cycles, deps, duplicates, schema).
     Check {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+    },
+    /// Emit the parsed DAG as JSON.
+    Graph {
         #[arg(long, value_name = "ID")]
         mission: String,
     },
@@ -137,6 +210,7 @@ pub fn run(cli: &Cli) -> i32 {
         Commands::Validate { mission } => validate::cmd_validate(cli, mission),
         Commands::Status { mission } => status::cmd_status(cli, mission),
         Commands::Plan(PlanCommand::Check { mission }) => plan::cmd_plan_check(cli, mission),
+        Commands::Plan(PlanCommand::Graph { mission }) => plan::cmd_plan_graph(cli, mission),
         Commands::Plan(PlanCommand::Waves { mission }) => plan::cmd_plan_waves(cli, mission),
         Commands::Task(TaskCommand::Next { mission }) => task::cmd_task_next(cli, mission),
         Commands::Task(TaskCommand::Start { mission, task_id }) => {
@@ -147,6 +221,24 @@ pub fn run(cli: &Cli) -> i32 {
         }
         Commands::Task(TaskCommand::Status { mission, task_id }) => {
             task::cmd_task_status(cli, mission, task_id)
+        }
+        Commands::Review(ReviewCommand::Open { mission, task, profiles }) => {
+            review::cmd_review_open(cli, mission, task, profiles)
+        }
+        Commands::Review(ReviewCommand::Submit { mission, bundle, input }) => {
+            review::cmd_review_submit(cli, mission, bundle, input)
+        }
+        Commands::Review(ReviewCommand::Status { mission, bundle }) => {
+            review::cmd_review_status(cli, mission, bundle)
+        }
+        Commands::Review(ReviewCommand::Close { mission, bundle }) => {
+            review::cmd_review_close(cli, mission, bundle)
+        }
+        Commands::Replan(ReplanCommand::Record { mission, reason, supersedes }) => {
+            replan::cmd_replan_record(cli, mission, reason, supersedes.as_deref())
+        }
+        Commands::Replan(ReplanCommand::Check { mission }) => {
+            replan::cmd_replan_check(cli, mission)
         }
     }
 }

@@ -17,6 +17,8 @@ pub(crate) mod blueprint;
 pub(crate) mod graph;
 pub(crate) mod proof;
 pub(crate) mod binding;
+pub(crate) mod replan;
+pub(crate) mod review;
 pub(crate) mod status;
 
 pub mod cli;

@@ -12,6 +12,7 @@ use crate::state::StateStore;
 use super::{emit_error, emit_success, resolve_repo, Cli};
 
 const CHECK_SCHEMA: &str = "codex1.plan.check.v1";
+const GRAPH_SCHEMA: &str = "codex1.plan.graph.v1";
 const WAVES_SCHEMA: &str = "codex1.plan.waves.v1";
 
 pub fn cmd_plan_check(cli: &Cli, mission: &str) -> i32 {
@@ -42,6 +43,51 @@ fn run_check(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError> {
                 "Plan check passed for mission {mission} ({} tasks).",
                 dag.len()
             ),
+        }),
+    ))
+}
+
+pub fn cmd_plan_graph(cli: &Cli, mission: &str) -> i32 {
+    match run_graph(cli, mission) {
+        Ok(env) => emit_success(cli, &env),
+        Err(err) => emit_error(cli, &err),
+    }
+}
+
+fn run_graph(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError> {
+    let repo_root = resolve_repo(cli)?;
+    let paths = resolve_mission(&repo_root, mission)?;
+    if !paths.mission_dir.exists() {
+        return Err(CliError::MissionNotFound {
+            path: paths.mission_dir.display().to_string(),
+        });
+    }
+    let blueprint = blueprint::parse_blueprint(&paths.program_blueprint())?;
+    let dag = graph::build_dag(&blueprint)?;
+    let tasks_json: Vec<serde_json::Value> = dag
+        .tasks
+        .values()
+        .map(|spec| {
+            json!({
+                "id": spec.id,
+                "title": spec.title,
+                "kind": spec.kind,
+                "depends_on": spec.depends_on,
+                "read_paths": spec.read_paths,
+                "write_paths": spec.write_paths,
+                "exclusive_resources": spec.exclusive_resources,
+                "unknown_side_effects": spec.unknown_side_effects,
+                "supersedes": spec.supersedes,
+                "review_profiles": spec.review_profiles,
+            })
+        })
+        .collect();
+    Ok(envelope::success(
+        GRAPH_SCHEMA,
+        &json!({
+            "mission_id": mission,
+            "graph_revision": dag.graph_revision,
+            "tasks": tasks_json,
         }),
     ))
 }
