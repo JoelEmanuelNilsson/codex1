@@ -66,6 +66,11 @@ The user invokes the public skill.
 The main logical orchestrating thread owns the mission.
 It does not have to personally perform every planning or execution subtask.
 
+Companion product-contract docs refine this PRD without replacing it:
+
+- `docs/codex1-ux-flow.md` defines the expected user-facing manual, autopilot, review-loop, close, reopen, and recovery flows.
+- `docs/codex1-planning-review-advisor-contract.md` defines the planning rigor, review profile, advisor checkpoint, and repair-vs-replan registries that make the natural-language UX auditable.
+
 Likewise, `replan` should not be a normal user-facing button. It is primarily an internal workflow used when execution, review, validators, or specialist subagents discover contradictions and need to bring structured replan signals back to the main orchestrating thread. The main thread remains the authority that decides what layer to reopen.
 
 There should also be one high-trust public workflow above the manual sequence:
@@ -289,6 +294,10 @@ The public workflow surface for V1 is:
 - `$execute`
 - `$review-loop`
 
+The public control surface for V1 is:
+
+- `$close`
+
 These names are simple, obvious, and durable. V1 should not rename them.
 
 ### Public workflow rule
@@ -296,6 +305,7 @@ These names are simple, obvious, and durable. V1 should not rename them.
 - `$clarify` is the only mandatory primitive the user must understand
 - `$autopilot` is the preferred one-command workflow in the final product
 - `$plan`, `$execute`, and `$review-loop` remain public operator workflows
+- `$close` remains the in-Codex escape hatch for pausing Ralph-governed parent loops so the user can talk, redirect, or stop without moving hook files
 - `replan` remains internal
 
 Public-surface rule:
@@ -324,8 +334,9 @@ Rules:
 | `$clarify` | turn a vague ask into a locked mission and create the mission package | user ask plus repo context | `MISSION-STATE.md`, then `OUTCOME-LOCK.md` when safe |
 | `$autopilot` | run the end-to-end mission flow under Ralph discipline | user ask or existing mission | continuation until an honest terminal verdict (`complete` or `hard_blocked`) or a durable waiting non-terminal verdict (`needs_user`) |
 | `$plan` | run the planning loop for a locked mission until the planning completion gate is reached, a durable waiting non-terminal verdict occurs, or an honest terminal verdict is reached | mission id or current locked mission | `PROGRAM-BLUEPRINT.md`, frontier `SPEC.md` files, and a passed execution package for the next target |
-| `$execute` | run the execution loop for an already-packaged mission/spec/wave target until the next honest gate, durable waiting non-terminal verdict, or terminal verdict | mission/spec/wave target | receipts, state updates, review-ready output |
-| `$review-loop` | orchestrate risk-first review loops against a bounded target and its proof | mission/spec/wave/diff target | findings plus continuation verdict |
+| `$execute` | run the execution loop for an already-packaged mission/spec/wave target until the next honest gate, durable waiting non-terminal verdict, or terminal verdict; automatically invokes `$review-loop` when review is owed | mission/spec/wave target | receipts, state updates, review-ready output, and review-clean or repair/replan routing |
+| `$review-loop` | parent/orchestrator review workflow; orchestrate risk-first review/fix/review loops against a bounded target and its proof | mission/spec/wave/diff target or open review gate | bounded reviewer outputs, findings, repair/replan routing, plus continuation verdict |
+| `$close` | pause or clear the active parent loop so the user can discuss, redirect, or stop without uninstalling hooks | active mission/thread context | paused loop state plus passive next-branch status |
 
 ### Happy path
 
@@ -362,6 +373,74 @@ Plain-language interpretation:
 - if the next branch is known and Codex can keep acting without new user input, `$autopilot` must keep going
 - if only the user can answer the next question after bounded autonomous attempts have failed, `$autopilot` may yield the turn but must leave the mission open and resumable
 - a builder must be able to remove the word `$autopilot` from the interaction, drive the same mission manually through `$clarify` / `$plan` / `$execute` / `$review-loop`, and observe the same mission truth, verdict family, and closeout behavior
+
+### `$review-loop` rule
+
+`$review-loop` is both automatic and user-callable.
+
+Rules:
+
+- `$execute` and `$autopilot` must route into `$review-loop` whenever current mission truth says review is owed
+- users may invoke `$review-loop` directly to resolve an open review gate, rerun an explicit review boundary, or conduct review/fix/review loops on a bounded target
+- `$review-loop` is for the parent/orchestrating Codex thread only
+- child reviewer agents do not invoke `$review-loop` or any other skill
+- child reviewer agents return bounded reviewer-output artifacts only
+- the parent records review outcomes only after required reviewer lanes have answered durably
+- `$review-loop` may repair and rerun relevant lanes when findings remain local; it must route to replan when the finding class, repeated-finding pattern, or review-loop cap proves the current contract is inadequate
+
+Plain-language interpretation:
+
+- review is not optional cleanup after execution
+- review is also not a child-reviewer skill
+- review-loop is the parent workflow that turns independent reviewer judgment into repair, replan, or clean gate truth
+
+### `$close` rule
+
+`$close` is the in-Codex escape hatch.
+
+Rules:
+
+- `$close` pauses or clears the active parent Ralph loop lease
+- `$close` must not resolve review gates, repair specs, write review outcomes, compile packages, or mark missions complete
+- `$close` returns the parent conversation to discussion/control mode so the user can talk normally
+- resumption happens by invoking `$plan`, `$execute`, `$review-loop`, or `$autopilot`
+- a CLI fallback such as `codex1 close` may exist for recovery/debug use, but the product UX is skill-first because the user is already talking to Codex
+
+Plain-language interpretation:
+
+- `$close` means "pause the loop so we can talk"
+- it does not mean "the mission is done"
+- it does not mean "discard mission truth"
+
+### Advisor / CritiqueScout rule
+
+Advisor/CritiqueScout is a parent-callable support lane/tool, not a user-facing slash command.
+
+Rules:
+
+- the parent orchestrating Codex session may call Advisor/CritiqueScout at any time for strategic critique
+- Advisor/CritiqueScout is read-only/advice-only and must not mutate mission truth
+- Advisor/CritiqueScout lanes are Ralph-exempt and may stop normally
+- advice must be persisted as bounded advisor output or visible advisory notes when it materially affects a plan, review, replan, or close decision
+- material advisor advice must also have a parent disposition such as followed, partially followed, rejected with evidence, converted to review, converted to replan, or needs_user
+- the parent must either follow advice, reject it with evidence, or route to replan/review if the advice exposes a contract break
+- Advisor/CritiqueScout does not replace `$review-loop`; advisor gives strategic critique, while review-loop gives formal bounded review evidence
+
+Required or strongly recommended checkpoints:
+
+- before sealing a high-risk or level-5 plan
+- before mission-close
+- when repeated P0/P1/P2 findings suggest the plan/spec/review contract is weak
+- when the parent is stuck or changing approach
+- when user intent, protected surfaces, or rollback/restore behavior feel under-specified
+- before large global setup, hook, restore, uninstall, or migration changes
+
+The pattern is inspired by Claude Code's advisor design: a configured stronger-model advisor is exposed to the main model, the main model decides when to call it, and the advisor returns critique into the same work stream. Codex1 adapts the pattern as a native parent-callable advisor lane/tool with visible artifact discipline, not as a user slash command.
+
+Advisor output is bounded by checkpoint, target, context refs, strategic
+question, risks, recommended actions, review/replan flags, confidence, and
+timestamp. Required advisor checkpoints must either produce durable advisor
+output or a bounded skip record explaining why the checkpoint no longer applies.
 
 Remaining open detail:
 
@@ -889,6 +968,19 @@ Rules:
 - migrations, public interfaces, or ops-coupled work should raise the floor materially
 - rollback-limited or mission-critical work should raise the floor to the highest rigor
 - final selected planning rigor must be `max(user_floor, risk_floor)`
+
+Implementation-facing planning decisions must be auditable through the planning rigor contract in `docs/codex1-planning-review-advisor-contract.md`.
+
+At minimum, planning should record:
+
+- requested rigor from user wording or explicit level
+- computed risk floor
+- effective rigor
+- risk triggers that raised the floor
+- required planning methods for that rigor
+- planning methods actually run or intentionally skipped with rationale
+- subagents, advisors, or critiques used
+- proof and review obligations that make the plan execution-ready
 
 ### Decision obligations
 
@@ -2235,6 +2327,41 @@ Rules:
 - resume must attach to the mission selected by canonical artifacts and latest valid closeout, not merely whichever session or subagent touched the repo most recently
 - when session or subagent evidence conflicts with canonical mission artifacts, canonical mission artifacts win until an explicit Ralph-governed repair or reopen updates them
 
+### Mode and capability rule
+
+Authority is a product contract, not only a runtime detail.
+
+Core modes:
+
+| Mode | Ralph blocking | Mission-truth mutation |
+| --- | --- | --- |
+| discussion / interrupt | no | none by default; parent may mint scoped capabilities after user direction |
+| manual clarify | no parent loop lease | `MISSION-STATE.md` and `OUTCOME-LOCK.md` only |
+| planning loop | yes | blueprint/spec/package truth through scoped planning capability |
+| execution loop | yes | package-scoped code/docs/receipt writes through scoped execution capability |
+| review-loop parent | yes | review orchestration and outcome writeback only through scoped review capability |
+| autopilot parent | yes | branch routing over the same clarify/plan/execute/review contracts |
+| subagent support lane | no | none unless explicitly given a bounded writer packet |
+| findings-only reviewer lane | no | reviewer-output artifacts only |
+| advisor / CritiqueScout lane | no | advisor-output/advisory artifacts only |
+
+Capability rules:
+
+- parent control means the parent may mint scoped operation capabilities; it is not a permanent blanket write permission
+- child, reviewer, and advisor lanes must not be able to mint broader authority
+- every mutation of canonical mission truth must be attributable to a parent-owned scoped capability
+- findings-only reviewer output is evidence, not review writeback authority
+- advisor output is critique, not review evidence and not mission-truth writeback authority
+- parent loop lease authority is about continuation control; it is orthogonal to artifact write scope
+- subagents and reviewer/advisor lanes are Ralph-exempt and must be able to stop normally
+- hooks enforce stop/yield continuation boundaries; hooks must not become planner, reviewer, advisor, or mission-truth authority
+
+Recovery rule:
+
+- avoid long-lived plaintext parent authority tokens as the default recovery mechanism
+- prefer verifier-only recovery, explicit user-confirmed recovery, OS keychain storage, or narrow recovery capabilities bound to mission, cycle, bundle, and scope
+- paused leases must not be replaceable by child lanes without parent authority; this invariant requires regression coverage before `$close` is treated as fully safe
+
 ### Closeout discipline
 
 Every bounded orchestration cycle must end with a durable closeout artifact.
@@ -2843,11 +2970,13 @@ Public repo-local skills are the main user surface:
 - `autopilot`
 - `plan`
 - `execute`
-- `review`
+- `review-loop`
+- `close`
 
 Internal skills or methods should exist for:
 
 - replan
+- Advisor / CritiqueScout support
 - system mapping
 - invariants
 - truth register
@@ -3011,7 +3140,8 @@ Codex1 must not make deterministic CLI/tools the primary product surface for:
 - `autopilot`
 - `plan`
 - `execute`
-- `review`
+- `review-loop`
+- `close`
 - Ralph mission control or orchestration
 - deciding user intent
 - deciding clarify sufficiency
@@ -3045,7 +3175,8 @@ AGENTS.md
     autopilot/
     plan/
     execute/
-    review/
+    review-loop/
+    close/
     internal-*
 PLANS/
   <mission-id>/

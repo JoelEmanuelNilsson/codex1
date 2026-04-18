@@ -19,6 +19,8 @@ pub(crate) mod proof;
 pub(crate) mod binding;
 pub(crate) mod replan;
 pub(crate) mod review;
+pub(crate) mod mission_close;
+pub(crate) mod advisor;
 pub(crate) mod status;
 
 pub mod cli;

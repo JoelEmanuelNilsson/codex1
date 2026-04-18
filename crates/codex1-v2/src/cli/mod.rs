@@ -10,6 +10,7 @@
 #![allow(dead_code)]
 
 pub(crate) mod init;
+pub(crate) mod mission_close;
 pub(crate) mod parent_loop;
 pub(crate) mod plan;
 pub(crate) mod replan;
@@ -89,6 +90,24 @@ pub enum Commands {
     /// Parent-loop subcommands: activate, deactivate, pause, resume.
     #[command(name = "parent-loop", subcommand)]
     ParentLoop(ParentLoopCommand),
+    /// Mission-close subcommands: readiness check and terminal complete.
+    #[command(name = "mission-close", subcommand)]
+    MissionClose(MissionCloseCommand),
+}
+
+/// `codex1 mission-close <subcommand>`.
+#[derive(Debug, Subcommand)]
+pub enum MissionCloseCommand {
+    /// Readiness report. Refuses to pass until all required conditions hold.
+    Check {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+    },
+    /// Terminal transition. Refuses unless `check` passes.
+    Complete {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+    },
 }
 
 /// `codex1 parent-loop <subcommand>`.
@@ -131,6 +150,14 @@ pub enum ReviewCommand {
         #[arg(long, value_name = "TASK")]
         task: String,
         /// Comma-separated profile list (e.g. `code_bug_correctness,local_spec_intent`).
+        #[arg(long, value_name = "PROFILES")]
+        profiles: String,
+    },
+    /// Open a mission-close review bundle (no task scope).
+    #[command(name = "open-mission-close")]
+    OpenMissionClose {
+        #[arg(long, value_name = "ID")]
+        mission: String,
         #[arg(long, value_name = "PROFILES")]
         profiles: String,
     },
@@ -259,6 +286,9 @@ pub fn run(cli: &Cli) -> i32 {
         Commands::Review(ReviewCommand::Open { mission, task, profiles }) => {
             review::cmd_review_open(cli, mission, task, profiles)
         }
+        Commands::Review(ReviewCommand::OpenMissionClose { mission, profiles }) => {
+            review::cmd_review_open_mission_close(cli, mission, profiles)
+        }
         Commands::Review(ReviewCommand::Submit { mission, bundle, input }) => {
             review::cmd_review_submit(cli, mission, bundle, input)
         }
@@ -285,6 +315,12 @@ pub fn run(cli: &Cli) -> i32 {
         }
         Commands::ParentLoop(ParentLoopCommand::Resume { mission }) => {
             parent_loop::cmd_resume(cli, mission)
+        }
+        Commands::MissionClose(MissionCloseCommand::Check { mission }) => {
+            mission_close::cmd_mission_close_check(cli, mission)
+        }
+        Commands::MissionClose(MissionCloseCommand::Complete { mission }) => {
+            mission_close::cmd_mission_close_complete(cli, mission)
         }
     }
 }

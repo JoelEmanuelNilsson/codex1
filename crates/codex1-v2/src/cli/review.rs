@@ -191,6 +191,129 @@ fn run_open(
     ))
 }
 
+pub fn cmd_review_open_mission_close(
+    cli: &Cli,
+    mission: &str,
+    profiles_csv: &str,
+) -> i32 {
+    match run_open_mission_close(cli, mission, profiles_csv) {
+        Ok(env) => emit_success(cli, &env),
+        Err(err) => emit_error(cli, &err),
+    }
+}
+
+fn run_open_mission_close(
+    cli: &Cli,
+    mission: &str,
+    profiles_csv: &str,
+) -> Result<serde_json::Value, CliError> {
+    let profiles: Vec<String> = profiles_csv
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if profiles.is_empty() {
+        return Err(CliError::Internal {
+            message: "--profiles must list at least one profile".into(),
+        });
+    }
+    let repo_root = resolve_repo(cli)?;
+    let paths = resolve_mission(&repo_root, mission)?;
+    if !paths.mission_dir.exists() {
+        return Err(CliError::MissionNotFound {
+            path: paths.mission_dir.display().to_string(),
+        });
+    }
+    let blueprint = blueprint::parse_blueprint(&paths.program_blueprint())?;
+    let dag = graph::build_dag(&blueprint)?;
+    let state = StateStore::new(paths.mission_dir.clone()).load()?;
+
+    let bundles_dir = paths.mission_dir.join(BUNDLES_DIRNAME);
+    std::fs::create_dir_all(&bundles_dir).map_err(|e| CliError::Io {
+        path: bundles_dir.display().to_string(),
+        source: e,
+    })?;
+    let bundle_id = next_bundle_id(&bundles_dir)?;
+
+    let requirements: Vec<ReviewRequirement> = profiles
+        .iter()
+        .map(|profile| ReviewRequirement {
+            id: format!("{bundle_id}-{}", profile_slug(profile)),
+            profile: profile.clone(),
+            min_outputs: 1,
+            allowed_roles: vec!["reviewer".into()],
+        })
+        .collect();
+
+    // Evidence snapshot: sha256 of the DAG's graph_revision + all terminal
+    // task ids joined. Keeps it deterministic so reviewers can rebuild
+    // the expected hash without new machinery.
+    let evidence_hash = {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(format!("graph_revision={}\n", dag.graph_revision).as_bytes());
+        for id in dag.ids() {
+            h.update(format!("{id}\n").as_bytes());
+        }
+        format!("sha256:{:x}", h.finalize())
+    };
+
+    let bundle = ReviewBundle {
+        bundle_id: bundle_id.clone(),
+        mission_id: mission.into(),
+        graph_revision: dag.graph_revision,
+        state_revision: state.state_revision,
+        target: ReviewTarget::MissionClose,
+        requirements,
+        evidence_refs: vec![
+            "PROGRAM-BLUEPRINT.md".into(),
+            "STATE.json".into(),
+        ],
+        evidence_snapshot_hash: evidence_hash.clone(),
+        status: ReviewStatus::Open,
+        opened_at: now_rfc3339(),
+        closed_at: None,
+        opener_role: PARENT_ROLE.into(),
+    };
+
+    let bundle_path = bundle_path(&paths.mission_dir, &bundle_id);
+    let bytes = serde_json::to_vec_pretty(&bundle).map_err(|e| CliError::Internal {
+        message: format!("serialize bundle: {e}"),
+    })?;
+    crate::fs_atomic::atomic_write(&bundle_path, &bytes).map_err(|e| CliError::Io {
+        path: bundle_path.display().to_string(),
+        source: e,
+    })?;
+
+    // Emit audit event.
+    let event = crate::events::Event {
+        seq: state.state_revision,
+        kind: "mission_close_review_opened".into(),
+        at: now_rfc3339(),
+        extra: serde_json::Map::from_iter([(
+            "bundle_id".into(),
+            json!(bundle_id.clone()),
+        )]),
+    };
+    crate::events::append_event(&paths.mission_dir.join("events.jsonl"), &event).map_err(|e| {
+        CliError::Io {
+            path: paths.mission_dir.display().to_string(),
+            source: e,
+        }
+    })?;
+
+    Ok(envelope::success(
+        "codex1.review.open_mission_close.v1",
+        &json!({
+            "mission_id": mission,
+            "bundle_id": bundle_id,
+            "profiles": profiles,
+            "evidence_snapshot_hash": evidence_hash,
+            "message": format!("Opened mission-close review bundle {bundle_id}."),
+        }),
+    ))
+}
+
 pub fn cmd_review_submit(
     cli: &Cli,
     mission: &str,

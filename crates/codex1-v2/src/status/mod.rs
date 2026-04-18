@@ -23,6 +23,7 @@
 use serde::Serialize;
 
 use crate::graph::{waves::derive_waves, Dag};
+use crate::review::bundle::{ReviewBundle, ReviewStatus, ReviewTarget};
 use crate::state::{ParentLoopMode, Phase, State, TaskStatus};
 
 /// Schema string for the status envelope.
@@ -94,16 +95,35 @@ pub enum NextActionKind {
     /// Wave 2+: a task has `ProofSubmitted` or `ReviewOwed` status and needs
     /// a review bundle opened against it.
     ReviewOpen,
+    /// Wave 5: all tasks terminal but mission-close review not yet open/clean.
+    MissionCloseCheck,
+    /// Wave 5: mission-close review is clean; run `mission-close complete`.
+    MissionCloseComplete,
     UserDecision,
     Complete,
     InvalidState,
 }
 
-/// Project the given state and DAG into a status envelope.
+/// Project the given state and DAG into a status envelope without any
+/// review-bundle awareness. Callers that know about bundles should use
+/// [`project_status_with_bundles`] so the mission-close next actions fire
+/// correctly.
+#[must_use]
+pub fn project_status(state: &State, dag: &Dag) -> StatusEnvelope {
+    project_status_with_bundles(state, dag, &[])
+}
+
+/// Full Wave 5 projection: considers mission-close review bundles when
+/// deciding whether to emit `mission_close_check` or
+/// `mission_close_complete` as the next action.
 #[must_use]
 #[allow(clippy::too_many_lines)] // Envelope construction is linear and reads better
                                  // as one function than split into helpers.
-pub fn project_status(state: &State, dag: &Dag) -> StatusEnvelope {
+pub fn project_status_with_bundles(
+    state: &State,
+    dag: &Dag,
+    bundles: &[ReviewBundle],
+) -> StatusEnvelope {
     // Wave 4: active is derived from `mode != None`. When active, Ralph must
     // block stop unless the loop is paused (discussion mode).
     let active = !matches!(state.parent_loop.mode, ParentLoopMode::None);
@@ -139,23 +159,65 @@ pub fn project_status(state: &State, dag: &Dag) -> StatusEnvelope {
         };
     }
 
+    // If all tasks are terminal and DAG is non-empty, we're in the mission-
+    // close zone. Three sub-cases: (a) phase is already Complete → truly
+    // done; (b) mission-close bundle is clean → run `mission-close complete`;
+    // (c) otherwise → open/close the mission-close bundle first.
     if mission_is_complete(state, dag) {
+        if state.phase == Phase::Complete {
+            return StatusEnvelope {
+                mission_id: state.mission_id.clone(),
+                state_revision: state.state_revision,
+                phase: state.phase,
+                terminality: Terminality::Terminal,
+                verdict: Verdict::Complete,
+                parent_loop,
+                stop_policy: derive_stop_policy(active, state.parent_loop.paused, Verdict::Complete),
+                next_action: NextAction {
+                    kind: NextActionKind::Complete,
+                    task_id: None,
+                    args: vec![],
+                    display_message: "Mission is complete.".into(),
+                },
+                ready_tasks: vec![],
+                running_tasks: vec![],
+                review_required: vec![],
+                blocked: vec![],
+                stale: vec![],
+                required_user_decision: None,
+            };
+        }
+        // Not yet Complete: route through mission-close.
+        let mc_clean = bundles
+            .iter()
+            .any(|b| matches!(b.target, ReviewTarget::MissionClose) && b.status == ReviewStatus::Clean);
+        let (kind, message) = if mc_clean {
+            (
+                NextActionKind::MissionCloseComplete,
+                "Run codex1 mission-close complete.",
+            )
+        } else {
+            (
+                NextActionKind::MissionCloseCheck,
+                "Open the mission-close review bundle and run codex1 mission-close check.",
+            )
+        };
         return StatusEnvelope {
             mission_id: state.mission_id.clone(),
             state_revision: state.state_revision,
             phase: state.phase,
-            terminality: Terminality::Terminal,
-            verdict: Verdict::Complete,
+            terminality: Terminality::NonTerminal,
+            verdict: Verdict::ContinueRequired,
             parent_loop,
-            stop_policy: derive_stop_policy(active, state.parent_loop.paused, Verdict::Complete),
+            stop_policy: derive_stop_policy(active, state.parent_loop.paused, Verdict::ContinueRequired),
             next_action: NextAction {
-                kind: NextActionKind::Complete,
+                kind,
                 task_id: None,
-                args: vec![],
-                display_message: "Mission is complete.".into(),
+                args: vec!["--mission".into(), state.mission_id.clone()],
+                display_message: message.into(),
             },
             ready_tasks: vec![],
-            running_tasks: vec![],
+            running_tasks: running_task_ids(state),
             review_required: vec![],
             blocked: vec![],
             stale: vec![],
@@ -292,15 +354,10 @@ fn detect_invalid_state(state: &State, dag: &Dag) -> Option<String> {
         );
     }
 
-    if !dag.is_empty()
-        && !non_sup.is_empty()
-        && non_sup.iter().all(|s| s.is_terminal())
-        && state.phase != Phase::Complete
-    {
-        return Some(
-            "all_tasks_terminal_requires_complete_phase".into(),
-        );
-    }
+    // Note: the "all tasks terminal but phase != complete" case is NOT
+    // invalid_state in Wave 5 — it is the natural "ready for mission-close
+    // review" state. Mission-close routing is handled above in
+    // project_status_with_bundles.
 
     None
 }
@@ -596,15 +653,15 @@ mod tests {
     }
 
     #[test]
-    fn invalid_state_all_terminal_without_complete_phase() {
+    fn all_terminal_without_complete_phase_routes_to_mission_close() {
         let dag = dag_of(vec![task("T1")]);
         let state = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
         let s = project_status(&state, &dag);
-        assert_eq!(s.verdict, Verdict::InvalidState);
-        assert_eq!(
-            s.required_user_decision.as_deref(),
-            Some("all_tasks_terminal_requires_complete_phase")
-        );
+        // Wave 5: this is no longer invalid_state; it is the "ready for
+        // mission-close" state. With no bundles, the next action is to
+        // open/close the mission-close bundle.
+        assert_eq!(s.verdict, Verdict::ContinueRequired);
+        assert_eq!(s.next_action.kind, NextActionKind::MissionCloseCheck);
     }
 
     #[test]
