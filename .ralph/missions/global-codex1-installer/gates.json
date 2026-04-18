@@ -1,0 +1,1450 @@
+{
+  "mission_id": "global-codex1-installer",
+  "current_phase": "mission_close",
+  "updated_at": "2026-04-18T00:17:36.377178Z",
+  "gates": [
+    {
+      "gate_id": "global-codex1-installer:outcome_lock:lock:1",
+      "gate_kind": "outcome_lock",
+      "target_ref": "mission:global-codex1-installer",
+      "governing_refs": [
+        "mission:global-codex1-installer"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-17T17:49:24.597672Z",
+      "evaluated_at": "2026-04-17T17:49:24.597672Z",
+      "evaluated_against_ref": "OUTCOME-LOCK.md",
+      "evidence_refs": [
+        "PLANS/global-codex1-installer/OUTCOME-LOCK.md"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "global-codex1-installer:planning_completion:lock:1",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:global-codex1-installer",
+      "governing_refs": [
+        "lock:1"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T17:49:24.597672Z",
+      "evaluated_at": "2026-04-17T18:00:05.444483Z",
+      "evaluated_against_ref": null,
+      "evidence_refs": [],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:planning_completion:blueprint:3"
+    },
+    {
+      "gate_id": "global-codex1-installer:planning_completion:blueprint:3",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:global-codex1-installer",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:3"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T18:01:44.337833Z",
+      "evaluated_at": "2026-04-17T18:01:44.407092Z",
+      "evaluated_against_ref": "package:fc6cb9c5-44b2-40d2-b7ae-fca3f0ddf39a",
+      "evidence_refs": [
+        "/Users/joel/codex1/PLANS/global-codex1-installer/PROGRAM-BLUEPRINT.md",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/fc6cb9c5-44b2-40d2-b7ae-fca3f0ddf39a.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:planning_completion:blueprint:4"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:cli_command_split:53e165aa-6744-46ba-94d1-75edb27f3676",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:cli_command_split",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:3"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T18:00:29.920264Z",
+      "evaluated_at": "2026-04-17T18:00:29.908425Z",
+      "evaluated_against_ref": "53e165aa-6744-46ba-94d1-75edb27f3676",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/53e165aa-6744-46ba-94d1-75edb27f3676.json"
+      ],
+      "failure_refs": [
+        "dependency_governing_ref_missing:outcome_lock_current",
+        "dependency_governing_ref_missing:repo_state_read_before_edit",
+        "package_read_scope_outside_frontier:crates/codex1/src/commands/mod.rs",
+        "package_read_scope_outside_frontier:crates/codex1/src/commands/setup.rs",
+        "package_read_scope_outside_frontier:crates/codex1/src/main.rs",
+        "package_read_scope_outside_frontier:crates/codex1/tests/qualification_cli.rs",
+        "package_write_scope_outside_frontier:crates/codex1/src/commands/init.rs",
+        "package_write_scope_outside_frontier:crates/codex1/src/commands/mod.rs",
+        "package_write_scope_outside_frontier:crates/codex1/src/commands/setup.rs",
+        "package_write_scope_outside_frontier:crates/codex1/src/main.rs",
+        "package_write_scope_outside_frontier:crates/codex1/tests/qualification_cli.rs",
+        "package_read_scope_missing_for_included_spec:cli_command_split:`crates/codex1/src/commands/mod.rs`",
+        "package_read_scope_missing_for_included_spec:cli_command_split:`crates/codex1/src/commands/setup.rs`",
+        "package_read_scope_missing_for_included_spec:cli_command_split:`crates/codex1/src/main.rs`",
+        "package_read_scope_missing_for_included_spec:cli_command_split:`crates/codex1/tests/qualification_cli.rs`",
+        "package_write_scope_missing_for_included_spec:cli_command_split:`crates/codex1/src/commands/init.rs`",
+        "package_write_scope_missing_for_included_spec:cli_command_split:`crates/codex1/src/commands/mod.rs`",
+        "package_write_scope_missing_for_included_spec:cli_command_split:`crates/codex1/src/commands/setup.rs`",
+        "package_write_scope_missing_for_included_spec:cli_command_split:`crates/codex1/src/main.rs`",
+        "package_write_scope_missing_for_included_spec:cli_command_split:`crates/codex1/tests/qualification_cli.rs`",
+        "package_read_scope_outside_target_spec:crates/codex1/src/commands/mod.rs",
+        "package_read_scope_outside_target_spec:crates/codex1/src/commands/setup.rs",
+        "package_read_scope_outside_target_spec:crates/codex1/src/main.rs",
+        "package_read_scope_outside_target_spec:crates/codex1/tests/qualification_cli.rs",
+        "package_write_scope_outside_target_spec:crates/codex1/src/commands/init.rs",
+        "package_write_scope_outside_target_spec:crates/codex1/src/commands/mod.rs",
+        "package_write_scope_outside_target_spec:crates/codex1/src/commands/setup.rs",
+        "package_write_scope_outside_target_spec:crates/codex1/src/main.rs",
+        "package_write_scope_outside_target_spec:crates/codex1/tests/qualification_cli.rs",
+        "unknown_gate_check:proof_story_present",
+        "unknown_gate_check:read_scope_bound_to_spec",
+        "unknown_gate_check:write_scope_bound_to_spec",
+        "gate_check_failed:dependency_truth_current",
+        "gate_check_failed:scope_bounded_to_frontier"
+      ],
+      "superseded_by": "global-codex1-installer:execution_package:spec:cli_command_split:fc6cb9c5-44b2-40d2-b7ae-fca3f0ddf39a"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:cli_command_split:fc6cb9c5-44b2-40d2-b7ae-fca3f0ddf39a",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:cli_command_split",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:3"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T18:01:44.407089Z",
+      "evaluated_at": "2026-04-17T18:01:44.396941Z",
+      "evaluated_against_ref": "fc6cb9c5-44b2-40d2-b7ae-fca3f0ddf39a",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/fc6cb9c5-44b2-40d2-b7ae-fca3f0ddf39a.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:execution_package:spec:cli_command_split:2a96c5b5-df5c-4bdd-85f6-8931e9e9b049"
+    },
+    {
+      "gate_id": "global-codex1-installer:planning_completion:blueprint:4",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:global-codex1-installer",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:4"
+      ],
+      "status": "failed",
+      "blocking": true,
+      "opened_at": "2026-04-17T18:02:36.016136Z",
+      "evaluated_at": "2026-04-17T20:01:01.097063Z",
+      "evaluated_against_ref": "package:c2e956eb-5138-4da6-9fcd-d75992b5ee01",
+      "evidence_refs": [
+        "/Users/joel/codex1/PLANS/global-codex1-installer/PROGRAM-BLUEPRINT.md",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/2a96c5b5-df5c-4bdd-85f6-8931e9e9b049.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/911b7252-9f9b-4c38-88fa-ba58562f3520.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/09bbcc14-da83-4fed-9d33-93ec9801b8be.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/7d2bc979-377d-46d0-9738-4847ddaed935.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/c2e956eb-5138-4da6-9fcd-d75992b5ee01.json"
+      ],
+      "failure_refs": [
+        "execution_graph_missing",
+        "planning_selected_target_mismatch:spec:cli_command_split!=package:spec:global_setup_backup",
+        "gate_check_failed:target_resolution"
+      ],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:cli_command_split:2a96c5b5-df5c-4bdd-85f6-8931e9e9b049",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:cli_command_split",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:4"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T18:02:36.088216Z",
+      "evaluated_at": "2026-04-17T18:02:36.077537Z",
+      "evaluated_against_ref": "2a96c5b5-df5c-4bdd-85f6-8931e9e9b049",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/2a96c5b5-df5c-4bdd-85f6-8931e9e9b049.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:execution_package:spec:cli_command_split:911b7252-9f9b-4c38-88fa-ba58562f3520"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:cli_command_split:911b7252-9f9b-4c38-88fa-ba58562f3520",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:cli_command_split",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:4"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T19:06:03.315321Z",
+      "evaluated_at": "2026-04-17T19:06:03.298099Z",
+      "evaluated_against_ref": "911b7252-9f9b-4c38-88fa-ba58562f3520",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/911b7252-9f9b-4c38-88fa-ba58562f3520.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:execution_package:spec:cli_command_split:09bbcc14-da83-4fed-9d33-93ec9801b8be"
+    },
+    {
+      "gate_id": "global-codex1-installer:BlockingReview:spec:cli_command_split:dbef8e3c-3ba7-4e85-9d2e-55b99b01d6c9",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:cli_command_split",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:4",
+        "bundle:dbef8e3c-3ba7-4e85-9d2e-55b99b01d6c9"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T19:09:47.337846Z",
+      "evaluated_at": "2026-04-17T19:14:13.89673Z",
+      "evaluated_against_ref": "dbef8e3c-3ba7-4e85-9d2e-55b99b01d6c9",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/dbef8e3c-3ba7-4e85-9d2e-55b99b01d6c9.json",
+        "reviewer-output:dbef8e3c-3ba7-4e85-9d2e-55b99b01d6c9:3b2781e1-da5b-4ca1-ae16-6edaabb8ad45",
+        "reviewer-output:dbef8e3c-3ba7-4e85-9d2e-55b99b01d6c9:25061cc1-9264-493b-b867-aeff2ee32d65"
+      ],
+      "failure_refs": [
+        "Doctor remediation still points project repair at setup",
+        "Setup accepts repo-root but ignores it"
+      ],
+      "superseded_by": "global-codex1-installer:BlockingReview:spec:cli_command_split:4c7761c4-7b50-44a0-8506-2f9bdbcab4d5"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:cli_command_split:09bbcc14-da83-4fed-9d33-93ec9801b8be",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:cli_command_split",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:4"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T19:16:31.726958Z",
+      "evaluated_at": "2026-04-17T19:16:31.712318Z",
+      "evaluated_against_ref": "09bbcc14-da83-4fed-9d33-93ec9801b8be",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/09bbcc14-da83-4fed-9d33-93ec9801b8be.json"
+      ],
+      "failure_refs": [
+        "package_read_scope_outside_frontier:crates/codex1/src/commands/init.rs",
+        "package_read_scope_outside_target_spec:crates/codex1/src/commands/init.rs",
+        "gate_check_failed:scope_bounded_to_frontier"
+      ],
+      "superseded_by": "global-codex1-installer:execution_package:spec:cli_command_split:7d2bc979-377d-46d0-9738-4847ddaed935"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:cli_command_split:7d2bc979-377d-46d0-9738-4847ddaed935",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:cli_command_split",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:4"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-17T19:16:53.711317Z",
+      "evaluated_at": "2026-04-17T19:16:53.696595Z",
+      "evaluated_against_ref": "7d2bc979-377d-46d0-9738-4847ddaed935",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/7d2bc979-377d-46d0-9738-4847ddaed935.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "global-codex1-installer:BlockingReview:spec:cli_command_split:4c7761c4-7b50-44a0-8506-2f9bdbcab4d5",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:cli_command_split",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:4",
+        "bundle:4c7761c4-7b50-44a0-8506-2f9bdbcab4d5"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-17T19:17:08.960361Z",
+      "evaluated_at": "2026-04-17T19:18:16.78036Z",
+      "evaluated_against_ref": "4c7761c4-7b50-44a0-8506-2f9bdbcab4d5",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/4c7761c4-7b50-44a0-8506-2f9bdbcab4d5.json",
+        "reviewer-output:4c7761c4-7b50-44a0-8506-2f9bdbcab4d5:9deafcfa-1279-42fe-865d-25e77dc677c9"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:global_setup_backup:c2e956eb-5138-4da6-9fcd-d75992b5ee01",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:global_setup_backup",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:4"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T20:01:01.097058Z",
+      "evaluated_at": "2026-04-17T20:01:01.077723Z",
+      "evaluated_against_ref": "c2e956eb-5138-4da6-9fcd-d75992b5ee01",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/c2e956eb-5138-4da6-9fcd-d75992b5ee01.json"
+      ],
+      "failure_refs": [
+        "execution_graph_missing",
+        "planning_selected_target_mismatch:spec:cli_command_split!=package:spec:global_setup_backup",
+        "gate_check_failed:target_resolution"
+      ],
+      "superseded_by": "global-codex1-installer:execution_package:spec:global_setup_backup:45dc21b5-c331-49b1-9880-8cecf67249b0"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:global_setup_backup:45dc21b5-c331-49b1-9880-8cecf67249b0",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:global_setup_backup",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T20:01:30.936759Z",
+      "evaluated_at": "2026-04-17T20:01:30.916989Z",
+      "evaluated_against_ref": "45dc21b5-c331-49b1-9880-8cecf67249b0",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/45dc21b5-c331-49b1-9880-8cecf67249b0.json"
+      ],
+      "failure_refs": [
+        "included_spec_blueprint_revision_mismatch:global_setup_backup:4!=current:5",
+        "included_spec_blueprint_fingerprint_mismatch:global_setup_backup",
+        "gate_check_failed:planning_truth_current"
+      ],
+      "superseded_by": "global-codex1-installer:execution_package:spec:global_setup_backup:4928be7e-3f5e-43e2-834c-41e6f8c402f4"
+    },
+    {
+      "gate_id": "global-codex1-installer:planning_completion:blueprint:5",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:global-codex1-installer",
+      "governing_refs": [
+        "blueprint:5"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-17T20:01:30.936763Z",
+      "evaluated_at": "2026-04-17T20:13:38.166333Z",
+      "evaluated_against_ref": "package:7771db17-e3db-422b-88d3-ff343f8c68a9",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/45dc21b5-c331-49b1-9880-8cecf67249b0.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/4928be7e-3f5e-43e2-834c-41e6f8c402f4.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/b9546449-8f9d-4604-b26a-5b8de35d82b3.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/81deb594-2b52-434f-aa38-867d1134cd62.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/7771db17-e3db-422b-88d3-ff343f8c68a9.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:global_setup_backup:4928be7e-3f5e-43e2-834c-41e6f8c402f4",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:global_setup_backup",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T20:01:57.314644Z",
+      "evaluated_at": "2026-04-17T20:01:57.291379Z",
+      "evaluated_against_ref": "4928be7e-3f5e-43e2-834c-41e6f8c402f4",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/4928be7e-3f5e-43e2-834c-41e6f8c402f4.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:execution_package:spec:global_setup_backup:b9546449-8f9d-4604-b26a-5b8de35d82b3"
+    },
+    {
+      "gate_id": "global-codex1-installer:BlockingReview:spec:global_setup_backup:137ba22b-7522-482f-a43e-478340c88864",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:global_setup_backup",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5",
+        "bundle:137ba22b-7522-482f-a43e-478340c88864"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T20:05:19.572279Z",
+      "evaluated_at": "2026-04-17T20:09:08.690247Z",
+      "evaluated_against_ref": "137ba22b-7522-482f-a43e-478340c88864",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/137ba22b-7522-482f-a43e-478340c88864.json",
+        "reviewer-output:137ba22b-7522-482f-a43e-478340c88864:4c1f48c4-ec6b-4899-bfb0-981030fb54c5",
+        "reviewer-output:137ba22b-7522-482f-a43e-478340c88864:b6520f1d-d379-4bbc-98b2-299a8c5bbb77"
+      ],
+      "failure_refs": [
+        "Global setup backups cannot be restored by existing CLI",
+        "Global setup rewrites semantically desired config/hooks"
+      ],
+      "superseded_by": "global-codex1-installer:BlockingReview:spec:global_setup_backup:ef750bd1-176e-4de9-a268-4db429d0ed11"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:global_setup_backup:b9546449-8f9d-4604-b26a-5b8de35d82b3",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:global_setup_backup",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T20:09:32.987461Z",
+      "evaluated_at": "2026-04-17T20:09:32.975444Z",
+      "evaluated_against_ref": "b9546449-8f9d-4604-b26a-5b8de35d82b3",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/b9546449-8f9d-4604-b26a-5b8de35d82b3.json"
+      ],
+      "failure_refs": [
+        "dependency_governing_ref_missing:review:29c04546",
+        "gate_check_failed:dependency_truth_current"
+      ],
+      "superseded_by": "global-codex1-installer:execution_package:spec:global_setup_backup:81deb594-2b52-434f-aa38-867d1134cd62"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:global_setup_backup:81deb594-2b52-434f-aa38-867d1134cd62",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:global_setup_backup",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T20:09:45.873222Z",
+      "evaluated_at": "2026-04-17T20:09:45.858936Z",
+      "evaluated_against_ref": "81deb594-2b52-434f-aa38-867d1134cd62",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/81deb594-2b52-434f-aa38-867d1134cd62.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:execution_package:spec:global_setup_backup:7771db17-e3db-422b-88d3-ff343f8c68a9"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:global_setup_backup:7771db17-e3db-422b-88d3-ff343f8c68a9",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:global_setup_backup",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T20:13:38.166328Z",
+      "evaluated_at": "2026-04-17T20:13:38.146443Z",
+      "evaluated_against_ref": "7771db17-e3db-422b-88d3-ff343f8c68a9",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/7771db17-e3db-422b-88d3-ff343f8c68a9.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:execution_package:spec:global_setup_backup:0c0b7e8b-7f4d-47e2-aeb5-af01977c63cc"
+    },
+    {
+      "gate_id": "global-codex1-installer:BlockingReview:spec:global_setup_backup:ef750bd1-176e-4de9-a268-4db429d0ed11",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:global_setup_backup",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5",
+        "bundle:ef750bd1-176e-4de9-a268-4db429d0ed11"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T20:13:50.026556Z",
+      "evaluated_at": "2026-04-17T20:15:31.722793Z",
+      "evaluated_against_ref": "ef750bd1-176e-4de9-a268-4db429d0ed11",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/ef750bd1-176e-4de9-a268-4db429d0ed11.json",
+        "reviewer-output:ef750bd1-176e-4de9-a268-4db429d0ed11:d57063f1-ba51-464d-ad68-acb7fbed6402"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:BlockingReview:spec:global_setup_backup:26194473-3804-46cd-b8af-af07f48d85ba"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:global_setup_backup:0c0b7e8b-7f4d-47e2-aeb5-af01977c63cc",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:global_setup_backup",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:6"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T20:42:20.337548Z",
+      "evaluated_at": "2026-04-17T20:42:20.316935Z",
+      "evaluated_against_ref": "0c0b7e8b-7f4d-47e2-aeb5-af01977c63cc",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/0c0b7e8b-7f4d-47e2-aeb5-af01977c63cc.json"
+      ],
+      "failure_refs": [
+        "dependency_governing_ref_missing:contradiction:5224cd13",
+        "included_spec_blueprint_revision_mismatch:global_setup_backup:5!=current:6",
+        "included_spec_blueprint_fingerprint_mismatch:global_setup_backup",
+        "package_write_scope_missing_for_included_spec:global_setup_backup:crates/codex1/src/commands/restore.rs",
+        "package_write_scope_missing_for_included_spec:global_setup_backup:crates/codex1/src/commands/uninstall.rs",
+        "unknown_gate_check:contradiction_5224_replanned",
+        "unknown_gate_check:focused_setup_tests_passed",
+        "gate_check_failed:dependency_truth_current",
+        "gate_check_failed:scope_bounded_to_frontier",
+        "gate_check_failed:planning_truth_current"
+      ],
+      "superseded_by": "global-codex1-installer:execution_package:spec:global_setup_backup:36d102b8-6f59-438b-94a6-5adbbdffc55f"
+    },
+    {
+      "gate_id": "global-codex1-installer:planning_completion:blueprint:6",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:global-codex1-installer",
+      "governing_refs": [
+        "blueprint:6"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-17T20:42:20.337553Z",
+      "evaluated_at": "2026-04-17T21:03:25.696187Z",
+      "evaluated_against_ref": "package:41ee7737-6785-4a4b-a447-1fd3c1138e65",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/0c0b7e8b-7f4d-47e2-aeb5-af01977c63cc.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/36d102b8-6f59-438b-94a6-5adbbdffc55f.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/a8953e94-436b-4408-8d13-6611da826969.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/3b551258-80ca-4ac0-85eb-5039513edc76.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/41ee7737-6785-4a4b-a447-1fd3c1138e65.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:global_setup_backup:36d102b8-6f59-438b-94a6-5adbbdffc55f",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:global_setup_backup",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:6"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T20:42:48.184128Z",
+      "evaluated_at": "2026-04-17T20:42:48.170362Z",
+      "evaluated_against_ref": "36d102b8-6f59-438b-94a6-5adbbdffc55f",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/36d102b8-6f59-438b-94a6-5adbbdffc55f.json"
+      ],
+      "failure_refs": [
+        "dependency_governing_ref_missing:contradiction_5224cd13_replanned",
+        "gate_check_failed:dependency_truth_current"
+      ],
+      "superseded_by": "global-codex1-installer:execution_package:spec:global_setup_backup:a8953e94-436b-4408-8d13-6611da826969"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:global_setup_backup:a8953e94-436b-4408-8d13-6611da826969",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:global_setup_backup",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:6"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T20:43:24.304412Z",
+      "evaluated_at": "2026-04-17T20:43:24.294282Z",
+      "evaluated_against_ref": "a8953e94-436b-4408-8d13-6611da826969",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/a8953e94-436b-4408-8d13-6611da826969.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:execution_package:spec:global_setup_backup:3b551258-80ca-4ac0-85eb-5039513edc76"
+    },
+    {
+      "gate_id": "global-codex1-installer:BlockingReview:spec:global_setup_backup:26194473-3804-46cd-b8af-af07f48d85ba",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:global_setup_backup",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:6",
+        "bundle:26194473-3804-46cd-b8af-af07f48d85ba"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T20:47:16.617308Z",
+      "evaluated_at": "2026-04-17T20:53:26.916888Z",
+      "evaluated_against_ref": "26194473-3804-46cd-b8af-af07f48d85ba",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/26194473-3804-46cd-b8af-af07f48d85ba.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/26194473-3804-46cd-b8af-af07f48d85ba.json",
+        "reviewer-output:26194473-3804-46cd-b8af-af07f48d85ba:57ab1927-59e2-4f8c-bc47-76bd42f707a5"
+      ],
+      "failure_refs": [
+        "Global setup proof overclaims uninstall and human-output coverage"
+      ],
+      "superseded_by": "global-codex1-installer:BlockingReview:spec:global_setup_backup:400ef148-6488-44d1-8508-ed11df12f6d5"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:global_setup_backup:3b551258-80ca-4ac0-85eb-5039513edc76",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:global_setup_backup",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:6"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T20:59:33.871122Z",
+      "evaluated_at": "2026-04-17T20:59:33.854264Z",
+      "evaluated_against_ref": "3b551258-80ca-4ac0-85eb-5039513edc76",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/3b551258-80ca-4ac0-85eb-5039513edc76.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:execution_package:spec:global_setup_backup:41ee7737-6785-4a4b-a447-1fd3c1138e65"
+    },
+    {
+      "gate_id": "global-codex1-installer:BlockingReview:spec:global_setup_backup:400ef148-6488-44d1-8508-ed11df12f6d5",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:global_setup_backup",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:6",
+        "bundle:400ef148-6488-44d1-8508-ed11df12f6d5"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T20:59:56.307413Z",
+      "evaluated_at": "2026-04-17T21:02:28.322569Z",
+      "evaluated_against_ref": "400ef148-6488-44d1-8508-ed11df12f6d5",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/400ef148-6488-44d1-8508-ed11df12f6d5.json",
+        "reviewer-output:400ef148-6488-44d1-8508-ed11df12f6d5:c3137265-a22f-412b-8f31-6c825660b88a",
+        "reviewer-output:400ef148-6488-44d1-8508-ed11df12f6d5:8fe773a2-bf5d-4a55-b254-a06d9bdba389"
+      ],
+      "failure_refs": [
+        "Human changed-path proof is not isolated from preflight output"
+      ],
+      "superseded_by": "global-codex1-installer:BlockingReview:spec:global_setup_backup:4882c015-9794-4465-8d8f-d7b0b869ef3b"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:global_setup_backup:41ee7737-6785-4a4b-a447-1fd3c1138e65",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:global_setup_backup",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:6"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-17T21:03:25.696183Z",
+      "evaluated_at": "2026-04-17T21:03:25.677684Z",
+      "evaluated_against_ref": "41ee7737-6785-4a4b-a447-1fd3c1138e65",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/41ee7737-6785-4a4b-a447-1fd3c1138e65.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "global-codex1-installer:BlockingReview:spec:global_setup_backup:4882c015-9794-4465-8d8f-d7b0b869ef3b",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:global_setup_backup",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:6",
+        "bundle:4882c015-9794-4465-8d8f-d7b0b869ef3b"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-17T21:03:42.323812Z",
+      "evaluated_at": "2026-04-17T21:07:57.173251Z",
+      "evaluated_against_ref": "4882c015-9794-4465-8d8f-d7b0b869ef3b",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/4882c015-9794-4465-8d8f-d7b0b869ef3b.json",
+        "reviewer-output:4882c015-9794-4465-8d8f-d7b0b869ef3b:7b758739-8727-412f-a33c-a0ee0845a017",
+        "reviewer-output:4882c015-9794-4465-8d8f-d7b0b869ef3b:6a36288e-3369-4f41-9e74-855ba65b3eb1"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:doctor_restore_verification:8d3d4949-9de2-4b57-b14f-bf69ef10b217",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:doctor_restore_verification",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:7"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T21:09:48.647936Z",
+      "evaluated_at": "2026-04-17T21:09:48.635686Z",
+      "evaluated_against_ref": "8d3d4949-9de2-4b57-b14f-bf69ef10b217",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/8d3d4949-9de2-4b57-b14f-bf69ef10b217.json"
+      ],
+      "failure_refs": [
+        "included_spec_blueprint_fingerprint_mismatch:doctor_restore_verification",
+        "gate_check_failed:planning_truth_current"
+      ],
+      "superseded_by": "global-codex1-installer:execution_package:spec:doctor_restore_verification:8db06e8e-600a-411c-926e-43beb264e3f3"
+    },
+    {
+      "gate_id": "global-codex1-installer:planning_completion:blueprint:7",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:global-codex1-installer",
+      "governing_refs": [
+        "blueprint:7"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-17T21:09:48.64794Z",
+      "evaluated_at": "2026-04-17T21:23:18.234889Z",
+      "evaluated_against_ref": "package:28fc5626-b2af-408b-ac0b-ec1c49f8e6da",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/8d3d4949-9de2-4b57-b14f-bf69ef10b217.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/8db06e8e-600a-411c-926e-43beb264e3f3.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/28fc5626-b2af-408b-ac0b-ec1c49f8e6da.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:doctor_restore_verification:8db06e8e-600a-411c-926e-43beb264e3f3",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:doctor_restore_verification",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:7"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T21:10:12.438808Z",
+      "evaluated_at": "2026-04-17T21:10:12.429808Z",
+      "evaluated_against_ref": "8db06e8e-600a-411c-926e-43beb264e3f3",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/8db06e8e-600a-411c-926e-43beb264e3f3.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:execution_package:spec:doctor_restore_verification:28fc5626-b2af-408b-ac0b-ec1c49f8e6da"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:doctor_restore_verification:28fc5626-b2af-408b-ac0b-ec1c49f8e6da",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:doctor_restore_verification",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:7"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-17T21:23:18.234885Z",
+      "evaluated_at": "2026-04-17T21:23:18.223847Z",
+      "evaluated_against_ref": "28fc5626-b2af-408b-ac0b-ec1c49f8e6da",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/28fc5626-b2af-408b-ac0b-ec1c49f8e6da.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "global-codex1-installer:BlockingReview:spec:doctor_restore_verification:666382e9-0198-4d6c-b007-2a334aafe3f2",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:doctor_restore_verification",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:7",
+        "bundle:666382e9-0198-4d6c-b007-2a334aafe3f2"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-17T21:24:18.90151Z",
+      "evaluated_at": "2026-04-17T21:28:54.417932Z",
+      "evaluated_against_ref": "666382e9-0198-4d6c-b007-2a334aafe3f2",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/666382e9-0198-4d6c-b007-2a334aafe3f2.json",
+        "reviewer-output:666382e9-0198-4d6c-b007-2a334aafe3f2:4a5d6937-da75-4fd3-bd2d-ad8f01d15dde",
+        "PLANS/global-codex1-installer/specs/doctor_restore_verification/RECEIPTS/2026-04-17-doctor-restore-verification-proof.md"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:review_lane_completion_guard:96720086-0a2b-433c-a592-3688fcdea80e",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:review_lane_completion_guard",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:8"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T21:50:38.304475Z",
+      "evaluated_at": "2026-04-17T21:50:38.289911Z",
+      "evaluated_against_ref": "96720086-0a2b-433c-a592-3688fcdea80e",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/96720086-0a2b-433c-a592-3688fcdea80e.json"
+      ],
+      "failure_refs": [
+        "dependency_governing_ref_missing:blueprint_reopened_for_e719",
+        "dependency_governing_ref_missing:contradiction:e7198761-0b56-4978-b587-2aeaa944a03e",
+        "dependency_governing_ref_missing:preserved_installer_work",
+        "spec_body_missing_section:review_lane_completion_guard:Freshness Notes",
+        "included_spec_blueprint_fingerprint_mismatch:review_lane_completion_guard",
+        "package_write_scope_outside_frontier:plans/global-codex1-installer/specs/review_lane_completion_guard",
+        "package_write_scope_outside_target_spec:plans/global-codex1-installer/specs/review_lane_completion_guard",
+        "gate_check_failed:dependency_truth_current",
+        "gate_check_failed:scope_bounded_to_frontier",
+        "gate_check_failed:planning_truth_current"
+      ],
+      "superseded_by": "global-codex1-installer:execution_package:spec:review_lane_completion_guard:2a7a74b2-d786-4e52-9fe5-0b17b065c484"
+    },
+    {
+      "gate_id": "global-codex1-installer:planning_completion:blueprint:8",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:global-codex1-installer",
+      "governing_refs": [
+        "blueprint:8"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-17T21:50:38.304479Z",
+      "evaluated_at": "2026-04-17T21:51:23.172877Z",
+      "evaluated_against_ref": "package:2a7a74b2-d786-4e52-9fe5-0b17b065c484",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/96720086-0a2b-433c-a592-3688fcdea80e.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/2a7a74b2-d786-4e52-9fe5-0b17b065c484.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:review_lane_completion_guard:2a7a74b2-d786-4e52-9fe5-0b17b065c484",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:review_lane_completion_guard",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:8"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-17T21:51:23.172873Z",
+      "evaluated_at": "2026-04-17T21:51:23.161238Z",
+      "evaluated_against_ref": "2a7a74b2-d786-4e52-9fe5-0b17b065c484",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/2a7a74b2-d786-4e52-9fe5-0b17b065c484.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "global-codex1-installer:BlockingReview:spec:review_lane_completion_guard:458afa40-b44c-4ccf-94a2-bca0559884a6",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:review_lane_completion_guard",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:8",
+        "bundle:458afa40-b44c-4ccf-94a2-bca0559884a6"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-17T22:01:31.074006Z",
+      "evaluated_at": "2026-04-17T22:04:45.691697Z",
+      "evaluated_against_ref": "458afa40-b44c-4ccf-94a2-bca0559884a6",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/458afa40-b44c-4ccf-94a2-bca0559884a6.json",
+        "reviewer-output:458afa40-b44c-4ccf-94a2-bca0559884a6:ac686452-e8ac-4994-ab59-905b1190ce65",
+        "reviewer-output:458afa40-b44c-4ccf-94a2-bca0559884a6:48a47c15-d6f1-490d-b1e4-66c8bfc05c70"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "global-codex1-installer:MissionCloseReview:mission:global-codex1-installer:804edb4a-fcf3-4449-b3ec-19f06a9ae76e",
+      "gate_kind": "mission_close_review",
+      "target_ref": "mission:global-codex1-installer",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:8",
+        "bundle:804edb4a-fcf3-4449-b3ec-19f06a9ae76e"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T22:10:00.907183Z",
+      "evaluated_at": "2026-04-17T22:11:54.589586Z",
+      "evaluated_against_ref": "804edb4a-fcf3-4449-b3ec-19f06a9ae76e",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/804edb4a-fcf3-4449-b3ec-19f06a9ae76e.json",
+        "reviewer-output:804edb4a-fcf3-4449-b3ec-19f06a9ae76e:616f398b-2312-499f-ab8a-b75201b3e7ad"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:execution_package:spec:reviewer_writeback_authority_enforcement:cb52fafa-516f-4028-ab1a-eec0e83a9fcc"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:reviewer_writeback_authority_enforcement:bc6256aa-5627-419d-b84f-1a44d2aa14f3",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_writeback_authority_enforcement",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T22:16:22.613701Z",
+      "evaluated_at": "2026-04-17T22:16:22.59617Z",
+      "evaluated_against_ref": "bc6256aa-5627-419d-b84f-1a44d2aa14f3",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/bc6256aa-5627-419d-b84f-1a44d2aa14f3.json"
+      ],
+      "failure_refs": [
+        "included_spec_blueprint_fingerprint_mismatch:reviewer_writeback_authority_enforcement",
+        "gate_check_failed:planning_truth_current"
+      ],
+      "superseded_by": "global-codex1-installer:execution_package:spec:reviewer_writeback_authority_enforcement:cb52fafa-516f-4028-ab1a-eec0e83a9fcc"
+    },
+    {
+      "gate_id": "global-codex1-installer:planning_completion:blueprint:9",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:global-codex1-installer",
+      "governing_refs": [
+        "blueprint:9"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-17T22:16:22.613704Z",
+      "evaluated_at": "2026-04-17T23:51:28.238625Z",
+      "evaluated_against_ref": "package:fedd60de-6aa7-412e-ae5b-09a50d2f3d0a",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/bc6256aa-5627-419d-b84f-1a44d2aa14f3.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/cb52fafa-516f-4028-ab1a-eec0e83a9fcc.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/bc6900ba-c720-4f60-990d-599e2110e782.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/5808620b-0ce9-4855-be57-d86c40921657.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/0f11069d-ea5e-4084-b055-ddd887c734e3.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/d60fd68d-e84f-491e-b00b-4fe1caaabf15.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/08b5a096-fa3d-4722-ab9d-210ec2279e15.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/e8487546-92c3-46cc-8c82-c895d8b1f6c5.json",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/fedd60de-6aa7-412e-ae5b-09a50d2f3d0a.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:reviewer_writeback_authority_enforcement:cb52fafa-516f-4028-ab1a-eec0e83a9fcc",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_writeback_authority_enforcement",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T22:16:54.666501Z",
+      "evaluated_at": "2026-04-17T22:16:54.651737Z",
+      "evaluated_against_ref": "cb52fafa-516f-4028-ab1a-eec0e83a9fcc",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/cb52fafa-516f-4028-ab1a-eec0e83a9fcc.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:execution_package:spec:reviewer_writeback_authority_enforcement:bc6900ba-c720-4f60-990d-599e2110e782"
+    },
+    {
+      "gate_id": "global-codex1-installer:BlockingReview:spec:reviewer_writeback_authority_enforcement:ecf8524c-af62-4dd2-9d50-3eb20828d0e1",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:reviewer_writeback_authority_enforcement",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9",
+        "bundle:ecf8524c-af62-4dd2-9d50-3eb20828d0e1"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T22:28:31.209125Z",
+      "evaluated_at": "2026-04-17T22:36:42.003666Z",
+      "evaluated_against_ref": "ecf8524c-af62-4dd2-9d50-3eb20828d0e1",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/ecf8524c-af62-4dd2-9d50-3eb20828d0e1.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:BlockingReview:spec:reviewer_writeback_authority_enforcement:92692444-ff1f-4b4f-89de-4873bae17978"
+    },
+    {
+      "gate_id": "global-codex1-installer:BlockingReview:spec:reviewer_writeback_authority_enforcement:92692444-ff1f-4b4f-89de-4873bae17978",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:reviewer_writeback_authority_enforcement",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9",
+        "bundle:92692444-ff1f-4b4f-89de-4873bae17978"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T22:36:41.987389Z",
+      "evaluated_at": "2026-04-17T22:46:04.347672Z",
+      "evaluated_against_ref": "92692444-ff1f-4b4f-89de-4873bae17978",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/92692444-ff1f-4b4f-89de-4873bae17978.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:BlockingReview:spec:reviewer_writeback_authority_enforcement:fc648c5a-baf0-42bf-8a46-118b655926cf"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:reviewer_writeback_authority_enforcement:bc6900ba-c720-4f60-990d-599e2110e782",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_writeback_authority_enforcement",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T22:46:04.347683Z",
+      "evaluated_at": "2026-04-17T22:46:04.336569Z",
+      "evaluated_against_ref": "bc6900ba-c720-4f60-990d-599e2110e782",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/bc6900ba-c720-4f60-990d-599e2110e782.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:execution_package:spec:reviewer_writeback_authority_enforcement:5808620b-0ce9-4855-be57-d86c40921657"
+    },
+    {
+      "gate_id": "global-codex1-installer:BlockingReview:spec:reviewer_writeback_authority_enforcement:fc648c5a-baf0-42bf-8a46-118b655926cf",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:reviewer_writeback_authority_enforcement",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9",
+        "bundle:fc648c5a-baf0-42bf-8a46-118b655926cf"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T22:46:27.515819Z",
+      "evaluated_at": "2026-04-17T22:54:30.71795Z",
+      "evaluated_against_ref": "fc648c5a-baf0-42bf-8a46-118b655926cf",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/fc648c5a-baf0-42bf-8a46-118b655926cf.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:BlockingReview:spec:reviewer_writeback_authority_enforcement:2470aee6-d890-4ebe-b177-ff6fb8ce7945"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:reviewer_writeback_authority_enforcement:5808620b-0ce9-4855-be57-d86c40921657",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_writeback_authority_enforcement",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T22:54:30.717968Z",
+      "evaluated_at": "2026-04-17T22:54:30.708614Z",
+      "evaluated_against_ref": "5808620b-0ce9-4855-be57-d86c40921657",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/5808620b-0ce9-4855-be57-d86c40921657.json"
+      ],
+      "failure_refs": [
+        "package_read_scope_outside_frontier:.codex/skills/close/skill.md",
+        "package_write_scope_outside_frontier:.codex/skills/close/skill.md",
+        "package_read_scope_outside_target_spec:.codex/skills/close/skill.md",
+        "package_write_scope_outside_target_spec:.codex/skills/close/skill.md",
+        "gate_check_failed:scope_bounded_to_frontier"
+      ],
+      "superseded_by": "global-codex1-installer:execution_package:spec:reviewer_writeback_authority_enforcement:0f11069d-ea5e-4084-b055-ddd887c734e3"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:reviewer_writeback_authority_enforcement:0f11069d-ea5e-4084-b055-ddd887c734e3",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_writeback_authority_enforcement",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T22:55:26.462799Z",
+      "evaluated_at": "2026-04-17T22:55:26.441425Z",
+      "evaluated_against_ref": "0f11069d-ea5e-4084-b055-ddd887c734e3",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/0f11069d-ea5e-4084-b055-ddd887c734e3.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:execution_package:spec:reviewer_writeback_authority_enforcement:d60fd68d-e84f-491e-b00b-4fe1caaabf15"
+    },
+    {
+      "gate_id": "global-codex1-installer:BlockingReview:spec:reviewer_writeback_authority_enforcement:2470aee6-d890-4ebe-b177-ff6fb8ce7945",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:reviewer_writeback_authority_enforcement",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9",
+        "bundle:2470aee6-d890-4ebe-b177-ff6fb8ce7945"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T22:55:45.966656Z",
+      "evaluated_at": "2026-04-17T23:02:53.187691Z",
+      "evaluated_against_ref": "2470aee6-d890-4ebe-b177-ff6fb8ce7945",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/2470aee6-d890-4ebe-b177-ff6fb8ce7945.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:BlockingReview:spec:reviewer_writeback_authority_enforcement:eff2ecf6-4c58-4d36-aa23-f3b2ca2cfd25"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:reviewer_writeback_authority_enforcement:d60fd68d-e84f-491e-b00b-4fe1caaabf15",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_writeback_authority_enforcement",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T23:02:53.187717Z",
+      "evaluated_at": "2026-04-17T23:02:53.177865Z",
+      "evaluated_against_ref": "d60fd68d-e84f-491e-b00b-4fe1caaabf15",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/d60fd68d-e84f-491e-b00b-4fe1caaabf15.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:execution_package:spec:reviewer_writeback_authority_enforcement:08b5a096-fa3d-4722-ab9d-210ec2279e15"
+    },
+    {
+      "gate_id": "global-codex1-installer:BlockingReview:spec:reviewer_writeback_authority_enforcement:eff2ecf6-4c58-4d36-aa23-f3b2ca2cfd25",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:reviewer_writeback_authority_enforcement",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9",
+        "bundle:eff2ecf6-4c58-4d36-aa23-f3b2ca2cfd25"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T23:03:26.266224Z",
+      "evaluated_at": "2026-04-17T23:06:23.193445Z",
+      "evaluated_against_ref": "eff2ecf6-4c58-4d36-aa23-f3b2ca2cfd25",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/eff2ecf6-4c58-4d36-aa23-f3b2ca2cfd25.json",
+        "reviewer-output:eff2ecf6-4c58-4d36-aa23-f3b2ca2cfd25:9da23783-90bd-48bb-9c9d-4329875d47ad",
+        "reviewer-output:eff2ecf6-4c58-4d36-aa23-f3b2ca2cfd25:729070cd-4679-480c-a75f-6daa7b6ea898"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:BlockingReview:spec:reviewer_writeback_authority_enforcement:30430d49-cec2-485f-b9cf-a53819fad87c"
+    },
+    {
+      "gate_id": "global-codex1-installer:MissionCloseReview:mission:global-codex1-installer:5c9c99b8-7ecc-4315-bbeb-c326b6863c6f",
+      "gate_kind": "mission_close_review",
+      "target_ref": "mission:global-codex1-installer",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9",
+        "bundle:5c9c99b8-7ecc-4315-bbeb-c326b6863c6f"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T23:07:02.356501Z",
+      "evaluated_at": "2026-04-17T23:07:24.495203Z",
+      "evaluated_against_ref": "5c9c99b8-7ecc-4315-bbeb-c326b6863c6f",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/5c9c99b8-7ecc-4315-bbeb-c326b6863c6f.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:MissionCloseReview:mission:global-codex1-installer:609a4e73-4e66-419b-aa7c-220172668bc0"
+    },
+    {
+      "gate_id": "global-codex1-installer:MissionCloseReview:mission:global-codex1-installer:609a4e73-4e66-419b-aa7c-220172668bc0",
+      "gate_kind": "mission_close_review",
+      "target_ref": "mission:global-codex1-installer",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9",
+        "bundle:609a4e73-4e66-419b-aa7c-220172668bc0"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T23:07:24.480059Z",
+      "evaluated_at": "2026-04-17T23:13:45.279507Z",
+      "evaluated_against_ref": "609a4e73-4e66-419b-aa7c-220172668bc0",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/609a4e73-4e66-419b-aa7c-220172668bc0.json",
+        "reviewer-output:609a4e73-4e66-419b-aa7c-220172668bc0:194e19d5-3852-4144-94fb-bab84579d96b",
+        "reviewer-output:609a4e73-4e66-419b-aa7c-220172668bc0:be3a625b-dc0a-4dbc-8b73-25dd482efbb7"
+      ],
+      "failure_refs": [
+        "Writeback authority is only enforced when an active verifier-backed loop lease exists.",
+        "A single generic legacy reviewer id can satisfy all required review lanes."
+      ],
+      "superseded_by": "global-codex1-installer:MissionCloseReview:mission:global-codex1-installer:94787774-980e-47ef-977e-4804f004096c"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:reviewer_writeback_authority_enforcement:08b5a096-fa3d-4722-ab9d-210ec2279e15",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_writeback_authority_enforcement",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T23:23:31.173408Z",
+      "evaluated_at": "2026-04-17T23:23:31.160018Z",
+      "evaluated_against_ref": "08b5a096-fa3d-4722-ab9d-210ec2279e15",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/08b5a096-fa3d-4722-ab9d-210ec2279e15.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:execution_package:spec:reviewer_writeback_authority_enforcement:e8487546-92c3-46cc-8c82-c895d8b1f6c5"
+    },
+    {
+      "gate_id": "global-codex1-installer:BlockingReview:spec:reviewer_writeback_authority_enforcement:30430d49-cec2-485f-b9cf-a53819fad87c",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:reviewer_writeback_authority_enforcement",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9",
+        "bundle:30430d49-cec2-485f-b9cf-a53819fad87c"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T23:23:56.78979Z",
+      "evaluated_at": "2026-04-17T23:30:09.495746Z",
+      "evaluated_against_ref": "30430d49-cec2-485f-b9cf-a53819fad87c",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/30430d49-cec2-485f-b9cf-a53819fad87c.json",
+        "reviewer-output:30430d49-cec2-485f-b9cf-a53819fad87c:1428e22b-a6d6-40f8-8743-22fba7439a96",
+        "reviewer-output:30430d49-cec2-485f-b9cf-a53819fad87c:7eeb9635-86ef-4ac1-b72f-587207270afa"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:BlockingReview:spec:reviewer_writeback_authority_enforcement:62f20f7b-f2af-464d-b728-5186760c6aa0"
+    },
+    {
+      "gate_id": "global-codex1-installer:MissionCloseReview:mission:global-codex1-installer:94787774-980e-47ef-977e-4804f004096c",
+      "gate_kind": "mission_close_review",
+      "target_ref": "mission:global-codex1-installer",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9",
+        "bundle:94787774-980e-47ef-977e-4804f004096c"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T23:30:27.459195Z",
+      "evaluated_at": "2026-04-17T23:36:28.549369Z",
+      "evaluated_against_ref": "94787774-980e-47ef-977e-4804f004096c",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/94787774-980e-47ef-977e-4804f004096c.json",
+        "reviewer-output:94787774-980e-47ef-977e-4804f004096c:065b4a2a-436e-450f-9079-594706770e82",
+        "reviewer-output:94787774-980e-47ef-977e-4804f004096c:39925211-12d3-4ffd-bcba-c1e6e27b86d2",
+        "reviewer-output:94787774-980e-47ef-977e-4804f004096c:9571e425-f2de-4cd3-aefa-c1ece11692df"
+      ],
+      "failure_refs": [
+        "Mission-close bundle excludes completed installer specs.",
+        "No-lease reviewer can still mint parent authority by beginning a lease.",
+        "Mission-close clean review has no enforced code/correctness reviewer lane.",
+        "Multiple generic reviewer outputs can still satisfy distinct required lanes."
+      ],
+      "superseded_by": "global-codex1-installer:MissionCloseReview:mission:global-codex1-installer:9d5a0680-42e6-48dc-9719-7f0b300cf740"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:reviewer_writeback_authority_enforcement:e8487546-92c3-46cc-8c82-c895d8b1f6c5",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_writeback_authority_enforcement",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T23:45:04.112356Z",
+      "evaluated_at": "2026-04-17T23:45:04.097703Z",
+      "evaluated_against_ref": "e8487546-92c3-46cc-8c82-c895d8b1f6c5",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/e8487546-92c3-46cc-8c82-c895d8b1f6c5.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:execution_package:spec:reviewer_writeback_authority_enforcement:fedd60de-6aa7-412e-ae5b-09a50d2f3d0a"
+    },
+    {
+      "gate_id": "global-codex1-installer:BlockingReview:spec:reviewer_writeback_authority_enforcement:62f20f7b-f2af-464d-b728-5186760c6aa0",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:reviewer_writeback_authority_enforcement",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9",
+        "bundle:62f20f7b-f2af-464d-b728-5186760c6aa0"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T23:45:27.455077Z",
+      "evaluated_at": "2026-04-17T23:49:51.619657Z",
+      "evaluated_against_ref": "62f20f7b-f2af-464d-b728-5186760c6aa0",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/62f20f7b-f2af-464d-b728-5186760c6aa0.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:BlockingReview:spec:reviewer_writeback_authority_enforcement:1876e0e9-ddaf-4417-8d4d-cfcd99dace05"
+    },
+    {
+      "gate_id": "global-codex1-installer:BlockingReview:spec:reviewer_writeback_authority_enforcement:1876e0e9-ddaf-4417-8d4d-cfcd99dace05",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:reviewer_writeback_authority_enforcement",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9",
+        "bundle:1876e0e9-ddaf-4417-8d4d-cfcd99dace05"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T23:49:51.605923Z",
+      "evaluated_at": "2026-04-17T23:51:28.238604Z",
+      "evaluated_against_ref": "1876e0e9-ddaf-4417-8d4d-cfcd99dace05",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/1876e0e9-ddaf-4417-8d4d-cfcd99dace05.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:BlockingReview:spec:reviewer_writeback_authority_enforcement:6d71de06-5d75-4233-bb6b-d3ff31e59d2f"
+    },
+    {
+      "gate_id": "global-codex1-installer:execution_package:spec:reviewer_writeback_authority_enforcement:fedd60de-6aa7-412e-ae5b-09a50d2f3d0a",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_writeback_authority_enforcement",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-17T23:51:28.23862Z",
+      "evaluated_at": "2026-04-17T23:51:28.223209Z",
+      "evaluated_against_ref": "fedd60de-6aa7-412e-ae5b-09a50d2f3d0a",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/fedd60de-6aa7-412e-ae5b-09a50d2f3d0a.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "global-codex1-installer:BlockingReview:spec:reviewer_writeback_authority_enforcement:6d71de06-5d75-4233-bb6b-d3ff31e59d2f",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:reviewer_writeback_authority_enforcement",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9",
+        "bundle:6d71de06-5d75-4233-bb6b-d3ff31e59d2f"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T23:51:54.892567Z",
+      "evaluated_at": "2026-04-17T23:53:02.723142Z",
+      "evaluated_against_ref": "6d71de06-5d75-4233-bb6b-d3ff31e59d2f",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/6d71de06-5d75-4233-bb6b-d3ff31e59d2f.json",
+        "reviewer-output:6d71de06-5d75-4233-bb6b-d3ff31e59d2f:c09f896f-a71a-4e34-9f1b-25068eec72ff"
+      ],
+      "failure_refs": [
+        "Stale mission-close regression is partially disabled by unreachable return."
+      ],
+      "superseded_by": "global-codex1-installer:BlockingReview:spec:reviewer_writeback_authority_enforcement:19c26e37-4e6a-4387-877d-3b62bf2b7802"
+    },
+    {
+      "gate_id": "global-codex1-installer:BlockingReview:spec:reviewer_writeback_authority_enforcement:19c26e37-4e6a-4387-877d-3b62bf2b7802",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:reviewer_writeback_authority_enforcement",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9",
+        "bundle:19c26e37-4e6a-4387-877d-3b62bf2b7802"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T23:58:00.850399Z",
+      "evaluated_at": "2026-04-17T23:58:19.650916Z",
+      "evaluated_against_ref": "19c26e37-4e6a-4387-877d-3b62bf2b7802",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/19c26e37-4e6a-4387-877d-3b62bf2b7802.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:BlockingReview:spec:reviewer_writeback_authority_enforcement:ca919757-4205-4d41-abe1-b7104bdf15ba"
+    },
+    {
+      "gate_id": "global-codex1-installer:BlockingReview:spec:reviewer_writeback_authority_enforcement:ca919757-4205-4d41-abe1-b7104bdf15ba",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:reviewer_writeback_authority_enforcement",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9",
+        "bundle:ca919757-4205-4d41-abe1-b7104bdf15ba"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-17T23:58:19.638573Z",
+      "evaluated_at": "2026-04-18T00:03:47.998252Z",
+      "evaluated_against_ref": "ca919757-4205-4d41-abe1-b7104bdf15ba",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/ca919757-4205-4d41-abe1-b7104bdf15ba.json",
+        "reviewer-output:ca919757-4205-4d41-abe1-b7104bdf15ba:419ab603-e191-4fe2-91fe-a4edd9ca3ac8",
+        "reviewer-output:ca919757-4205-4d41-abe1-b7104bdf15ba:641b34ed-40b2-4473-ae7a-756bc1e1afbd"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "global-codex1-installer:MissionCloseReview:mission:global-codex1-installer:9d5a0680-42e6-48dc-9719-7f0b300cf740",
+      "gate_kind": "mission_close_review",
+      "target_ref": "mission:global-codex1-installer",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9",
+        "bundle:9d5a0680-42e6-48dc-9719-7f0b300cf740"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-18T00:04:05.586795Z",
+      "evaluated_at": "2026-04-18T00:08:10.060725Z",
+      "evaluated_against_ref": "9d5a0680-42e6-48dc-9719-7f0b300cf740",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/9d5a0680-42e6-48dc-9719-7f0b300cf740.json",
+        "reviewer-output:9d5a0680-42e6-48dc-9719-7f0b300cf740:77e7ab47-f36c-441f-bd8e-dd12b69a172e",
+        "reviewer-output:9d5a0680-42e6-48dc-9719-7f0b300cf740:7d823819-ec9d-4d34-9b09-bb0575c192f8",
+        "reviewer-output:9d5a0680-42e6-48dc-9719-7f0b300cf740:9bb6c449-261f-4bc8-8615-9cade4d8bb5c",
+        "reviewer-output:9d5a0680-42e6-48dc-9719-7f0b300cf740:13d9068d-dd5b-420e-8fed-481e3213b32a",
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/9d5a0680-42e6-48dc-9719-7f0b300cf740.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "global-codex1-installer:MissionCloseReview:mission:global-codex1-installer:e224f978-2ea0-47ec-bd4b-7ee39068c7b1"
+    },
+    {
+      "gate_id": "global-codex1-installer:MissionCloseReview:mission:global-codex1-installer:e224f978-2ea0-47ec-bd4b-7ee39068c7b1",
+      "gate_kind": "mission_close_review",
+      "target_ref": "mission:global-codex1-installer",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9",
+        "bundle:e224f978-2ea0-47ec-bd4b-7ee39068c7b1"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-18T00:14:08.595817Z",
+      "evaluated_at": "2026-04-18T00:17:36.377174Z",
+      "evaluated_against_ref": "e224f978-2ea0-47ec-bd4b-7ee39068c7b1",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/e224f978-2ea0-47ec-bd4b-7ee39068c7b1.json",
+        "reviewer-output:e224f978-2ea0-47ec-bd4b-7ee39068c7b1:6ec241aa-50bf-47fa-bd77-18d190fdd0f1",
+        "reviewer-output:e224f978-2ea0-47ec-bd4b-7ee39068c7b1:cb3d2048-29eb-4d66-95be-f8b7a79c3a5e"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    }
+  ]
+}

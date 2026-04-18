@@ -1,0 +1,44 @@
+{
+  "mission_id": "global-codex1-installer",
+  "bundle_id": "94787774-980e-47ef-977e-4804f004096c",
+  "reviewer_id": "review_mission_close_intent_947_2",
+  "reviewer_output_id": "39925211-12d3-4ffd-bcba-c1e6e27b86d2",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P1",
+      "title": "Mission-close bundle excludes completed installer specs",
+      "evidence_refs": [
+        ".ralph/missions/global-codex1-installer/bundles/94787774-980e-47ef-977e-4804f004096c.json:38-48",
+        "PLANS/global-codex1-installer/PROGRAM-BLUEPRINT.md:91-99",
+        "PLANS/global-codex1-installer/PROGRAM-BLUEPRINT.md:110-116",
+        "PLANS/global-codex1-installer/specs/cli_command_split/SPEC.md:4-11",
+        "PLANS/global-codex1-installer/specs/global_setup_backup/SPEC.md:4-11",
+        "PLANS/global-codex1-installer/specs/doctor_restore_verification/SPEC.md:4-11",
+        "PLANS/global-codex1-installer/specs/review_lane_completion_guard/SPEC.md:4-11",
+        "crates/codex1-core/src/runtime.rs:2870-2894",
+        "crates/codex1-core/src/runtime.rs:10245-10268",
+        "crates/codex1-core/src/runtime.rs:10301-10349"
+      ],
+      "rationale": "The current mission-close bundle asserts cross-spec claims for setup/init, global backups, doctor/restore, review-lane coverage, and writeback authority, but its included_spec_refs contains only reviewer_writeback_authority_enforcement. The blueprint still lists the earlier installer workstreams as in-scope and blocking, and their specs remain active/complete, but load_mission_close_spec_ids filters included specs to the current blueprint revision. As a result, validate-review-bundle can return valid while mission_close_eligibility_findings only checks the latest authority spec and skips the completed setup/init, backup, doctor/restore, and lane-guard specs that prove most of the locked installer outcome.",
+      "suggested_next_action": "Make mission-close inclusion cover every active non-descoped mission spec that remains part of the current blueprint outcome, or explicitly roll prior completed specs forward/descoped with reviewable truth; then regenerate the mission-close bundle and require eligibility checks over all installer specs before terminal close."
+    },
+    {
+      "severity": "P2",
+      "title": "Mission-close clean review has no enforced code/correctness reviewer lane",
+      "evidence_refs": [
+        ".ralph/missions/global-codex1-installer/bundles/94787774-980e-47ef-977e-4804f004096c.json:11-28",
+        ".ralph/missions/global-codex1-installer/bundles/94787774-980e-47ef-977e-4804f004096c.json:38-44",
+        "crates/codex1-core/src/runtime.rs:2887-2890",
+        "crates/codex1-core/src/runtime.rs:4460-4470",
+        "crates/codex1-core/src/runtime.rs:4496-4509",
+        "PLANS/global-codex1-installer/PROGRAM-BLUEPRINT.md:98-99"
+      ],
+      "rationale": "The mission-close bundle carries the correctness lens and claims P6/P7, but mission-close bundle construction forces proof_rows_under_review, receipts, changed_files_or_diff, and touched_interface_contracts to empty. The clean-review lane guard derives required code/spec reviewer lanes only when changed_files_or_diff looks code-producing, so a clean mission-close outcome for this bundle has an empty required lane set even though it is closing over code-changing work and authority-boundary claims. This leaves the P6 lane-coverage promise dependent on parent discipline rather than machine enforcement at the final close boundary.",
+      "suggested_next_action": "Define required reviewer-output profiles for mission-close bundles directly from mandatory lenses/cross-spec claims or included specs instead of changed_files_or_diff alone, and add a regression proving a mission-close bundle with correctness/authority claims cannot be recorded clean without the required durable reviewer-output lanes."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/global-codex1-installer/review-evidence-snapshots/94787774-980e-47ef-977e-4804f004096c.json",
+  "source_evidence_snapshot_fingerprint": "sha256:8af2dd7dcded44a2e8f2aee19a810c12e91e43eb3614f39eb8e5e6d954f49bcf",
+  "recorded_at": "2026-04-17T23:34:38.660574Z"
+}

@@ -1,0 +1,77 @@
+{
+  "mission_id": "ralph-control-loop-boundary",
+  "bundle_id": "554f7fb3-076a-47a8-98d8-d3e08c729142",
+  "bundle_kind": "spec_review",
+  "source_package_id": "8b4bd058-052c-43b0-b59c-ca8a9b914dc8",
+  "target_spec_id": "control_loop_qualification",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:5cbaab0b13c64a004ec37eaa7217fd9b06349887f5b8f42611793ffed1c848a2",
+  "blueprint_revision": 14,
+  "blueprint_fingerprint": "sha256:7b0bdfae9be3384ae45e5ffeb0a68404bfd36fb71f934b4d4181705b25b8de01",
+  "spec_revision": 5,
+  "spec_fingerprint": "sha256:20f5dab17c1872cdac2aac0842b128c9e5fd55e2946f5d9979bb254283996b6b",
+  "mandatory_review_lenses": [
+    "evidence_adequacy",
+    "release_gate_integrity",
+    "operability_rollback_observability",
+    "interface_compatibility",
+    "correctness",
+    "spec_conformance",
+    "operability_rollback_observability."
+  ],
+  "proof_rows_under_review": [
+    "cargo test -p codex1 --test qualification_cli control_loop --quiet",
+    "cargo run -p codex1 -- qualify-codex --json --live=false --self-hosting=false",
+    "cargo fmt --all --check",
+    "codex1 internal validate-mission-artifacts --mission-id ralph-control-loop-boundary",
+    "cargo test -p codex1 --test qualification_cli control_loop --quiet or equivalent targeted qualification test.",
+    "cargo run -p codex1 -- qualify-codex --json --live=false --self-hosting=false produces non-zero checks for the scoped control-loop gate.",
+    "If the source workspace hook is intentionally paused, the source qualification"
+  ],
+  "receipts": [
+    "PLANS/ralph-control-loop-boundary/specs/control_loop_qualification/RECEIPTS/2026-04-17-control-loop-qualification-proof.txt"
+  ],
+  "changed_files_or_diff": [
+    "crates/codex1/src/commands/qualify.rs",
+    "crates/codex1/tests/qualification_cli.rs",
+    "docs/qualification/README.md",
+    "docs/qualification/gates.md",
+    "PLANS/ralph-control-loop-boundary/specs/control_loop_qualification"
+  ],
+  "touched_interface_contracts": [
+    "Qualification gate registry.",
+    "Qualification report semantics.",
+    "Hook support documentation.",
+    "Reviewer-output evidence requirements in qualification smoke flows.",
+    "Paused-hook source qualification proof caveat."
+  ],
+  "mission_level_proof_rows": [],
+  "cross_spec_claim_refs": [],
+  "visible_artifact_refs": [],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [],
+  "evidence_refs": [
+    "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/bundles/554f7fb3-076a-47a8-98d8-d3e08c729142.json",
+    "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/8b4bd058-052c-43b0-b59c-ca8a9b914dc8.json",
+    "PLANS/ralph-control-loop-boundary/specs/control_loop_qualification/RECEIPTS/2026-04-17-control-loop-qualification-proof.txt",
+    "crates/codex1/src/commands/qualify.rs",
+    "crates/codex1/tests/qualification_cli.rs",
+    "docs/qualification/README.md",
+    "docs/qualification/gates.md",
+    "PLANS/ralph-control-loop-boundary/specs/control_loop_qualification"
+  ],
+  "reviewer_instructions": [
+    "Review only this frozen evidence snapshot and the refs it names.",
+    "Return exactly NONE or structured findings with severity, evidence refs, rationale, and suggested next action, then persist only that bounded result with record-reviewer-output.",
+    "Do not mutate mission truth, clear gates, write artifacts outside the reviewer-output inbox, call record-review-outcome, or decide mission completion.",
+    "This evidence snapshot is not a writeback capability; only the parent keeps the full review truth snapshot for record-review-outcome.",
+    "If live repo reads are necessary, the parent review-loop must keep its parent-held review truth snapshot guard active."
+  ],
+  "review_truth_guard": {
+    "bundle_id": "554f7fb3-076a-47a8-98d8-d3e08c729142",
+    "captured_at": "2026-04-17T10:04:54.851643Z",
+    "artifact_fingerprint_count": 45,
+    "guard_fingerprint": "sha256:4c3d0003b7d7466cd312be84a2cf7dcbddd43621fb5800ee6a6a56fd348d5ea7"
+  },
+  "generated_at": "2026-04-17T10:04:54.889771Z"
+}

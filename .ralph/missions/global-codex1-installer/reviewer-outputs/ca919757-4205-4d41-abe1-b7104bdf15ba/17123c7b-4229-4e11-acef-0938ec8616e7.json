@@ -1,0 +1,24 @@
+{
+  "mission_id": "global-codex1-installer",
+  "bundle_id": "ca919757-4205-4d41-abe1-b7104bdf15ba",
+  "reviewer_id": "review_code_bug_correctness_ca919",
+  "reviewer_output_id": "17123c7b-4229-4e11-acef-0938ec8616e7",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P2",
+      "title": "Required reviewer-lane coverage can be spoofed via reviewer_id substrings",
+      "evidence_refs": [
+        "crates/codex1-core/src/runtime.rs:4558",
+        "crates/codex1-core/src/runtime.rs:4491",
+        "crates/codex1-core/src/runtime.rs:3466",
+        ".codex/skills/review-loop/SKILL.md:192"
+      ],
+      "rationale": "Clean writeback lane coverage is determined by substring checks on free-form reviewer_id values instead of a trusted lane-role binding. Any actor that can write reviewer outputs can mint two artifacts with crafted reviewer_id strings (for example including both code/bug and spec/intent terms) and satisfy distinct-lane requirements without proving those outputs came from distinct mandated reviewer lanes.",
+      "suggested_next_action": "Bind reviewer outputs to a canonical lane role (for example enum lane_role persisted by parent orchestration and verified at writeback) and require one artifact per required role, rejecting reviewer_id-only heuristics for cleanliness gating."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/global-codex1-installer/review-evidence-snapshots/ca919757-4205-4d41-abe1-b7104bdf15ba.json",
+  "source_evidence_snapshot_fingerprint": "sha256:4dbf18786edfb834fa181c7358b28bccc47afbaa416cb7c725b17dcbb625cb69",
+  "recorded_at": "2026-04-18T00:05:19.779591Z"
+}

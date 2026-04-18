@@ -1,0 +1,22 @@
+{
+  "mission_id": "global-codex1-installer",
+  "bundle_id": "400ef148-6488-44d1-8508-ed11df12f6d5",
+  "reviewer_id": "repair_spec_intent",
+  "reviewer_output_id": "8fe773a2-bf5d-4a55-b254-a06d9bdba389",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P2",
+      "title": "Human changed-path proof is not isolated from preflight output",
+      "evidence_refs": [
+        "crates/codex1/tests/qualification_cli.rs:375-399",
+        "crates/codex1/src/commands/setup.rs:1419-1457"
+      ],
+      "rationale": "The new non-JSON test asserts that stdout contains \"changed paths:\" and the changed path strings, but `codex1 setup` prints both a preflight list and the final human report to stdout. Because the preflight output uses the same path formatting, the test can pass even if the final `changed paths` section regresses or omits entries. That means the repaired proof still overclaims the specific human-output behavior it is supposed to prove.",
+      "suggested_next_action": "Tighten the test to isolate the final human report section, for example by splitting on the `changed paths:` header or by asserting the exact rendered report block, so the proof cannot be satisfied by preflight output alone."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/global-codex1-installer/review-evidence-snapshots/400ef148-6488-44d1-8508-ed11df12f6d5.json",
+  "source_evidence_snapshot_fingerprint": "sha256:14ee66d0bf448da3c012f65765f6cef338c0cf7770c7a250d5998fe0622c1fab",
+  "recorded_at": "2026-04-17T21:01:56.276879Z"
+}

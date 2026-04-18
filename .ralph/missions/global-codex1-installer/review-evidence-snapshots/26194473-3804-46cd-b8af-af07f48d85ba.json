@@ -1,0 +1,89 @@
+{
+  "mission_id": "global-codex1-installer",
+  "bundle_id": "26194473-3804-46cd-b8af-af07f48d85ba",
+  "bundle_kind": "spec_review",
+  "source_package_id": "a8953e94-436b-4408-8d13-6611da826969",
+  "target_spec_id": "global_setup_backup",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:7314d24eea35d8d5439ddb2d0e3d87ac3c9af728e1eb2d2c1336c2eb5ac9cf39",
+  "blueprint_revision": 6,
+  "blueprint_fingerprint": "sha256:6250fe0d1ab5eda605be0adda7974655b796c3b253cd9c190d6c2b78b2b0bda7",
+  "spec_revision": 4,
+  "spec_fingerprint": "sha256:b9d894ca3ed5849bff272234bb9bdd6564d4ee50d09cda49557b8c513f12d023",
+  "mandatory_review_lenses": [
+    "correctness",
+    "protected-surface safety",
+    "backup/restore integrity",
+    "test adequacy",
+    "command UX clarity",
+    "test adequacy."
+  ],
+  "proof_rows_under_review": [
+    "Targeted CLI tests prove codex1 setup writes only user-scope config.toml, hooks.json, and global managed skill files under temp CODEX_HOME/HOME.",
+    "Tests prove existing user files are backed up before mutation with manifest entries marked scope = user.",
+    "Tests prove setup is idempotent when the global config, hook, and skill surface are already desired.",
+    "Tests prove codex1 setup installs $clarify and $close into the global skill surface.",
+    "Tests prove codex1 init succeeds after global setup and does not add a duplicate project Stop hook when the global managed Stop hook is present.",
+    "Tests prove human setup output reports actual changed paths when global setup mutates user files.",
+    "Tests prove existing global setup backups can be restored through the CLI.",
+    "Relevant cargo test -p codex1 subset compiles and passes.",
+    "Targeted CLI tests prove `codex1 setup` writes only user-scope `config.toml`, `hooks.json`, and global managed skill files under temp CODEX_HOME/HOME.",
+    "Tests prove existing user files are backed up before mutation with manifest entries marked `scope = \"user\"`.",
+    "Tests prove `codex1 setup` installs `$clarify` and `$close` into the global skill surface.",
+    "Tests prove `codex1 init` succeeds after global setup and does not add a duplicate project Stop hook when the global managed Stop hook is present.",
+    "Tests prove existing global setup backups can be restored or uninstalled through the CLI.",
+    "Tests assert no real home or unrelated repo files are mutated.",
+    "Relevant cargo test -p codex1 subset passes."
+  ],
+  "receipts": [
+    "PLANS/global-codex1-installer/specs/global_setup_backup/RECEIPTS/2026-04-17-global-setup-replan-proof.md"
+  ],
+  "changed_files_or_diff": [
+    "crates/codex1/src/commands/setup.rs",
+    "crates/codex1/src/commands/restore.rs",
+    "crates/codex1/src/commands/uninstall.rs",
+    "crates/codex1/src/support_surface.rs",
+    "crates/codex1/tests/qualification_cli.rs",
+    "PLANS/global-codex1-installer/PROGRAM-BLUEPRINT.md",
+    "PLANS/global-codex1-installer/REPLAN-LOG.md",
+    "PLANS/global-codex1-installer/specs/global_setup_backup/SPEC.md"
+  ],
+  "touched_interface_contracts": [
+    "Global setup installs managed user skill surface.",
+    "Project init coexists with global managed Stop hook.",
+    "Global setup human changed-path reporting.",
+    "User-scope setup backup manifest handling."
+  ],
+  "mission_level_proof_rows": [],
+  "cross_spec_claim_refs": [],
+  "visible_artifact_refs": [],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [],
+  "evidence_refs": [
+    "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/26194473-3804-46cd-b8af-af07f48d85ba.json",
+    "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/a8953e94-436b-4408-8d13-6611da826969.json",
+    "PLANS/global-codex1-installer/specs/global_setup_backup/RECEIPTS/2026-04-17-global-setup-replan-proof.md",
+    "crates/codex1/src/commands/setup.rs",
+    "crates/codex1/src/commands/restore.rs",
+    "crates/codex1/src/commands/uninstall.rs",
+    "crates/codex1/src/support_surface.rs",
+    "crates/codex1/tests/qualification_cli.rs",
+    "PLANS/global-codex1-installer/PROGRAM-BLUEPRINT.md",
+    "PLANS/global-codex1-installer/REPLAN-LOG.md",
+    "PLANS/global-codex1-installer/specs/global_setup_backup/SPEC.md"
+  ],
+  "reviewer_instructions": [
+    "Review only this frozen evidence snapshot and the refs it names.",
+    "Return exactly NONE or structured findings with severity, evidence refs, rationale, and suggested next action, then persist only that bounded result with record-reviewer-output.",
+    "Do not mutate mission truth, clear gates, write artifacts outside the reviewer-output inbox, call record-review-outcome, or decide mission completion.",
+    "This evidence snapshot is not a writeback capability; only the parent keeps the full review truth snapshot for record-review-outcome.",
+    "If live repo reads are necessary, the parent review-loop must keep its parent-held review truth snapshot guard active."
+  ],
+  "review_truth_guard": {
+    "bundle_id": "26194473-3804-46cd-b8af-af07f48d85ba",
+    "captured_at": "2026-04-17T20:48:13.73495Z",
+    "artifact_fingerprint_count": 49,
+    "guard_fingerprint": "sha256:0c2f8c20ff6bedcef9106b681f34a8f17a1f8883772204f2a809890ce6d157cd"
+  },
+  "generated_at": "2026-04-17T20:48:24.242247Z"
+}

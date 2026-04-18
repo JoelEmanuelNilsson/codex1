@@ -1,0 +1,156 @@
+{
+  "package_id": "bb5b5473-3c4c-432e-a31f-92399bb55b57",
+  "mission_id": "review-loop-delegated-review-only",
+  "target_type": "spec",
+  "target_id": "reviewer_lane_canonical_write_isolation",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:3de1e1e3042357e940a4dbb53251c54a8a7fc31288505ad9d8b4ae9b4c39b785",
+  "blueprint_revision": 11,
+  "blueprint_fingerprint": "sha256:596b669a070cea5376140aed77477e0a296a26ecc54ed3690299152d96d490b0",
+  "dependency_snapshot_fingerprint": "sha256:54ac90c477272d757012982f262511fbc11e487d463d2c3c7600ee9d24723bf8",
+  "wave_fingerprint": null,
+  "included_specs": [
+    {
+      "spec_id": "reviewer_lane_canonical_write_isolation",
+      "spec_revision": 1,
+      "spec_fingerprint": "sha256:d68cb626ef37e9ef83d6c9112c82a58837ac39e42490424208bb3347871f3163"
+    }
+  ],
+  "dependency_satisfaction_state": [
+    {
+      "name": "lock_current",
+      "satisfied": true,
+      "detail": "current"
+    },
+    {
+      "name": "blueprint_current",
+      "satisfied": true,
+      "detail": "current"
+    }
+  ],
+  "read_scope": [
+    ".codex/skills",
+    "docs",
+    "crates/codex1-core/src",
+    "crates/codex1/src",
+    "crates/codex1/tests",
+    "PLANS/review-loop-delegated-review-only",
+    ".ralph/missions/review-loop-delegated-review-only"
+  ],
+  "write_scope": [
+    ".codex/skills/review-loop/SKILL.md",
+    ".codex/skills/internal-orchestration/SKILL.md",
+    "docs/runtime-backend.md",
+    "docs/MULTI-AGENT-V2-GUIDE.md",
+    "crates/codex1-core/src/runtime.rs",
+    "crates/codex1-core/src/lib.rs",
+    "crates/codex1/src/internal/mod.rs",
+    "crates/codex1/tests/runtime_internal.rs",
+    "PLANS/review-loop-delegated-review-only/specs/reviewer_lane_canonical_write_isolation"
+  ],
+  "proof_obligations": [
+    "cargo test -p codex1 --test runtime_internal reviewer_lane_canonical_write_isolation --quiet",
+    "cargo test -p codex1 --test runtime_internal delegated_review_authority --quiet",
+    "cargo test -p codex1 --test runtime_internal reviewer_lane_mutation_guard --quiet",
+    "cargo fmt --all --check",
+    "cargo run -p codex1 -- internal validate-mission-artifacts --mission-id review-loop-delegated-review-only"
+  ],
+  "review_obligations": [
+    "code_bug_correctness",
+    "local_spec_intent",
+    "evidence_adequacy",
+    "interface_compatibility",
+    "operability_rollback_observability"
+  ],
+  "replan_boundary": {
+    "local_repair_allowed": false,
+    "trigger_matrix": [
+      {
+        "trigger_code": "write_scope_expansion",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "interface_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "dependency_truth_change",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "proof_obligation_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "review_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "protected_surface_change",
+        "reopen_layer": "mission_lock"
+      },
+      {
+        "trigger_code": "migration_rollout_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "outcome_lock_change",
+        "reopen_layer": "mission_lock"
+      }
+    ]
+  },
+  "wave_context": null,
+  "wave_specs": [],
+  "gate_checks": [
+    {
+      "gate_id": "target_resolution",
+      "passed": true,
+      "detail": "resolved spec:reviewer_lane_canonical_write_isolation"
+    },
+    {
+      "gate_id": "dependency_truth_current",
+      "passed": true,
+      "detail": "dependency satisfaction is explicit, revision-bearing, and fully satisfied"
+    },
+    {
+      "gate_id": "scope_declared",
+      "passed": true,
+      "detail": "read and write scope are explicit"
+    },
+    {
+      "gate_id": "scope_bounded_to_frontier",
+      "passed": true,
+      "detail": "package scope stays inside the declared execution frontier"
+    },
+    {
+      "gate_id": "proof_contract_declared",
+      "passed": true,
+      "detail": "proof obligations are explicit"
+    },
+    {
+      "gate_id": "review_contract_declared",
+      "passed": true,
+      "detail": "review obligations are explicit"
+    },
+    {
+      "gate_id": "included_specs_runnable",
+      "passed": true,
+      "detail": "included specs are active executable frontier specs"
+    },
+    {
+      "gate_id": "planning_truth_current",
+      "passed": true,
+      "detail": "lock, blueprint, and included spec bindings are current"
+    },
+    {
+      "gate_id": "wave_validation",
+      "passed": true,
+      "detail": "wave same-workspace safety rules are satisfied"
+    }
+  ],
+  "validation_failures": [
+    "execution_graph_obligation_spec_fingerprint_mismatch:obligation:reviewer-lane-isolation-proof"
+  ],
+  "validated_at": "2026-04-16T18:51:22.416656Z",
+  "status": "failed"
+}

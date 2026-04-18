@@ -1,0 +1,39 @@
+{
+  "mission_id": "global-codex1-installer",
+  "bundle_id": "609a4e73-4e66-419b-aa7c-220172668bc0",
+  "reviewer_id": "review_mission_close_intent_1",
+  "reviewer_output_id": "be3a625b-dc0a-4dbc-8b73-25dd482efbb7",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P1",
+      "title": "Writeback authority is only enforced when an active loop lease exists",
+      "evidence_refs": [
+        "crates/codex1-core/src/runtime.rs:3703-3728",
+        "crates/codex1-core/src/runtime.rs:5553-5559",
+        "crates/codex1-core/src/runtime.rs:5559-5562",
+        "crates/codex1/tests/runtime_internal.rs:1018-1088",
+        "PLANS/global-codex1-installer/specs/reviewer_writeback_authority_enforcement/SPEC.md:42-43",
+        "PLANS/global-codex1-installer/specs/reviewer_writeback_authority_enforcement/SPEC.md:109-115"
+      ],
+      "rationale": "The authority guard used by capture-review-truth-snapshot and record-review-outcome returns Ok when no loop lease exists, when the lease has no verifier, or when the lease belongs to a different mission. That means the runtime can still mint a writeback token and accept parent-looking record-review-outcome calls outside the active-lease path, while the spec requires reviewer lanes not to mint usable review_truth_snapshot authority or terminalize by spoofing parent-review-loop. Existing tests also exercise successful parent writeback without first creating a verifier-backed lease, so this bypass is part of the accepted behavior rather than an untested edge only.",
+      "suggested_next_action": "Make parent writeback authority mandatory for review truth capture/outcome regardless of lease absence, or add an explicit non-reviewer parent capability/caller context that reviewer lanes cannot mint; then add a regression where a child lane with no active lease cannot capture truth or record a clean outcome by setting reviewer to parent-review-loop."
+    },
+    {
+      "severity": "P2",
+      "title": "A single generic legacy reviewer id can satisfy all required review lanes",
+      "evidence_refs": [
+        "crates/codex1-core/src/runtime.rs:4454-4482",
+        "crates/codex1-core/src/runtime.rs:4524-4559",
+        "crates/codex1/tests/runtime_internal.rs:1018-1088",
+        "PLANS/global-codex1-installer/PROGRAM-BLUEPRINT.md:36-37",
+        "PLANS/global-codex1-installer/specs/review_lane_completion_guard/SPEC.md:40-45"
+      ],
+      "rationale": "The lane-completion guard derives required code_bug_correctness and spec_intent_or_proof lanes for clean correctness reviews, but reviewer_output_is_legacy_combined_lane returns true for any reviewer id beginning with review_ or review- that lacks the lane tokens. Consequently one durable output such as review_token_lifecycle can satisfy both required lanes for a code-producing correctness bundle, which weakens the machine-enforced guarantee that clean code review has distinct required lane/profile coverage.",
+      "suggested_next_action": "Remove the broad legacy-combined bypass for new bundles, or gate it to explicitly marked historical artifacts; add a regression proving a single generic review_* output cannot clear a code-producing correctness bundle that requires both code/correctness and spec/intent or proof coverage."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/global-codex1-installer/review-evidence-snapshots/609a4e73-4e66-419b-aa7c-220172668bc0.json",
+  "source_evidence_snapshot_fingerprint": "sha256:0caee74cc8c03ecaa72d41a0ceb9792376c9b630f37f6a5f7ee9a71926c80683",
+  "recorded_at": "2026-04-17T23:10:43.391707Z"
+}

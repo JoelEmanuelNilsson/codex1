@@ -1,0 +1,31 @@
+ralph_review_lane_isolation proof receipt
+date: 2026-04-16
+mission: review-lane-role-contract
+spec: ralph_review_lane_isolation
+executed_package: 8a85a5d2-cb74-4892-9efc-833bde9fdf8c
+
+implemented changes
+- added `ChildLaneRole::FindingsOnlyReviewer` to child lane expectation metadata
+- surfaced child lane role in child-lane reconciliation entries
+- added optional Stop-hook input metadata for `laneRole` and `childLaneKind`
+- allowed findings-only reviewer lanes to return bounded payloads while parent gates remain parent-owned
+- preserved normal parent/controller Ralph blocking behavior
+- added runtime integration proof that parent Stop blocks on an open review gate while findings-only reviewer Stop does not
+- narrowed stale completed-spec review bypass so it only ignores stale review gates whose prior bundle still matches the current completed spec contract
+- added a negative regression proving a stale completed-spec review still blocks when the spec changed after review
+- documented the lane-role Stop-hook contract in `docs/MULTI-AGENT-V2-GUIDE.md` and `docs/runtime-backend.md`
+
+verification
+- cargo test -p codex1 --test runtime_internal findings_only_reviewer_stop_hook_bypasses_parent_review_gate_block --quiet
+- cargo test -p codex1 --test runtime_internal public_execute_and_autopilot_skills_require_mission_close_review --quiet
+- cargo test -p codex1-core stale_review_gate_for_completed_spec_does_not_block_resume --quiet
+- cargo test -p codex1-core stale_review_gate_for_changed_completed_spec_still_blocks_resume --quiet
+- cargo test -p codex1-core --quiet
+- cargo build -p codex1
+- cargo fmt --all --check
+- codex1 internal validate-mission-artifacts --mission-id review-lane-role-contract
+
+notes
+- this slice does not implement full `$review-loop` orchestration
+- native hard sandboxing for child tools is still outside this slice; this slice establishes explicit lane metadata and Stop-hook behavior that later orchestration can use
+- the stale completed-spec bypass is intentionally narrow: completion alone is not enough; the old review bundle must still match the current completed spec contract

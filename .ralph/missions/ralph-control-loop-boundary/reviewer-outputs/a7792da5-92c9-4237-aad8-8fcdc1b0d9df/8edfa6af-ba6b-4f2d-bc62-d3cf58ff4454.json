@@ -1,0 +1,26 @@
+{
+  "mission_id": "ralph-control-loop-boundary",
+  "bundle_id": "a7792da5-92c9-4237-aad8-8fcdc1b0d9df",
+  "reviewer_id": "review_lease_repair_spec",
+  "reviewer_output_id": "8edfa6af-ba6b-4f2d-bc62-d3cf58ff4454",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P2",
+      "title": "Mission-artifact validation proof still does not reproduce",
+      "evidence_refs": [
+        "PLANS/ralph-control-loop-boundary/specs/ralph_loop_lease_runtime/SPEC.md:44",
+        "PLANS/ralph-control-loop-boundary/specs/ralph_loop_lease_runtime/RECEIPTS/2026-04-17-ralph-loop-lease-runtime-proof.txt",
+        ".ralph/missions/ralph-control-loop-boundary/review-evidence-snapshots/a7792da5-92c9-4237-aad8-8fcdc1b0d9df.json",
+        ".ralph/missions/ralph-control-loop-boundary/state.json",
+        "command: target/debug/codex1 internal validate-mission-artifacts --mission-id ralph-control-loop-boundary",
+        "command: cargo run -q -p codex1 -- internal validate-mission-artifacts --mission-id ralph-control-loop-boundary"
+      ],
+      "rationale": "The previous review finding required the mission-artifact validation proof to reproduce and the receipt to reflect that honestly. The current receipt addendum says the cached mission state was reconciled and that both target/debug and cargo-run validation forms were reproduced after repair, but rerunning both commands still returns success:false with the error cached state.json does not match authoritative rebuild from hidden mission files. This leaves the required proof unrepaired and makes the receipt materially inaccurate for the repair claim.",
+      "suggested_next_action": "Reconcile .ralph/missions/ralph-control-loop-boundary/state.json with the authoritative hidden mission files, rerun the required mission-artifact validation command until success:true, and update the receipt with the real passing validation result before seeking another review."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/review-evidence-snapshots/a7792da5-92c9-4237-aad8-8fcdc1b0d9df.json",
+  "source_evidence_snapshot_fingerprint": "sha256:bbe42d67e1462a1aa14df4c5f03b03140e951602b394c346535c36464a07fa76",
+  "recorded_at": "2026-04-17T08:38:31.526908Z"
+}

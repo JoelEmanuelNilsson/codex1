@@ -1,0 +1,24 @@
+{
+  "mission_id": "ralph-control-loop-boundary",
+  "bundle_id": "fb9c9715-9915-4f13-9e1e-d725938dd422",
+  "reviewer_id": "review_loop_skill_spec",
+  "reviewer_output_id": "b1a3256a-6305-40e7-90d0-aefb843186cd",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P1",
+      "title": "Public $review skill is removed",
+      "evidence_refs": [
+        "PLANS/ralph-control-loop-boundary/specs/loop_skill_surface_and_pause/SPEC.md:105",
+        ".codex/skills/review/SKILL.md",
+        ".codex/skills/review-loop/SKILL.md",
+        "git diff -- .codex/skills/review/SKILL.md"
+      ],
+      "rationale": "The spec non-breakage contract says existing public skills remain present and no skill is removed, but the current skill surface deletes the tracked public .codex/skills/review/SKILL.md while adding .codex/skills/review-loop/SKILL.md. That is a public interface regression for users or automation invoking $review, and the deletion is outside the package write scope/evidence changed-files list, so the slice cannot be considered interface-compatible as-is.",
+      "suggested_next_action": "Restore a compatible $review public skill as an alias/wrapper to $review-loop, or explicitly reopen the governing mission/blueprint contract if the public skill is intentionally being renamed or removed."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/review-evidence-snapshots/fb9c9715-9915-4f13-9e1e-d725938dd422.json",
+  "source_evidence_snapshot_fingerprint": "sha256:e65bd15b9ea5d77b23a0346df28cdbd2fc4d5625eaa67fd0651e19bf31c77177",
+  "recorded_at": "2026-04-17T09:11:30.593495Z"
+}

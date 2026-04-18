@@ -1,0 +1,1009 @@
+{
+  "mission_id": "reviewer-lane-capability-boundary",
+  "current_phase": "mission_close",
+  "updated_at": "2026-04-16T17:15:03.394217Z",
+  "gates": [
+    {
+      "gate_id": "reviewer-lane-capability-boundary:outcome_lock:lock:1",
+      "gate_kind": "outcome_lock",
+      "target_ref": "mission:reviewer-lane-capability-boundary",
+      "governing_refs": [
+        "mission:reviewer-lane-capability-boundary"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:23:33.265703Z",
+      "evaluated_at": "2026-04-16T16:23:33.265703Z",
+      "evaluated_against_ref": "OUTCOME-LOCK.md",
+      "evidence_refs": [
+        "PLANS/reviewer-lane-capability-boundary/OUTCOME-LOCK.md"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:planning_completion:lock:1",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:reviewer-lane-capability-boundary",
+      "governing_refs": [
+        "lock:1"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:23:33.265703Z",
+      "evaluated_at": "2026-04-16T16:25:43.550519Z",
+      "evaluated_against_ref": null,
+      "evidence_refs": [],
+      "failure_refs": [],
+      "superseded_by": "reviewer-lane-capability-boundary:planning_completion:blueprint:2"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:planning_completion:blueprint:2",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:reviewer-lane-capability-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:2"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:25:43.55053Z",
+      "evaluated_at": "2026-04-16T16:26:08.777551Z",
+      "evaluated_against_ref": "package:0d2b6a6e-b0c4-48f3-b765-6895b6d9934c",
+      "evidence_refs": [
+        "/Users/joel/codex1/PLANS/reviewer-lane-capability-boundary/PROGRAM-BLUEPRINT.md",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-graph.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/e336c821-431a-4b23-9dc9-885a624e77ad.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/0d2b6a6e-b0c4-48f3-b765-6895b6d9934c.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "reviewer-lane-capability-boundary:planning_completion:blueprint:3"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_lane_mutation_guard:e336c821-431a-4b23-9dc9-885a624e77ad",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_lane_mutation_guard",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:2"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:25:54.775322Z",
+      "evaluated_at": "2026-04-16T16:25:54.758914Z",
+      "evaluated_against_ref": "e336c821-431a-4b23-9dc9-885a624e77ad",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/e336c821-431a-4b23-9dc9-885a624e77ad.json"
+      ],
+      "failure_refs": [
+        "dependency_governing_ref_missing:prior_review_lane_context",
+        "gate_check_failed:dependency_truth_current"
+      ],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_lane_mutation_guard:0d2b6a6e-b0c4-48f3-b765-6895b6d9934c"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_lane_mutation_guard:0d2b6a6e-b0c4-48f3-b765-6895b6d9934c",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_lane_mutation_guard",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:2"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:26:08.777546Z",
+      "evaluated_at": "2026-04-16T16:26:08.763926Z",
+      "evaluated_against_ref": "0d2b6a6e-b0c4-48f3-b765-6895b6d9934c",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/0d2b6a6e-b0c4-48f3-b765-6895b6d9934c.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_lane_mutation_guard:5b7e512a-6d44-44c7-bfa2-84189e5e8dfc"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:BlockingReview:spec:reviewer_lane_mutation_guard:584f5b35-d94a-4d2c-8c0b-23806ba12c8a",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:reviewer_lane_mutation_guard",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:2",
+        "bundle:584f5b35-d94a-4d2c-8c0b-23806ba12c8a"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:34:49.76106Z",
+      "evaluated_at": "2026-04-16T16:40:29.211804Z",
+      "evaluated_against_ref": "584f5b35-d94a-4d2c-8c0b-23806ba12c8a",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/bundles/584f5b35-d94a-4d2c-8c0b-23806ba12c8a.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "reviewer-lane-capability-boundary:BlockingReview:spec:reviewer_lane_mutation_guard:666864aa-d88d-44d2-a3c5-74b212affde0"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:BlockingReview:spec:reviewer_lane_mutation_guard:666864aa-d88d-44d2-a3c5-74b212affde0",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:reviewer_lane_mutation_guard",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:2",
+        "bundle:666864aa-d88d-44d2-a3c5-74b212affde0"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:40:29.191781Z",
+      "evaluated_at": "2026-04-16T16:40:57.534425Z",
+      "evaluated_against_ref": "666864aa-d88d-44d2-a3c5-74b212affde0",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/bundles/666864aa-d88d-44d2-a3c5-74b212affde0.json",
+        "PLANS/reviewer-lane-capability-boundary/specs/reviewer_lane_mutation_guard/RECEIPTS/2026-04-16-reviewer-lane-mutation-guard-proof.txt",
+        "cargo test -p codex1 --test runtime_internal reviewer_lane_mutation_guard --quiet",
+        "cargo test -p codex1-core --quiet",
+        "cargo build -p codex1",
+        "cargo fmt --all --check",
+        "cargo run -p codex1 -- internal validate-mission-artifacts --mission-id reviewer-lane-capability-boundary"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:planning_completion:blueprint:3",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:reviewer-lane-capability-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:3"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:42:26.49549Z",
+      "evaluated_at": "2026-04-16T16:42:37.691859Z",
+      "evaluated_against_ref": "package:1cdcd7e3-b6a5-43ba-9419-ca35a43998c1",
+      "evidence_refs": [
+        "/Users/joel/codex1/PLANS/reviewer-lane-capability-boundary/PROGRAM-BLUEPRINT.md",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-graph.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/1cdcd7e3-b6a5-43ba-9419-ca35a43998c1.json"
+      ],
+      "failure_refs": [
+        "execution_graph_blueprint_fingerprint_mismatch",
+        "included_spec_blueprint_fingerprint_mismatch:reviewer_evidence_snapshot_contract",
+        "graph_dependency_unsatisfied:reviewer_evidence_snapshot_contract:reviewer_lane_mutation_guard",
+        "gate_check_failed:planning_truth_current"
+      ],
+      "superseded_by": "reviewer-lane-capability-boundary:planning_completion:blueprint:4"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_evidence_snapshot_contract:1cdcd7e3-b6a5-43ba-9419-ca35a43998c1",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_evidence_snapshot_contract",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:3"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:42:37.691855Z",
+      "evaluated_at": "2026-04-16T16:42:37.678309Z",
+      "evaluated_against_ref": "1cdcd7e3-b6a5-43ba-9419-ca35a43998c1",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/1cdcd7e3-b6a5-43ba-9419-ca35a43998c1.json"
+      ],
+      "failure_refs": [
+        "execution_graph_blueprint_fingerprint_mismatch",
+        "included_spec_blueprint_fingerprint_mismatch:reviewer_evidence_snapshot_contract",
+        "graph_dependency_unsatisfied:reviewer_evidence_snapshot_contract:reviewer_lane_mutation_guard",
+        "gate_check_failed:planning_truth_current"
+      ],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_evidence_snapshot_contract:0b2b5a99-71d0-4739-883c-c0a9f2cb078d"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:planning_completion:blueprint:4",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:reviewer-lane-capability-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:4"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:44:25.853543Z",
+      "evaluated_at": "2026-04-16T16:46:45.310766Z",
+      "evaluated_against_ref": "package:4e8b50f7-0934-4c12-90ce-79ccb8ccb489",
+      "evidence_refs": [
+        "/Users/joel/codex1/PLANS/reviewer-lane-capability-boundary/PROGRAM-BLUEPRINT.md",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-graph.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/0b2b5a99-71d0-4739-883c-c0a9f2cb078d.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/ff389f96-6f26-43aa-ae8a-726a0cc6c004.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/fdea4a82-e95f-4ed6-9860-422245be231e.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/6d4757be-d603-4538-b91d-d8953352cf5e.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/5b7e512a-6d44-44c7-bfa2-84189e5e8dfc.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/14dc0695-c142-44b1-9382-3c09ddd5510e.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/f04276c9-38c9-405b-ae2d-31e7fe77a5f5.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/4e8b50f7-0934-4c12-90ce-79ccb8ccb489.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "reviewer-lane-capability-boundary:planning_completion:blueprint:5"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_evidence_snapshot_contract:0b2b5a99-71d0-4739-883c-c0a9f2cb078d",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_evidence_snapshot_contract",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:4"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:44:46.422928Z",
+      "evaluated_at": "2026-04-16T16:44:46.4106Z",
+      "evaluated_against_ref": "0b2b5a99-71d0-4739-883c-c0a9f2cb078d",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/0b2b5a99-71d0-4739-883c-c0a9f2cb078d.json"
+      ],
+      "failure_refs": [
+        "execution_graph_blueprint_fingerprint_mismatch",
+        "included_spec_blueprint_fingerprint_mismatch:reviewer_evidence_snapshot_contract",
+        "gate_check_failed:planning_truth_current"
+      ],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_evidence_snapshot_contract:fdea4a82-e95f-4ed6-9860-422245be231e"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_capability_qualification:ff389f96-6f26-43aa-ae8a-726a0cc6c004",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_capability_qualification",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:4"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:45:18.375106Z",
+      "evaluated_at": "2026-04-16T16:45:18.359428Z",
+      "evaluated_against_ref": "ff389f96-6f26-43aa-ae8a-726a0cc6c004",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/ff389f96-6f26-43aa-ae8a-726a0cc6c004.json"
+      ],
+      "failure_refs": [
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_capability_qualification",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_evidence_snapshot_contract",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_lane_mutation_guard",
+        "planning_selected_target_mismatch:spec:reviewer_evidence_snapshot_contract!=package:spec:reviewer_capability_qualification",
+        "graph_dependency_unsatisfied:reviewer_capability_qualification:reviewer_evidence_snapshot_contract",
+        "gate_check_failed:target_resolution"
+      ],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_capability_qualification:14dc0695-c142-44b1-9382-3c09ddd5510e"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_evidence_snapshot_contract:fdea4a82-e95f-4ed6-9860-422245be231e",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_evidence_snapshot_contract",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:4"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:45:18.407059Z",
+      "evaluated_at": "2026-04-16T16:45:18.377134Z",
+      "evaluated_against_ref": "fdea4a82-e95f-4ed6-9860-422245be231e",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/fdea4a82-e95f-4ed6-9860-422245be231e.json"
+      ],
+      "failure_refs": [
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_capability_qualification",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_evidence_snapshot_contract",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_lane_mutation_guard"
+      ],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_evidence_snapshot_contract:6d4757be-d603-4538-b91d-d8953352cf5e"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_evidence_snapshot_contract:6d4757be-d603-4538-b91d-d8953352cf5e",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_evidence_snapshot_contract",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:4"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:45:32.565556Z",
+      "evaluated_at": "2026-04-16T16:45:32.549542Z",
+      "evaluated_against_ref": "6d4757be-d603-4538-b91d-d8953352cf5e",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/6d4757be-d603-4538-b91d-d8953352cf5e.json"
+      ],
+      "failure_refs": [
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_capability_qualification",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_evidence_snapshot_contract",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_lane_mutation_guard"
+      ],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_evidence_snapshot_contract:4e8b50f7-0934-4c12-90ce-79ccb8ccb489"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_lane_mutation_guard:5b7e512a-6d44-44c7-bfa2-84189e5e8dfc",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_lane_mutation_guard",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:4"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:45:45.015103Z",
+      "evaluated_at": "2026-04-16T16:45:44.99997Z",
+      "evaluated_against_ref": "5b7e512a-6d44-44c7-bfa2-84189e5e8dfc",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/5b7e512a-6d44-44c7-bfa2-84189e5e8dfc.json"
+      ],
+      "failure_refs": [
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_capability_qualification",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_evidence_snapshot_contract",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_lane_mutation_guard",
+        "planning_selected_target_mismatch:spec:reviewer_evidence_snapshot_contract!=package:spec:reviewer_lane_mutation_guard",
+        "gate_check_failed:target_resolution"
+      ],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_lane_mutation_guard:f04276c9-38c9-405b-ae2d-31e7fe77a5f5"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_capability_qualification:14dc0695-c142-44b1-9382-3c09ddd5510e",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_capability_qualification",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:4"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:45:45.809718Z",
+      "evaluated_at": "2026-04-16T16:45:45.800125Z",
+      "evaluated_against_ref": "14dc0695-c142-44b1-9382-3c09ddd5510e",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/14dc0695-c142-44b1-9382-3c09ddd5510e.json"
+      ],
+      "failure_refs": [
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_capability_qualification",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_evidence_snapshot_contract",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_lane_mutation_guard",
+        "planning_selected_target_mismatch:spec:reviewer_evidence_snapshot_contract!=package:spec:reviewer_capability_qualification",
+        "graph_dependency_unsatisfied:reviewer_capability_qualification:reviewer_evidence_snapshot_contract",
+        "gate_check_failed:target_resolution"
+      ],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_capability_qualification:128b6cb7-8e41-4ae3-b26f-2e6c2f9c3757"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_lane_mutation_guard:f04276c9-38c9-405b-ae2d-31e7fe77a5f5",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_lane_mutation_guard",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:4"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:46:26.615553Z",
+      "evaluated_at": "2026-04-16T16:46:26.601806Z",
+      "evaluated_against_ref": "f04276c9-38c9-405b-ae2d-31e7fe77a5f5",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/f04276c9-38c9-405b-ae2d-31e7fe77a5f5.json"
+      ],
+      "failure_refs": [
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_lane_mutation_guard",
+        "planning_selected_target_mismatch:spec:reviewer_evidence_snapshot_contract!=package:spec:reviewer_lane_mutation_guard",
+        "gate_check_failed:target_resolution"
+      ],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_lane_mutation_guard:27370e65-cde6-4b7c-a663-f7bda4e1b817"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_evidence_snapshot_contract:4e8b50f7-0934-4c12-90ce-79ccb8ccb489",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_evidence_snapshot_contract",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:4"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:46:45.310763Z",
+      "evaluated_at": "2026-04-16T16:46:45.295871Z",
+      "evaluated_against_ref": "4e8b50f7-0934-4c12-90ce-79ccb8ccb489",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/4e8b50f7-0934-4c12-90ce-79ccb8ccb489.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_evidence_snapshot_contract:5a4ecd40-1bae-4cae-8079-a4976e5c09fa"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:BlockingReview:spec:reviewer_evidence_snapshot_contract:9f638074-1b33-437d-b428-324268776d93",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:reviewer_evidence_snapshot_contract",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:4",
+        "bundle:9f638074-1b33-437d-b428-324268776d93"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:51:52.620187Z",
+      "evaluated_at": "2026-04-16T16:55:32.504774Z",
+      "evaluated_against_ref": "9f638074-1b33-437d-b428-324268776d93",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/bundles/9f638074-1b33-437d-b428-324268776d93.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "reviewer-lane-capability-boundary:BlockingReview:spec:reviewer_evidence_snapshot_contract:223b824c-c50a-40e2-8257-1a1a61fd1b42"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:BlockingReview:spec:reviewer_evidence_snapshot_contract:223b824c-c50a-40e2-8257-1a1a61fd1b42",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:reviewer_evidence_snapshot_contract",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:4",
+        "bundle:223b824c-c50a-40e2-8257-1a1a61fd1b42"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:55:32.4912Z",
+      "evaluated_at": "2026-04-16T16:55:55.497722Z",
+      "evaluated_against_ref": "223b824c-c50a-40e2-8257-1a1a61fd1b42",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/bundles/223b824c-c50a-40e2-8257-1a1a61fd1b42.json",
+        "PLANS/reviewer-lane-capability-boundary/specs/reviewer_evidence_snapshot_contract/RECEIPTS/2026-04-16-reviewer-evidence-snapshot-proof.txt",
+        "cargo test -p codex1 --test runtime_internal reviewer_evidence_snapshot_contract --quiet",
+        "cargo check -p codex1",
+        "cargo fmt --all --check",
+        "cargo run -p codex1 -- internal validate-review-evidence-snapshot --mission-id reviewer-lane-capability-boundary --bundle-id 223b824c-c50a-40e2-8257-1a1a61fd1b42",
+        "cargo run -p codex1 -- internal validate-mission-artifacts --mission-id reviewer-lane-capability-boundary"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:planning_completion:blueprint:5",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:reviewer-lane-capability-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:57:00.030373Z",
+      "evaluated_at": "2026-04-16T17:05:58.243755Z",
+      "evaluated_against_ref": "package:80c9c9b1-1a1e-4549-8f9a-757d2ef6fad5",
+      "evidence_refs": [
+        "/Users/joel/codex1/PLANS/reviewer-lane-capability-boundary/PROGRAM-BLUEPRINT.md",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-graph.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/128b6cb7-8e41-4ae3-b26f-2e6c2f9c3757.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/27370e65-cde6-4b7c-a663-f7bda4e1b817.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/5a4ecd40-1bae-4cae-8079-a4976e5c09fa.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/38ed006a-7dc2-46d9-8e2b-41c86481952d.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/659e4fad-c23f-417a-90d2-8e3b1448963d.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/f875ecb3-001d-470b-8c58-b74ec077322a.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/9a79684b-f960-4613-a4c1-7d66312a4cad.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/80c9c9b1-1a1e-4549-8f9a-757d2ef6fad5.json"
+      ],
+      "failure_refs": [
+        "planning_selected_target_mismatch:spec:reviewer_capability_qualification!=package:mission:reviewer-lane-capability-boundary",
+        "package_read_scope_outside_frontier:plans/reviewer-lane-capability-boundary",
+        "package_write_scope_outside_frontier:plans/reviewer-lane-capability-boundary",
+        "gate_check_failed:target_resolution",
+        "gate_check_failed:scope_bounded_to_frontier"
+      ],
+      "superseded_by": "reviewer-lane-capability-boundary:planning_completion:blueprint:6"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_capability_qualification:128b6cb7-8e41-4ae3-b26f-2e6c2f9c3757",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_capability_qualification",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:57:11.860044Z",
+      "evaluated_at": "2026-04-16T16:57:11.845729Z",
+      "evaluated_against_ref": "128b6cb7-8e41-4ae3-b26f-2e6c2f9c3757",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/128b6cb7-8e41-4ae3-b26f-2e6c2f9c3757.json"
+      ],
+      "failure_refs": [
+        "execution_graph_blueprint_fingerprint_mismatch",
+        "included_spec_blueprint_fingerprint_mismatch:reviewer_capability_qualification",
+        "gate_check_failed:planning_truth_current"
+      ],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_capability_qualification:38ed006a-7dc2-46d9-8e2b-41c86481952d"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_lane_mutation_guard:27370e65-cde6-4b7c-a663-f7bda4e1b817",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_lane_mutation_guard",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:57:34.168712Z",
+      "evaluated_at": "2026-04-16T16:57:34.153724Z",
+      "evaluated_against_ref": "27370e65-cde6-4b7c-a663-f7bda4e1b817",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/27370e65-cde6-4b7c-a663-f7bda4e1b817.json"
+      ],
+      "failure_refs": [
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_capability_qualification",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_evidence_snapshot_contract",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_lane_mutation_guard",
+        "planning_selected_target_mismatch:spec:reviewer_capability_qualification!=package:spec:reviewer_lane_mutation_guard",
+        "gate_check_failed:target_resolution"
+      ],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_lane_mutation_guard:659e4fad-c23f-417a-90d2-8e3b1448963d"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_evidence_snapshot_contract:5a4ecd40-1bae-4cae-8079-a4976e5c09fa",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_evidence_snapshot_contract",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:57:34.981421Z",
+      "evaluated_at": "2026-04-16T16:57:34.970521Z",
+      "evaluated_against_ref": "5a4ecd40-1bae-4cae-8079-a4976e5c09fa",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/5a4ecd40-1bae-4cae-8079-a4976e5c09fa.json"
+      ],
+      "failure_refs": [
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_capability_qualification",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_evidence_snapshot_contract",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_lane_mutation_guard",
+        "planning_selected_target_mismatch:spec:reviewer_capability_qualification!=package:spec:reviewer_evidence_snapshot_contract",
+        "gate_check_failed:target_resolution"
+      ],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_evidence_snapshot_contract:f875ecb3-001d-470b-8c58-b74ec077322a"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_capability_qualification:38ed006a-7dc2-46d9-8e2b-41c86481952d",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_capability_qualification",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:57:35.805721Z",
+      "evaluated_at": "2026-04-16T16:57:35.796266Z",
+      "evaluated_against_ref": "38ed006a-7dc2-46d9-8e2b-41c86481952d",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/38ed006a-7dc2-46d9-8e2b-41c86481952d.json"
+      ],
+      "failure_refs": [
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_capability_qualification",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_evidence_snapshot_contract",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_lane_mutation_guard"
+      ],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_capability_qualification:9a79684b-f960-4613-a4c1-7d66312a4cad"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_lane_mutation_guard:659e4fad-c23f-417a-90d2-8e3b1448963d",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_lane_mutation_guard",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:58:20.698093Z",
+      "evaluated_at": "2026-04-16T16:58:20.678669Z",
+      "evaluated_against_ref": "659e4fad-c23f-417a-90d2-8e3b1448963d",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/659e4fad-c23f-417a-90d2-8e3b1448963d.json"
+      ],
+      "failure_refs": [
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_evidence_snapshot_contract",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_lane_mutation_guard",
+        "planning_selected_target_mismatch:spec:reviewer_capability_qualification!=package:spec:reviewer_lane_mutation_guard",
+        "gate_check_failed:target_resolution"
+      ],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_lane_mutation_guard:a6ef8760-4b34-4e6b-8453-c48a43857d0d"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_evidence_snapshot_contract:f875ecb3-001d-470b-8c58-b74ec077322a",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_evidence_snapshot_contract",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:58:21.564732Z",
+      "evaluated_at": "2026-04-16T16:58:21.554727Z",
+      "evaluated_against_ref": "f875ecb3-001d-470b-8c58-b74ec077322a",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/f875ecb3-001d-470b-8c58-b74ec077322a.json"
+      ],
+      "failure_refs": [
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_evidence_snapshot_contract",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_lane_mutation_guard",
+        "planning_selected_target_mismatch:spec:reviewer_capability_qualification!=package:spec:reviewer_evidence_snapshot_contract",
+        "gate_check_failed:target_resolution"
+      ],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_evidence_snapshot_contract:fc1d5deb-fad1-41a8-82e2-3986c3c5fb11"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_capability_qualification:9a79684b-f960-4613-a4c1-7d66312a4cad",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_capability_qualification",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T16:58:56.538185Z",
+      "evaluated_at": "2026-04-16T16:58:56.526564Z",
+      "evaluated_against_ref": "9a79684b-f960-4613-a4c1-7d66312a4cad",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/9a79684b-f960-4613-a4c1-7d66312a4cad.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_capability_qualification:c0728fa0-83d4-4876-970a-093cb698c34e"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:BlockingReview:spec:reviewer_capability_qualification:94f2b540-a70c-4caf-a7fc-ac5c7a6837b6",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:reviewer_capability_qualification",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5",
+        "bundle:94f2b540-a70c-4caf-a7fc-ac5c7a6837b6"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-16T17:03:27.103691Z",
+      "evaluated_at": "2026-04-16T17:05:06.888512Z",
+      "evaluated_against_ref": "94f2b540-a70c-4caf-a7fc-ac5c7a6837b6",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/bundles/94f2b540-a70c-4caf-a7fc-ac5c7a6837b6.json",
+        "PLANS/reviewer-lane-capability-boundary/specs/reviewer_capability_qualification/RECEIPTS/2026-04-16-reviewer-capability-qualification-proof.txt",
+        "cargo test -p codex1 qualification_cli_support_surface_helper_flows_pass --quiet",
+        "cargo test -p codex1 --test qualification_cli qualify_writes_latest_and_versioned_reports_on_successful_smoke_inputs --quiet",
+        "cargo check -p codex1",
+        "cargo fmt --all --check",
+        "cargo run -p codex1 -- internal validate-review-evidence-snapshot --mission-id reviewer-lane-capability-boundary --bundle-id 94f2b540-a70c-4caf-a7fc-ac5c7a6837b6",
+        "cargo run -p codex1 -- internal validate-mission-artifacts --mission-id reviewer-lane-capability-boundary"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:mission:reviewer-lane-capability-boundary:80c9c9b1-1a1e-4549-8f9a-757d2ef6fad5",
+      "gate_kind": "execution_package",
+      "target_ref": "mission:reviewer-lane-capability-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T17:05:58.243753Z",
+      "evaluated_at": "2026-04-16T17:05:58.227655Z",
+      "evaluated_against_ref": "80c9c9b1-1a1e-4549-8f9a-757d2ef6fad5",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/80c9c9b1-1a1e-4549-8f9a-757d2ef6fad5.json"
+      ],
+      "failure_refs": [
+        "planning_selected_target_mismatch:spec:reviewer_capability_qualification!=package:mission:reviewer-lane-capability-boundary",
+        "package_read_scope_outside_frontier:plans/reviewer-lane-capability-boundary",
+        "package_write_scope_outside_frontier:plans/reviewer-lane-capability-boundary",
+        "gate_check_failed:target_resolution",
+        "gate_check_failed:scope_bounded_to_frontier"
+      ],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:mission:reviewer-lane-capability-boundary:155aa6f6-6116-4aa2-86cf-ee7e77098fe4"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:planning_completion:blueprint:6",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:reviewer-lane-capability-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:6"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-16T17:06:29.143975Z",
+      "evaluated_at": "2026-04-16T17:14:19.327309Z",
+      "evaluated_against_ref": "package:b5b65022-e510-4eb9-baf2-a8f7ae936070",
+      "evidence_refs": [
+        "/Users/joel/codex1/PLANS/reviewer-lane-capability-boundary/PROGRAM-BLUEPRINT.md",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-graph.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/155aa6f6-6116-4aa2-86cf-ee7e77098fe4.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/a6ef8760-4b34-4e6b-8453-c48a43857d0d.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/fc1d5deb-fad1-41a8-82e2-3986c3c5fb11.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/c0728fa0-83d4-4876-970a-093cb698c34e.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/ebd703cc-9361-4a4a-9d29-39271f5cd63a.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/7a6dd595-f48e-42fc-a9cb-886d88b1a086.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/4f7ebed2-589f-44f8-beb8-dc762324614e.json",
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/b5b65022-e510-4eb9-baf2-a8f7ae936070.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:mission:reviewer-lane-capability-boundary:155aa6f6-6116-4aa2-86cf-ee7e77098fe4",
+      "gate_kind": "execution_package",
+      "target_ref": "mission:reviewer-lane-capability-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:6"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T17:06:42.916895Z",
+      "evaluated_at": "2026-04-16T17:06:42.903034Z",
+      "evaluated_against_ref": "155aa6f6-6116-4aa2-86cf-ee7e77098fe4",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/155aa6f6-6116-4aa2-86cf-ee7e77098fe4.json"
+      ],
+      "failure_refs": [
+        "execution_graph_blueprint_fingerprint_mismatch",
+        "included_spec_blueprint_fingerprint_mismatch:reviewer_lane_mutation_guard",
+        "included_spec_blueprint_fingerprint_mismatch:reviewer_evidence_snapshot_contract",
+        "included_spec_blueprint_fingerprint_mismatch:reviewer_capability_qualification",
+        "package_write_scope_missing_for_included_spec:reviewer_lane_mutation_guard:plans/reviewer-lane-capability-boundary/specs/reviewer_lane_mutation_guard",
+        "package_write_scope_missing_for_included_spec:reviewer_evidence_snapshot_contract:plans/reviewer-lane-capability-boundary/specs/reviewer_evidence_snapshot_contract",
+        "package_write_scope_missing_for_included_spec:reviewer_capability_qualification:plans/reviewer-lane-capability-boundary/specs/reviewer_capability_qualification",
+        "gate_check_failed:scope_bounded_to_frontier",
+        "gate_check_failed:planning_truth_current"
+      ],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:mission:reviewer-lane-capability-boundary:ebd703cc-9361-4a4a-9d29-39271f5cd63a"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_lane_mutation_guard:a6ef8760-4b34-4e6b-8453-c48a43857d0d",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_lane_mutation_guard",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:6"
+      ],
+      "status": "failed",
+      "blocking": true,
+      "opened_at": "2026-04-16T17:07:17.133305Z",
+      "evaluated_at": "2026-04-16T17:07:17.12112Z",
+      "evaluated_against_ref": "a6ef8760-4b34-4e6b-8453-c48a43857d0d",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/a6ef8760-4b34-4e6b-8453-c48a43857d0d.json"
+      ],
+      "failure_refs": [
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_capability_qualification",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_evidence_snapshot_contract",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_lane_mutation_guard",
+        "planning_selected_target_mismatch:mission:reviewer-lane-capability-boundary!=package:spec:reviewer_lane_mutation_guard",
+        "gate_check_failed:target_resolution"
+      ],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_evidence_snapshot_contract:fc1d5deb-fad1-41a8-82e2-3986c3c5fb11",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_evidence_snapshot_contract",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:6"
+      ],
+      "status": "failed",
+      "blocking": true,
+      "opened_at": "2026-04-16T17:07:18.002537Z",
+      "evaluated_at": "2026-04-16T17:07:17.992612Z",
+      "evaluated_against_ref": "fc1d5deb-fad1-41a8-82e2-3986c3c5fb11",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/fc1d5deb-fad1-41a8-82e2-3986c3c5fb11.json"
+      ],
+      "failure_refs": [
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_capability_qualification",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_evidence_snapshot_contract",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_lane_mutation_guard",
+        "planning_selected_target_mismatch:mission:reviewer-lane-capability-boundary!=package:spec:reviewer_evidence_snapshot_contract",
+        "gate_check_failed:target_resolution"
+      ],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:spec:reviewer_capability_qualification:c0728fa0-83d4-4876-970a-093cb698c34e",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:reviewer_capability_qualification",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:6"
+      ],
+      "status": "failed",
+      "blocking": true,
+      "opened_at": "2026-04-16T17:07:18.845814Z",
+      "evaluated_at": "2026-04-16T17:07:18.834915Z",
+      "evaluated_against_ref": "c0728fa0-83d4-4876-970a-093cb698c34e",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/c0728fa0-83d4-4876-970a-093cb698c34e.json"
+      ],
+      "failure_refs": [
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_capability_qualification",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_evidence_snapshot_contract",
+        "execution_graph_node_spec_fingerprint_mismatch:reviewer_lane_mutation_guard",
+        "planning_selected_target_mismatch:mission:reviewer-lane-capability-boundary!=package:spec:reviewer_capability_qualification",
+        "gate_check_failed:target_resolution"
+      ],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:mission:reviewer-lane-capability-boundary:ebd703cc-9361-4a4a-9d29-39271f5cd63a",
+      "gate_kind": "execution_package",
+      "target_ref": "mission:reviewer-lane-capability-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:6"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T17:07:39.783362Z",
+      "evaluated_at": "2026-04-16T17:07:39.770503Z",
+      "evaluated_against_ref": "ebd703cc-9361-4a4a-9d29-39271f5cd63a",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/ebd703cc-9361-4a4a-9d29-39271f5cd63a.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:mission:reviewer-lane-capability-boundary:7a6dd595-f48e-42fc-a9cb-886d88b1a086"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:MissionCloseReview:mission:reviewer-lane-capability-boundary:9bf2a014-75bc-495f-ac8d-db7654e2ebf9",
+      "gate_kind": "mission_close_review",
+      "target_ref": "mission:reviewer-lane-capability-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:6",
+        "bundle:9bf2a014-75bc-495f-ac8d-db7654e2ebf9"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T17:07:55.532305Z",
+      "evaluated_at": "2026-04-16T17:10:57.405558Z",
+      "evaluated_against_ref": "9bf2a014-75bc-495f-ac8d-db7654e2ebf9",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/bundles/9bf2a014-75bc-495f-ac8d-db7654e2ebf9.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "reviewer-lane-capability-boundary:MissionCloseReview:mission:reviewer-lane-capability-boundary:8f41e14e-06a6-496e-a545-5264d6a0eefe"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:mission:reviewer-lane-capability-boundary:7a6dd595-f48e-42fc-a9cb-886d88b1a086",
+      "gate_kind": "execution_package",
+      "target_ref": "mission:reviewer-lane-capability-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:6"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T17:10:57.405577Z",
+      "evaluated_at": "2026-04-16T17:10:57.358286Z",
+      "evaluated_against_ref": "7a6dd595-f48e-42fc-a9cb-886d88b1a086",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/7a6dd595-f48e-42fc-a9cb-886d88b1a086.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:mission:reviewer-lane-capability-boundary:4f7ebed2-589f-44f8-beb8-dc762324614e"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:MissionCloseReview:mission:reviewer-lane-capability-boundary:8f41e14e-06a6-496e-a545-5264d6a0eefe",
+      "gate_kind": "mission_close_review",
+      "target_ref": "mission:reviewer-lane-capability-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:6",
+        "bundle:8f41e14e-06a6-496e-a545-5264d6a0eefe"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T17:11:13.908396Z",
+      "evaluated_at": "2026-04-16T17:13:28.043478Z",
+      "evaluated_against_ref": "8f41e14e-06a6-496e-a545-5264d6a0eefe",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/bundles/8f41e14e-06a6-496e-a545-5264d6a0eefe.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "reviewer-lane-capability-boundary:MissionCloseReview:mission:reviewer-lane-capability-boundary:d44e71d2-d8a2-4f9c-a01c-f10d7e379c18"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:mission:reviewer-lane-capability-boundary:4f7ebed2-589f-44f8-beb8-dc762324614e",
+      "gate_kind": "execution_package",
+      "target_ref": "mission:reviewer-lane-capability-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:6"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T17:13:28.043491Z",
+      "evaluated_at": "2026-04-16T17:13:28.026248Z",
+      "evaluated_against_ref": "4f7ebed2-589f-44f8-beb8-dc762324614e",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/4f7ebed2-589f-44f8-beb8-dc762324614e.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "reviewer-lane-capability-boundary:execution_package:mission:reviewer-lane-capability-boundary:b5b65022-e510-4eb9-baf2-a8f7ae936070"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:MissionCloseReview:mission:reviewer-lane-capability-boundary:d44e71d2-d8a2-4f9c-a01c-f10d7e379c18",
+      "gate_kind": "mission_close_review",
+      "target_ref": "mission:reviewer-lane-capability-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:6",
+        "bundle:d44e71d2-d8a2-4f9c-a01c-f10d7e379c18"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-16T17:13:41.203899Z",
+      "evaluated_at": "2026-04-16T17:14:19.327288Z",
+      "evaluated_against_ref": "d44e71d2-d8a2-4f9c-a01c-f10d7e379c18",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/bundles/d44e71d2-d8a2-4f9c-a01c-f10d7e379c18.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "reviewer-lane-capability-boundary:MissionCloseReview:mission:reviewer-lane-capability-boundary:b5fdb6a7-d678-401a-a809-f8592ac901a4"
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:execution_package:mission:reviewer-lane-capability-boundary:b5b65022-e510-4eb9-baf2-a8f7ae936070",
+      "gate_kind": "execution_package",
+      "target_ref": "mission:reviewer-lane-capability-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:6"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-16T17:14:19.327304Z",
+      "evaluated_at": "2026-04-16T17:14:19.311114Z",
+      "evaluated_against_ref": "b5b65022-e510-4eb9-baf2-a8f7ae936070",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/execution-packages/b5b65022-e510-4eb9-baf2-a8f7ae936070.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "reviewer-lane-capability-boundary:MissionCloseReview:mission:reviewer-lane-capability-boundary:b5fdb6a7-d678-401a-a809-f8592ac901a4",
+      "gate_kind": "mission_close_review",
+      "target_ref": "mission:reviewer-lane-capability-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:6",
+        "bundle:b5fdb6a7-d678-401a-a809-f8592ac901a4"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-16T17:14:32.597066Z",
+      "evaluated_at": "2026-04-16T17:15:03.394214Z",
+      "evaluated_against_ref": "b5fdb6a7-d678-401a-a809-f8592ac901a4",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/reviewer-lane-capability-boundary/bundles/b5fdb6a7-d678-401a-a809-f8592ac901a4.json",
+        "PLANS/reviewer-lane-capability-boundary/OUTCOME-LOCK.md",
+        "PLANS/reviewer-lane-capability-boundary/PROGRAM-BLUEPRINT.md",
+        "PLANS/reviewer-lane-capability-boundary/REVIEW-LEDGER.md",
+        "PLANS/reviewer-lane-capability-boundary/specs/reviewer_lane_mutation_guard/RECEIPTS/2026-04-16-reviewer-lane-mutation-guard-proof.txt",
+        "PLANS/reviewer-lane-capability-boundary/specs/reviewer_evidence_snapshot_contract/RECEIPTS/2026-04-16-reviewer-evidence-snapshot-proof.txt",
+        "PLANS/reviewer-lane-capability-boundary/specs/reviewer_capability_qualification/RECEIPTS/2026-04-16-reviewer-capability-qualification-proof.txt",
+        "cargo run -p codex1 -- internal validate-execution-package --mission-id reviewer-lane-capability-boundary --package-id b5b65022-e510-4eb9-baf2-a8f7ae936070",
+        "cargo run -p codex1 -- internal validate-review-bundle --mission-id reviewer-lane-capability-boundary --bundle-id b5fdb6a7-d678-401a-a809-f8592ac901a4",
+        "cargo run -p codex1 -- internal validate-review-evidence-snapshot --mission-id reviewer-lane-capability-boundary --bundle-id b5fdb6a7-d678-401a-a809-f8592ac901a4",
+        "cargo run -p codex1 -- internal validate-mission-artifacts --mission-id reviewer-lane-capability-boundary"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    }
+  ]
+}

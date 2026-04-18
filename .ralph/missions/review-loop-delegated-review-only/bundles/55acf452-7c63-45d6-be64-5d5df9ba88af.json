@@ -1,0 +1,54 @@
+{
+  "bundle_id": "55acf452-7c63-45d6-be64-5d5df9ba88af",
+  "mission_id": "review-loop-delegated-review-only",
+  "bundle_kind": "spec_review",
+  "source_package_id": "0a772975-cc26-4b40-86a2-53a7478dd85a",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:3de1e1e3042357e940a4dbb53251c54a8a7fc31288505ad9d8b4ae9b4c39b785",
+  "blueprint_revision": 14,
+  "blueprint_fingerprint": "sha256:3e0db9761964fdc7202f2e8a017367ad16062e6c2a7acd988b6dfb3312db8e00",
+  "governing_revision": "spec:reviewer_parent_writeback_guard:1",
+  "mandatory_review_lenses": [
+    "correctness",
+    "evidence_adequacy",
+    "operability_rollback_observability",
+    "interface_compatibility",
+    "spec_conformance",
+    "operability_rollback_observability."
+  ],
+  "target_spec_id": "reviewer_parent_writeback_guard",
+  "spec_revision": 1,
+  "spec_fingerprint": "sha256:77ac5c8955ce112670efcdf67a37d7245ddadac68f9dbb82c4ac7cb2fd43bd0d",
+  "proof_rows_under_review": [
+    "cargo test -p codex1 --test runtime_internal reviewer_parent_writeback_guard --quiet",
+    "cargo test -p codex1 --test runtime_internal delegated_review_authority --quiet",
+    "cargo test -p codex1 --test runtime_internal reviewer_lane_canonical_write_isolation --quiet",
+    "cargo fmt --all --check",
+    "codex1 internal validate-mission-artifacts --mission-id review-loop-delegated-review-only"
+  ],
+  "receipts": [
+    "PLANS/review-loop-delegated-review-only/specs/reviewer_parent_writeback_guard/RECEIPTS/2026-04-16-reviewer-parent-writeback-guard-proof.txt"
+  ],
+  "changed_files_or_diff": [
+    "crates/codex1-core/src/runtime.rs",
+    "crates/codex1/tests/runtime_internal.rs",
+    ".codex/skills/review-loop/SKILL.md",
+    ".codex/skills/internal-orchestration/SKILL.md",
+    "docs/runtime-backend.md",
+    "PLANS/review-loop-delegated-review-only/specs/reviewer_parent_writeback_guard/SPEC.md",
+    "PLANS/review-loop-delegated-review-only/specs/reviewer_parent_writeback_guard/RECEIPTS/2026-04-16-reviewer-parent-writeback-guard-proof.txt"
+  ],
+  "touched_interface_contracts": [
+    "record-review-outcome authority validation",
+    "reviewer output evidence reference semantics",
+    "parent-owned review-loop writeback contract",
+    "review-loop public skill and internal orchestration instructions"
+  ],
+  "mission_level_proof_rows": [],
+  "cross_spec_claim_refs": [],
+  "included_spec_refs": [],
+  "visible_artifact_refs": [],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [],
+  "generated_at": "2026-04-16T19:57:06.408515Z"
+}

@@ -1,0 +1,50 @@
+{
+  "bundle_id": "47761234-495a-4fb3-94fd-3e41a41dc8c8",
+  "mission_id": "contract-centered-architecture",
+  "bundle_kind": "spec_review",
+  "source_package_id": "413c9891-75e2-4579-833d-183f5779f855",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:4e35be4d1adaa85d5725d5fb4a891f47fe4bd24f5f25bec09c5f5249b7a93893",
+  "blueprint_revision": 6,
+  "blueprint_fingerprint": "sha256:8badc46dd9712d3ce3fed5703b68ff2ca4c63fc869171bc82cac9ab9a625653c",
+  "governing_revision": "spec:artifact_contract_registry:2",
+  "mandatory_review_lenses": [
+    "correctness",
+    "evidence_adequacy",
+    "interface_compatibility",
+    "spec_conformance",
+    "safety_security_policy",
+    "operability_rollback_observability."
+  ],
+  "target_spec_id": "artifact_contract_registry",
+  "spec_revision": 2,
+  "spec_fingerprint": "sha256:03fc8e436fce4ed60b74a04375333f435802210800928bbb39f5affb7e791d49",
+  "proof_rows_under_review": [
+    "artifact validators reject structurally weak visible artifacts that previously passed marker checks",
+    "templates and validators stay in parity for the moved artifact classes",
+    "cargo test -p codex1-core",
+    "cargo test -p codex1 --test runtime_internal",
+    "visible-artifact validation fails for structurally weak artifacts that previously passed marker checks",
+    "cargo test -p codex1 runtime_internal"
+  ],
+  "receipts": [
+    "PLANS/contract-centered-architecture/specs/artifact_contract_registry/RECEIPTS/2026-04-15-artifact-registry-proof.txt"
+  ],
+  "changed_files_or_diff": [
+    "crates/codex1-core/src/artifacts.rs",
+    "crates/codex1-core/src/lib.rs",
+    "crates/codex1/src/internal/mod.rs"
+  ],
+  "touched_interface_contracts": [
+    "visible artifact text contract registry",
+    "visible artifact validator contract",
+    "template parity contract"
+  ],
+  "mission_level_proof_rows": [],
+  "cross_spec_claim_refs": [],
+  "included_spec_refs": [],
+  "visible_artifact_refs": [],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [],
+  "generated_at": "2026-04-15T17:59:26.076047Z"
+}

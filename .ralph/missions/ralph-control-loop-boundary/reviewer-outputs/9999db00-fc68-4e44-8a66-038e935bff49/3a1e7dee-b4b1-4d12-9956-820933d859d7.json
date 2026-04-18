@@ -1,0 +1,36 @@
+{
+  "mission_id": "ralph-control-loop-boundary",
+  "bundle_id": "9999db00-fc68-4e44-8a66-038e935bff49",
+  "reviewer_id": "review_loop_surface_repair_code_bug_2",
+  "reviewer_output_id": "3a1e7dee-b4b1-4d12-9956-820933d859d7",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P2",
+      "title": "Formatting-coupled assertion makes the close-surface regression test brittle",
+      "evidence_refs": [
+        "crates/codex1/tests/runtime_internal.rs:336",
+        "crates/codex1/tests/runtime_internal.rs:337",
+        "docs/runtime-backend.md:8",
+        "docs/runtime-backend.md:15"
+      ],
+      "rationale": "The assertion requires the exact substring \"- `$close`\\n\\n## Public Skill Responsibilities\", coupling the test to Markdown adjacency and section ordering rather than the intended contract. Non-semantic edits (wrapping, inserted context lines, or list reordering that still includes `$close`) can produce false failures and block proof gates without a real contract regression.",
+      "suggested_next_action": "Replace adjacency-sensitive substring matching with resilient checks that independently validate required contract atoms (for example: public list contains `$close`, responsibilities section contains `$close` ownership text), while avoiding dependence on exact blank-line/layout formatting."
+    },
+    {
+      "severity": "P2",
+      "title": "Runtime public-surface guard misses explicit `$review-loop` vs legacy `$review` doc contract",
+      "evidence_refs": [
+        "crates/codex1/tests/runtime_internal.rs:312",
+        "crates/codex1/tests/runtime_internal.rs:337",
+        "PLANS/ralph-control-loop-boundary/specs/loop_skill_surface_and_pause/RECEIPTS/2026-04-17-loop-skill-surface-proof.txt:14",
+        "docs/runtime-backend.md:11"
+      ],
+      "rationale": "The test proves filesystem removal of `.codex/skills/review/SKILL.md`, but it does not assert that runtime docs explicitly keep `$review-loop` in the public skill list while excluding legacy `$review`. Because the receipt claims this naming repair, the current proof can pass even if docs later reintroduce stale `$review` wording or drop `$review-loop` from the list.",
+      "suggested_next_action": "Add explicit runtime-doc assertions for both presence of `- `$review-loop`` and absence of a legacy `- `$review`` public-surface bullet (or equivalent tokenized check) so the receipt claim is directly regression-guarded."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/review-evidence-snapshots/9999db00-fc68-4e44-8a66-038e935bff49.json",
+  "source_evidence_snapshot_fingerprint": "sha256:cc038a605c70d8810fc947221979d0522bd6cfba82a8ea8e353acbd79179e3b4",
+  "recorded_at": "2026-04-17T09:28:34.597813Z"
+}

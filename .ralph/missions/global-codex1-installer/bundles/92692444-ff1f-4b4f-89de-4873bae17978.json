@@ -1,0 +1,78 @@
+{
+  "bundle_id": "92692444-ff1f-4b4f-89de-4873bae17978",
+  "mission_id": "global-codex1-installer",
+  "bundle_kind": "spec_review",
+  "source_package_id": "cb52fafa-516f-4028-ab1a-eec0e83a9fcc",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:7314d24eea35d8d5439ddb2d0e3d87ac3c9af728e1eb2d2c1336c2eb5ac9cf39",
+  "blueprint_revision": 9,
+  "blueprint_fingerprint": "sha256:93b7d201928fb9931ce297e2a7ee5f8de2be02f13c7cce252efc697eb01561be",
+  "governing_revision": "spec:reviewer_writeback_authority_enforcement:1",
+  "mandatory_review_lenses": [
+    "correctness",
+    "review honesty",
+    "authority boundary",
+    "backward compatibility",
+    "qualification adequacy",
+    "protected-surface safety",
+    "backup/restore integrity",
+    "command UX clarity",
+    "test adequacy."
+  ],
+  "target_spec_id": "reviewer_writeback_authority_enforcement",
+  "spec_revision": 1,
+  "spec_fingerprint": "sha256:f70143395ebe451295fce2bc1b76f9d815c7c80d9e642da31f41109c109765c7",
+  "proof_rows_under_review": [
+    "Runtime regression rejects reviewer-lane capture of parent writeback authority.",
+    "Runtime regression rejects reviewer-lane record-review-outcome even with valid reviewer-output refs and a valid-looking snapshot.",
+    "Runtime regression proves parent-owned writeback still works.",
+    "Qualification CLI proof covers the authority boundary and remains green.",
+    "cargo test -p codex1 --test runtime_internal passes.",
+    "cargo test -p codex1 --test qualification_cli passes.",
+    "cargo fmt --all --check passes.",
+    "cargo check -p codex1 passes.",
+    "Runtime regression rejects reviewer-lane `record-review-outcome` even with valid reviewer-output refs and a valid-looking snapshot.",
+    "`cargo test -p codex1 --test runtime_internal` passes.",
+    "`cargo test -p codex1 --test qualification_cli` passes.",
+    "`cargo fmt --all --check` passes.",
+    "`cargo check -p codex1` passes.",
+    "cargo test -p codex1 --test runtime_internal: 47 passed, 0 failed",
+    "cargo test -p codex1 --test runtime_internal review_writeback -- --nocapture: 6 passed, 0 failed",
+    "cargo test -p codex1 --test qualification_cli delegated_review_authority_gate_proves_docs_and_runtime_rejections -- --nocapture: passed",
+    "cargo test -p codex1 --test qualification_cli: 37 passed, 0 failed",
+    "cargo fmt --all --check: passed",
+    "cargo check -p codex1: passed",
+    "codex1 internal validate-execution-package --mission-id global-codex1-installer --package-id cb52fafa-516f-4028-ab1a-eec0e83a9fcc: valid",
+    "codex1 internal validate-mission-artifacts --mission-id global-codex1-installer: passed",
+    "codex1 internal validate-gates --mission-id global-codex1-installer: passed"
+  ],
+  "receipts": [
+    "PLANS/global-codex1-installer/specs/reviewer_writeback_authority_enforcement/RECEIPTS/2026-04-17-reviewer-writeback-authority-proof.md"
+  ],
+  "changed_files_or_diff": [
+    "crates/codex1-core/src/runtime.rs",
+    "crates/codex1/src/commands/qualify.rs",
+    "crates/codex1/tests/runtime_internal.rs",
+    ".codex/skills/review-loop/SKILL.md",
+    ".codex/skills/internal-orchestration/SKILL.md",
+    "docs/runtime-backend.md",
+    "PLANS/global-codex1-installer/specs/reviewer_writeback_authority_enforcement/SPEC.md",
+    "PLANS/global-codex1-installer/specs/reviewer_writeback_authority_enforcement/RECEIPTS/README.md",
+    "PLANS/global-codex1-installer/specs/reviewer_writeback_authority_enforcement/RECEIPTS/2026-04-17-reviewer-writeback-authority-proof.md"
+  ],
+  "touched_interface_contracts": [
+    "capture-review-truth-snapshot writeback authority lifecycle",
+    "record-review-outcome delegated reviewer evidence validation",
+    "delegated_review_authority qualification gate",
+    "review-loop/internal-orchestration reviewer-lane contract"
+  ],
+  "mission_level_proof_rows": [],
+  "cross_spec_claim_refs": [],
+  "included_spec_refs": [],
+  "visible_artifact_refs": [],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [
+    "Prior reviewer-output f5b57382-4f25-4419-a448-86cb2e9026fc reported P1: reviewer lanes can still capture writeback authority first and spoof parent-review-loop because capture-review-truth-snapshot and record-review-outcome lack authenticated caller context."
+  ],
+  "generated_at": "2026-04-17T22:36:41.987389Z"
+}

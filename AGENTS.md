@@ -1,7 +1,7 @@
 <!-- codex1:begin -->
 ## Codex1
 ### Workflow Stance
-- Use the native Codex skills surface for `clarify`, `plan`, `execute`, `review`, and `autopilot`.
+- Use the native Codex skills surface for `clarify`, `plan`, `execute`, `review-loop`, and `autopilot`.
 - Keep mission truth in visible repo artifacts instead of hidden chat state.
 - Replan stays internal unless the repo truth explicitly says otherwise.
 

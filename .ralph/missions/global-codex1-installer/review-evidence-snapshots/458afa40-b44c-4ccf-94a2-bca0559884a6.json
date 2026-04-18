@@ -1,0 +1,84 @@
+{
+  "mission_id": "global-codex1-installer",
+  "bundle_id": "458afa40-b44c-4ccf-94a2-bca0559884a6",
+  "bundle_kind": "spec_review",
+  "source_package_id": "2a7a74b2-d786-4e52-9fe5-0b17b065c484",
+  "target_spec_id": "review_lane_completion_guard",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:7314d24eea35d8d5439ddb2d0e3d87ac3c9af728e1eb2d2c1336c2eb5ac9cf39",
+  "blueprint_revision": 8,
+  "blueprint_fingerprint": "sha256:ac8b3f655d713f33eb59ab49b99a5d3cb78fd5b25abfc22c89e55c9cc1c28b04",
+  "spec_revision": 1,
+  "spec_fingerprint": "sha256:701dfedb6a47e7a28e1d0638cccc9778cf205c046f89dcddb41d47c776df1a7e",
+  "mandatory_review_lenses": [
+    "correctness",
+    "review honesty",
+    "evidence adequacy",
+    "backward compatibility",
+    "qualification adequacy",
+    "protected-surface safety",
+    "backup/restore integrity",
+    "command UX clarity",
+    "test adequacy."
+  ],
+  "proof_rows_under_review": [
+    "Runtime regression test rejects a clean review outcome that cites only a spec/intent reviewer-output for a code-producing correctness bundle.",
+    "Runtime regression test accepts a clean review outcome when required code/correctness and spec/intent reviewer-output artifacts are both present and clean.",
+    "Existing delegated review authority, reviewer-output inbox, and qualification CLI tests still pass.",
+    "cargo fmt --all --check passes.",
+    "cargo check -p codex1 passes.",
+    "`cargo fmt --all --check` passes.",
+    "`cargo check -p codex1` passes.",
+    "cargo test -p codex1 --test runtime_internal",
+    "cargo test -p codex1 --test runtime_internal clean_code_review_writeback_requires_code_and_spec_reviewer_outputs -- --nocapture",
+    "cargo test -p codex1 --test qualification_cli",
+    "cargo fmt --all --check",
+    "cargo check -p codex1"
+  ],
+  "receipts": [
+    "PLANS/global-codex1-installer/specs/review_lane_completion_guard/RECEIPTS/2026-04-17-review-lane-completion-guard-proof.md"
+  ],
+  "changed_files_or_diff": [
+    "crates/codex1-core/src/runtime.rs",
+    "crates/codex1/src/commands/qualify.rs",
+    "crates/codex1/tests/runtime_internal.rs",
+    ".codex/skills/review-loop/SKILL.md",
+    "PLANS/global-codex1-installer/specs/review_lane_completion_guard/SPEC.md",
+    "PLANS/global-codex1-installer/specs/review_lane_completion_guard/RECEIPTS/2026-04-17-review-lane-completion-guard-proof.md"
+  ],
+  "touched_interface_contracts": [
+    "Clean review writeback requires durable lane coverage for code-producing correctness bundles.",
+    "Reviewer-output lane classification supports explicit code/correctness and spec/intent/proof lanes plus legacy combined review ids.",
+    "Qualification smoke flows now persist required code and spec reviewer outputs before clean spec-review writeback.",
+    "Review-loop skill states missing required lane output is contaminated or blocked review truth, not NONE."
+  ],
+  "mission_level_proof_rows": [],
+  "cross_spec_claim_refs": [],
+  "visible_artifact_refs": [],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [],
+  "evidence_refs": [
+    "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/458afa40-b44c-4ccf-94a2-bca0559884a6.json",
+    "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/2a7a74b2-d786-4e52-9fe5-0b17b065c484.json",
+    "PLANS/global-codex1-installer/specs/review_lane_completion_guard/RECEIPTS/2026-04-17-review-lane-completion-guard-proof.md",
+    "crates/codex1-core/src/runtime.rs",
+    "crates/codex1/src/commands/qualify.rs",
+    "crates/codex1/tests/runtime_internal.rs",
+    ".codex/skills/review-loop/SKILL.md",
+    "PLANS/global-codex1-installer/specs/review_lane_completion_guard/SPEC.md"
+  ],
+  "reviewer_instructions": [
+    "Review only this frozen evidence snapshot and the refs it names.",
+    "Return exactly NONE or structured findings with severity, evidence refs, rationale, and suggested next action, then persist only that bounded result with record-reviewer-output.",
+    "Do not mutate mission truth, clear gates, write artifacts outside the reviewer-output inbox, call record-review-outcome, or decide mission completion.",
+    "This evidence snapshot is not a writeback capability; only the parent keeps the full review truth snapshot for record-review-outcome.",
+    "If live repo reads are necessary, the parent review-loop must keep its parent-held review truth snapshot guard active."
+  ],
+  "review_truth_guard": {
+    "bundle_id": "458afa40-b44c-4ccf-94a2-bca0559884a6",
+    "captured_at": "2026-04-17T22:06:01.05674Z",
+    "artifact_fingerprint_count": 67,
+    "guard_fingerprint": "sha256:67f90af1c279ac1e856775caee2cc888d0e71769c4522d2fc9dba1d3a7491c99"
+  },
+  "generated_at": "2026-04-17T22:06:01.105421Z"
+}

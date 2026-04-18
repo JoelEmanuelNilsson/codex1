@@ -1,0 +1,56 @@
+{
+  "bundle_id": "5fecfe49-f1ce-479d-b4d2-3ac1461dc45d",
+  "mission_id": "contract-centered-architecture",
+  "bundle_kind": "mission_close",
+  "source_package_id": "abe189bb-04c5-4a22-b94a-61dfe8cb5e54",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:4e35be4d1adaa85d5725d5fb4a891f47fe4bd24f5f25bec09c5f5249b7a93893",
+  "blueprint_revision": 10,
+  "blueprint_fingerprint": "sha256:0e73f4340105227393ea58ff06a5ef2e5784a282c52f4b7d420d5f71bca87a3d",
+  "governing_revision": "mission:contract-centered-architecture:close",
+  "mandatory_review_lenses": [
+    "spec_conformance",
+    "correctness",
+    "interface_compatibility",
+    "safety_security_policy",
+    "operability_rollback_observability",
+    "evidence_adequacy",
+    "operability_rollback_observability."
+  ],
+  "target_spec_id": null,
+  "spec_revision": null,
+  "spec_fingerprint": null,
+  "proof_rows_under_review": [],
+  "receipts": [],
+  "changed_files_or_diff": [],
+  "touched_interface_contracts": [],
+  "mission_level_proof_rows": [
+    "all active frontier specs are execution-complete and review-passed under blueprint revision 10",
+    "manual/autopilot parity, waiting identity, and native child-lane qualification remain green on the supported surface",
+    "mission close requires no agreed P0, P1, or P2 findings across the final PRD-based review lanes"
+  ],
+  "cross_spec_claim_refs": [
+    "claim:clarify_intent_lock",
+    "claim:planning_no_invention",
+    "claim:execution_ralph_autonomy",
+    "claim:support_surface_reversible",
+    "claim:qualification_evidence_honesty",
+    "claim:review_clean_closeout"
+  ],
+  "included_spec_refs": [
+    "artifact_contract_registry",
+    "execute_autopilot_governance",
+    "mission_contract_kernel",
+    "qualification_evidence_pipeline",
+    "support_surface_txn",
+    "workflow_surface_clarify_plan_review"
+  ],
+  "visible_artifact_refs": [
+    "/Users/joel/codex1/PLANS/contract-centered-architecture/OUTCOME-LOCK.md",
+    "/Users/joel/codex1/PLANS/contract-centered-architecture/PROGRAM-BLUEPRINT.md",
+    "/Users/joel/codex1/PLANS/contract-centered-architecture/REVIEW-LEDGER.md"
+  ],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [],
+  "generated_at": "2026-04-15T20:49:34.903381Z"
+}

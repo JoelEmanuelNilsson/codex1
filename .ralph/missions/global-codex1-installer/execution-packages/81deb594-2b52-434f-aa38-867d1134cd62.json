@@ -1,0 +1,152 @@
+{
+  "package_id": "81deb594-2b52-434f-aa38-867d1134cd62",
+  "mission_id": "global-codex1-installer",
+  "target_type": "spec",
+  "target_id": "global_setup_backup",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:7314d24eea35d8d5439ddb2d0e3d87ac3c9af728e1eb2d2c1336c2eb5ac9cf39",
+  "blueprint_revision": 5,
+  "blueprint_fingerprint": "sha256:ad18469c285fdbac0fdfd6a4d22ac08fba083395d6c78735633e881030790b37",
+  "dependency_snapshot_fingerprint": "sha256:2e09514f5ad2e3ecf8e7f9addd80c2925ba71d3261093c812b9133c0915e5008",
+  "wave_fingerprint": null,
+  "included_specs": [
+    {
+      "spec_id": "global_setup_backup",
+      "spec_revision": 3,
+      "spec_fingerprint": "sha256:ca79a778643ea5e686236582c7573aa7d31b54f9255703b00cc30a19e3cc93c3"
+    }
+  ],
+  "dependency_satisfaction_state": [
+    {
+      "name": "lock_current",
+      "satisfied": true,
+      "detail": "OUTCOME-LOCK.md remains locked at revision 1."
+    },
+    {
+      "name": "blueprint_current",
+      "satisfied": true,
+      "detail": "PROGRAM-BLUEPRINT.md revision 5 selects global_setup_backup."
+    },
+    {
+      "name": "spec:global_setup_backup",
+      "satisfied": true,
+      "detail": "SPEC.md includes review repair scope for restore/uninstall and semantic idempotence."
+    }
+  ],
+  "read_scope": [
+    "crates/codex1/src/commands/setup.rs",
+    "crates/codex1/src/commands/restore.rs",
+    "crates/codex1/src/commands/uninstall.rs",
+    "crates/codex1-core/src/backup.rs",
+    "crates/codex1/tests/qualification_cli.rs"
+  ],
+  "write_scope": [
+    "crates/codex1/src/commands/setup.rs",
+    "crates/codex1/src/commands/restore.rs",
+    "crates/codex1/src/commands/uninstall.rs",
+    "crates/codex1/tests/qualification_cli.rs"
+  ],
+  "proof_obligations": [
+    "Targeted CLI tests prove codex1 setup writes only user-scope config.toml and hooks.json under temp CODEX_HOME/HOME.",
+    "Tests prove existing user files are backed up before mutation with manifest entries marked scope = user.",
+    "Tests prove setup is semantically idempotent when TOML/JSON are already desired.",
+    "Tests prove existing global setup backups can be restored or uninstalled through the CLI.",
+    "Relevant cargo test -p codex1 subset compiles and passes."
+  ],
+  "review_obligations": [
+    "correctness",
+    "protected-surface safety",
+    "backup/restore integrity",
+    "test adequacy",
+    "command UX clarity"
+  ],
+  "replan_boundary": {
+    "local_repair_allowed": false,
+    "trigger_matrix": [
+      {
+        "trigger_code": "write_scope_expansion",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "interface_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "dependency_truth_change",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "proof_obligation_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "review_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "protected_surface_change",
+        "reopen_layer": "mission_lock"
+      },
+      {
+        "trigger_code": "migration_rollout_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "outcome_lock_change",
+        "reopen_layer": "mission_lock"
+      }
+    ]
+  },
+  "wave_context": null,
+  "wave_specs": [],
+  "gate_checks": [
+    {
+      "gate_id": "target_resolution",
+      "passed": true,
+      "detail": "resolved spec:global_setup_backup"
+    },
+    {
+      "gate_id": "dependency_truth_current",
+      "passed": true,
+      "detail": "dependency satisfaction is explicit, revision-bearing, and fully satisfied"
+    },
+    {
+      "gate_id": "scope_declared",
+      "passed": true,
+      "detail": "read and write scope are explicit"
+    },
+    {
+      "gate_id": "scope_bounded_to_frontier",
+      "passed": true,
+      "detail": "package scope stays inside the declared execution frontier"
+    },
+    {
+      "gate_id": "proof_contract_declared",
+      "passed": true,
+      "detail": "proof obligations are explicit"
+    },
+    {
+      "gate_id": "review_contract_declared",
+      "passed": true,
+      "detail": "review obligations are explicit"
+    },
+    {
+      "gate_id": "included_specs_runnable",
+      "passed": true,
+      "detail": "included specs are active executable frontier specs"
+    },
+    {
+      "gate_id": "planning_truth_current",
+      "passed": true,
+      "detail": "lock, blueprint, and included spec bindings are current"
+    },
+    {
+      "gate_id": "wave_validation",
+      "passed": true,
+      "detail": "wave same-workspace safety rules are satisfied"
+    }
+  ],
+  "validation_failures": [],
+  "validated_at": "2026-04-17T20:09:45.858936Z",
+  "status": "passed"
+}

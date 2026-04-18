@@ -13,7 +13,7 @@ The staged repo-owned rollout based on this proposal now lives in
 ## Goals
 
 - Keep the public product surface in skills: `$clarify`, `$plan`, `$execute`,
-  `$review`, `$autopilot`.
+  `$review-loop`, `$autopilot`.
 - Push format-heavy, schema-heavy, append-only state mutation into deterministic
   CLI commands.
 - Make command names predictable enough that Codex can inspect `--help` and

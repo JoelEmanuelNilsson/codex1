@@ -11,13 +11,21 @@ use sha2::{Digest, Sha256};
 use toml::Value as TomlValue;
 use walkdir::WalkDir;
 
-pub const REQUIRED_PUBLIC_SKILLS: &[&str] = &["clarify", "plan", "execute", "review", "autopilot"];
+pub const REQUIRED_PUBLIC_SKILLS: &[&str] = &[
+    "clarify",
+    "plan",
+    "execute",
+    "review-loop",
+    "autopilot",
+    "close",
+];
 pub const MANAGED_SKILLS: &[&str] = &[
     "clarify",
     "plan",
     "execute",
-    "review",
+    "review-loop",
     "autopilot",
+    "close",
     "internal-replan",
     "internal-orchestration",
 ];
@@ -31,7 +39,7 @@ pub const LEGACY_AGENTS_BLOCK_END: &str = "<!-- CODEX1:END MANAGED BLOCK -->";
 pub const AGENTS_BUILD_COMMAND_PLACEHOLDER: &str = "{{BUILD_COMMAND}}";
 pub const AGENTS_TEST_COMMAND_PLACEHOLDER: &str = "{{TEST_COMMAND}}";
 pub const AGENTS_LINT_COMMAND_PLACEHOLDER: &str = "{{LINT_OR_FORMAT_COMMAND}}";
-pub const AGENTS_BLOCK: &str = "<!-- codex1:begin -->\n## Codex1\n### Workflow Stance\n- Use the native Codex skills surface for `clarify`, `plan`, `execute`, `review`, and `autopilot`.\n- Keep mission truth in visible repo artifacts instead of hidden chat state.\n- Replan stays internal unless the repo truth explicitly says otherwise.\n\n### Quality Bar\n- Work is complete only when the locked outcome, proof, review, and closeout contracts are all satisfied.\n- Review is mandatory before mission completion.\n- Hold the repo to production-grade changes with explicit validation and review-clean closeout.\n\n### Repo Commands\n- Build: {{BUILD_COMMAND}}\n- Test: {{TEST_COMMAND}}\n- Lint or format: {{LINT_OR_FORMAT_COMMAND}}\n\n### Artifact Conventions\n- Mission packages live under `PLANS/<mission-id>/`.\n- `OUTCOME-LOCK.md` is canonical for destination truth.\n- `PROGRAM-BLUEPRINT.md` is canonical for route truth.\n- `specs/*/SPEC.md` is canonical for one bounded execution slice.\n<!-- codex1:end -->\n";
+pub const AGENTS_BLOCK: &str = "<!-- codex1:begin -->\n## Codex1\n### Workflow Stance\n- Use the native Codex skills surface for `clarify`, `plan`, `execute`, `review-loop`, and `autopilot`.\n- Keep mission truth in visible repo artifacts instead of hidden chat state.\n- Replan stays internal unless the repo truth explicitly says otherwise.\n\n### Quality Bar\n- Work is complete only when the locked outcome, proof, review, and closeout contracts are all satisfied.\n- Review is mandatory before mission completion.\n- Hold the repo to production-grade changes with explicit validation and review-clean closeout.\n\n### Repo Commands\n- Build: {{BUILD_COMMAND}}\n- Test: {{TEST_COMMAND}}\n- Lint or format: {{LINT_OR_FORMAT_COMMAND}}\n\n### Artifact Conventions\n- Mission packages live under `PLANS/<mission-id>/`.\n- `OUTCOME-LOCK.md` is canonical for destination truth.\n- `PROGRAM-BLUEPRINT.md` is canonical for route truth.\n- `specs/*/SPEC.md` is canonical for one bounded execution slice.\n<!-- codex1:end -->\n";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ManagedAgentsBlockSpan {
@@ -1067,7 +1075,7 @@ fn inspect_managed_agents_block(block: &str) -> AgentsScaffoldInspection {
         (2, "### Workflow Stance"),
         (
             3,
-            "- Use the native Codex skills surface for `clarify`, `plan`, `execute`, `review`, and `autopilot`.",
+            "- Use the native Codex skills surface for `clarify`, `plan`, `execute`, `review-loop`, and `autopilot`.",
         ),
         (
             4,

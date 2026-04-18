@@ -1,0 +1,44 @@
+loop_skill_surface_and_pause proof receipt
+date: 2026-04-17
+mission: ralph-control-loop-boundary
+spec: loop_skill_surface_and_pause
+package: see the current execution package and review bundle artifacts
+
+implemented changes
+- documented parent loop lease acquisition in `$plan`, `$execute`, `$review-loop`, and `$autopilot`
+- documented that manual `$clarify` does not acquire a parent loop lease and still hands off to `$plan`
+- documented that subagents never acquire Ralph loop leases and may stop normally
+- added public `$close` skill that pauses or clears the active Ralph loop lease without moving `.codex/hooks.json`
+- updated runtime backend docs to list `$close` as a public skill and connect it with `pause-loop-lease` / `clear-loop-lease`
+- added runtime regression coverage for the public skill/close lease contract
+- clarified after review that `$review` removal is intentional and `$review-loop`
+  is the public parent/orchestrator review workflow
+
+verification
+- cargo test -p codex1 --test runtime_internal loop_skill_surface_documents_lease_and_close_contract --quiet
+  result: exit 0
+  output:
+    running 1 test
+    .
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 43 filtered out; finished in 0.00s
+- cargo test -p codex1 --test runtime_internal ralph_control_loop_boundary --quiet
+  result: exit 0
+  output:
+    running 1 test
+    .
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 43 filtered out; finished in 0.65s
+- cargo fmt --all --check
+  result: exit 0
+  output: no output
+- codex1 internal validate-mission-artifacts --mission-id ralph-control-loop-boundary
+  result: exit 0
+  output:
+    findings: []
+    success: true
+
+notes
+- `.codex/hooks.json` remains intentionally paused in this workspace until the user chooses to restore it.
+- This slice documents and exposes the UX surface; later qualification work proves the contract in the release gate.
+- Review wave 0f48c7d4-0074-489e-8576-7eab41d1c940 found receipt-detail and `$close` public-list gaps; both were repaired here.
+- Review wave 9999db00-fc68-4e44-8a66-038e935bff49 found brittle public-list assertion coverage and missing explicit `$review-loop` versus legacy `$review` doc-list guard; the regression now checks the parsed public-skill bullet list for `$close`, `$review-loop`, and absence of legacy `$review`.
+- Review wave 741adc5f-83ed-4c15-99f2-9bdc84b68cd9 found the public-list check still compared whole bullet strings; the regression now extracts the first backticked skill token from each public-surface bullet and asserts token-set semantics.

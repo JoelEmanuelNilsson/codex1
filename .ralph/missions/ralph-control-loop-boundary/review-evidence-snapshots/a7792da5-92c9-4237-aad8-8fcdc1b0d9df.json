@@ -1,0 +1,79 @@
+{
+  "mission_id": "ralph-control-loop-boundary",
+  "bundle_id": "a7792da5-92c9-4237-aad8-8fcdc1b0d9df",
+  "bundle_kind": "spec_review",
+  "source_package_id": "a31920b3-a02f-4b48-a74a-2807c7bd0cb5",
+  "target_spec_id": "ralph_loop_lease_runtime",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:5cbaab0b13c64a004ec37eaa7217fd9b06349887f5b8f42611793ffed1c848a2",
+  "blueprint_revision": 5,
+  "blueprint_fingerprint": "sha256:b7b7366619f2a6470ec759c8ca06302ad0446a3917fa8d8c8124cec35be20af8",
+  "spec_revision": 2,
+  "spec_fingerprint": "sha256:2b3efb8ad639bd6a6fe0bcf5698bffea0a61d98081a67d59425a5df6cb0fe4e8",
+  "mandatory_review_lenses": [
+    "correctness",
+    "spec_conformance",
+    "interface_compatibility",
+    "operability_rollback_observability",
+    "evidence_adequacy",
+    "operability_rollback_observability."
+  ],
+  "proof_rows_under_review": [
+    "cargo test -p codex1 --test runtime_internal ralph_control_loop_boundary --quiet",
+    "cargo test -p codex1 --test runtime_internal findings_only_reviewer_stop_hook_bypasses_parent_review_gate_block --quiet",
+    "cargo test -p codex1 --test runtime_internal manual_ratified_clarify_yields_for_explicit_plan_instead_of_blocking --quiet",
+    "cargo fmt --all --check",
+    "codex1 internal validate-mission-artifacts --mission-id ralph-control-loop-boundary",
+    "cargo test -p codex1 --test runtime_internal --quiet",
+    "target/debug/codex1 internal validate-mission-artifacts --mission-id ralph-control-loop-boundary",
+    "cargo run -q -p codex1 -- internal validate-mission-artifacts --mission-id ralph-control-loop-boundary"
+  ],
+  "receipts": [
+    "PLANS/ralph-control-loop-boundary/specs/ralph_loop_lease_runtime/RECEIPTS/2026-04-17-ralph-loop-lease-runtime-proof.txt"
+  ],
+  "changed_files_or_diff": [
+    "crates/codex1-core/src/runtime.rs",
+    "crates/codex1-core/src/paths.rs",
+    "crates/codex1-core/src/lib.rs",
+    "crates/codex1/src/internal/mod.rs",
+    "crates/codex1/tests/runtime_internal.rs",
+    "docs/runtime-backend.md",
+    "PLANS/ralph-control-loop-boundary/specs/ralph_loop_lease_runtime/RECEIPTS/2026-04-17-ralph-loop-lease-runtime-proof.txt"
+  ],
+  "touched_interface_contracts": [
+    "Stop-hook control-loop lease contract.",
+    "Internal loop lease command surface.",
+    "Generic subagent Stop-hook exemption.",
+    "Parent actionable Stop-hook blocking policy."
+  ],
+  "mission_level_proof_rows": [],
+  "cross_spec_claim_refs": [],
+  "visible_artifact_refs": [],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [],
+  "evidence_refs": [
+    "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/bundles/a7792da5-92c9-4237-aad8-8fcdc1b0d9df.json",
+    "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/a31920b3-a02f-4b48-a74a-2807c7bd0cb5.json",
+    "PLANS/ralph-control-loop-boundary/specs/ralph_loop_lease_runtime/RECEIPTS/2026-04-17-ralph-loop-lease-runtime-proof.txt",
+    "crates/codex1-core/src/runtime.rs",
+    "crates/codex1-core/src/paths.rs",
+    "crates/codex1-core/src/lib.rs",
+    "crates/codex1/src/internal/mod.rs",
+    "crates/codex1/tests/runtime_internal.rs",
+    "docs/runtime-backend.md"
+  ],
+  "reviewer_instructions": [
+    "Review only this frozen evidence snapshot and the refs it names.",
+    "Return exactly NONE or structured findings with severity, evidence refs, rationale, and suggested next action, then persist only that bounded result with record-reviewer-output.",
+    "Do not mutate mission truth, clear gates, write artifacts outside the reviewer-output inbox, call record-review-outcome, or decide mission completion.",
+    "This evidence snapshot is not a writeback capability; only the parent keeps the full review truth snapshot for record-review-outcome.",
+    "If live repo reads are necessary, the parent review-loop must keep its parent-held review truth snapshot guard active."
+  ],
+  "review_truth_guard": {
+    "bundle_id": "a7792da5-92c9-4237-aad8-8fcdc1b0d9df",
+    "captured_at": "2026-04-17T08:37:13.602854Z",
+    "artifact_fingerprint_count": 25,
+    "guard_fingerprint": "sha256:f654b38f62a82f44bb2b292938bffc1930c5172165cc36c1ae7516e8cd4da210"
+  },
+  "generated_at": "2026-04-17T08:37:13.636663Z"
+}

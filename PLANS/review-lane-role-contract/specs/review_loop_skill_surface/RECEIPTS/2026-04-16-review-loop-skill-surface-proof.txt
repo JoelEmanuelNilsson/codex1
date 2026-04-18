@@ -1,0 +1,25 @@
+review_loop_skill_surface proof receipt
+date: 2026-04-16
+mission: review-lane-role-contract
+spec: review_loop_skill_surface
+executed_package: adb0bbd6-5886-4c54-9dd7-1c38a4fcedbf
+current_review_package: 823997c8-678a-41f7-9c04-7f0cb8ab0102
+
+implemented changes
+- added `.codex/skills/review-loop/SKILL.md` as the canonical parent/orchestrator review-loop skill
+- removed `.codex/skills/review/SKILL.md` as a public skill name
+- updated managed skill expectations in `crates/codex1/src/support_surface.rs`
+- updated AGENTS managed scaffolds and templates to list `review-loop`
+- updated `$execute`, `$autopilot`, runtime backend docs, internal taxonomy notes, PRD public-workflow references, and qualification/runtime test fixtures to use `$review-loop`
+
+verification
+- cargo test -p codex1 --test qualification_cli --quiet
+- cargo test -p codex1 --test runtime_internal public_execute_and_autopilot_skills_require_mission_close_review --quiet
+- cargo test -p codex1 support_surface --quiet
+- cargo fmt --all --check
+- codex1 internal validate-execution-package --mission-id review-lane-role-contract --package-id 823997c8-678a-41f7-9c04-7f0cb8ab0102
+- codex1 internal validate-mission-artifacts --mission-id review-lane-role-contract
+
+notes
+- this slice intentionally does not implement reviewer profile contracts, Ralph child-lane isolation, or full review-loop orchestration; those remain in later specs
+- the remaining `review` word is still valid when it refers to the generic activity, review gates, bundles, ledgers, or model/config names rather than the removed public `$review` skill

@@ -1,0 +1,507 @@
+{
+  "mission_id": "review-loop-delegated-review-only",
+  "blueprint_revision": 16,
+  "blueprint_fingerprint": "sha256:cded0d54c8006846633e31bb172ffa0ba686ccbc69a147d8b1cdca40528173ca",
+  "nodes": [
+    {
+      "spec_id": "delegated_review_authority_contract",
+      "spec_revision": 2,
+      "spec_fingerprint": "sha256:c23fe5358ead33cacfaa619f51fb259e3b6c84c9eb46919c3ebbb07b3bfe12eb",
+      "depends_on": [],
+      "produces": [
+        "delegated review authority contract"
+      ],
+      "read_paths": [
+        ".codex/skills",
+        "docs",
+        "crates/codex1-core/src",
+        "crates/codex1/src",
+        "crates/codex1/tests",
+        "PLANS/reviewer-lane-capability-boundary",
+        "PLANS/review-lane-role-contract"
+      ],
+      "write_paths": [
+        ".codex/skills/review-loop/SKILL.md",
+        ".codex/skills/internal-orchestration/SKILL.md",
+        "docs/runtime-backend.md",
+        "docs/MULTI-AGENT-V2-GUIDE.md",
+        "crates/codex1-core/src/runtime.rs",
+        "crates/codex1/src/internal/mod.rs",
+        "crates/codex1/tests/runtime_internal.rs",
+        "PLANS/review-loop-delegated-review-only/specs/delegated_review_authority_contract"
+      ],
+      "exclusive_resources": [
+        "delegated_review_authority_contract"
+      ],
+      "coupling_tags": [
+        "review-loop",
+        "review-output"
+      ],
+      "ownership_domains": [
+        "runtime",
+        "cli",
+        "skills",
+        "docs",
+        "tests"
+      ],
+      "risk_class": "meta",
+      "acceptance_checks": [
+        "Test proves a parent-only clean review outcome without reviewer-agent output evidence is rejected or cannot clear the review gate.",
+        "Test proves a clean parent-owned writeback with reviewer-agent output evidence and a clean review truth snapshot succeeds.",
+        "Test proves a blocking finding outcome must also cite reviewer-agent evidence rather than parent-only judgment.",
+        "Source assertions prove $review-loop, internal-orchestration, and runtime docs forbid parent self-review and preserve allowed parent orchestration responsibilities.",
+        "cargo test -p codex1 --test runtime_internal delegated_review_authority --quiet or an equivalent targeted test passes.",
+        "cargo run -p codex1 -- internal validate-mission-artifacts --mission-id review-loop-delegated-review-only passes after receipt writeback."
+      ],
+      "evidence_type": "runtime tests plus workflow docs"
+    },
+    {
+      "spec_id": "delegated_review_qualification_guard",
+      "spec_revision": 6,
+      "spec_fingerprint": "sha256:3700c4be5c1aaf3f602f890bab629e4da3f16657021f9d6114c3bee05c720230",
+      "depends_on": [
+        "reviewer_output_inbox_contract",
+        "review_writeback_authority_token",
+        "reviewer_parent_writeback_guard"
+      ],
+      "produces": [
+        "delegated review qualification guard"
+      ],
+      "read_paths": [
+        "crates/codex1/src/commands",
+        "crates/codex1-core/src",
+        "crates/codex1/tests",
+        "docs/qualification",
+        ".codex/skills/review-loop/SKILL.md",
+        "docs/runtime-backend.md"
+      ],
+      "write_paths": [
+        "crates/codex1/src/commands/qualify.rs",
+        "crates/codex1-core/src/runtime.rs",
+        "crates/codex1/tests/qualification_cli.rs",
+        "docs/qualification/README.md",
+        "docs/qualification/gates.md",
+        "PLANS/review-loop-delegated-review-only/specs/delegated_review_qualification_guard"
+      ],
+      "exclusive_resources": [
+        "delegated_review_qualification_guard"
+      ],
+      "coupling_tags": [
+        "review-loop",
+        "review-output"
+      ],
+      "ownership_domains": [
+        "runtime",
+        "cli",
+        "skills",
+        "docs",
+        "tests"
+      ],
+      "risk_class": "meta",
+      "acceptance_checks": [
+        "cargo test -p codex1-core compile_execution_package_accepts_spec_dependency_governing_refs --quiet",
+        "Targeted qualification test passes and fails for representative missing delegated-review-only phrases or missing outcome evidence behavior.",
+        "cargo test -p codex1 --test qualification_cli delegated_review --quiet or equivalent passes.",
+        "cargo run -p codex1 -- qualify-codex delegated_review --json or equivalent targeted gate produces non-zero checks.",
+        "Qualification docs name the gate and explain what it protects."
+      ],
+      "evidence_type": "runtime tests plus workflow docs"
+    },
+    {
+      "spec_id": "review_writeback_authority_token",
+      "spec_revision": 2,
+      "spec_fingerprint": "sha256:195cd7b10bb0a67145f225325d6ddeb8743c4b0d73ccc1ddb2e282153c757028",
+      "depends_on": [
+        "reviewer_output_inbox_contract"
+      ],
+      "produces": [
+        "review writeback authority token"
+      ],
+      "read_paths": [
+        "crates/codex1-core/src",
+        "crates/codex1/src/internal/mod.rs",
+        "crates/codex1/tests",
+        ".codex/skills",
+        "docs",
+        "PLANS/review-loop-delegated-review-only",
+        ".ralph/missions/review-loop-delegated-review-only"
+      ],
+      "write_paths": [
+        "crates/codex1-core/src/runtime.rs",
+        "crates/codex1/src/internal/mod.rs",
+        "crates/codex1/tests/runtime_internal.rs",
+        ".codex/skills/review-loop/SKILL.md",
+        ".codex/skills/internal-orchestration/SKILL.md",
+        "docs/runtime-backend.md",
+        "PLANS/review-loop-delegated-review-only/specs/review_writeback_authority_token"
+      ],
+      "exclusive_resources": [
+        "review_writeback_authority_token"
+      ],
+      "coupling_tags": [
+        "review-loop",
+        "review-output"
+      ],
+      "ownership_domains": [
+        "runtime",
+        "cli",
+        "skills",
+        "docs",
+        "tests"
+      ],
+      "risk_class": "meta",
+      "acceptance_checks": [
+        "cargo test -p codex1 --test runtime_internal review_writeback_authority_token --quiet",
+        "cargo test -p codex1 --test runtime_internal reviewer_parent_writeback_guard --quiet",
+        "cargo test -p codex1 --test runtime_internal delegated_review_authority --quiet",
+        "cargo fmt --all --check",
+        "codex1 internal validate-mission-artifacts --mission-id review-loop-delegated-review-only"
+      ],
+      "evidence_type": "runtime tests plus workflow docs"
+    },
+    {
+      "spec_id": "reviewer_lane_canonical_write_isolation",
+      "spec_revision": 1,
+      "spec_fingerprint": "sha256:3097927baeb5d5777fdf7848aa445df5caa1e70bf2ca3380ce0a1906f436a84f",
+      "depends_on": [],
+      "produces": [
+        "reviewer lane canonical write isolation"
+      ],
+      "read_paths": [
+        ".codex/skills",
+        "docs",
+        "crates/codex1-core/src",
+        "crates/codex1/src",
+        "crates/codex1/tests",
+        "PLANS/review-loop-delegated-review-only",
+        ".ralph/missions/review-loop-delegated-review-only"
+      ],
+      "write_paths": [
+        ".codex/skills/review-loop/SKILL.md",
+        ".codex/skills/internal-orchestration/SKILL.md",
+        "docs/runtime-backend.md",
+        "docs/MULTI-AGENT-V2-GUIDE.md",
+        "crates/codex1-core/src/runtime.rs",
+        "crates/codex1-core/src/lib.rs",
+        "crates/codex1/src/internal/mod.rs",
+        "crates/codex1/tests/runtime_internal.rs",
+        "PLANS/review-loop-delegated-review-only/specs/reviewer_lane_canonical_write_isolation"
+      ],
+      "exclusive_resources": [
+        "reviewer_lane_canonical_write_isolation"
+      ],
+      "coupling_tags": [
+        "review-loop",
+        "review-output"
+      ],
+      "ownership_domains": [
+        "runtime",
+        "cli",
+        "skills",
+        "docs",
+        "tests"
+      ],
+      "risk_class": "meta",
+      "acceptance_checks": [
+        "Test proves capture-review-evidence-snapshot output omits the full review_truth_snapshot field while preserving guard binding metadata and required review context.",
+        "Test proves validate-review-evidence-snapshot still rejects weak reviewer briefs and accepts the new non-capability evidence snapshot shape.",
+        "Test proves record-review-outcome still rejects writeback without a parent-supplied review_truth_snapshot.",
+        "Test or source assertion proves $review-loop reviewer lanes must use explorer-style findings-only spawn protocol with fork_turns none and must not use default/worker reviewer lanes for blocking review.",
+        "cargo test -p codex1 --test runtime_internal reviewer_lane_canonical_write_isolation --quiet or equivalent passes.",
+        "cargo fmt --all --check passes."
+      ],
+      "evidence_type": "runtime tests plus workflow docs"
+    },
+    {
+      "spec_id": "reviewer_output_inbox_contract",
+      "spec_revision": 1,
+      "spec_fingerprint": "sha256:42a81df0f4c6c28e6989f1ee2135121198dfb892aaed803f02d7777e0facb728",
+      "depends_on": [
+        "reviewer_lane_canonical_write_isolation"
+      ],
+      "produces": [
+        "reviewer output inbox contract"
+      ],
+      "read_paths": [
+        "crates/codex1-core/src",
+        "crates/codex1/src/internal/mod.rs",
+        "crates/codex1/tests",
+        ".codex/skills",
+        "docs",
+        "PLANS/review-loop-delegated-review-only",
+        ".ralph/missions/review-loop-delegated-review-only"
+      ],
+      "write_paths": [
+        "crates/codex1-core/src/runtime.rs",
+        "crates/codex1-core/src/paths.rs",
+        "crates/codex1/src/internal/mod.rs",
+        "crates/codex1/tests/runtime_internal.rs",
+        ".codex/skills/review-loop/SKILL.md",
+        ".codex/skills/internal-orchestration/SKILL.md",
+        "docs/runtime-backend.md",
+        "PLANS/review-loop-delegated-review-only/specs/reviewer_output_inbox_contract"
+      ],
+      "exclusive_resources": [
+        "reviewer_output_inbox_contract"
+      ],
+      "coupling_tags": [
+        "review-loop",
+        "review-output"
+      ],
+      "ownership_domains": [
+        "runtime",
+        "cli",
+        "skills",
+        "docs",
+        "tests"
+      ],
+      "risk_class": "meta",
+      "acceptance_checks": [
+        "cargo test -p codex1 --test runtime_internal reviewer_output_inbox_contract --quiet",
+        "cargo test -p codex1 --test runtime_internal review_writeback_authority_token --quiet",
+        "cargo test -p codex1 --test runtime_internal delegated_review_authority --quiet",
+        "cargo fmt --all --check",
+        "codex1 internal validate-mission-artifacts --mission-id review-loop-delegated-review-only"
+      ],
+      "evidence_type": "runtime tests plus workflow docs"
+    },
+    {
+      "spec_id": "reviewer_parent_writeback_guard",
+      "spec_revision": 2,
+      "spec_fingerprint": "sha256:0b71a019b847465c31bb1087dc87d6e3032bea34061028206daf16ddf42b5a71",
+      "depends_on": [
+        "reviewer_output_inbox_contract",
+        "review_writeback_authority_token"
+      ],
+      "produces": [
+        "reviewer parent writeback guard"
+      ],
+      "read_paths": [
+        "crates/codex1-core/src",
+        "crates/codex1/tests",
+        ".codex/skills",
+        "docs",
+        "PLANS/review-loop-delegated-review-only",
+        ".ralph/missions/review-loop-delegated-review-only"
+      ],
+      "write_paths": [
+        "crates/codex1-core/src/runtime.rs",
+        "crates/codex1/tests/runtime_internal.rs",
+        ".codex/skills/review-loop/SKILL.md",
+        ".codex/skills/internal-orchestration/SKILL.md",
+        "docs/runtime-backend.md",
+        "PLANS/review-loop-delegated-review-only/specs/reviewer_parent_writeback_guard"
+      ],
+      "exclusive_resources": [
+        "reviewer_parent_writeback_guard"
+      ],
+      "coupling_tags": [
+        "review-loop",
+        "review-output"
+      ],
+      "ownership_domains": [
+        "runtime",
+        "cli",
+        "skills",
+        "docs",
+        "tests"
+      ],
+      "risk_class": "meta",
+      "acceptance_checks": [
+        "cargo test -p codex1 --test runtime_internal reviewer_parent_writeback_guard --quiet",
+        "cargo test -p codex1 --test runtime_internal delegated_review_authority --quiet",
+        "cargo test -p codex1 --test runtime_internal reviewer_lane_canonical_write_isolation --quiet",
+        "cargo fmt --all --check",
+        "codex1 internal validate-mission-artifacts --mission-id review-loop-delegated-review-only"
+      ],
+      "evidence_type": "runtime tests plus workflow docs"
+    }
+  ],
+  "obligations": [
+    {
+      "obligation_id": "obligation:delegated_review_authority_contract",
+      "kind": "validation",
+      "target_spec_id": "delegated_review_authority_contract",
+      "target_spec_revision": 2,
+      "target_spec_fingerprint": "sha256:c23fe5358ead33cacfaa619f51fb259e3b6c84c9eb46919c3ebbb07b3bfe12eb",
+      "discharges_claim_ref": "claim:delegated-review-authority",
+      "proof_rows": [
+        "delegated_review_authority_contract"
+      ],
+      "acceptance_checks": [
+        "Test proves a parent-only clean review outcome without reviewer-agent output evidence is rejected or cannot clear the review gate.",
+        "Test proves a clean parent-owned writeback with reviewer-agent output evidence and a clean review truth snapshot succeeds.",
+        "Test proves a blocking finding outcome must also cite reviewer-agent evidence rather than parent-only judgment.",
+        "Source assertions prove $review-loop, internal-orchestration, and runtime docs forbid parent self-review and preserve allowed parent orchestration responsibilities.",
+        "cargo test -p codex1 --test runtime_internal delegated_review_authority --quiet or an equivalent targeted test passes.",
+        "cargo run -p codex1 -- internal validate-mission-artifacts --mission-id review-loop-delegated-review-only passes after receipt writeback."
+      ],
+      "required_evidence": [
+        "proof receipt"
+      ],
+      "review_lenses": [
+        "correctness",
+        "evidence_adequacy"
+      ],
+      "blocking": true,
+      "status": "open",
+      "satisfied_by": [],
+      "evidence_refs": []
+    },
+    {
+      "obligation_id": "obligation:delegated_review_qualification_guard",
+      "kind": "validation",
+      "target_spec_id": "delegated_review_qualification_guard",
+      "target_spec_revision": 6,
+      "target_spec_fingerprint": "sha256:3700c4be5c1aaf3f602f890bab629e4da3f16657021f9d6114c3bee05c720230",
+      "discharges_claim_ref": "claim:delegated-review-authority",
+      "proof_rows": [
+        "delegated_review_qualification_guard"
+      ],
+      "acceptance_checks": [
+        "cargo test -p codex1-core compile_execution_package_accepts_spec_dependency_governing_refs --quiet",
+        "Targeted qualification test passes and fails for representative missing delegated-review-only phrases or missing outcome evidence behavior.",
+        "cargo test -p codex1 --test qualification_cli delegated_review --quiet or equivalent passes.",
+        "cargo run -p codex1 -- qualify-codex delegated_review --json or equivalent targeted gate produces non-zero checks.",
+        "Qualification docs name the gate and explain what it protects."
+      ],
+      "required_evidence": [
+        "proof receipt"
+      ],
+      "review_lenses": [
+        "correctness",
+        "evidence_adequacy"
+      ],
+      "blocking": true,
+      "status": "open",
+      "satisfied_by": [],
+      "evidence_refs": []
+    },
+    {
+      "obligation_id": "obligation:review_writeback_authority_token",
+      "kind": "validation",
+      "target_spec_id": "review_writeback_authority_token",
+      "target_spec_revision": 2,
+      "target_spec_fingerprint": "sha256:195cd7b10bb0a67145f225325d6ddeb8743c4b0d73ccc1ddb2e282153c757028",
+      "discharges_claim_ref": "claim:delegated-review-authority",
+      "proof_rows": [
+        "review_writeback_authority_token"
+      ],
+      "acceptance_checks": [
+        "cargo test -p codex1 --test runtime_internal review_writeback_authority_token --quiet",
+        "cargo test -p codex1 --test runtime_internal reviewer_parent_writeback_guard --quiet",
+        "cargo test -p codex1 --test runtime_internal delegated_review_authority --quiet",
+        "cargo fmt --all --check",
+        "codex1 internal validate-mission-artifacts --mission-id review-loop-delegated-review-only"
+      ],
+      "required_evidence": [
+        "proof receipt"
+      ],
+      "review_lenses": [
+        "correctness",
+        "evidence_adequacy"
+      ],
+      "blocking": true,
+      "status": "open",
+      "satisfied_by": [],
+      "evidence_refs": []
+    },
+    {
+      "obligation_id": "obligation:reviewer_lane_canonical_write_isolation",
+      "kind": "validation",
+      "target_spec_id": "reviewer_lane_canonical_write_isolation",
+      "target_spec_revision": 1,
+      "target_spec_fingerprint": "sha256:3097927baeb5d5777fdf7848aa445df5caa1e70bf2ca3380ce0a1906f436a84f",
+      "discharges_claim_ref": "claim:delegated-review-authority",
+      "proof_rows": [
+        "reviewer_lane_canonical_write_isolation"
+      ],
+      "acceptance_checks": [
+        "Test proves capture-review-evidence-snapshot output omits the full review_truth_snapshot field while preserving guard binding metadata and required review context.",
+        "Test proves validate-review-evidence-snapshot still rejects weak reviewer briefs and accepts the new non-capability evidence snapshot shape.",
+        "Test proves record-review-outcome still rejects writeback without a parent-supplied review_truth_snapshot.",
+        "Test or source assertion proves $review-loop reviewer lanes must use explorer-style findings-only spawn protocol with fork_turns none and must not use default/worker reviewer lanes for blocking review.",
+        "cargo test -p codex1 --test runtime_internal reviewer_lane_canonical_write_isolation --quiet or equivalent passes.",
+        "cargo fmt --all --check passes."
+      ],
+      "required_evidence": [
+        "proof receipt"
+      ],
+      "review_lenses": [
+        "correctness",
+        "evidence_adequacy"
+      ],
+      "blocking": true,
+      "status": "satisfied",
+      "satisfied_by": [
+        "gate:review-loop-delegated-review-only:BlockingReview:spec:reviewer_lane_canonical_write_isolation:f40feaca-3f23-4b3e-b2ee-2952c00dbe54",
+        "bundle:f40feaca-3f23-4b3e-b2ee-2952c00dbe54"
+      ],
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/review-loop-delegated-review-only/bundles/f40feaca-3f23-4b3e-b2ee-2952c00dbe54.json",
+        "reviewer-output:explorer:review_iso_explorer_code:NONE",
+        "/Users/joel/codex1/.ralph/missions/review-loop-delegated-review-only/review-evidence-snapshots/f40feaca-3f23-4b3e-b2ee-2952c00dbe54.json",
+        "PLANS/review-loop-delegated-review-only/specs/reviewer_lane_canonical_write_isolation/RECEIPTS/2026-04-16-reviewer-lane-canonical-write-isolation-proof.txt"
+      ]
+    },
+    {
+      "obligation_id": "obligation:reviewer_output_inbox_contract",
+      "kind": "validation",
+      "target_spec_id": "reviewer_output_inbox_contract",
+      "target_spec_revision": 1,
+      "target_spec_fingerprint": "sha256:42a81df0f4c6c28e6989f1ee2135121198dfb892aaed803f02d7777e0facb728",
+      "discharges_claim_ref": "claim:reviewer-output-inbox-contract",
+      "proof_rows": [
+        "reviewer_output_inbox_contract"
+      ],
+      "acceptance_checks": [
+        "cargo test -p codex1 --test runtime_internal reviewer_output_inbox_contract --quiet",
+        "cargo test -p codex1 --test runtime_internal review_writeback_authority_token --quiet",
+        "cargo test -p codex1 --test runtime_internal delegated_review_authority --quiet",
+        "cargo fmt --all --check",
+        "codex1 internal validate-mission-artifacts --mission-id review-loop-delegated-review-only"
+      ],
+      "required_evidence": [
+        "proof receipt"
+      ],
+      "review_lenses": [
+        "correctness",
+        "evidence_adequacy"
+      ],
+      "blocking": true,
+      "status": "open",
+      "satisfied_by": [],
+      "evidence_refs": []
+    },
+    {
+      "obligation_id": "obligation:reviewer_parent_writeback_guard",
+      "kind": "validation",
+      "target_spec_id": "reviewer_parent_writeback_guard",
+      "target_spec_revision": 2,
+      "target_spec_fingerprint": "sha256:0b71a019b847465c31bb1087dc87d6e3032bea34061028206daf16ddf42b5a71",
+      "discharges_claim_ref": "claim:delegated-review-authority",
+      "proof_rows": [
+        "reviewer_parent_writeback_guard"
+      ],
+      "acceptance_checks": [
+        "cargo test -p codex1 --test runtime_internal reviewer_parent_writeback_guard --quiet",
+        "cargo test -p codex1 --test runtime_internal delegated_review_authority --quiet",
+        "cargo test -p codex1 --test runtime_internal reviewer_lane_canonical_write_isolation --quiet",
+        "cargo fmt --all --check",
+        "codex1 internal validate-mission-artifacts --mission-id review-loop-delegated-review-only"
+      ],
+      "required_evidence": [
+        "proof receipt"
+      ],
+      "review_lenses": [
+        "correctness",
+        "evidence_adequacy"
+      ],
+      "blocking": true,
+      "status": "open",
+      "satisfied_by": [],
+      "evidence_refs": []
+    }
+  ],
+  "generated_at": "2026-04-16T20:33:05.737046Z"
+}

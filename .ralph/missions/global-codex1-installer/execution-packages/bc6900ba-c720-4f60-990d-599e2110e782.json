@@ -1,0 +1,170 @@
+{
+  "package_id": "bc6900ba-c720-4f60-990d-599e2110e782",
+  "mission_id": "global-codex1-installer",
+  "target_type": "spec",
+  "target_id": "reviewer_writeback_authority_enforcement",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:7314d24eea35d8d5439ddb2d0e3d87ac3c9af728e1eb2d2c1336c2eb5ac9cf39",
+  "blueprint_revision": 9,
+  "blueprint_fingerprint": "sha256:93b7d201928fb9931ce297e2a7ee5f8de2be02f13c7cce252efc697eb01561be",
+  "dependency_snapshot_fingerprint": "sha256:0581d7a526e8149a880dd29da86a65682cbd247c12954933dc4573f7255c010b",
+  "wave_fingerprint": null,
+  "included_specs": [
+    {
+      "spec_id": "reviewer_writeback_authority_enforcement",
+      "spec_revision": 1,
+      "spec_fingerprint": "sha256:d8f38d08a0a8cbf0eebe32db3739170105a0c05f734b23db21b29f5c84bec8ce"
+    }
+  ],
+  "dependency_satisfaction_state": [
+    {
+      "name": "lock_current",
+      "satisfied": true,
+      "detail": "OUTCOME-LOCK.md remains locked at revision 1."
+    },
+    {
+      "name": "blueprint_current",
+      "satisfied": true,
+      "detail": "PROGRAM-BLUEPRINT.md revision 9 selects reviewer_writeback_authority_enforcement after contradiction 0d8f3968."
+    },
+    {
+      "name": "spec:review_lane_completion_guard",
+      "satisfied": true,
+      "detail": "review_lane_completion_guard is complete and reviewed clean; the current repair only strengthens parent/reviewer authority isolation."
+    }
+  ],
+  "read_scope": [
+    "crates/codex1-core/src/runtime.rs",
+    "crates/codex1/src/internal/mod.rs",
+    "crates/codex1/src/commands/qualify.rs",
+    "crates/codex1/tests/runtime_internal.rs",
+    "crates/codex1/tests/qualification_cli.rs",
+    ".codex/skills/review-loop/SKILL.md",
+    ".codex/skills/internal-orchestration/SKILL.md",
+    "docs/runtime-backend.md",
+    "PLANS/global-codex1-installer/REPLAN-LOG.md",
+    "PLANS/global-codex1-installer/REVIEW-LEDGER.md"
+  ],
+  "write_scope": [
+    "crates/codex1-core/src/runtime.rs",
+    "crates/codex1/src/internal/mod.rs",
+    "crates/codex1/src/commands/qualify.rs",
+    "crates/codex1/tests/runtime_internal.rs",
+    "crates/codex1/tests/qualification_cli.rs",
+    ".codex/skills/review-loop/SKILL.md",
+    ".codex/skills/internal-orchestration/SKILL.md",
+    "docs/runtime-backend.md",
+    "PLANS/global-codex1-installer/specs/reviewer_writeback_authority_enforcement/SPEC.md",
+    "PLANS/global-codex1-installer/specs/reviewer_writeback_authority_enforcement/REVIEW.md",
+    "PLANS/global-codex1-installer/specs/reviewer_writeback_authority_enforcement/NOTES.md",
+    "PLANS/global-codex1-installer/specs/reviewer_writeback_authority_enforcement/RECEIPTS/README.md",
+    "PLANS/global-codex1-installer/specs/reviewer_writeback_authority_enforcement/RECEIPTS/2026-04-17-reviewer-writeback-authority-proof.md"
+  ],
+  "proof_obligations": [
+    "Runtime regression rejects reviewer-lane capture of parent writeback authority.",
+    "Runtime regression rejects reviewer-lane record-review-outcome even with valid reviewer-output refs and a valid-looking snapshot.",
+    "Runtime regression proves parent-owned writeback still works.",
+    "Runtime regression proves active parent loop authority blocks child mission-truth mutation commands.",
+    "Qualification CLI proof covers the authority boundary and remains green.",
+    "cargo test -p codex1 --test runtime_internal passes.",
+    "cargo test -p codex1 --test qualification_cli passes.",
+    "cargo fmt --all --check passes.",
+    "cargo check -p codex1 passes."
+  ],
+  "review_obligations": [
+    "correctness",
+    "review honesty",
+    "authority boundary",
+    "backward compatibility",
+    "qualification adequacy"
+  ],
+  "replan_boundary": {
+    "local_repair_allowed": false,
+    "trigger_matrix": [
+      {
+        "trigger_code": "write_scope_expansion",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "interface_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "dependency_truth_change",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "proof_obligation_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "review_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "protected_surface_change",
+        "reopen_layer": "mission_lock"
+      },
+      {
+        "trigger_code": "migration_rollout_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "outcome_lock_change",
+        "reopen_layer": "mission_lock"
+      }
+    ]
+  },
+  "wave_context": null,
+  "wave_specs": [],
+  "gate_checks": [
+    {
+      "gate_id": "target_resolution",
+      "passed": true,
+      "detail": "resolved spec:reviewer_writeback_authority_enforcement"
+    },
+    {
+      "gate_id": "dependency_truth_current",
+      "passed": true,
+      "detail": "dependency satisfaction is explicit, revision-bearing, and fully satisfied"
+    },
+    {
+      "gate_id": "scope_declared",
+      "passed": true,
+      "detail": "read and write scope are explicit"
+    },
+    {
+      "gate_id": "scope_bounded_to_frontier",
+      "passed": true,
+      "detail": "package scope stays inside the declared execution frontier"
+    },
+    {
+      "gate_id": "proof_contract_declared",
+      "passed": true,
+      "detail": "proof obligations are explicit"
+    },
+    {
+      "gate_id": "review_contract_declared",
+      "passed": true,
+      "detail": "review obligations are explicit"
+    },
+    {
+      "gate_id": "included_specs_runnable",
+      "passed": true,
+      "detail": "included specs are active executable frontier specs"
+    },
+    {
+      "gate_id": "planning_truth_current",
+      "passed": true,
+      "detail": "lock, blueprint, and included spec bindings are current"
+    },
+    {
+      "gate_id": "wave_validation",
+      "passed": true,
+      "detail": "wave same-workspace safety rules are satisfied"
+    }
+  ],
+  "validation_failures": [],
+  "validated_at": "2026-04-17T22:46:04.336569Z",
+  "status": "passed"
+}

@@ -19,8 +19,20 @@
 - Proves helper repair/fail-safe behavior for multi-Stop conflict rejection plus `--force` normalization, repair from a deliberately partial support surface representative of interrupted setup, and drift detection on managed shared files.
 - Runs an isolated temp-repo mission-runtime flow through mission bootstrap, canonical blueprint/spec writeback, execution-package compilation, writer-packet derivation, review-bundle compilation, contradiction logging, resume-resolution, and selection consumption.
 - Proves that a durable `needs_user` mission and a resolver-created resume-selection wait both yield through the Stop hook, and that the acknowledgement handshake preserves request identity across idempotent re-emission.
+- Proves the scoped Ralph control-loop boundary with an installed Stop hook:
+  parent turns without an active lease yield, subagent turns yield, active
+  parent loop leases block on owed review gates, and paused leases yield again.
 - When `--live` is enabled, proves the trusted build dispatches the real native Stop hook through Codex rather than only the internal adapter.
 - Proves internal backend parity by running the same mission truth through an explicit manual backend sequence and an autopilot-style backend composition, then comparing their validated durable artifact summaries.
+- Proves the `$review-loop` decision contract for clean continuation,
+  non-clean repair before the cap, and six consecutive non-clean loops routing
+  to replan.
+- Proves the reviewer-lane capability boundary by rejecting contaminated
+  child-review writeback, validating a frozen review evidence snapshot, and
+  accepting clean parent-owned snapshot-backed review writeback.
+- Proves the delegated-review authority boundary by checking public docs forbid
+  parent self-review, rejecting review outcomes without reviewer-agent output
+  evidence, and rejecting durable writeback without a review truth snapshot.
 - Verifies a real self-hosting source-repo gate when the target repo looks like the `codex1` source workspace.
 
 ## Live native proof boundary
@@ -34,6 +46,31 @@ The plain interactive `codex resume` TUI surface is still terminal-shaped and no
 
 For the current diagnosis of the remaining native child-agent qualification gap,
 see [native-multi-agent-resume-note.md](/Users/joel/codex1/docs/qualification/native-multi-agent-resume-note.md).
+
+## Autonomy Governance Proof Boundary
+
+The fully autonomous execute or autopilot promise is not proven by one gate.
+It is the combination of:
+
+- package-entry honesty for the selected target
+- manual or autopilot parity over the same durable mission truth
+- durable waiting identity through stop-hook and resume flows
+- no-false-terminal behavior during review, repair, replan, and child-lane
+  reconciliation
+- raw-evidence judgment for native child-lane inspection and resume
+
+Those proof surfaces together are the evidence boundary for Codex1's autonomy
+claim on the supported native Codex build.
+
+The public skill-level branch contract is proven separately from those
+qualification gates by targeted repository tests that assert:
+
+- `$execute` explicitly routes a clean final frontier into mission-close review
+- `$autopilot` explicitly routes that same condition into `$review-loop`
+- `docs/runtime-backend.md` preserves the same public-ownership contract
+
+Qualification parity and waiting gates support that claim, but they do not
+replace the direct public-contract proof.
 
 ## Support-surface baseline
 
@@ -59,6 +96,7 @@ The current supported helper baseline is:
 Each run writes:
 
 - Versioned evidence to `<repo>/.codex1/qualification/reports/<timestamp>--<codex-version>--<id>.json`
+- Per-gate evidence payloads to `<repo>/.codex1/qualification/reports/<timestamp>--<codex-version>--<id>/`
 - The latest report to `<repo>/.codex1/qualification/latest.json`
 
 The report schema is currently `codex1.qualify.v1`.
@@ -80,6 +118,14 @@ The top-level JSON keys are:
 - `summary`
 - `gates`
 - `evidence`
+
+Each gate may now also include `evidence_path`, which points at the persisted
+raw artifact payload used to justify that gate's pass, fail, or skip outcome.
+
+For the live native child-lane gate specifically, the decisive judgment path is
+now the raw JSONL tool/event stream plus the raw wait or resume artifacts it
+produced. Any final model-authored JSON summary is retained only as convenience
+evidence and must not override the raw event record.
 
 ## Source-repo invocation
 

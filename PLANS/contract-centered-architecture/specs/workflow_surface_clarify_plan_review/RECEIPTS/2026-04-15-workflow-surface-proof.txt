@@ -1,0 +1,17 @@
+workflow_surface_clarify_plan_review proof receipt
+date: 2026-04-15
+mission: contract-centered-architecture
+spec: workflow_surface_clarify_plan_review
+
+implemented changes
+- strengthened `.codex/skills/clarify/SKILL.md` around ambiguity scoring, branch-reduction questioning, provenance discipline, and lock readiness
+- strengthened `.codex/skills/plan/SKILL.md` around critique-driven route selection, execution-grade packetization, and packaging honesty
+- strengthened `.codex/skills/review/SKILL.md` around findings-first reporting, stale-bundle intolerance, and mission-close honesty
+- updated `docs/runtime-backend.md` so the machine-side command surface remains explicitly subordinate to the public skill contracts
+
+verification
+- /Users/joel/codex1/target/debug/codex1 internal validate-mission-artifacts --mission-id contract-centered-architecture
+
+notes
+- this slice is primarily workflow-contract and documentation truth, so the proof is artifact alignment rather than a large new runtime test surface
+- the skill rewrite stays native and skills-first; it borrows OMX interview and critique pressure without reintroducing wrapper-runtime ownership

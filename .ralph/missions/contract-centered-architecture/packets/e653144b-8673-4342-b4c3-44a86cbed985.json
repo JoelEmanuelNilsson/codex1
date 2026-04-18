@@ -1,0 +1,73 @@
+{
+  "packet_id": "e653144b-8673-4342-b4c3-44a86cbed985",
+  "mission_id": "contract-centered-architecture",
+  "source_package_id": "71804982-bc9d-40f4-ba6e-ff721e057850",
+  "target_spec_id": "qualification_evidence_pipeline",
+  "blueprint_revision": 8,
+  "spec_revision": 3,
+  "allowed_read_paths": [
+    "crates/codex1/src/commands",
+    "crates/codex1/tests",
+    "docs/qualification"
+  ],
+  "allowed_write_paths": [
+    "crates/codex1/src/commands",
+    "crates/codex1/tests",
+    "docs/qualification"
+  ],
+  "proof_rows": [
+    "live qualification reports preserve the raw artifacts needed to justify each pass or fail decision",
+    "native child-lane qualification can distinguish surface gaps from Codex1 reconcile bugs honestly",
+    "manual and autopilot parity and Ralph waiting proofs remain inspectable and stable",
+    "cargo test -p codex1 qualification_cli"
+  ],
+  "required_checks": [
+    "cargo test -p codex1 qualification_cli"
+  ],
+  "review_lenses": [
+    "correctness",
+    "evidence_adequacy",
+    "operability_rollback_observability"
+  ],
+  "replan_boundary": {
+    "local_repair_allowed": false,
+    "trigger_matrix": [
+      {
+        "trigger_code": "write_scope_expansion",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "interface_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "dependency_truth_change",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "proof_obligation_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "review_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "protected_surface_change",
+        "reopen_layer": "mission_lock"
+      },
+      {
+        "trigger_code": "migration_rollout_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "outcome_lock_change",
+        "reopen_layer": "mission_lock"
+      }
+    ]
+  },
+  "explicitly_disallowed_decisions": [
+    "do not expand write scope",
+    "do not redesign qualification into a different product"
+  ]
+}

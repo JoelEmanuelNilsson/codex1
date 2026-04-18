@@ -595,6 +595,14 @@ For Codex1 specifically, the best use of Multi-Agent V2 is:
 - context transfer happens mainly through durable artifacts
 - `fork_turns` is a secondary aid, not the main truth layer
 - resume is parent-led and artifact-led
+- execute and autopilot should treat `list_agents` as reconciliation input and
+  `wait_agent` only as mailbox-edge waiting, never as completion proof
+- `$review-loop` should treat child reviewer lanes as findings-only workers:
+  they return `NONE` or structured findings, never gate updates, closeouts, or
+  completion decisions
+- review judgment itself belongs to those reviewer lanes; the parent
+  orchestrates, aggregates, and writes back, but does not perform code/spec,
+  intent, integration, or mission-close review locally
 
 That keeps Codex1:
 
@@ -603,6 +611,54 @@ That keeps Codex1:
 - cheaper to run
 - easier to qualify
 - easier to reason about
+
+## 16.1 Review-Lane Profiles
+
+Codex1 review children should be routed by review profile, not by one generic
+review prompt:
+
+- `local_spec_intent`: `gpt-5.4`, for spec and intent judgment after a local
+  spec or phase boundary
+- `integration_intent`: `gpt-5.4`, for cross-slice coherence and end-goal fit
+- `mission_close`: two `gpt-5.4` reviewers, for PRD/intent/mission-close
+  judgment before terminal completion
+- `code_bug_correctness`: `gpt-5.3-codex`, for code defects and implementation
+  correctness after code-producing work
+
+`gpt-5.4-mini` is not a default blocking-review model. Use it only for a
+non-blocking support role if a later plan explicitly permits that.
+
+Child reviewer output must be either `NONE` or structured findings with
+severity, evidence refs, rationale, and suggested next action. P0, P1, and P2
+findings block clean review; P3 findings are non-blocking by default.
+
+When a native hook invocation can identify a child as a findings-only reviewer
+lane, it should pass lane metadata such as `laneRole = findings_only_reviewer`
+or a review `childLaneKind` value. Codex1's Stop-hook handling treats that lane
+as allowed to return its bounded payload even while parent mission gates remain
+blocked. Parent/controller lanes still enforce the full Ralph mission gate
+contract.
+
+Before spawning findings-only review lanes, the parent should capture Codex1
+review truth, then capture a frozen review evidence snapshot for the child
+brief. The full review truth snapshot is parent-held writeback capability; do
+not embed it in child-visible review evidence or hand it to reviewer lanes. The
+parent later includes the parent-held truth snapshot when recording the
+parent-owned review outcome. If a child lane changes gates, closeouts, state,
+ledgers, specs, receipts, bundles, or mission-close artifacts, the snapshot
+guard makes the review wave contaminated instead of letting the child clear
+mission truth. Reviewer children should consume the frozen evidence snapshot
+first and use live mutable repo paths only when the parent keeps the guard
+active.
+
+For blocking reviews, reviewer children should be spawned as read-only
+explorer-style findings-only lanes with `fork_turns` set to `none`. Do not use
+mutation-capable worker/default reviewer lanes as the blocking review role.
+
+When the parent records a review outcome, it must cite reviewer-agent output
+evidence such as `reviewer-output:<lane-or-artifact>`. That evidence is the
+authority for `NONE` or findings. Parent-local judgment is allowed only for
+orchestration and aggregation; it is not a substitute review result.
 
 ## 17. One-sentence summary
 

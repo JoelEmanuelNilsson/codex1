@@ -1,0 +1,145 @@
+{
+  "package_id": "299d50b8-8210-4bf0-915e-112ab904081c",
+  "mission_id": "manual-clarify-handoff-boundary",
+  "target_type": "spec",
+  "target_id": "manual_clarify_handoff_runtime",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:cd30b99ea6e3f3e120931fd18666defeea9ad70793f9115a319687950cb44918",
+  "blueprint_revision": 1,
+  "blueprint_fingerprint": "sha256:1bb89621f7c85816dbf8dc0d4138bb0da02e547100ea086685ed6480da26c97c",
+  "dependency_snapshot_fingerprint": "sha256:afcdecc7edb37b39b121c75b8f5abf851dd0e514c2f7194e2cf1f3ab2d0ff7a2",
+  "wave_fingerprint": null,
+  "included_specs": [
+    {
+      "spec_id": "manual_clarify_handoff_runtime",
+      "spec_revision": 1,
+      "spec_fingerprint": "sha256:0615e40d763cb0d06b97e12d9fce14c62d92653a9395c15ac1b80e977274a074"
+    }
+  ],
+  "dependency_satisfaction_state": [
+    {
+      "name": "lock_current",
+      "satisfied": true,
+      "detail": "Outcome Lock revision 1 is locked and current."
+    },
+    {
+      "name": "blueprint_current",
+      "satisfied": true,
+      "detail": "Program Blueprint revision 1 selects spec:manual_clarify_handoff_runtime."
+    }
+  ],
+  "read_scope": [
+    "crates/codex1-core/src",
+    "crates/codex1/tests",
+    ".codex/skills",
+    "docs"
+  ],
+  "write_scope": [
+    "crates/codex1-core/src",
+    "crates/codex1/tests",
+    ".codex/skills",
+    "docs",
+    "PLANS/manual-clarify-handoff-boundary/specs/manual_clarify_handoff_runtime"
+  ],
+  "proof_obligations": [
+    "manual ratified clarify stop-hook does not block with Start plan",
+    "manual ratified clarify state contains durable request for explicit plan invocation",
+    "autopilot contract still continues from clarify to plan",
+    "validate-mission-artifacts succeeds for manual-clarify-handoff-boundary"
+  ],
+  "review_obligations": [
+    "spec_conformance",
+    "correctness",
+    "interface_compatibility",
+    "evidence_adequacy"
+  ],
+  "replan_boundary": {
+    "local_repair_allowed": false,
+    "trigger_matrix": [
+      {
+        "trigger_code": "write_scope_expansion",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "interface_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "dependency_truth_change",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "proof_obligation_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "review_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "protected_surface_change",
+        "reopen_layer": "mission_lock"
+      },
+      {
+        "trigger_code": "migration_rollout_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "outcome_lock_change",
+        "reopen_layer": "mission_lock"
+      }
+    ]
+  },
+  "wave_context": null,
+  "wave_specs": [],
+  "gate_checks": [
+    {
+      "gate_id": "target_resolution",
+      "passed": true,
+      "detail": "resolved spec:manual_clarify_handoff_runtime"
+    },
+    {
+      "gate_id": "dependency_truth_current",
+      "passed": true,
+      "detail": "dependency satisfaction is explicit, revision-bearing, and fully satisfied"
+    },
+    {
+      "gate_id": "scope_declared",
+      "passed": true,
+      "detail": "read and write scope are explicit"
+    },
+    {
+      "gate_id": "scope_bounded_to_frontier",
+      "passed": true,
+      "detail": "package scope stays inside the declared execution frontier"
+    },
+    {
+      "gate_id": "proof_contract_declared",
+      "passed": true,
+      "detail": "proof obligations are explicit"
+    },
+    {
+      "gate_id": "review_contract_declared",
+      "passed": true,
+      "detail": "review obligations are explicit"
+    },
+    {
+      "gate_id": "included_specs_runnable",
+      "passed": true,
+      "detail": "included specs are active executable frontier specs"
+    },
+    {
+      "gate_id": "planning_truth_current",
+      "passed": true,
+      "detail": "lock, blueprint, and included spec bindings are current"
+    },
+    {
+      "gate_id": "wave_validation",
+      "passed": true,
+      "detail": "wave same-workspace safety rules are satisfied"
+    }
+  ],
+  "validation_failures": [],
+  "validated_at": "2026-04-16T16:10:06.626694Z",
+  "status": "passed"
+}

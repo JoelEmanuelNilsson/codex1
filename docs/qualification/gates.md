@@ -20,13 +20,22 @@
 - `helper_drift_detection_flow`: drift a managed shared file after setup, then prove `doctor` surfaces the drift honestly and that `restore` / `uninstall` fail safe instead of guessing.
 - `runtime_backend_flow`: run the internal mission-runtime flow in an isolated temp repo and confirm that mission artifacts, graph-backed blueprint writeback, execution packages, writer packets, review bundles, contradiction records, resume-resolution outputs, and selection consume state are all persisted.
 - `waiting_stop_hook_flow`: prove that durable mission-waiting and resolver-created selection-wait states yield through the Stop hook with the canonical request exactly once before acknowledgement.
+- `control_loop_boundary`: prove the installed Stop-hook surface is safe because Ralph enforcement is lease-scoped: no-lease parent turns yield, subagent turns yield, active parent loop leases block on owed review gates, and paused leases yield again.
 - `native_stop_hook_live_flow`: prove the trusted build dispatches the repo-local Ralph Stop hook through a real native Codex run when live qualification is enabled.
 - `native_exec_resume_flow`: prove the exact trusted Codex build can create a machine-readable `codex exec` session and resume the same thread through `codex exec resume`.
 - `native_multi_agent_resume_flow`: prove the exact trusted Codex build can exercise the resume-critical native child-agent inspection path across `spawn_agent`, `list_agents`, `wait_agent`, and `close_agent`, then feed the resulting live child snapshot into Codex1 resume reconciliation without false completion. Queue-only child messaging and turn-triggering delivery are recorded observationally when the build surfaces them, but they are not the decisive pass/fail signal for this resume gate.
-- `manual_internal_contract_parity`: run the same mission truth through an explicit manual backend sequence and an autopilot-style backend composition, then confirm both paths converge to the same validated durable artifact summary.
+- `review_loop_decision_contract`: prove the parent `$review-loop` branch decisions for clean continuation, non-clean repair before the cap, and six consecutive non-clean loops routing to replan.
+- `reviewer_capability_boundary`: prove contaminated child-review writeback is rejected, frozen review evidence snapshots validate, and clean parent-owned snapshot-backed review writeback still passes.
+- `delegated_review_authority`: prove public docs forbid parent self-review and durable review writeback rejects missing reviewer-agent output evidence or missing review truth snapshots.
+- `manual_internal_contract_parity`: run the same mission truth through an explicit manual backend sequence and an autopilot-style backend composition, then confirm both paths converge to the same validated durable artifact summary, gate outcomes, and verdict family.
 - `self_hosting_source_repo`: verify the source workspace contains the expected `codex1` source markers and managed support surfaces after setup.
 
-These gates still do not automate every possible PRD scenario, but they now provide inspectable evidence for the support surface, helper repair/fail-safe behavior, mission-runtime backend, internal backend parity, durable waiting behavior, native `codex exec resume`, native child-agent tooling, and the authoritative Stop-hook pipeline.
+These gates still do not automate every possible PRD scenario, but they now provide inspectable evidence for the support surface, helper repair/fail-safe behavior, mission-runtime backend, internal backend parity, durable waiting behavior, native `codex exec resume`, native child-agent tooling, and the authoritative Stop-hook pipeline. Together they form the autonomy-governance proof surface for execute and autopilot.
+
+That proof surface is broader than any single gate. In particular,
+`manual_internal_contract_parity` is supporting evidence for public
+execute/autopilot honesty, not the sole proof of the public skill-level
+mission-close routing contract.
 
 The supported helper baseline enforced by setup, doctor, and qualification is:
 

@@ -1,0 +1,22 @@
+Mission: contract-centered-architecture
+Spec: artifact_contract_registry
+Date: 2026-04-15
+
+Changed files
+- crates/codex1-core/src/artifacts.rs
+- crates/codex1-core/src/lib.rs
+- crates/codex1/src/internal/mod.rs
+
+Proof commands
+- cargo fmt --all
+- cargo test -p codex1-core --quiet
+  Result: 80 passed; 0 failed
+- cargo test -p codex1 --test runtime_internal --quiet
+  Result: 19 passed; 0 failed
+- cargo run -q -p codex1 -- internal validate-mission-artifacts --repo-root /Users/joel/codex1 --mission-id contract-centered-architecture --json
+  Result: success=true; visible_artifacts.success=true; machine_state.success=true
+
+Execution notes
+- Added a machine-readable visible-artifact text contract registry for `mission_readme`, `review_ledger`, and `replan_log`.
+- Replaced marker-array validation in the internal visible-artifact validator with registry-backed checks.
+- Added template parity tests so the mission templates satisfy the registered contract shape.

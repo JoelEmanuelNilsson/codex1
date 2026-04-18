@@ -1,0 +1,23 @@
+{
+  "mission_id": "global-codex1-installer",
+  "bundle_id": "6d71de06-5d75-4233-bb6b-d3ff31e59d2f",
+  "reviewer_id": "review_spec_intent_evidence_authority_6d71",
+  "reviewer_output_id": "c09f896f-a71a-4e34-9f1b-25068eec72ff",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P2",
+      "title": "Stale mission-close regression is partially disabled by unreachable return",
+      "evidence_refs": [
+        "crates/codex1-core/src/runtime.rs:16122",
+        "crates/codex1-core/src/runtime.rs:16124",
+        "PLANS/global-codex1-installer/specs/reviewer_writeback_authority_enforcement/RECEIPTS/2026-04-17-reviewer-writeback-authority-proof.md"
+      ],
+      "rationale": "The reviewed repair relies on stale mission-close and mission-close inclusion behavior being trustworthy, but `mission_close_review_ignores_stale_historical_execution_packages` returns before its integrated mission setup and mission-close review assertions. This leaves a material stale/repair routing regression path unexecuted and weakens the test-adequacy and review-honesty contract for the current repair bundle.",
+      "suggested_next_action": "Remove the early return or split the test into focused executable regressions, rerun the relevant runtime/qualification checks, and recompile a fresh review bundle for re-review."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/global-codex1-installer/review-evidence-snapshots/6d71de06-5d75-4233-bb6b-d3ff31e59d2f.json",
+  "source_evidence_snapshot_fingerprint": "sha256:dd8092157b8b4280dea43a361675796c32b37de39ee931e9c93701cee7c8109c",
+  "recorded_at": "2026-04-17T23:52:26.811985Z"
+}

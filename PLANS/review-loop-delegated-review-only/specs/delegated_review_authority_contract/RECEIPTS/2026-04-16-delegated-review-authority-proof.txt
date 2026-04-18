@@ -1,0 +1,22 @@
+delegated_review_authority_contract proof receipt
+date: 2026-04-16
+mission: review-loop-delegated-review-only
+spec: delegated_review_authority_contract
+executed_package: fac8c579-05c9-4e6d-872c-e84b41491609
+
+implemented changes
+- added delegated-review authority validation for guarded review outcome writeback
+- guarded review outcomes now require reviewer-agent output evidence refs such as `reviewer-output:<lane-or-artifact>`
+- contaminated or invalid review waves may route explicitly with refs such as `review-wave-contaminated:<reason>` instead of pretending parent-local judgment reviewed the target
+- preserved parent-owned writeback, review truth snapshot validation, and child no-mutation protections
+- updated `$review-loop`, internal orchestration, runtime backend, and Multi-Agent V2 docs to state that parent orchestration is not parent review judgment
+- added targeted runtime tests for parent-only clean outcome rejection, parent-only blocking finding rejection, contaminated replan routing, and public documentation assertions
+
+verification
+- cargo test -p codex1 --test runtime_internal delegated_review_authority --quiet
+- cargo test -p codex1 --test runtime_internal reviewer_lane_mutation_guard --quiet
+- cargo fmt --all --check
+
+notes
+- The parent may still explore context, prepare briefs, aggregate reviewer outputs, detect contamination, route repair/replan, and record durable outcomes.
+- The substantive review verdict must come from reviewer-agent output evidence; parent-only judgment cannot clear or fail a guarded review gate.

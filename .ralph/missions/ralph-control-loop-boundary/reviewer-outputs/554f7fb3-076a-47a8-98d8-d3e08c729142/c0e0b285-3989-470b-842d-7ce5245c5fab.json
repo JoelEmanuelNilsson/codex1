@@ -1,0 +1,23 @@
+{
+  "mission_id": "ralph-control-loop-boundary",
+  "bundle_id": "554f7fb3-076a-47a8-98d8-d3e08c729142",
+  "reviewer_id": "control_loop_qual_repair_spec",
+  "reviewer_output_id": "c0e0b285-3989-470b-842d-7ce5245c5fab",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P2",
+      "title": "control_loop_boundary passes while recording a failed cleanup smoke step",
+      "evidence_refs": [
+        "/Users/joel/codex1/.codex1/qualification/reports/20260417T100316Z--unknown--255fbdde/control_loop_boundary.json",
+        "crates/codex1/src/commands/qualify.rs:3533",
+        "crates/codex1/src/internal/mod.rs:316"
+      ],
+      "rationale": "The frozen control_loop_boundary gate evidence reports status pass and all decisive scoped checks true, but its embedded steps include clear_parent_loop_lease with success=false, exit_code=2, and stderr 'unexpected argument --input-json'. The implementation invokes clear-loop-lease with --input-json even though that internal command does not accept input_json. A release gate that returns pass while preserving a failed smoke step weakens gate integrity and can mask an internal command contract regression or cleanup failure in successful qualification evidence.",
+      "suggested_next_action": "Repair the control-loop qualification cleanup invocation to call clear-loop-lease with the supported arguments, or explicitly mark cleanup as non-gating/best-effort outside the pass evidence; rerun the targeted control_loop qualification test and refresh the receipt/report evidence so the passing gate no longer contains failed smoke steps."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/review-evidence-snapshots/554f7fb3-076a-47a8-98d8-d3e08c729142.json",
+  "source_evidence_snapshot_fingerprint": "sha256:62802d81672a0c05ff12dbf02fca42f863685781faaa8376f9ca62a0618c7f3f",
+  "recorded_at": "2026-04-17T10:07:11.034044Z"
+}

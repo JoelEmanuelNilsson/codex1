@@ -1,0 +1,31 @@
+review_writeback_authority_token proof receipt
+date: 2026-04-16
+mission: review-loop-delegated-review-only
+spec: review_writeback_authority_token
+package: 694c25df-7552-454b-8135-e1cce1bd061b
+
+implemented changes
+- added `writeback_authority_verifier` to persisted review truth snapshots
+- added `writeback_authority_token` to parent-returned review truth snapshots
+- persisted review truth snapshots now omit the plaintext token
+- `record-review-outcome` now rejects repo-visible review truth snapshots that lack the parent-held token
+- token mismatch is rejected before any review gate, closeout, ledger, or spec writeback
+- child evidence snapshot capture now reuses the existing canonical parent review truth snapshot instead of minting and discarding a replacement token
+- added a lifecycle regression proving the parent token survives capture-review-truth-snapshot -> capture-review-evidence-snapshot -> record-review-outcome
+- reviewer-lane identity/self-writeback guard remains in force
+- review-loop, internal-orchestration, and runtime docs now state that the token must not be passed to child reviewers or child-readable artifacts
+
+verification
+- cargo test -p codex1 --test runtime_internal review_writeback_authority_token --quiet
+- cargo test -p codex1 --test runtime_internal reviewer_parent_writeback_guard --quiet
+- cargo test -p codex1 --test runtime_internal delegated_review_authority --quiet
+- cargo test -p codex1 --test runtime_internal reviewer_lane_canonical_write_isolation --quiet
+- cargo fmt --all --check
+- cargo build -p codex1
+- cargo run -p codex1 -- internal validate-mission-artifacts --mission-id review-loop-delegated-review-only
+- codex1 internal validate-execution-package --mission-id review-loop-delegated-review-only --package-id 694c25df-7552-454b-8135-e1cce1bd061b --json
+
+notes
+- This is still not malicious-process isolation if the parent intentionally leaks the token to a child. It closes the observed product failure: child/reviewer lanes can no longer clear gates from repo-visible review truth snapshots alone.
+- The first delegated review of this package found the token lifecycle bug above; gate de80a724 was recorded failed and this receipt now includes the targeted repair proof.
+- The contaminated reviewer_parent_writeback_guard review gate 55acf452 and closeout 57 remain invalidated by contradiction 7de544a7 and blueprint 15.

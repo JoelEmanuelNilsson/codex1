@@ -1,0 +1,28 @@
+reviewer_output_inbox_contract proof receipt
+date: 2026-04-16
+mission: review-loop-delegated-review-only
+spec: reviewer_output_inbox_contract
+package: 68eb86c9-e17d-4920-be1a-2e0b7680422f
+
+implemented changes
+- added a bounded reviewer-output inbox under `.ralph/missions/<mission-id>/reviewer-outputs/<bundle-id>/`
+- added `codex1 internal record-reviewer-output` so child reviewer lanes can persist only `NONE` or structured findings
+- bound reviewer output artifacts to mission id, bundle id, reviewer id, output id, source review evidence snapshot path, and source snapshot fingerprint
+- excluded reviewer-output inbox artifacts from parent review-truth drift checks so child result capture does not contaminate the parent-held review truth snapshot
+- changed parent review writeback to reject arbitrary `reviewer-output:*` strings and require existing inbox artifacts shaped `reviewer-output:<bundle-id>:<output-id>`
+- rejected clean parent writeback when cited reviewer-output artifacts contain P0/P1/P2 findings
+- preserved contaminated-wave replan routing without requiring reviewer-output inbox evidence
+- updated review-loop, internal-orchestration, and runtime docs to route child reviewers through the bounded inbox before parent writeback
+
+verification
+- cargo test -p codex1 --test runtime_internal reviewer_output_inbox_contract --quiet
+- cargo test -p codex1 --test runtime_internal review_writeback_authority_token --quiet
+- cargo test -p codex1 --test runtime_internal delegated_review_authority --quiet
+- cargo test -p codex1 --test runtime_internal --quiet
+- cargo fmt --all --check
+- cargo build -p codex1
+- codex1 internal validate-mission-artifacts --mission-id review-loop-delegated-review-only
+
+notes
+- This does not attempt malicious filesystem sandboxing. It closes the observed UX/runtime failure where findings-only reviewer lanes could call parent writeback commands or cite fake reviewer-output refs instead of returning bounded outputs.
+- The contaminated blueprint-15 token review branch remains superseded by blueprint revision 16 and must not be counted as clean review proof.

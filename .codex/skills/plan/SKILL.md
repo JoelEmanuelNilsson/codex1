@@ -28,10 +28,39 @@ Bootstrap or refresh planning artifacts from:
 
 Deterministic backend:
 
+- begin a parent planning loop with `codex1 internal begin-loop-lease` using
+  `mode = "planning_loop"` before relying on Ralph continuation
 - use `codex1 internal materialize-plan` for visible blueprint/spec writeback
 - use `codex1 internal compile-execution-package` and
   `codex1 internal validate-execution-package` for the next selected target
 - see `docs/runtime-backend.md` for payload shape and state ownership
+
+## Ralph Lease
+
+`$plan` is a parent/orchestrator loop. When the user invokes `$plan`, acquire or
+refresh a parent lease before autonomous planning continuation:
+
+```json
+{
+  "mission_id": "<mission-id>",
+  "mode": "planning_loop",
+  "owner": "parent-plan",
+  "reason": "User invoked $plan."
+}
+```
+
+Use `codex1 internal begin-loop-lease` for that payload. Clear or pause the
+lease only through the explicit close/pause surface or when the workflow leaves
+a durable `needs_user`, `hard_blocked`, or terminal reviewed state.
+
+## Planning Posture
+
+- Optimize for route quality, not document minimalism.
+- Spend compute freely when ambiguity, risk, or coupling justify it.
+- Use bounded subagents when they materially improve critique, research,
+  decomposition, or package quality.
+- Keep the public planning truth explicit in artifacts; do not hide core route
+  choice in orchestration-only reasoning.
 
 ## Planning Program
 
@@ -53,9 +82,15 @@ Deterministic backend:
    - workstream packetization
    - execution graph and wave design when sequencing is non-trivial
    - execution package gate for the next selected target
-4. Keep the selected route, proof design, review contract, and packetization in
+4. Run real route pressure:
+   keep at least one steelman alternative alive until the selected route has
+   survived critique honestly, or record why no other route remains viable.
+5. Keep the selected route, proof design, review contract, and packetization in
    sync after route selection. Do not carry stale pre-selection drafts forward.
-5. Use `internal-orchestration` when bounded subagents materially help, and use
+6. Make every runnable workstream execution-grade:
+   bounded scope, explicit proof story, explicit review story, explicit
+   replan boundary.
+7. Use `internal-orchestration` when bounded subagents materially help, and use
    `internal-replan` if planning proves that a higher layer must reopen.
 
 ## Planning Rules
@@ -66,6 +101,10 @@ Deterministic backend:
 - No work item is runnable unless it has a proof story and review story.
 - Compact plans are allowed for bounded low-risk work, but compact does not mean
   shallow.
+- The blueprint must make clear:
+  selected route, rejected alternatives or invalidation rationale, proof
+  matrix, decision obligations, execution graph when needed, and the exact next
+  packaged target.
 
 ## Completion Bar
 
@@ -79,6 +118,8 @@ Planning is complete only when all of the following are true:
 - proof and review design are explicit
 - the frontier is packetized into bounded specs
 - at least the next selected target has a passed execution package gate
+- the selected route is strong enough that execution will not need to invent
+  major architecture or proof structure on the fly
 
 ## Must Not
 
@@ -86,6 +127,8 @@ Planning is complete only when all of the following are true:
 - hide core planning method in private code or vibes
 - silently discard earlier valid evidence during replanning
 - claim planning completion while the next execution target is still unpackaged
+- package a frontier slice whose dependencies or review contract are still
+  fuzzy
 
 ## Return Shape
 

@@ -1,0 +1,32 @@
+{
+  "mission_id": "contract-centered-architecture",
+  "phase": "mission_close",
+  "current_target": "mission:contract-centered-architecture",
+  "verdict": "complete",
+  "terminality": "terminal",
+  "resume_mode": "allow_stop",
+  "next_phase": "complete",
+  "next_action": "Mission-close review passed; the mission may stop as complete.",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:4e35be4d1adaa85d5725d5fb4a891f47fe4bd24f5f25bec09c5f5249b7a93893",
+  "blueprint_revision": 10,
+  "blueprint_fingerprint": "sha256:0e73f4340105227393ea58ff06a5ef2e5784a282c52f4b7d420d5f71bca87a3d",
+  "governing_revision": "mission:contract-centered-architecture:close",
+  "reason_code": "mission_close_review_passed",
+  "summary": "Recorded review bundle 5fecfe49-f1ce-479d-b4d2-3ac1461dc45d with 0 blocking finding(s)",
+  "continuation_prompt": "Mission is complete.",
+  "last_valid_closeout_seq": 118,
+  "last_valid_closeout_ref": "fadc4b61-219f-4ff3-ae4e-1ed718dfef90",
+  "last_applied_closeout_seq": 118,
+  "active_cycle_id": null,
+  "waiting_request_id": null,
+  "waiting_for": null,
+  "canonical_waiting_request": null,
+  "resume_condition": null,
+  "request_emitted_at": null,
+  "active_child_task_paths": [],
+  "artifact_fingerprints": {
+    "outcome_lock": "sha256:4e35be4d1adaa85d5725d5fb4a891f47fe4bd24f5f25bec09c5f5249b7a93893",
+    "program_blueprint": "sha256:0e73f4340105227393ea58ff06a5ef2e5784a282c52f4b7d420d5f71bca87a3d"
+  }
+}

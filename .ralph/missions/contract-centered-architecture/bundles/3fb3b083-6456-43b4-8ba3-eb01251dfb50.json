@@ -1,0 +1,49 @@
+{
+  "bundle_id": "3fb3b083-6456-43b4-8ba3-eb01251dfb50",
+  "mission_id": "contract-centered-architecture",
+  "bundle_kind": "spec_review",
+  "source_package_id": "09b588df-d67a-4925-a0e0-0fbdcce71dc8",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:4e35be4d1adaa85d5725d5fb4a891f47fe4bd24f5f25bec09c5f5249b7a93893",
+  "blueprint_revision": 9,
+  "blueprint_fingerprint": "sha256:2a0228b7f2acbd5edcea89c9184fd284537c99e11e6ba4c1edd0c3df141c1b9a",
+  "governing_revision": "spec:support_surface_txn:2",
+  "mandatory_review_lenses": [
+    "spec_conformance",
+    "correctness",
+    "evidence_adequacy",
+    "interface_compatibility",
+    "safety_security_policy",
+    "operability_rollback_observability.",
+    "operability_rollback_observability"
+  ],
+  "target_spec_id": "support_surface_txn",
+  "spec_revision": 2,
+  "spec_fingerprint": "sha256:900cb9b39b66cb70f3b9ce82e832666bc18957fcf2e00d7abd2ab716bd3544bb",
+  "proof_rows_under_review": [
+    "clarify questions materially reduce ambiguity with less user effort and stronger destination truth",
+    "plan skill instructions match the required planning program and package gate expectations",
+    "review skill instructions preserve independent, bundle-bound, mission-close-honest review behavior",
+    "changed skills remain aligned with runtime-backend and PRD contracts",
+    "interrupted or failed helper-surface mutations can be diagnosed and rolled back from journal truth",
+    "setup, restore, and uninstall stop duplicating manifest schema and mutation semantics",
+    "helper qualification gates still pass or become stronger",
+    "cargo test -p codex1 qualification_cli"
+  ],
+  "receipts": [
+    "PLANS/contract-centered-architecture/specs/support_surface_txn/RECEIPTS/2026-04-15-support-surface-txn-proof.txt"
+  ],
+  "changed_files_or_diff": [
+    "PLANS/contract-centered-architecture/specs/support_surface_txn/SPEC.md"
+  ],
+  "touched_interface_contracts": [
+    "current package dependency rebind"
+  ],
+  "mission_level_proof_rows": [],
+  "cross_spec_claim_refs": [],
+  "included_spec_refs": [],
+  "visible_artifact_refs": [],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [],
+  "generated_at": "2026-04-15T19:38:17.605071Z"
+}

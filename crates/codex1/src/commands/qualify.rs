@@ -38,6 +38,11 @@ const CONFIG_HARD_CODING_MODEL: &str = "gpt-5.3-codex";
 const CONFIG_HARD_CODING_REASONING_EFFORT: &str = "xhigh";
 const TRUSTED_CODEX_BUILD: &str = "0.120.0";
 const INTERNAL_CONTRACT_PARITY_GATE: &str = "manual_internal_contract_parity";
+const REVIEW_LOOP_DECISION_GATE: &str = "review_loop_decision_contract";
+const REVIEWER_CAPABILITY_BOUNDARY_GATE: &str = "reviewer_capability_boundary";
+const DELEGATED_REVIEW_AUTHORITY_GATE: &str = "delegated_review_authority";
+const CONTROL_LOOP_BOUNDARY_GATE: &str = "control_loop_boundary";
+const QUALIFY_CHILD_TASK_NAME: &str = "qualify_child";
 
 pub fn run(args: QualifyArgs) -> Result<()> {
     let repo_root = resolve_repo_root(args.common.repo_root.as_deref())?;
@@ -73,9 +78,13 @@ pub fn run(args: QualifyArgs) -> Result<()> {
     gates.push(run_helper_drift_detection_flow()?);
     gates.push(run_runtime_backend_flow()?);
     gates.push(run_waiting_stop_hook_flow()?);
+    gates.push(run_control_loop_boundary_flow()?);
     gates.push(run_native_stop_hook_live_flow(args.live)?);
     gates.push(run_native_exec_resume_flow(args.live)?);
     gates.push(run_native_multi_agent_resume_flow(args.live)?);
+    gates.push(review_loop_decision_contract_gate());
+    gates.push(run_reviewer_capability_boundary_flow()?);
+    gates.push(run_delegated_review_authority_flow(&repo_root)?);
     gates.push(manual_autopilot_parity_gate()?);
     gates.push(self_hosting_gate(&repo_root, args.self_hosting));
 
@@ -87,7 +96,7 @@ pub fn run(args: QualifyArgs) -> Result<()> {
         &qualification_id,
     );
 
-    let report = QualificationReport {
+    let mut report = QualificationReport {
         schema_version: REPORT_SCHEMA_VERSION,
         qualification_id,
         repo_root: repo_root.clone(),
@@ -115,6 +124,7 @@ pub fn run(args: QualifyArgs) -> Result<()> {
         evidence,
     };
 
+    persist_gate_evidence(&mut report)?;
     write_report(&report)?;
     emit_report(&report, args.common.json)?;
 
@@ -366,6 +376,7 @@ enum GateStatus {
 struct EvidencePaths {
     report_path: PathBuf,
     latest_path: PathBuf,
+    gate_evidence_dir: PathBuf,
 }
 
 #[derive(Debug, Serialize)]
@@ -461,6 +472,867 @@ struct ParityBundleSummary {
     mandatory_review_lenses: Vec<String>,
     proof_rows_under_review: Vec<String>,
     mission_level_proof_rows: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum ReviewLoopSeverity {
+    P0,
+    P1,
+    P2,
+    P3,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum ReviewLoopNextBranch {
+    Continue,
+    Repair,
+    Replan,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct ReviewLoopFinding {
+    severity: ReviewLoopSeverity,
+    root_cause_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct ReviewLoopDecision {
+    next_branch: ReviewLoopNextBranch,
+    blocking_findings: usize,
+    unique_blocking_root_causes: usize,
+    consecutive_non_clean_loops: u8,
+}
+
+fn review_loop_decision(
+    findings: &[ReviewLoopFinding],
+    prior_consecutive_non_clean_loops: u8,
+) -> ReviewLoopDecision {
+    let blocking_root_causes = findings
+        .iter()
+        .filter(|finding| {
+            matches!(
+                finding.severity,
+                ReviewLoopSeverity::P0 | ReviewLoopSeverity::P1 | ReviewLoopSeverity::P2
+            )
+        })
+        .map(|finding| finding.root_cause_key.clone())
+        .collect::<BTreeSet<_>>();
+    let blocking_findings = findings
+        .iter()
+        .filter(|finding| {
+            matches!(
+                finding.severity,
+                ReviewLoopSeverity::P0 | ReviewLoopSeverity::P1 | ReviewLoopSeverity::P2
+            )
+        })
+        .count();
+
+    if blocking_findings == 0 {
+        return ReviewLoopDecision {
+            next_branch: ReviewLoopNextBranch::Continue,
+            blocking_findings,
+            unique_blocking_root_causes: 0,
+            consecutive_non_clean_loops: 0,
+        };
+    }
+
+    let consecutive_non_clean_loops = prior_consecutive_non_clean_loops.saturating_add(1);
+    ReviewLoopDecision {
+        next_branch: if consecutive_non_clean_loops >= 6 {
+            ReviewLoopNextBranch::Replan
+        } else {
+            ReviewLoopNextBranch::Repair
+        },
+        blocking_findings,
+        unique_blocking_root_causes: blocking_root_causes.len(),
+        consecutive_non_clean_loops,
+    }
+}
+
+fn review_loop_decision_contract_gate() -> QualificationGate {
+    const DESCRIPTION: &str =
+        "Prove review-loop clean, repair, and six-loop replan branch decisions.";
+    let clean = review_loop_decision(
+        &[ReviewLoopFinding {
+            severity: ReviewLoopSeverity::P3,
+            root_cause_key: "docs-polish".to_string(),
+        }],
+        5,
+    );
+    let repair = review_loop_decision(
+        &[
+            ReviewLoopFinding {
+                severity: ReviewLoopSeverity::P1,
+                root_cause_key: "stale-gate".to_string(),
+            },
+            ReviewLoopFinding {
+                severity: ReviewLoopSeverity::P2,
+                root_cause_key: "stale-gate".to_string(),
+            },
+        ],
+        4,
+    );
+    let replan = review_loop_decision(
+        &[ReviewLoopFinding {
+            severity: ReviewLoopSeverity::P0,
+            root_cause_key: "architecture-contract".to_string(),
+        }],
+        5,
+    );
+    let success = clean.next_branch == ReviewLoopNextBranch::Continue
+        && clean.consecutive_non_clean_loops == 0
+        && repair.next_branch == ReviewLoopNextBranch::Repair
+        && repair.blocking_findings == 2
+        && repair.unique_blocking_root_causes == 1
+        && repair.consecutive_non_clean_loops == 5
+        && replan.next_branch == ReviewLoopNextBranch::Replan
+        && replan.consecutive_non_clean_loops == 6;
+    let details = json!({
+        "clean": clean,
+        "repair": repair,
+        "replan": replan,
+    });
+
+    if success {
+        QualificationGate::pass(
+            REVIEW_LOOP_DECISION_GATE,
+            DESCRIPTION,
+            "review-loop branch decisions route clean, repair, and capped replan correctly",
+            Some(details),
+        )
+    } else {
+        QualificationGate::fail(
+            REVIEW_LOOP_DECISION_GATE,
+            DESCRIPTION,
+            "review-loop branch decision contract failed",
+            Some(details),
+        )
+    }
+}
+
+fn run_reviewer_capability_boundary_flow() -> Result<QualificationGate> {
+    let binary = qualification_binary()?;
+    let sandbox = tempfile::tempdir().context("failed to create reviewer-boundary sandbox")?;
+    let repo_root = sandbox.path().join("repo");
+    fs::create_dir_all(&repo_root).context("failed to create reviewer-boundary repo root")?;
+
+    let (mut contaminated_steps, contaminated_bundle_id) =
+        open_reviewer_boundary_bundle(&binary, &repo_root, "reviewer-boundary-contaminated")?;
+    let contaminated_snapshot = capture_review_truth_snapshot_payload(
+        &binary,
+        &repo_root,
+        "reviewer-boundary-contaminated",
+        &contaminated_bundle_id,
+    )?;
+    let contaminated_reviewer_output_ref = record_none_reviewer_output_ref(
+        &binary,
+        &repo_root,
+        "reviewer-boundary-contaminated",
+        &contaminated_bundle_id,
+        "qualification-reviewer-boundary-contaminated-spec",
+        &mut contaminated_steps,
+    )?;
+    let contaminated_code_output_ref = record_none_reviewer_output_ref_after_snapshot(
+        &binary,
+        &repo_root,
+        "reviewer-boundary-contaminated",
+        &contaminated_bundle_id,
+        "qualification-reviewer-boundary-contaminated-code",
+        &mut contaminated_steps,
+    )?;
+    fs::write(
+        repo_root.join("PLANS/reviewer-boundary-contaminated/REVIEW-LEDGER.md"),
+        "# contaminated by child reviewer\n",
+    )
+    .context("failed to contaminate review ledger")?;
+    let contaminated_record = run_json_smoke_step(
+        "contaminated_record_review_outcome",
+        &binary,
+        &repo_root,
+        &[
+            "internal",
+            "record-review-outcome",
+            "--repo-root",
+            repo_root.to_str().unwrap(),
+            "--input-json",
+            "-",
+            "--json",
+        ],
+        &reviewer_boundary_review_result_payload(
+            "reviewer-boundary-contaminated",
+            &contaminated_bundle_id,
+            &[
+                contaminated_reviewer_output_ref,
+                contaminated_code_output_ref,
+            ],
+            contaminated_snapshot,
+        ),
+    )?;
+    let contaminated_rejected = !contaminated_record.success
+        && format!(
+            "{}{}",
+            contaminated_record.stdout, contaminated_record.stderr
+        )
+        .contains("reviewer_lane_truth_mutation_detected");
+    contaminated_steps.push(contaminated_record);
+
+    let (mut clean_steps, clean_bundle_id) =
+        open_reviewer_boundary_bundle(&binary, &repo_root, "reviewer-boundary-clean")?;
+    let clean_snapshot = capture_review_truth_snapshot_payload(
+        &binary,
+        &repo_root,
+        "reviewer-boundary-clean",
+        &clean_bundle_id,
+    )?;
+    clean_steps.push(run_json_smoke_step(
+        "capture_review_evidence_snapshot",
+        &binary,
+        &repo_root,
+        &[
+            "internal",
+            "capture-review-evidence-snapshot",
+            "--repo-root",
+            repo_root.to_str().unwrap(),
+            "--mission-id",
+            "reviewer-boundary-clean",
+            "--bundle-id",
+            &clean_bundle_id,
+            "--json",
+        ],
+        &json!({}),
+    )?);
+    let evidence_validation = run_json_smoke_step(
+        "validate_review_evidence_snapshot",
+        &binary,
+        &repo_root,
+        &[
+            "internal",
+            "validate-review-evidence-snapshot",
+            "--repo-root",
+            repo_root.to_str().unwrap(),
+            "--mission-id",
+            "reviewer-boundary-clean",
+            "--bundle-id",
+            &clean_bundle_id,
+            "--json",
+        ],
+        &json!({}),
+    )?;
+    let evidence_valid = evidence_validation.success
+        && serde_json::from_str::<Value>(&evidence_validation.stdout)
+            .ok()
+            .and_then(|value| value.get("valid").and_then(Value::as_bool))
+            .unwrap_or(false);
+    clean_steps.push(evidence_validation);
+    let clean_reviewer_output_ref = record_none_reviewer_output_ref(
+        &binary,
+        &repo_root,
+        "reviewer-boundary-clean",
+        &clean_bundle_id,
+        "qualification-reviewer-boundary-clean-spec",
+        &mut clean_steps,
+    )?;
+    let clean_code_output_ref = record_none_reviewer_output_ref_after_snapshot(
+        &binary,
+        &repo_root,
+        "reviewer-boundary-clean",
+        &clean_bundle_id,
+        "qualification-reviewer-boundary-clean-code",
+        &mut clean_steps,
+    )?;
+    let clean_record = run_json_smoke_step(
+        "clean_record_review_outcome",
+        &binary,
+        &repo_root,
+        &[
+            "internal",
+            "record-review-outcome",
+            "--repo-root",
+            repo_root.to_str().unwrap(),
+            "--input-json",
+            "-",
+            "--json",
+        ],
+        &reviewer_boundary_review_result_payload(
+            "reviewer-boundary-clean",
+            &clean_bundle_id,
+            &[clean_reviewer_output_ref, clean_code_output_ref],
+            clean_snapshot,
+        ),
+    )?;
+    let clean_recorded = clean_record.success
+        && serde_json::from_str::<Value>(&clean_record.stdout)
+            .ok()
+            .and_then(|value| value.get("blocking_findings").and_then(Value::as_u64))
+            == Some(0);
+    clean_steps.push(clean_record);
+
+    let details = Some(json!({
+        "sandbox_root": sandbox.path().display().to_string(),
+        "contaminated_bundle_id": contaminated_bundle_id,
+        "clean_bundle_id": clean_bundle_id,
+        "contaminated_rejected": contaminated_rejected,
+        "evidence_valid": evidence_valid,
+        "clean_recorded": clean_recorded,
+        "contaminated_steps": contaminated_steps,
+        "clean_steps": clean_steps,
+    }));
+
+    if contaminated_rejected && evidence_valid && clean_recorded {
+        Ok(QualificationGate::pass(
+            REVIEWER_CAPABILITY_BOUNDARY_GATE,
+            "Reviewer-lane capability qualification proves child-review mutation cannot silently clear mission truth.",
+            "Contaminated review writeback was rejected, the frozen review evidence snapshot validated, and clean parent-owned review writeback passed.",
+            details,
+        ))
+    } else {
+        Ok(QualificationGate::fail(
+            REVIEWER_CAPABILITY_BOUNDARY_GATE,
+            "Reviewer-lane capability qualification proves child-review mutation cannot silently clear mission truth.",
+            "Reviewer capability boundary proof did not satisfy contaminated rejection, evidence snapshot validation, and clean parent writeback.",
+            details,
+        ))
+    }
+}
+
+fn run_delegated_review_authority_flow(repo_root: &Path) -> Result<QualificationGate> {
+    let binary = qualification_binary()?;
+    let sandbox = tempfile::tempdir().context("failed to create delegated-review sandbox")?;
+    let sandbox_repo_root = sandbox.path().join("repo");
+    fs::create_dir_all(&sandbox_repo_root)
+        .context("failed to create delegated-review repo root")?;
+
+    let (mut steps, bundle_id) =
+        open_reviewer_boundary_bundle(&binary, &sandbox_repo_root, "delegated-review-authority")?;
+    let review_truth_snapshot = capture_review_truth_snapshot_payload(
+        &binary,
+        &sandbox_repo_root,
+        "delegated-review-authority",
+        &bundle_id,
+    )?;
+
+    let missing_reviewer_output = run_json_smoke_step(
+        "reject_missing_reviewer_output",
+        &binary,
+        &sandbox_repo_root,
+        &[
+            "internal",
+            "record-review-outcome",
+            "--repo-root",
+            sandbox_repo_root.to_str().unwrap(),
+            "--input-json",
+            "-",
+            "--json",
+        ],
+        &json!({
+            "mission_id": "delegated-review-authority",
+            "bundle_id": bundle_id,
+            "reviewer": "qualify-codex",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": ["RECEIPTS/reviewer-boundary.txt"],
+            "findings": [],
+            "disposition_notes": ["Parent-only evidence should not qualify."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": review_truth_snapshot.clone()
+        }),
+    )?;
+    let missing_reviewer_output_rejected = !missing_reviewer_output.success
+        && format!(
+            "{}{}",
+            missing_reviewer_output.stdout, missing_reviewer_output.stderr
+        )
+        .contains("requires reviewer-agent output evidence");
+    steps.push(missing_reviewer_output);
+
+    let remint_snapshot = run_json_smoke_step(
+        "reject_review_truth_snapshot_remint",
+        &binary,
+        &sandbox_repo_root,
+        &[
+            "internal",
+            "capture-review-truth-snapshot",
+            "--repo-root",
+            sandbox_repo_root.to_str().unwrap(),
+            "--mission-id",
+            "delegated-review-authority",
+            "--bundle-id",
+            &bundle_id,
+            "--json",
+        ],
+        &json!({}),
+    )?;
+    let remint_rejected = !remint_snapshot.success
+        && format!("{}{}", remint_snapshot.stdout, remint_snapshot.stderr)
+            .contains("refusing to remint parent writeback authority");
+    steps.push(remint_snapshot);
+
+    let spec_reviewer_output_ref = record_none_reviewer_output_ref(
+        &binary,
+        &sandbox_repo_root,
+        "delegated-review-authority",
+        &bundle_id,
+        "qualification-delegated-review-spec",
+        &mut steps,
+    )?;
+    let code_reviewer_output_ref = record_none_reviewer_output_ref_after_snapshot(
+        &binary,
+        &sandbox_repo_root,
+        "delegated-review-authority",
+        &bundle_id,
+        "qualification-delegated-review-code",
+        &mut steps,
+    )?;
+    let mut post_output_snapshot = review_truth_snapshot.clone();
+    post_output_snapshot["captured_at"] = json!("2099-01-01T00:00:00Z");
+    let mut persisted_post_output_snapshot = post_output_snapshot.clone();
+    if let Some(object) = persisted_post_output_snapshot.as_object_mut() {
+        object.remove("writeback_authority_token");
+    }
+    let persisted_snapshot_path = sandbox_repo_root.join(format!(
+        ".ralph/missions/delegated-review-authority/review-truth-snapshots/{bundle_id}.json"
+    ));
+    fs::write(
+        &persisted_snapshot_path,
+        serde_json::to_vec_pretty(&persisted_post_output_snapshot)
+            .context("failed to encode future review truth snapshot")?,
+    )
+    .with_context(|| {
+        format!(
+            "failed to write future review truth snapshot {}",
+            persisted_snapshot_path.display()
+        )
+    })?;
+    let post_output_capture = run_json_smoke_step(
+        "reject_post_output_review_truth_snapshot",
+        &binary,
+        &sandbox_repo_root,
+        &[
+            "internal",
+            "record-review-outcome",
+            "--repo-root",
+            sandbox_repo_root.to_str().unwrap(),
+            "--input-json",
+            "-",
+            "--json",
+        ],
+        &json!({
+            "mission_id": "delegated-review-authority",
+            "bundle_id": bundle_id,
+            "reviewer": "qualify-codex",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                spec_reviewer_output_ref,
+                code_reviewer_output_ref,
+                "RECEIPTS/reviewer-boundary.txt"
+            ],
+            "findings": [],
+            "disposition_notes": ["Reviewer outputs must be downstream of parent truth capture."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": post_output_snapshot
+        }),
+    )?;
+    let post_output_capture_rejected = !post_output_capture.success
+        && format!(
+            "{}{}",
+            post_output_capture.stdout, post_output_capture.stderr
+        )
+        .contains("was recorded before parent review_truth_snapshot capture");
+    steps.push(post_output_capture);
+
+    let (mut no_snapshot_steps, no_snapshot_bundle_id) =
+        open_reviewer_boundary_bundle(&binary, &sandbox_repo_root, "delegated-review-no-snapshot")?;
+    let missing_snapshot = run_json_smoke_step(
+        "reject_missing_review_truth_snapshot",
+        &binary,
+        &sandbox_repo_root,
+        &[
+            "internal",
+            "record-review-outcome",
+            "--repo-root",
+            sandbox_repo_root.to_str().unwrap(),
+            "--input-json",
+            "-",
+            "--json",
+        ],
+        &json!({
+            "mission_id": "delegated-review-no-snapshot",
+            "bundle_id": no_snapshot_bundle_id,
+            "reviewer": "qualify-codex",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                "reviewer-output:delegated-review-authority",
+                "RECEIPTS/reviewer-boundary.txt"
+            ],
+            "findings": [],
+            "disposition_notes": ["Missing snapshot should not qualify."],
+            "next_required_branch": "execution"
+        }),
+    )?;
+    let missing_snapshot_rejected = !missing_snapshot.success
+        && format!("{}{}", missing_snapshot.stdout, missing_snapshot.stderr)
+            .contains("requires review_truth_snapshot");
+    no_snapshot_steps.push(missing_snapshot);
+    steps.extend(no_snapshot_steps);
+
+    let (mut parent_authority_steps, parent_authority_bundle_id) = open_reviewer_boundary_bundle(
+        &binary,
+        &sandbox_repo_root,
+        "delegated-review-loop-authority",
+    )?;
+    let begin_parent_authority = run_json_smoke_step(
+        "begin_parent_review_loop_authority",
+        &binary,
+        &sandbox_repo_root,
+        &[
+            "internal",
+            "begin-loop-lease",
+            "--repo-root",
+            sandbox_repo_root.to_str().unwrap(),
+            "--input-json",
+            "-",
+            "--json",
+        ],
+        &json!({
+            "mission_id": "delegated-review-loop-authority",
+            "mode": "review_loop",
+            "owner": "parent-review-loop",
+            "reason": "Qualification should protect parent-only review authority."
+        }),
+    )?;
+    let parent_authority_token = serde_json::from_str::<Value>(&begin_parent_authority.stdout)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("parent_authority_token")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        });
+    let parent_authority_token_present = parent_authority_token.is_some();
+    parent_authority_steps.push(begin_parent_authority);
+
+    let capture_without_parent_authority = run_json_smoke_step_without_parent_authority(
+        "reject_capture_without_parent_loop_authority",
+        &binary,
+        &sandbox_repo_root,
+        &[
+            "internal",
+            "capture-review-truth-snapshot",
+            "--repo-root",
+            sandbox_repo_root.to_str().unwrap(),
+            "--mission-id",
+            "delegated-review-loop-authority",
+            "--bundle-id",
+            &parent_authority_bundle_id,
+            "--json",
+        ],
+        &json!({}),
+    )?;
+    let capture_without_parent_authority_rejected = !capture_without_parent_authority.success
+        && format!(
+            "{}{}",
+            capture_without_parent_authority.stdout, capture_without_parent_authority.stderr
+        )
+        .contains("requires parent loop authority");
+    parent_authority_steps.push(capture_without_parent_authority);
+
+    let capture_with_parent_authority = if let Some(token) = parent_authority_token.as_deref() {
+        run_json_smoke_step_with_env(
+            "capture_with_parent_loop_authority",
+            &binary,
+            &sandbox_repo_root,
+            &[
+                "internal",
+                "capture-review-truth-snapshot",
+                "--repo-root",
+                sandbox_repo_root.to_str().unwrap(),
+                "--mission-id",
+                "delegated-review-loop-authority",
+                "--bundle-id",
+                &parent_authority_bundle_id,
+                "--json",
+            ],
+            &json!({}),
+            &[("CODEX1_PARENT_LOOP_AUTHORITY_TOKEN", token)],
+        )?
+    } else {
+        SmokeStep {
+            step: "capture_with_parent_loop_authority",
+            success: false,
+            exit_code: None,
+            stdout: String::new(),
+            stderr: "missing parent authority token".to_string(),
+        }
+    };
+    let capture_with_parent_authority_passed = capture_with_parent_authority.success;
+    parent_authority_steps.push(capture_with_parent_authority);
+    steps.extend(parent_authority_steps);
+
+    let skill_surface_root = inspect_skill_surface(repo_root)
+        .ok()
+        .map(|inspection| inspection.discovery_root);
+    let review_loop_text =
+        read_optional_string(&repo_root.join(".codex/skills/review-loop/SKILL.md"))?
+            .or_else(|| {
+                skill_surface_root.as_ref().and_then(|root| {
+                    read_optional_string(&root.join("review-loop/SKILL.md"))
+                        .ok()
+                        .flatten()
+                })
+            })
+            .unwrap_or_default();
+    let internal_orchestration_text =
+        read_optional_string(&repo_root.join(".codex/skills/internal-orchestration/SKILL.md"))?
+            .or_else(|| {
+                skill_surface_root.as_ref().and_then(|root| {
+                    read_optional_string(&root.join("internal-orchestration/SKILL.md"))
+                        .ok()
+                        .flatten()
+                })
+            })
+            .unwrap_or_default();
+    let runtime_backend_text = read_optional_string(&repo_root.join("docs/runtime-backend.md"))?
+        .or_else(|| {
+            let source_runtime_backend =
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/runtime-backend.md");
+            read_optional_string(&source_runtime_backend).ok().flatten()
+        });
+    let normalize_doc = |contents: &str| contents.split_whitespace().collect::<Vec<_>>().join(" ");
+    let review_loop_normalized = normalize_doc(&review_loop_text);
+    let internal_orchestration_normalized = normalize_doc(&internal_orchestration_text);
+    let runtime_backend_requirement = runtime_backend_text.as_deref().is_some_and(|contents| {
+        let normalized = contents.split_whitespace().collect::<Vec<_>>().join(" ");
+        normalized.contains("Parent-owned review writeback is not parent-owned review judgment")
+            && normalized.contains("reviewer-agent output evidence")
+            && normalized.contains("Parent-only review judgment cannot clear")
+            && normalized.contains("one transient parent writeback token per review bundle")
+            && normalized.contains("parent loop authority")
+    });
+    let docs_requirements = vec![
+        (
+            "review_loop_forbids_parent_self_review",
+            review_loop_normalized.contains("must not substitute its own code, spec, intent")
+                && review_loop_normalized.contains("parent-only judgment is not"),
+        ),
+        (
+            "review_loop_requires_reviewer_output",
+            review_loop_normalized.contains("reviewer-agent output"),
+        ),
+        (
+            "internal_orchestration_delegates_judgment",
+            internal_orchestration_normalized.contains("not review judgment authority")
+                && internal_orchestration_normalized.contains("reviewer-agent outputs"),
+        ),
+        (
+            "runtime_backend_forbids_parent_only_gate_result",
+            runtime_backend_requirement,
+        ),
+    ];
+    let docs_ok = docs_requirements.iter().all(|(_, passed)| *passed);
+
+    let details = Some(json!({
+        "sandbox_root": sandbox.path().display().to_string(),
+        "missing_reviewer_output_rejected": missing_reviewer_output_rejected,
+        "missing_snapshot_rejected": missing_snapshot_rejected,
+        "remint_rejected": remint_rejected,
+        "post_output_capture_rejected": post_output_capture_rejected,
+        "parent_authority_token_present": parent_authority_token_present,
+        "capture_without_parent_authority_rejected": capture_without_parent_authority_rejected,
+        "capture_with_parent_authority_passed": capture_with_parent_authority_passed,
+        "docs_requirements": docs_requirements
+            .iter()
+            .map(|(name, passed)| json!({ "check": name, "passed": passed }))
+            .collect::<Vec<_>>(),
+        "steps": steps,
+    }));
+
+    if missing_reviewer_output_rejected
+        && missing_snapshot_rejected
+        && remint_rejected
+        && post_output_capture_rejected
+        && parent_authority_token_present
+        && capture_without_parent_authority_rejected
+        && capture_with_parent_authority_passed
+        && docs_ok
+    {
+        Ok(QualificationGate::pass(
+            DELEGATED_REVIEW_AUTHORITY_GATE,
+            "Delegated review authority qualification proves parent self-review cannot clear durable review truth.",
+            "Docs forbid parent self-review, missing reviewer-agent evidence is rejected, missing review truth snapshots are rejected, parent writeback authority cannot be reminted, and post-output truth capture cannot clear review.",
+            details,
+        ))
+    } else {
+        Ok(QualificationGate::fail(
+            DELEGATED_REVIEW_AUTHORITY_GATE,
+            "Delegated review authority qualification proves parent self-review cannot clear durable review truth.",
+            "Delegated review authority proof failed; inspect wording checks and runtime rejection steps.",
+            details,
+        ))
+    }
+}
+
+fn open_reviewer_boundary_bundle(
+    binary: &Path,
+    repo_root: &Path,
+    mission_id: &'static str,
+) -> Result<(Vec<SmokeStep>, String)> {
+    let mut steps = Vec::new();
+    steps.push(run_json_smoke_step(
+        "init_mission",
+        binary,
+        repo_root,
+        &[
+            "internal",
+            "init-mission",
+            "--repo-root",
+            repo_root.to_str().unwrap(),
+            "--input-json",
+            "-",
+            "--json",
+        ],
+        &json!({
+            "mission_id": mission_id,
+            "title": "Reviewer Boundary Qualification",
+            "objective": "Prove reviewer-lane capability boundary.",
+            "clarify_status": "ratified",
+            "lock_status": "locked"
+        }),
+    )?);
+    steps.push(run_json_smoke_step(
+        "materialize_plan",
+        binary,
+        repo_root,
+        &[
+            "internal",
+            "materialize-plan",
+            "--repo-root",
+            repo_root.to_str().unwrap(),
+            "--input-json",
+            "-",
+            "--json",
+        ],
+        &json!({
+            "mission_id": mission_id,
+            "body_markdown": canonical_blueprint_body("Use one reviewer-boundary runtime slice.", &["runtime_core"]),
+            "plan_level": 4,
+            "problem_size": "S",
+            "status": "approved",
+            "proof_matrix": [{
+                "claim_ref": "claim:reviewer-boundary",
+                "statement": "Reviewer capability boundary is explicit.",
+                "required_evidence": ["RECEIPTS/reviewer-boundary.txt"],
+                "review_lenses": ["correctness", "evidence_adequacy"],
+                "governing_contract_refs": ["blueprint"]
+            }],
+            "decision_obligations": [],
+            "selected_target_ref": "spec:runtime_core",
+            "specs": [{
+                "spec_id": "runtime_core",
+                "purpose": "Create reviewer boundary proof slice.",
+                "body_markdown": qualification_spec_body(
+                    "Create reviewer boundary proof slice.",
+                    &["src"],
+                    &["src"],
+                    &["cargo test"]
+                ),
+                "artifact_status": "active",
+                "packetization_status": "runnable",
+                "execution_status": "packaged"
+            }]
+        }),
+    )?);
+    steps.push(run_json_smoke_step(
+        "compile_execution_package",
+        binary,
+        repo_root,
+        &[
+            "internal",
+            "compile-execution-package",
+            "--repo-root",
+            repo_root.to_str().unwrap(),
+            "--input-json",
+            "-",
+            "--json",
+        ],
+        &json!({
+            "mission_id": mission_id,
+            "target_type": "spec",
+            "target_id": "runtime_core",
+            "included_spec_ids": ["runtime_core"],
+            "dependency_satisfaction_state": [{
+                "name": "lock_current",
+                "satisfied": true,
+                "detail": "Outcome Lock revision is current."
+            }],
+            "read_scope": ["src"],
+            "write_scope": ["src"],
+            "proof_obligations": ["cargo test"],
+            "review_obligations": ["spec review"]
+        }),
+    )?);
+    let package_id = parse_required_id(steps.last().expect("package step"), "package_id")?;
+    steps.push(run_json_smoke_step(
+        "compile_review_bundle",
+        binary,
+        repo_root,
+        &[
+            "internal",
+            "compile-review-bundle",
+            "--repo-root",
+            repo_root.to_str().unwrap(),
+            "--input-json",
+            "-",
+            "--json",
+        ],
+        &json!({
+            "mission_id": mission_id,
+            "source_package_id": package_id,
+            "bundle_kind": "spec_review",
+            "mandatory_review_lenses": ["correctness", "evidence_adequacy"],
+            "target_spec_id": "runtime_core",
+            "proof_rows_under_review": ["cargo test"],
+            "receipts": ["RECEIPTS/reviewer-boundary.txt"],
+            "changed_files_or_diff": ["src/lib.rs"],
+            "touched_interface_contracts": ["reviewer boundary"]
+        }),
+    )?);
+    let bundle_id = parse_required_id(steps.last().expect("bundle step"), "bundle_id")?;
+    Ok((steps, bundle_id))
+}
+
+fn reviewer_boundary_review_result_payload(
+    mission_id: &str,
+    bundle_id: &str,
+    reviewer_output_refs: &[String],
+    review_truth_snapshot: Value,
+) -> Value {
+    let evidence_refs = reviewer_output_refs
+        .iter()
+        .cloned()
+        .chain(std::iter::once(
+            "RECEIPTS/reviewer-boundary.txt".to_string(),
+        ))
+        .collect::<Vec<_>>();
+    json!({
+        "mission_id": mission_id,
+        "bundle_id": bundle_id,
+        "reviewer": "qualify-codex",
+        "verdict": "clean",
+        "target_spec_id": "runtime_core",
+        "governing_refs": ["bundle"],
+        "evidence_refs": evidence_refs,
+        "findings": [],
+        "disposition_notes": ["Reviewer boundary review path is clean."],
+        "next_required_branch": "execution",
+        "review_truth_snapshot": review_truth_snapshot
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1165,58 +2037,113 @@ fn run_isolated_helper_flow() -> Result<QualificationGate> {
     let home_before = snapshot_tree(&baseline_home)?;
 
     let mut steps = Vec::new();
-    for (step, args) in [
-        (
-            "setup_initial",
-            vec![
-                "setup",
-                "--repo-root",
-                repo_root.to_str().unwrap(),
-                "--json",
-            ],
-        ),
-        (
+    let setup_global = run_smoke_step(
+        "setup_global",
+        &binary,
+        &repo_root,
+        &home_root,
+        &["setup", "--json"],
+    )?;
+    let setup_global_backup_id = smoke_step_backup_id(&setup_global);
+    let mut should_continue = setup_global.success;
+    steps.push(setup_global);
+
+    if should_continue {
+        let init_initial = run_smoke_step(
+            "init_initial",
+            &binary,
+            &repo_root,
+            &home_root,
+            &["init", "--repo-root", repo_root.to_str().unwrap(), "--json"],
+        )?;
+        should_continue = init_initial.success;
+        steps.push(init_initial);
+    }
+    if should_continue {
+        let doctor_after_setup = run_smoke_step(
             "doctor_after_setup",
-            vec![
+            &binary,
+            &repo_root,
+            &home_root,
+            &[
                 "doctor",
                 "--repo-root",
                 repo_root.to_str().unwrap(),
                 "--json",
             ],
-        ),
-        (
-            "restore_latest",
-            vec![
+        )?;
+        should_continue = doctor_after_setup.success;
+        steps.push(doctor_after_setup);
+    }
+    if should_continue {
+        let restore_latest = run_smoke_step(
+            "restore_project_init",
+            &binary,
+            &repo_root,
+            &home_root,
+            &[
                 "restore",
                 "--repo-root",
                 repo_root.to_str().unwrap(),
                 "--json",
             ],
-        ),
-        (
-            "setup_after_restore",
-            vec![
-                "setup",
-                "--repo-root",
-                repo_root.to_str().unwrap(),
-                "--json",
-            ],
-        ),
-        (
-            "uninstall_after_setup",
-            vec![
+        )?;
+        should_continue = restore_latest.success;
+        steps.push(restore_latest);
+    }
+    if should_continue {
+        let setup_after_restore = run_smoke_step(
+            "init_after_restore",
+            &binary,
+            &repo_root,
+            &home_root,
+            &["init", "--repo-root", repo_root.to_str().unwrap(), "--json"],
+        )?;
+        should_continue = setup_after_restore.success;
+        steps.push(setup_after_restore);
+    }
+    if should_continue {
+        let uninstall_after_setup = run_smoke_step(
+            "uninstall_project_init",
+            &binary,
+            &repo_root,
+            &home_root,
+            &[
                 "uninstall",
                 "--repo-root",
                 repo_root.to_str().unwrap(),
                 "--json",
             ],
-        ),
-    ] {
-        let smoke_step = run_smoke_step(step, &binary, &repo_root, &home_root, &args)?;
-        let success = smoke_step.success;
-        steps.push(smoke_step);
-        if !success {
-            break;
+        )?;
+        should_continue = uninstall_after_setup.success;
+        steps.push(uninstall_after_setup);
+    }
+    if should_continue {
+        if let Some(backup_id) = setup_global_backup_id.as_deref() {
+            let uninstall_global_args = vec![
+                "uninstall".to_string(),
+                "--repo-root".to_string(),
+                repo_root.display().to_string(),
+                "--backup-id".to_string(),
+                backup_id.to_string(),
+                "--json".to_string(),
+            ];
+            let uninstall_global = run_smoke_step_strings(
+                "uninstall_global_setup",
+                &binary,
+                &repo_root,
+                &home_root,
+                &uninstall_global_args,
+            )?;
+            steps.push(uninstall_global);
+        } else {
+            steps.push(SmokeStep {
+                step: "uninstall_global_setup",
+                success: false,
+                exit_code: None,
+                stdout: String::new(),
+                stderr: "global setup did not report a backup_id".to_string(),
+            });
         }
     }
 
@@ -1326,17 +2253,19 @@ fn run_helper_force_normalization_flow() -> Result<QualificationGate> {
     )
     .context("seed multi-stop hooks")?;
 
+    let setup_global = run_smoke_step(
+        "setup_global",
+        &binary,
+        &repo_root,
+        &home_root,
+        &["setup", "--json"],
+    )?;
     let setup_without_force = run_smoke_step(
         "setup_without_force",
         &binary,
         &repo_root,
         &home_root,
-        &[
-            "setup",
-            "--repo-root",
-            repo_root.to_str().unwrap(),
-            "--json",
-        ],
+        &["init", "--repo-root", repo_root.to_str().unwrap(), "--json"],
     )?;
     let setup_with_force = run_smoke_step(
         "setup_with_force",
@@ -1344,7 +2273,7 @@ fn run_helper_force_normalization_flow() -> Result<QualificationGate> {
         &repo_root,
         &home_root,
         &[
-            "setup",
+            "init",
             "--force",
             "--repo-root",
             repo_root.to_str().unwrap(),
@@ -1374,35 +2303,37 @@ fn run_helper_force_normalization_flow() -> Result<QualificationGate> {
             "{}{}",
             setup_without_force.stdout, setup_without_force.stderr
         )
-        .contains("multiple authoritative Stop handlers");
+        .contains("project hooks.json contains authoritative Stop handlers");
 
     let details = Some(json!({
         "binary": binary.display().to_string(),
         "sandbox_root": sandbox.path().display().to_string(),
+        "setup_global": setup_global,
         "setup_without_force": setup_without_force,
         "setup_with_force": setup_with_force,
         "doctor_after_force": doctor_after_force,
-        "normalized_stop_hook_count": normalized_counts.0,
-        "normalized_managed_stop_hook_count": normalized_counts.1,
+        "normalized_project_stop_hook_count": normalized_counts.0,
+        "normalized_project_managed_stop_hook_count": normalized_counts.1,
     }));
 
     Ok(
-        if setup_force_failed_as_expected
+        if setup_global.success
+            && setup_force_failed_as_expected
             && setup_with_force.success
             && doctor_supported
-            && normalized_counts == (1, 1)
+            && normalized_counts == (0, 0)
         {
             QualificationGate::pass(
                 "helper_force_normalization_flow",
-                "Helper qualification proves multi-Stop conflict detection and force-based normalization back to one authoritative Codex1 Stop pipeline.",
-                "The helper flow rejected multiple Stop handlers without --force, then normalized back to one authoritative managed Stop pipeline with --force.",
+                "Helper qualification proves multi-Stop conflict detection and force-based normalization back to exactly one authoritative Codex1 Stop pipeline across user and project layers.",
+                "The helper flow rejected duplicate project Stop handlers without --force, then removed project Stop authority so the global managed pipeline remains the only authoritative Stop hook.",
                 details,
             )
         } else {
             QualificationGate::fail(
                 "helper_force_normalization_flow",
-                "Helper qualification proves multi-Stop conflict detection and force-based normalization back to one authoritative Codex1 Stop pipeline.",
-                "The helper flow did not prove the expected multi-Stop rejection and force-normalization behavior.",
+                "Helper qualification proves multi-Stop conflict detection and force-based normalization back to exactly one authoritative Codex1 Stop pipeline across user and project layers.",
+                "The helper flow did not prove the expected duplicate Stop rejection and global-pipeline force-normalization behavior.",
                 details,
             )
         },
@@ -1437,6 +2368,13 @@ fn run_helper_partial_install_repair_flow() -> Result<QualificationGate> {
     )
     .context("seed partial hooks")?;
 
+    let setup_global = run_smoke_step(
+        "setup_global",
+        &binary,
+        &repo_root,
+        &home_root,
+        &["setup", "--json"],
+    )?;
     let doctor_before_repair = run_smoke_step(
         "doctor_before_repair",
         &binary,
@@ -1455,7 +2393,8 @@ fn run_helper_partial_install_repair_flow() -> Result<QualificationGate> {
         &repo_root,
         &home_root,
         &[
-            "setup",
+            "init",
+            "--force",
             "--repo-root",
             repo_root.to_str().unwrap(),
             "--json",
@@ -1478,23 +2417,24 @@ fn run_helper_partial_install_repair_flow() -> Result<QualificationGate> {
     let details = Some(json!({
         "binary": binary.display().to_string(),
         "sandbox_root": sandbox.path().display().to_string(),
+        "setup_global": setup_global,
         "doctor_before_repair": doctor_before_repair,
         "setup_repair": setup_repair,
         "doctor_after_repair": doctor_after_repair,
     }));
 
     Ok(
-        if !before_supported && setup_repair.success && after_supported {
+        if setup_global.success && !before_supported && setup_repair.success && after_supported {
             QualificationGate::pass(
                 "helper_partial_install_repair_flow",
-                "Helper qualification proves rerunning setup repairs a partially written support surface representative of an interrupted install.",
-                "The helper flow started from a partial support surface, reported it unsupported, and returned it to a support-ready state by rerunning setup.",
+                "Helper qualification proves rerunning init --force repairs a partially written support surface representative of an interrupted install.",
+                "The helper flow started from a partial support surface, reported it unsupported, and returned it to a support-ready state by rerunning init --force.",
                 details,
             )
         } else {
             QualificationGate::fail(
                 "helper_partial_install_repair_flow",
-                "Helper qualification proves rerunning setup repairs a partially written support surface representative of an interrupted install.",
+                "Helper qualification proves rerunning init --force repairs a partially written support surface representative of an interrupted install.",
                 "The helper flow did not prove clean repair from the seeded partial support surface.",
                 details,
             )
@@ -1514,12 +2454,7 @@ fn run_helper_drift_detection_flow() -> Result<QualificationGate> {
         &binary,
         &repo_root,
         &home_root,
-        &[
-            "setup",
-            "--repo-root",
-            repo_root.to_str().unwrap(),
-            "--json",
-        ],
+        &["init", "--repo-root", repo_root.to_str().unwrap(), "--json"],
     )?;
     if !setup_initial.success {
         return Ok(QualificationGate::fail(
@@ -1529,7 +2464,7 @@ fn run_helper_drift_detection_flow() -> Result<QualificationGate> {
             Some(json!({
                 "binary": binary.display().to_string(),
                 "sandbox_root": sandbox.path().display().to_string(),
-                "setup_initial": setup_initial,
+            "setup_initial": setup_initial,
             })),
         ));
     }
@@ -1900,6 +2835,24 @@ fn run_runtime_backend_flow() -> Result<QualificationGate> {
         .and_then(Value::as_str)
         .context("runtime review-bundle output is missing bundle_id")?
         .to_string();
+    let review_truth_snapshot =
+        capture_review_truth_snapshot_payload(&binary, &repo_root, "qualify-runtime", &bundle_id)?;
+    let spec_review_output_ref = record_none_reviewer_output_ref(
+        &binary,
+        &repo_root,
+        "qualify-runtime",
+        &bundle_id,
+        "qualification-runtime-spec-review",
+        &mut steps,
+    )?;
+    let code_review_output_ref = record_none_reviewer_output_ref_after_snapshot(
+        &binary,
+        &repo_root,
+        "qualify-runtime",
+        &bundle_id,
+        "qualification-runtime-code-review",
+        &mut steps,
+    )?;
 
     steps.push(run_json_smoke_step(
         "record_review_result",
@@ -1921,10 +2874,15 @@ fn run_runtime_backend_flow() -> Result<QualificationGate> {
             "verdict": "clean",
             "target_spec_id": "runtime_core",
             "governing_refs": ["bundle"],
-            "evidence_refs": ["RECEIPTS/test-output.txt"],
+            "evidence_refs": [
+                spec_review_output_ref,
+                code_review_output_ref,
+                "RECEIPTS/test-output.txt"
+            ],
             "findings": [],
             "disposition_notes": ["Qualification review path is clean."],
-            "next_required_branch": "execution"
+            "next_required_branch": "execution",
+            "review_truth_snapshot": review_truth_snapshot
         }),
     )?);
     steps.push(run_json_smoke_step(
@@ -2059,6 +3017,28 @@ fn run_runtime_backend_flow() -> Result<QualificationGate> {
         .and_then(Value::as_str)
         .context("post-completion review bundle output is missing bundle_id")?
         .to_string();
+    let post_completion_review_truth_snapshot = capture_review_truth_snapshot_payload(
+        &binary,
+        &repo_root,
+        "qualify-runtime",
+        &post_completion_bundle_id,
+    )?;
+    let post_completion_output_ref = record_none_reviewer_output_ref(
+        &binary,
+        &repo_root,
+        "qualify-runtime",
+        &post_completion_bundle_id,
+        "qualification-runtime-post-completion-spec-review",
+        &mut steps,
+    )?;
+    let post_completion_code_output_ref = record_none_reviewer_output_ref_after_snapshot(
+        &binary,
+        &repo_root,
+        "qualify-runtime",
+        &post_completion_bundle_id,
+        "qualification-runtime-post-completion-code-review",
+        &mut steps,
+    )?;
     steps.push(run_json_smoke_step(
         "record_post_completion_review_result",
         &binary,
@@ -2079,10 +3059,15 @@ fn run_runtime_backend_flow() -> Result<QualificationGate> {
             "verdict": "clean",
             "target_spec_id": "runtime_core",
             "governing_refs": ["bundle"],
-            "evidence_refs": ["RECEIPTS/test-output.txt"],
+            "evidence_refs": [
+                post_completion_output_ref,
+                post_completion_code_output_ref,
+                "RECEIPTS/test-output.txt"
+            ],
             "findings": [],
             "disposition_notes": ["Post-completion review path is clean."],
-            "next_required_branch": "mission_close"
+            "next_required_branch": "mission_close",
+            "review_truth_snapshot": post_completion_review_truth_snapshot
         }),
     )?);
     steps.push(run_json_smoke_step(
@@ -2131,6 +3116,28 @@ fn run_runtime_backend_flow() -> Result<QualificationGate> {
         .and_then(Value::as_str)
         .context("mission-close bundle output is missing bundle_id")?
         .to_string();
+    let mission_close_review_truth_snapshot = capture_review_truth_snapshot_payload(
+        &binary,
+        &repo_root,
+        "qualify-runtime",
+        &mission_close_bundle_id,
+    )?;
+    let mission_close_code_output_ref = record_none_reviewer_output_ref(
+        &binary,
+        &repo_root,
+        "qualify-runtime",
+        &mission_close_bundle_id,
+        "qualification-runtime-mission-close-code",
+        &mut steps,
+    )?;
+    let mission_close_spec_output_ref = record_none_reviewer_output_ref_after_snapshot(
+        &binary,
+        &repo_root,
+        "qualify-runtime",
+        &mission_close_bundle_id,
+        "qualification-runtime-mission-close-spec",
+        &mut steps,
+    )?;
 
     steps.push(run_json_smoke_step(
         "record_mission_close_review",
@@ -2151,9 +3158,14 @@ fn run_runtime_backend_flow() -> Result<QualificationGate> {
             "reviewer": "qualify-codex",
             "verdict": "complete",
             "governing_refs": ["mission-close-bundle"],
-            "evidence_refs": ["RECEIPTS/test-output.txt"],
+            "evidence_refs": [
+                mission_close_code_output_ref,
+                mission_close_spec_output_ref,
+                "RECEIPTS/test-output.txt"
+            ],
             "findings": [],
-            "disposition_notes": ["Qualification mission-close review is clean."]
+            "disposition_notes": ["Qualification mission-close review is clean."],
+            "review_truth_snapshot": mission_close_review_truth_snapshot
         }),
     )?);
     let reached_complete_before_contradiction =
@@ -2664,6 +3676,263 @@ fn run_waiting_stop_hook_flow() -> Result<QualificationGate> {
     })
 }
 
+fn run_stop_hook_smoke_probe(
+    step: &'static str,
+    binary: &Path,
+    repo_root: &Path,
+    input: &Value,
+) -> Result<(SmokeStep, Option<Value>)> {
+    let output = run_stop_hook_probe(
+        Command::new(binary)
+            .args(["internal", "stop-hook"])
+            .current_dir(repo_root)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .with_context(|| format!("failed to spawn {step} stop-hook probe"))?,
+        input,
+    )?;
+    let stdout = trim_output(&output.stdout);
+    let parsed = serde_json::from_str::<Value>(&stdout).ok();
+    Ok((
+        SmokeStep {
+            step,
+            success: output.status.success(),
+            exit_code: output.status.code(),
+            stdout,
+            stderr: trim_output(&output.stderr),
+        },
+        parsed,
+    ))
+}
+
+fn run_control_loop_boundary_flow() -> Result<QualificationGate> {
+    let binary = qualification_binary()?;
+    let sandbox = tempfile::tempdir().context("failed to create control-loop sandbox")?;
+    let repo_root = sandbox.path().join("repo");
+    fs::create_dir_all(repo_root.join(".codex"))
+        .context("failed to create control-loop repo support surface")?;
+    fs::write(
+        repo_root.join(".codex/hooks.json"),
+        r#"{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "codex1 internal stop-hook"
+          }
+        ]
+      }
+    ]
+  }
+}"#,
+    )
+    .context("failed to write control-loop hooks.json")?;
+
+    let mission_id = "control-loop-boundary";
+    let (mut steps, _bundle_id) = open_reviewer_boundary_bundle(&binary, &repo_root, mission_id)?;
+
+    let parent_input = json!({ "cwd": repo_root.display().to_string() });
+    let (no_lease_step, no_lease_json) =
+        run_stop_hook_smoke_probe("no_lease_parent_stop", &binary, &repo_root, &parent_input)?;
+    let no_lease_yielded = no_lease_step.success
+        && no_lease_json.as_ref().is_some_and(|value| {
+            value.get("decision").is_none_or(Value::is_null)
+                && value
+                    .get("systemMessage")
+                    .and_then(Value::as_str)
+                    .is_some_and(|message| message.contains("Ralph loop is not active"))
+        });
+    steps.push(no_lease_step);
+
+    let child_input = json!({
+        "cwd": repo_root.display().to_string(),
+        "laneRole": "child_helper",
+        "agentName": "/root/control-loop-child"
+    });
+    let (child_step, child_json) =
+        run_stop_hook_smoke_probe("subagent_stop", &binary, &repo_root, &child_input)?;
+    let subagent_yielded = child_step.success
+        && child_json.as_ref().is_some_and(|value| {
+            value.get("decision").is_none_or(Value::is_null)
+                && value
+                    .get("systemMessage")
+                    .and_then(Value::as_str)
+                    .is_some_and(|message| message.contains("Subagent lane may stop"))
+        });
+    steps.push(child_step);
+
+    let begin_lease = run_json_smoke_step(
+        "begin_parent_loop_lease",
+        &binary,
+        &repo_root,
+        &[
+            "internal",
+            "begin-loop-lease",
+            "--repo-root",
+            repo_root.to_str().unwrap(),
+            "--input-json",
+            "-",
+            "--json",
+        ],
+        &json!({
+            "mission_id": mission_id,
+            "mode": "review_loop",
+            "owner": "parent-review-loop",
+            "reason": "Qualification proves active parent leases still enforce open review gates."
+        }),
+    )?;
+    let lease_active = begin_lease.success
+        && serde_json::from_str::<Value>(&begin_lease.stdout)
+            .ok()
+            .is_some_and(|value| {
+                value.get("status").and_then(Value::as_str) == Some("active")
+                    && value.get("mode").and_then(Value::as_str) == Some("review_loop")
+            });
+    let loop_authority_token = serde_json::from_str::<Value>(&begin_lease.stdout)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("parent_authority_token")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        });
+    steps.push(begin_lease);
+
+    let (active_parent_step, active_parent_json) =
+        run_stop_hook_smoke_probe("active_parent_stop", &binary, &repo_root, &parent_input)?;
+    let active_parent_blocked = active_parent_step.success
+        && active_parent_json.as_ref().is_some_and(|value| {
+            value.get("decision").and_then(Value::as_str) == Some("block")
+                && value
+                    .get("reason")
+                    .and_then(Value::as_str)
+                    .is_some_and(|reason| reason.contains("review gate"))
+        });
+    steps.push(active_parent_step);
+
+    let pause_lease = if let Some(token) = loop_authority_token.as_deref() {
+        run_json_smoke_step_with_env(
+            "pause_parent_loop_lease",
+            &binary,
+            &repo_root,
+            &[
+                "internal",
+                "pause-loop-lease",
+                "--repo-root",
+                repo_root.to_str().unwrap(),
+                "--input-json",
+                "-",
+                "--json",
+            ],
+            &json!({
+                "mission_id": mission_id,
+                "paused_by": "qualification",
+                "reason": "Qualification proves $close-style pause lets user discussion stop normally."
+            }),
+            &[("CODEX1_PARENT_LOOP_AUTHORITY_TOKEN", token)],
+        )?
+    } else {
+        SmokeStep {
+            step: "pause_parent_loop_lease",
+            success: false,
+            exit_code: None,
+            stdout: String::new(),
+            stderr: "missing parent authority token".to_string(),
+        }
+    };
+    let lease_paused = pause_lease.success
+        && serde_json::from_str::<Value>(&pause_lease.stdout)
+            .ok()
+            .is_some_and(|value| {
+                value.pointer("/lease/status").and_then(Value::as_str) == Some("paused")
+            });
+    steps.push(pause_lease);
+
+    let (paused_parent_step, paused_parent_json) =
+        run_stop_hook_smoke_probe("paused_parent_stop", &binary, &repo_root, &parent_input)?;
+    let paused_parent_yielded = paused_parent_step.success
+        && paused_parent_json.as_ref().is_some_and(|value| {
+            value.get("decision").is_none_or(Value::is_null)
+                && value
+                    .get("systemMessage")
+                    .and_then(Value::as_str)
+                    .is_some_and(|message| message.contains("Ralph loop is not active"))
+        });
+    steps.push(paused_parent_step);
+
+    let clear_lease = if let Some(token) = loop_authority_token.as_deref() {
+        run_json_smoke_step_with_env(
+            "clear_parent_loop_lease",
+            &binary,
+            &repo_root,
+            &[
+                "internal",
+                "clear-loop-lease",
+                "--repo-root",
+                repo_root.to_str().unwrap(),
+                "--json",
+            ],
+            &json!({}),
+            &[("CODEX1_PARENT_LOOP_AUTHORITY_TOKEN", token)],
+        )?
+    } else {
+        SmokeStep {
+            step: "clear_parent_loop_lease",
+            success: false,
+            exit_code: None,
+            stdout: String::new(),
+            stderr: "missing parent authority token".to_string(),
+        }
+    };
+    let lease_cleared = clear_lease.success;
+    steps.push(clear_lease);
+
+    let hook_surface_installed = repo_root.join(".codex/hooks.json").is_file();
+    let details = Some(json!({
+        "sandbox_root": sandbox.path().display().to_string(),
+        "hooks_json": repo_root.join(".codex/hooks.json").display().to_string(),
+        "checks": {
+            "hook_surface_installed": hook_surface_installed,
+            "no_lease_yielded": no_lease_yielded,
+            "subagent_yielded": subagent_yielded,
+            "lease_active": lease_active,
+            "active_parent_blocked": active_parent_blocked,
+            "lease_paused": lease_paused,
+            "paused_parent_yielded": paused_parent_yielded,
+            "lease_cleared": lease_cleared
+        },
+        "steps": steps
+    }));
+
+    if hook_surface_installed
+        && no_lease_yielded
+        && subagent_yielded
+        && lease_active
+        && active_parent_blocked
+        && lease_paused
+        && paused_parent_yielded
+        && lease_cleared
+    {
+        Ok(QualificationGate::pass(
+            CONTROL_LOOP_BOUNDARY_GATE,
+            "Scoped Ralph control-loop qualification proves hooks are safe because Stop-hook enforcement is lease-scoped.",
+            "With an installed Stop hook and an open review gate, no-lease parent turns yielded, subagent turns yielded, an active parent lease blocked, and a paused lease yielded again.",
+            details,
+        ))
+    } else {
+        Ok(QualificationGate::fail(
+            CONTROL_LOOP_BOUNDARY_GATE,
+            "Scoped Ralph control-loop qualification proves hooks are safe because Stop-hook enforcement is lease-scoped.",
+            "The scoped control-loop proof did not satisfy no-lease yield, subagent yield, active parent block, and pause-yield expectations.",
+            details,
+        ))
+    }
+}
+
 fn run_native_stop_hook_live_flow(live: bool) -> Result<QualificationGate> {
     if !live {
         return Ok(QualificationGate::skipped(
@@ -3051,36 +4320,28 @@ This gate is primarily about proving live child inspection and honest resume rec
             NativeCodexInvocation::Exec,
             prompt,
         )?;
+        let native_events = parse_jsonl_events(&native.stdout)?;
         let final_agent_message = last_agent_message_text(&native.stdout)?;
-        let native_summary = match parse_native_multi_agent_summary(&native.stdout) {
-            Ok(summary) => summary,
-            Err(error) => {
-                return Ok(native_multi_agent_gate_failure(
-                    "The native child-agent probe did not return a parseable JSON summary, so qualification recorded a failing gate instead of aborting.",
-                    Some(json!({
-                        "sandbox_root": sandbox.path().display().to_string(),
-                        "repo_root": repo_root.display().to_string(),
-                        "codex_home_root": codex_home_root.display().to_string(),
-                        "native_stdout": trim_output(&native.stdout),
-                        "native_stderr": trim_output(&native.stderr),
-                        "final_agent_message": final_agent_message,
-                        "parse_error": format!("{error:#}"),
-                        "failure_classification": "native_summary_parse_failed",
-                    })),
-                ));
-            }
-        };
+        let (reported_summary, reported_summary_parse_error) =
+            match parse_native_multi_agent_summary(&native.stdout) {
+                Ok(summary) => (Some(summary), None),
+                Err(error) => (None, Some(format!("{error:#}"))),
+            };
+        let native_summary = summarize_native_multi_agent_events(&native_events);
 
         if native_summary.child_task_path.trim().is_empty() {
             return Ok(native_multi_agent_gate_failure(
-                "The native child-agent probe omitted the child task path needed for honest resume reconciliation.",
+                "The native child-agent probe did not produce a raw child identity that resume reconciliation could bind to.",
                 Some(json!({
                     "sandbox_root": sandbox.path().display().to_string(),
                     "repo_root": repo_root.display().to_string(),
                     "codex_home_root": codex_home_root.display().to_string(),
-                    "native_stdout": trim_output(&native.stdout),
-                    "native_stderr": trim_output(&native.stderr),
+                    "native_stdout": full_output(&native.stdout),
+                    "native_stderr": full_output(&native.stderr),
+                    "native_events": native_events,
                     "final_agent_message": final_agent_message,
+                    "reported_summary": reported_summary,
+                    "reported_summary_parse_error": reported_summary_parse_error,
                     "native_summary": native_summary,
                     "failure_classification": "child_task_path_missing",
                 })),
@@ -3110,6 +4371,7 @@ This gate is primarily about proving live child inspection and honest resume rec
         )?;
 
         let child_status = native_child_status_for_resume(&native_summary);
+        let child_task_path = native_summary.child_task_path.clone();
         let write_closeout_step = run_json_smoke_step(
             "write_native_child_closeout",
             &binary,
@@ -3130,7 +4392,7 @@ This gate is primarily about proving live child inspection and honest resume rec
 
         let live_child_lanes = match child_status {
             Some(status) => vec![json!({
-                "task_path": native_summary.child_task_path,
+                "task_path": child_task_path,
                 "status": status,
             })],
             None => Vec::new(),
@@ -3167,7 +4429,7 @@ This gate is primarily about proving live child inspection and honest resume rec
             entry
                 .get("task_path")
                 .and_then(Value::as_str)
-                .is_some_and(|task_path| task_path == native_summary.child_task_path)
+                .is_some_and(|task_path| task_path == child_task_path)
         });
         let observed_classification = matching_entry
             .and_then(|entry| entry.get("classification"))
@@ -3184,28 +4446,12 @@ This gate is primarily about proving live child inspection and honest resume rec
             .get("resume_status")
             .and_then(Value::as_str)
             .map(ToOwned::to_owned);
-        let saw_spawn_agent_event = jsonl_contains_collab_tool(&native.stdout, "spawn_agent");
-        let saw_send_message_event = jsonl_contains_collab_tool(&native.stdout, "send_message");
-        let saw_assign_task_event = jsonl_contains_collab_tool(&native.stdout, "assign_task");
-        let saw_followup_task_event = jsonl_contains_collab_tool(&native.stdout, "followup_task");
-        let saw_list_agents_event = jsonl_contains_collab_tool(&native.stdout, "list_agents");
-        let saw_wait_event = jsonl_contains_collab_tool(&native.stdout, "wait");
-        let saw_close_agent_event = jsonl_contains_collab_tool(&native.stdout, "close_agent");
         let assessment = assess_native_multi_agent_gate(
             native.status.success(),
             &init_step,
             &write_closeout_step,
             &resolve_resume_step,
             &native_summary,
-            NativeMultiAgentObservedTools {
-                saw_spawn_agent_event,
-                saw_send_message_event,
-                saw_assign_task_event,
-                saw_followup_task_event,
-                saw_list_agents_event,
-                saw_wait_event,
-                saw_close_agent_event,
-            },
             expected_classification.as_deref(),
             observed_classification.as_deref(),
             resume_status.as_deref(),
@@ -3215,17 +4461,13 @@ This gate is primarily about proving live child inspection and honest resume rec
             "sandbox_root": sandbox.path().display().to_string(),
             "repo_root": repo_root.display().to_string(),
             "codex_home_root": codex_home_root.display().to_string(),
-            "native_stdout": trim_output(&native.stdout),
-            "native_stderr": trim_output(&native.stderr),
+            "native_stdout": full_output(&native.stdout),
+            "native_stderr": full_output(&native.stderr),
+            "native_events": native_events,
             "final_agent_message": final_agent_message,
+            "reported_summary": reported_summary,
+            "reported_summary_parse_error": reported_summary_parse_error,
             "native_summary": native_summary,
-            "saw_spawn_agent_event": saw_spawn_agent_event,
-            "saw_send_message_event": saw_send_message_event,
-            "saw_assign_task_event": saw_assign_task_event,
-            "saw_followup_task_event": saw_followup_task_event,
-            "saw_list_agents_event": saw_list_agents_event,
-            "saw_wait_event": saw_wait_event,
-            "saw_close_agent_event": saw_close_agent_event,
             "init_step": init_step,
             "write_closeout_step": write_closeout_step,
             "resolve_resume_step": resolve_resume_step,
@@ -3301,7 +4543,7 @@ fn qualification_binary() -> Result<PathBuf> {
     std::env::current_exe().context("failed to resolve the current codex1 binary")
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 struct NativeMultiAgentSummary {
     #[serde(default, deserialize_with = "bool_or_false")]
     used_spawn_agent: bool,
@@ -3355,17 +4597,6 @@ where
     Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
 }
 
-#[derive(Debug, Clone, Copy)]
-struct NativeMultiAgentObservedTools {
-    saw_spawn_agent_event: bool,
-    saw_send_message_event: bool,
-    saw_assign_task_event: bool,
-    saw_followup_task_event: bool,
-    saw_list_agents_event: bool,
-    saw_wait_event: bool,
-    saw_close_agent_event: bool,
-}
-
 #[derive(Debug, PartialEq, Eq)]
 struct NativeMultiAgentGateAssessment {
     success: bool,
@@ -3382,22 +4613,21 @@ fn assess_native_multi_agent_gate(
     write_closeout_step: &SmokeStep,
     resolve_resume_step: &SmokeStep,
     native_summary: &NativeMultiAgentSummary,
-    observed_tools: NativeMultiAgentObservedTools,
     expected_classification: Option<&str>,
     observed_classification: Option<&str>,
     resume_status: Option<&str>,
 ) -> NativeMultiAgentGateAssessment {
     let mut missing_required_tools = Vec::new();
-    if !(native_summary.used_spawn_agent && observed_tools.saw_spawn_agent_event) {
+    if !native_summary.used_spawn_agent {
         missing_required_tools.push("spawn_agent");
     }
-    if !(native_summary.used_list_agents && observed_tools.saw_list_agents_event) {
+    if !native_summary.used_list_agents {
         missing_required_tools.push("list_agents");
     }
-    if !(native_summary.used_wait_agent && observed_tools.saw_wait_event) {
+    if !native_summary.used_wait_agent {
         missing_required_tools.push("wait_agent");
     }
-    if !(native_summary.used_close_agent && observed_tools.saw_close_agent_event) {
+    if !native_summary.used_close_agent {
         missing_required_tools.push("close_agent");
     }
 
@@ -3416,13 +4646,13 @@ fn assess_native_multi_agent_gate(
     }
 
     let mut observed_optional_delivery_tools = Vec::new();
-    if native_summary.used_send_message && observed_tools.saw_send_message_event {
+    if native_summary.used_send_message {
         observed_optional_delivery_tools.push("send_message");
     }
-    if native_summary.used_assign_task && observed_tools.saw_assign_task_event {
+    if native_summary.used_assign_task {
         observed_optional_delivery_tools.push("assign_task");
     }
-    if native_summary.used_followup_task && observed_tools.saw_followup_task_event {
+    if native_summary.used_followup_task {
         observed_optional_delivery_tools.push("followup_task");
     }
 
@@ -3760,26 +4990,6 @@ fn parse_native_multi_agent_summary_text(text: &str) -> Result<NativeMultiAgentS
     serde_json::from_str(text).context("failed to parse final agent message JSON")
 }
 
-fn jsonl_contains_collab_tool(bytes: &[u8], tool: &str) -> bool {
-    parse_jsonl_events(bytes)
-        .map(|events| {
-            events.into_iter().any(|value| {
-                value.get("type").and_then(Value::as_str) == Some("item.started")
-                    && value
-                        .get("item")
-                        .and_then(|item| item.get("type"))
-                        .and_then(Value::as_str)
-                        == Some("collab_tool_call")
-                    && value
-                        .get("item")
-                        .and_then(|item| item.get("tool"))
-                        .and_then(Value::as_str)
-                        == Some(tool)
-            })
-        })
-        .unwrap_or(false)
-}
-
 fn parse_jsonl_events(bytes: &[u8]) -> Result<Vec<Value>> {
     let mut events = Vec::new();
     for line in String::from_utf8_lossy(bytes).lines() {
@@ -3794,8 +5004,216 @@ fn parse_jsonl_events(bytes: &[u8]) -> Result<Vec<Value>> {
     Ok(events)
 }
 
+fn summarize_native_multi_agent_events(events: &[Value]) -> NativeMultiAgentSummary {
+    let mut summary = NativeMultiAgentSummary::default();
+    let mut fallback_child_path = None::<String>;
+    let mut completed_waits = 0usize;
+    let mut completed_closes = 0usize;
+
+    for item in completed_collab_tool_items(events) {
+        let Some(tool) = item.get("tool").and_then(Value::as_str) else {
+            continue;
+        };
+
+        match tool {
+            "spawn_agent" => {
+                summary.used_spawn_agent = true;
+                if fallback_child_path.is_none() {
+                    fallback_child_path = extract_first_receiver_thread_id(item)
+                        .or_else(|| extract_single_status_key(item.get("agents_states")));
+                }
+            }
+            "send_message" => {
+                summary.used_send_message = true;
+            }
+            "assign_task" => {
+                summary.used_assign_task = true;
+            }
+            "followup_task" => {
+                summary.used_followup_task = true;
+            }
+            "list_agents" => {
+                summary.used_list_agents = true;
+                if let Some(snapshot) = extract_list_agents_snapshot(item) {
+                    if summary.child_task_path.is_empty() {
+                        if let Some(path) =
+                            find_agent_path_by_task_name(&snapshot, QUALIFY_CHILD_TASK_NAME)
+                        {
+                            summary.child_task_path = path;
+                        }
+                    }
+
+                    if summary.list_agents_before_wait.is_null() && completed_waits == 0 {
+                        summary.list_agents_before_wait = snapshot;
+                    } else if summary.list_agents_after_wait.is_null() && completed_closes == 0 {
+                        summary.list_agents_after_wait = snapshot;
+                    } else if summary.list_agents_after_close.is_null() {
+                        summary.list_agents_after_close = snapshot;
+                    }
+                }
+            }
+            "wait" | "wait_agent" => {
+                summary.used_wait_agent = true;
+                summary.wait_summary_present = true;
+                completed_waits += 1;
+                if summary.child_task_path.is_empty()
+                    && let Some(path) = extract_single_status_key(item.get("agents_states"))
+                {
+                    summary.child_task_path = path;
+                }
+                if summary.child_task_path.is_empty()
+                    && let Some(path) = fallback_child_path.clone()
+                {
+                    summary.child_task_path = path;
+                }
+                if !summary.child_task_path.is_empty()
+                    && let Some(status) = item.get("agents_states").and_then(|snapshot| {
+                        status_value_for_task_path(snapshot, &summary.child_task_path)
+                    })
+                {
+                    summary.child_seen_after_wait = true;
+                    summary.child_status_after_wait = status;
+                }
+            }
+            "close_agent" => {
+                summary.used_close_agent = true;
+                completed_closes += 1;
+                if summary.child_task_path.is_empty()
+                    && let Some(path) = extract_single_status_key(item.get("agents_states"))
+                {
+                    summary.child_task_path = path;
+                }
+                if summary.child_task_path.is_empty()
+                    && let Some(path) = fallback_child_path.clone()
+                {
+                    summary.child_task_path = path;
+                }
+                if !summary.child_task_path.is_empty()
+                    && let Some(status) = item.get("agents_states").and_then(|snapshot| {
+                        status_value_for_task_path(snapshot, &summary.child_task_path)
+                    })
+                {
+                    summary.child_seen_after_close = true;
+                    summary.child_status_after_close = status;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if summary.child_task_path.is_empty() {
+        if let Some(path) =
+            find_agent_path_by_task_name(&summary.list_agents_before_wait, QUALIFY_CHILD_TASK_NAME)
+                .or_else(|| {
+                    find_agent_path_by_task_name(
+                        &summary.list_agents_after_wait,
+                        QUALIFY_CHILD_TASK_NAME,
+                    )
+                })
+                .or_else(|| {
+                    find_agent_path_by_task_name(
+                        &summary.list_agents_after_close,
+                        QUALIFY_CHILD_TASK_NAME,
+                    )
+                })
+                .or(fallback_child_path)
+        {
+            summary.child_task_path = path;
+        }
+    }
+
+    if !summary.child_task_path.is_empty() {
+        if let Some(status) =
+            status_value_for_task_path(&summary.list_agents_before_wait, &summary.child_task_path)
+        {
+            summary.child_seen_before_wait = true;
+            summary.child_status_before_wait = status;
+        }
+        if let Some(status) =
+            status_value_for_task_path(&summary.list_agents_after_wait, &summary.child_task_path)
+        {
+            summary.child_seen_after_wait = true;
+            summary.child_status_after_wait = status;
+        }
+        if let Some(status) =
+            status_value_for_task_path(&summary.list_agents_after_close, &summary.child_task_path)
+        {
+            summary.child_seen_after_close = true;
+            summary.child_status_after_close = status;
+        }
+    }
+
+    summary
+}
+
+fn completed_collab_tool_items(events: &[Value]) -> Vec<&Value> {
+    events
+        .iter()
+        .filter_map(|value| {
+            let item = value.get("item")?;
+            let is_completed = value.get("type").and_then(Value::as_str) == Some("item.completed");
+            let is_collab_tool =
+                item.get("type").and_then(Value::as_str) == Some("collab_tool_call");
+            (is_completed && is_collab_tool).then_some(item)
+        })
+        .collect()
+}
+
+fn extract_first_receiver_thread_id(item: &Value) -> Option<String> {
+    item.get("receiver_thread_ids")
+        .and_then(Value::as_array)
+        .and_then(|receivers| receivers.first())
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+}
+
+fn extract_single_status_key(snapshot: Option<&Value>) -> Option<String> {
+    snapshot
+        .and_then(Value::as_object)
+        .filter(|map| map.len() == 1)
+        .and_then(|map| map.keys().next().cloned())
+}
+
+fn extract_list_agents_snapshot(item: &Value) -> Option<Value> {
+    match item {
+        Value::Array(items) => items.iter().find_map(extract_list_agents_snapshot),
+        Value::Object(map) => {
+            if let Some(agents) = map.get("agents").and_then(Value::as_array) {
+                return Some(Value::Array(agents.clone()));
+            }
+            map.values().find_map(extract_list_agents_snapshot)
+        }
+        _ => None,
+    }
+}
+
+fn find_agent_path_by_task_name(snapshot: &Value, task_name: &str) -> Option<String> {
+    match snapshot {
+        Value::Array(items) => items
+            .iter()
+            .find_map(|item| find_agent_path_by_task_name(item, task_name)),
+        Value::Object(map) => {
+            if let Some(path) = map
+                .get("task_path")
+                .or_else(|| map.get("agent_name"))
+                .and_then(Value::as_str)
+                .filter(|path| path_matches_task_name(path, task_name))
+            {
+                return Some(path.to_string());
+            }
+            map.values()
+                .find_map(|value| find_agent_path_by_task_name(value, task_name))
+        }
+        _ => None,
+    }
+}
+
+fn path_matches_task_name(path: &str, task_name: &str) -> bool {
+    path == task_name || path.ends_with(&format!("/{task_name}"))
+}
+
 fn native_child_status_for_resume(summary: &NativeMultiAgentSummary) -> Option<&'static str> {
-    if !summary.child_seen_after_wait {
+    if summary.child_task_path.is_empty() {
         return None;
     }
 
@@ -3810,20 +5228,42 @@ fn native_child_status_for_resume(summary: &NativeMultiAgentSummary) -> Option<&
     }
 }
 
-fn status_for_task_path(snapshot: &Value, task_path: &str) -> Option<String> {
+fn status_value_for_task_path(snapshot: &Value, task_path: &str) -> Option<Value> {
     match snapshot {
         Value::Array(items) => items
             .iter()
-            .find_map(|item| status_for_task_path(item, task_path)),
+            .find_map(|item| status_value_for_task_path(item, task_path)),
         Value::Object(map) => {
-            if map.get("task_path").and_then(Value::as_str) == Some(task_path) {
-                return map.get("status").and_then(native_child_status_name);
+            if map
+                .get("task_path")
+                .or_else(|| map.get("agent_name"))
+                .and_then(Value::as_str)
+                == Some(task_path)
+            {
+                return map
+                    .get("status")
+                    .cloned()
+                    .or_else(|| map.get("agent_status").cloned());
+            }
+            if let Some(value) = map.get(task_path) {
+                if let Some(status) = value
+                    .get("status")
+                    .cloned()
+                    .or_else(|| value.get("agent_status").cloned())
+                {
+                    return Some(status);
+                }
             }
             map.values()
-                .find_map(|value| status_for_task_path(value, task_path))
+                .find_map(|value| status_value_for_task_path(value, task_path))
         }
         _ => None,
     }
+}
+
+fn status_for_task_path(snapshot: &Value, task_path: &str) -> Option<String> {
+    status_value_for_task_path(snapshot, task_path)
+        .and_then(|value| native_child_status_name(&value))
 }
 
 fn native_child_status_name(value: &Value) -> Option<String> {
@@ -3875,8 +5315,45 @@ fn run_smoke_step(
     })
 }
 
+fn run_smoke_step_strings(
+    step: &'static str,
+    binary: &Path,
+    repo_root: &Path,
+    home_root: &Path,
+    args: &[String],
+) -> Result<SmokeStep> {
+    let output = Command::new(binary)
+        .args(args)
+        .current_dir(repo_root)
+        .env("HOME", home_root)
+        .env("XDG_CONFIG_HOME", home_root.join(".config"))
+        .env("CODEX_HOME", home_root.join(".codex"))
+        .env("CODEX1_QUALIFY_EXECUTABLE", binary)
+        .output()
+        .with_context(|| format!("failed to run `{}`", args.join(" ")))?;
+
+    Ok(SmokeStep {
+        step,
+        success: output.status.success(),
+        exit_code: output.status.code(),
+        stdout: trim_output(&output.stdout),
+        stderr: trim_output(&output.stderr),
+    })
+}
+
 fn parse_step_json(step: &SmokeStep) -> Option<Value> {
     serde_json::from_str(&step.stdout).ok()
+}
+
+fn smoke_step_backup_id(step: &SmokeStep) -> Option<String> {
+    parse_step_json(step)
+        .and_then(|value| {
+            value
+                .get("backup_id")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .filter(|backup_id| !backup_id.trim().is_empty())
 }
 
 fn doctor_report_support_ready(step: &SmokeStep) -> bool {
@@ -3931,6 +5408,39 @@ fn run_json_smoke_step(
     args: &[&str],
     input: &Value,
 ) -> Result<SmokeStep> {
+    run_json_smoke_step_inner(step, binary, repo_root, args, input, &[], true)
+}
+
+fn run_json_smoke_step_with_env(
+    step: &'static str,
+    binary: &Path,
+    repo_root: &Path,
+    args: &[&str],
+    input: &Value,
+    extra_env: &[(&str, &str)],
+) -> Result<SmokeStep> {
+    run_json_smoke_step_inner(step, binary, repo_root, args, input, extra_env, true)
+}
+
+fn run_json_smoke_step_without_parent_authority(
+    step: &'static str,
+    binary: &Path,
+    repo_root: &Path,
+    args: &[&str],
+    input: &Value,
+) -> Result<SmokeStep> {
+    run_json_smoke_step_inner(step, binary, repo_root, args, input, &[], false)
+}
+
+fn run_json_smoke_step_inner(
+    step: &'static str,
+    binary: &Path,
+    repo_root: &Path,
+    args: &[&str],
+    input: &Value,
+    extra_env: &[(&str, &str)],
+    include_parent_authority_marker: bool,
+) -> Result<SmokeStep> {
     let home_root = repo_root
         .parent()
         .map(|parent| parent.join("home"))
@@ -3939,7 +5449,8 @@ fn run_json_smoke_step(
         .with_context(|| format!("failed to create {}", home_root.join(".config").display()))?;
     fs::create_dir_all(home_root.join(".codex"))
         .with_context(|| format!("failed to create {}", home_root.join(".codex").display()))?;
-    let mut child = Command::new(binary)
+    let mut command = Command::new(binary);
+    command
         .args(args)
         .current_dir(repo_root)
         .env("HOME", &home_root)
@@ -3948,7 +5459,17 @@ fn run_json_smoke_step(
         .env("CODEX1_QUALIFY_EXECUTABLE", binary)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    if include_parent_authority_marker
+        && let Some(token) = qualification_parent_authority_token(repo_root)
+    {
+        command.env("CODEX1_PARENT_LOOP_AUTHORITY_TOKEN", token);
+    }
+    if include_parent_authority_marker && args.contains(&"begin-loop-lease") {
+        command.env("CODEX1_PARENT_LOOP_BEGIN", "1");
+    }
+    command.envs(extra_env.iter().copied());
+    let mut child = command
         .spawn()
         .with_context(|| format!("failed to run `{}`", args.join(" ")))?;
 
@@ -3970,6 +5491,164 @@ fn run_json_smoke_step(
         stdout: trim_output(&output.stdout),
         stderr: trim_output(&output.stderr),
     })
+}
+
+fn qualification_parent_authority_token_path(repo_root: &Path) -> PathBuf {
+    repo_root.join(".ralph/qualification-parent-authority-token")
+}
+
+fn qualification_parent_authority_token(repo_root: &Path) -> Option<String> {
+    fs::read_to_string(qualification_parent_authority_token_path(repo_root))
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn capture_review_truth_snapshot_payload(
+    binary: &Path,
+    repo_root: &Path,
+    mission_id: &str,
+    bundle_id: &str,
+) -> Result<Value> {
+    let lease_step = run_json_smoke_step(
+        "begin_parent_review_loop_authority",
+        binary,
+        repo_root,
+        &[
+            "internal",
+            "begin-loop-lease",
+            "--repo-root",
+            repo_root.to_str().unwrap(),
+            "--input-json",
+            "-",
+            "--json",
+        ],
+        &json!({
+            "mission_id": mission_id,
+            "mode": "review_loop",
+            "owner": "qualification-parent-review-loop",
+            "reason": "Qualification helper needs parent review authority."
+        }),
+    )?;
+    if !lease_step.success {
+        anyhow::bail!(
+            "failed to begin parent review loop authority: {}",
+            lease_step.stderr
+        );
+    }
+    let lease = serde_json::from_str::<Value>(&lease_step.stdout)
+        .context("failed to parse parent review loop authority lease")?;
+    let token = lease
+        .get("parent_authority_token")
+        .and_then(Value::as_str)
+        .context("parent review loop authority token missing")?;
+    if let Some(parent) = qualification_parent_authority_token_path(repo_root).parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    fs::write(qualification_parent_authority_token_path(repo_root), token)
+        .context("failed to persist qualification parent authority token marker")?;
+
+    let step = run_json_smoke_step(
+        "capture_review_truth_snapshot",
+        binary,
+        repo_root,
+        &[
+            "internal",
+            "capture-review-truth-snapshot",
+            "--repo-root",
+            repo_root.to_str().unwrap(),
+            "--mission-id",
+            mission_id,
+            "--bundle-id",
+            bundle_id,
+            "--json",
+        ],
+        &json!({}),
+    )?;
+    if !step.success {
+        anyhow::bail!("failed to capture review truth snapshot: {}", step.stderr);
+    }
+    serde_json::from_str::<Value>(&step.stdout)
+        .with_context(|| format!("failed to parse review truth snapshot for {bundle_id}"))
+}
+
+fn record_none_reviewer_output_ref(
+    binary: &Path,
+    repo_root: &Path,
+    mission_id: &str,
+    bundle_id: &str,
+    reviewer_id: &str,
+    steps: &mut Vec<SmokeStep>,
+) -> Result<String> {
+    steps.push(run_json_smoke_step(
+        "capture_review_evidence_snapshot",
+        binary,
+        repo_root,
+        &[
+            "internal",
+            "capture-review-evidence-snapshot",
+            "--repo-root",
+            repo_root.to_str().unwrap(),
+            "--mission-id",
+            mission_id,
+            "--bundle-id",
+            bundle_id,
+            "--json",
+        ],
+        &json!({}),
+    )?);
+    let step = steps.last().expect("capture review evidence step");
+    if !step.success {
+        anyhow::bail!(
+            "failed to capture review evidence snapshot: {}",
+            step.stderr
+        );
+    }
+    record_none_reviewer_output_ref_after_snapshot(
+        binary,
+        repo_root,
+        mission_id,
+        bundle_id,
+        reviewer_id,
+        steps,
+    )
+}
+
+fn record_none_reviewer_output_ref_after_snapshot(
+    binary: &Path,
+    repo_root: &Path,
+    mission_id: &str,
+    bundle_id: &str,
+    reviewer_id: &str,
+    steps: &mut Vec<SmokeStep>,
+) -> Result<String> {
+    steps.push(run_json_smoke_step(
+        "record_reviewer_output",
+        binary,
+        repo_root,
+        &[
+            "internal",
+            "record-reviewer-output",
+            "--repo-root",
+            repo_root.to_str().unwrap(),
+            "--input-json",
+            "-",
+            "--json",
+        ],
+        &json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer_id": reviewer_id,
+            "output_kind": "none",
+            "findings": []
+        }),
+    )?);
+    let step = steps.last().expect("reviewer output step");
+    if !step.success {
+        anyhow::bail!("failed to record reviewer output: {}", step.stderr);
+    }
+    parse_required_id(step, "evidence_ref")
 }
 
 fn run_stop_hook_probe(mut child: Child, input: &Value) -> Result<Output> {
@@ -3994,6 +5673,10 @@ fn trim_output(bytes: &[u8]) -> String {
         let truncated: String = output.chars().take(LIMIT).collect();
         format!("{truncated}...[truncated]")
     }
+}
+
+fn full_output(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes).to_string()
 }
 
 fn snapshot_tree(root: &Path) -> Result<BTreeMap<String, SnapshotEntry>> {
@@ -4159,7 +5842,7 @@ fn self_hosting_gate(repo_root: &Path, enabled: bool) -> QualificationGate {
                     "missing_required_public_skills": skill_inspection.missing_required_public_skills,
                     "drifted_managed_skill_files": skill_inspection.drifted_managed_files,
                     "suggested_invocation": format!(
-                        "cargo run -p codex1 -- setup --repo-root {} --json",
+                        "cargo run -p codex1 -- init --repo-root {} --json",
                         repo_root.display()
                     ),
                 })),
@@ -4309,6 +5992,28 @@ fn run_manual_parity_flow(binary: &Path, repo_root: &Path) -> Result<ParityFlowO
     if steps.iter().all(|step| step.success) {
         let bundle_id = parse_required_id(steps.last().expect("bundle step"), "bundle_id")
             .context("manual parity spec-review output missing bundle_id")?;
+        let review_truth_snapshot = capture_review_truth_snapshot_payload(
+            binary,
+            repo_root,
+            PARITY_MISSION_ID,
+            &bundle_id,
+        )?;
+        let reviewer_output_ref = record_none_reviewer_output_ref(
+            binary,
+            repo_root,
+            PARITY_MISSION_ID,
+            &bundle_id,
+            "parity-spec-review",
+            &mut steps,
+        )?;
+        let code_reviewer_output_ref = record_none_reviewer_output_ref_after_snapshot(
+            binary,
+            repo_root,
+            PARITY_MISSION_ID,
+            &bundle_id,
+            "parity-code-review",
+            &mut steps,
+        )?;
         steps.push(run_json_smoke_step(
             "manual_record_spec_review_result",
             binary,
@@ -4322,7 +6027,11 @@ fn run_manual_parity_flow(binary: &Path, repo_root: &Path) -> Result<ParityFlowO
                 "-",
                 "--json",
             ],
-            &parity_spec_review_result_payload(&bundle_id),
+            &parity_spec_review_result_payload(
+                &bundle_id,
+                &[reviewer_output_ref, code_reviewer_output_ref],
+                review_truth_snapshot,
+            ),
         )?);
     }
 
@@ -4351,6 +6060,28 @@ fn run_manual_parity_flow(binary: &Path, repo_root: &Path) -> Result<ParityFlowO
     if steps.iter().all(|step| step.success) {
         let bundle_id = parse_required_id(steps.last().expect("mission close bundle"), "bundle_id")
             .context("manual parity mission-close output missing bundle_id")?;
+        let review_truth_snapshot = capture_review_truth_snapshot_payload(
+            binary,
+            repo_root,
+            PARITY_MISSION_ID,
+            &bundle_id,
+        )?;
+        let code_reviewer_output_ref = record_none_reviewer_output_ref(
+            binary,
+            repo_root,
+            PARITY_MISSION_ID,
+            &bundle_id,
+            "parity-mission-close-code",
+            &mut steps,
+        )?;
+        let spec_reviewer_output_ref = record_none_reviewer_output_ref_after_snapshot(
+            binary,
+            repo_root,
+            PARITY_MISSION_ID,
+            &bundle_id,
+            "parity-mission-close-spec",
+            &mut steps,
+        )?;
         steps.push(run_json_smoke_step(
             "manual_record_mission_close_review",
             binary,
@@ -4364,7 +6095,11 @@ fn run_manual_parity_flow(binary: &Path, repo_root: &Path) -> Result<ParityFlowO
                 "-",
                 "--json",
             ],
-            &parity_mission_close_result_payload(&bundle_id),
+            &parity_mission_close_result_payload(
+                &bundle_id,
+                &[code_reviewer_output_ref, spec_reviewer_output_ref],
+                review_truth_snapshot,
+            ),
         )?);
     }
 
@@ -4491,6 +6226,28 @@ fn run_autopilot_parity_flow(binary: &Path, repo_root: &Path) -> Result<ParityFl
             }
             ParityAutopilotStep::RecordSpecReviewResult => {
                 let bundle_id = load_single_bundle_id(&paths, BundleKind::SpecReview)?;
+                let review_truth_snapshot = capture_review_truth_snapshot_payload(
+                    binary,
+                    repo_root,
+                    PARITY_MISSION_ID,
+                    &bundle_id,
+                )?;
+                let reviewer_output_ref = record_none_reviewer_output_ref(
+                    binary,
+                    repo_root,
+                    PARITY_MISSION_ID,
+                    &bundle_id,
+                    "parity-spec-review",
+                    &mut steps,
+                )?;
+                let code_reviewer_output_ref = record_none_reviewer_output_ref_after_snapshot(
+                    binary,
+                    repo_root,
+                    PARITY_MISSION_ID,
+                    &bundle_id,
+                    "parity-code-review",
+                    &mut steps,
+                )?;
                 steps.push(run_json_smoke_step(
                     "autopilot_record_spec_review_result",
                     binary,
@@ -4504,7 +6261,11 @@ fn run_autopilot_parity_flow(binary: &Path, repo_root: &Path) -> Result<ParityFl
                         "-",
                         "--json",
                     ],
-                    &parity_spec_review_result_payload(&bundle_id),
+                    &parity_spec_review_result_payload(
+                        &bundle_id,
+                        &[reviewer_output_ref, code_reviewer_output_ref],
+                        review_truth_snapshot,
+                    ),
                 )?);
             }
             ParityAutopilotStep::CompileMissionCloseBundle => {
@@ -4527,6 +6288,28 @@ fn run_autopilot_parity_flow(binary: &Path, repo_root: &Path) -> Result<ParityFl
             }
             ParityAutopilotStep::RecordMissionCloseReview => {
                 let bundle_id = load_single_bundle_id(&paths, BundleKind::MissionClose)?;
+                let review_truth_snapshot = capture_review_truth_snapshot_payload(
+                    binary,
+                    repo_root,
+                    PARITY_MISSION_ID,
+                    &bundle_id,
+                )?;
+                let code_reviewer_output_ref = record_none_reviewer_output_ref(
+                    binary,
+                    repo_root,
+                    PARITY_MISSION_ID,
+                    &bundle_id,
+                    "parity-mission-close-code",
+                    &mut steps,
+                )?;
+                let spec_reviewer_output_ref = record_none_reviewer_output_ref_after_snapshot(
+                    binary,
+                    repo_root,
+                    PARITY_MISSION_ID,
+                    &bundle_id,
+                    "parity-mission-close-spec",
+                    &mut steps,
+                )?;
                 steps.push(run_json_smoke_step(
                     "autopilot_record_mission_close_review",
                     binary,
@@ -4540,7 +6323,11 @@ fn run_autopilot_parity_flow(binary: &Path, repo_root: &Path) -> Result<ParityFl
                         "-",
                         "--json",
                     ],
-                    &parity_mission_close_result_payload(&bundle_id),
+                    &parity_mission_close_result_payload(
+                        &bundle_id,
+                        &[code_reviewer_output_ref, spec_reviewer_output_ref],
+                        review_truth_snapshot,
+                    ),
                 )?);
             }
             ParityAutopilotStep::Done => {
@@ -4979,7 +6766,16 @@ fn parity_spec_review_bundle_payload(package_id: &str) -> Value {
     })
 }
 
-fn parity_spec_review_result_payload(bundle_id: &str) -> Value {
+fn parity_spec_review_result_payload(
+    bundle_id: &str,
+    reviewer_output_refs: &[String],
+    review_truth_snapshot: Value,
+) -> Value {
+    let evidence_refs = reviewer_output_refs
+        .iter()
+        .cloned()
+        .chain(std::iter::once("RECEIPTS/parity-proof.txt".to_string()))
+        .collect::<Vec<_>>();
     json!({
         "mission_id": PARITY_MISSION_ID,
         "bundle_id": bundle_id,
@@ -4987,10 +6783,11 @@ fn parity_spec_review_result_payload(bundle_id: &str) -> Value {
         "verdict": "clean",
         "target_spec_id": PARITY_SPEC_ID,
         "governing_refs": ["bundle"],
-        "evidence_refs": ["RECEIPTS/parity-proof.txt"],
+        "evidence_refs": evidence_refs,
         "findings": [],
         "disposition_notes": ["Parity spec review is clean."],
-        "next_required_branch": "mission_close"
+        "next_required_branch": "mission_close",
+        "review_truth_snapshot": review_truth_snapshot
     })
 }
 
@@ -5028,16 +6825,26 @@ fn parity_mission_close_bundle_payload(repo_root: &Path, package_id: &str) -> Re
     }))
 }
 
-fn parity_mission_close_result_payload(bundle_id: &str) -> Value {
+fn parity_mission_close_result_payload(
+    bundle_id: &str,
+    reviewer_output_refs: &[String],
+    review_truth_snapshot: Value,
+) -> Value {
+    let evidence_refs = reviewer_output_refs
+        .iter()
+        .cloned()
+        .chain(std::iter::once("RECEIPTS/parity-proof.txt".to_string()))
+        .collect::<Vec<_>>();
     json!({
         "mission_id": PARITY_MISSION_ID,
         "bundle_id": bundle_id,
         "reviewer": "qualify-codex",
         "verdict": "complete",
         "governing_refs": ["mission-close-bundle"],
-        "evidence_refs": ["RECEIPTS/parity-proof.txt"],
+        "evidence_refs": evidence_refs,
         "findings": [],
-        "disposition_notes": ["Parity mission-close review is clean."]
+        "disposition_notes": ["Parity mission-close review is clean."],
+        "review_truth_snapshot": review_truth_snapshot
     })
 }
 
@@ -5146,10 +6953,58 @@ fn evidence_paths(
     let short_id = &qualification_id[..8];
     let report_name = format!("{timestamp}--{build_slug}--{short_id}.json");
 
+    let gate_evidence_dir = repo_root
+        .join(REPORTS_DIR)
+        .join(format!("{timestamp}--{build_slug}--{short_id}"));
+
     EvidencePaths {
         report_path: repo_root.join(REPORTS_DIR).join(report_name),
         latest_path: repo_root.join(LATEST_REPORT),
+        gate_evidence_dir,
     }
+}
+
+fn persist_gate_evidence(report: &mut QualificationReport) -> Result<()> {
+    fs::create_dir_all(&report.evidence.gate_evidence_dir).with_context(|| {
+        format!(
+            "failed to create {}",
+            report.evidence.gate_evidence_dir.display()
+        )
+    })?;
+
+    for gate in &mut report.gates {
+        let Some(details) = gate.details.as_ref() else {
+            continue;
+        };
+        let path = report
+            .evidence
+            .gate_evidence_dir
+            .join(format!("{}.json", sanitize_gate_filename(gate.gate)));
+        let payload = serde_json::to_vec_pretty(&json!({
+            "gate": gate.gate,
+            "description": gate.description,
+            "status": gate.status,
+            "message": gate.message,
+            "details": details,
+        }))
+        .context("failed to encode gate evidence payload")?;
+        fs::write(&path, payload).with_context(|| format!("failed to write {}", path.display()))?;
+        gate.evidence_path = Some(path);
+    }
+
+    Ok(())
+}
+
+fn sanitize_gate_filename(gate: &str) -> String {
+    gate.chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 fn write_report(report: &QualificationReport) -> Result<()> {
@@ -5221,11 +7076,14 @@ fn emit_report(report: &QualificationReport, json_output: bool) -> Result<()> {
 mod tests {
     use super::{
         CodexBuildInfo, EvidencePaths, GateStatus, INTERNAL_CONTRACT_PARITY_GATE,
-        NativeMultiAgentObservedTools, NativeMultiAgentSummary, QualificationGate,
-        QualificationReport, QualificationSummary, RequestedQualification, SmokeStep,
-        assess_native_multi_agent_gate, count_stop_hooks, detect_codex_hooks_setting,
-        native_child_probe_closeout_payload, parse_native_multi_agent_summary_text,
-        project_agents_scaffold_gate, seed_native_codex_home_from, self_hosting_gate,
+        NativeMultiAgentSummary, QualificationGate, QualificationReport, QualificationSummary,
+        RequestedQualification, ReviewLoopFinding, ReviewLoopNextBranch, ReviewLoopSeverity,
+        SmokeStep, assess_native_multi_agent_gate, count_stop_hooks, detect_codex_hooks_setting,
+        native_child_probe_closeout_payload, parse_jsonl_events,
+        parse_native_multi_agent_summary_text, persist_gate_evidence, project_agents_scaffold_gate,
+        review_loop_decision, run_helper_drift_detection_flow, run_helper_force_normalization_flow,
+        run_helper_partial_install_repair_flow, run_isolated_helper_flow,
+        seed_native_codex_home_from, self_hosting_gate, summarize_native_multi_agent_events,
     };
     use crate::support_surface::{AGENTS_BLOCK, managed_skill_files, resolve_source_skills_root};
     use serde_json::{Value, json};
@@ -5250,6 +7108,60 @@ features.codex_hooks = false
 "#;
 
         assert_eq!(detect_codex_hooks_setting(contents), Some(false));
+    }
+
+    #[test]
+    fn review_loop_clean_path_continues_and_resets_count() {
+        let decision = review_loop_decision(
+            &[ReviewLoopFinding {
+                severity: ReviewLoopSeverity::P3,
+                root_cause_key: "docs-polish".to_string(),
+            }],
+            5,
+        );
+
+        assert_eq!(decision.next_branch, ReviewLoopNextBranch::Continue);
+        assert_eq!(decision.blocking_findings, 0);
+        assert_eq!(decision.unique_blocking_root_causes, 0);
+        assert_eq!(decision.consecutive_non_clean_loops, 0);
+    }
+
+    #[test]
+    fn review_loop_non_clean_path_repairs_before_cap() {
+        let decision = review_loop_decision(
+            &[
+                ReviewLoopFinding {
+                    severity: ReviewLoopSeverity::P1,
+                    root_cause_key: "stale-gate".to_string(),
+                },
+                ReviewLoopFinding {
+                    severity: ReviewLoopSeverity::P2,
+                    root_cause_key: "stale-gate".to_string(),
+                },
+            ],
+            4,
+        );
+
+        assert_eq!(decision.next_branch, ReviewLoopNextBranch::Repair);
+        assert_eq!(decision.blocking_findings, 2);
+        assert_eq!(decision.unique_blocking_root_causes, 1);
+        assert_eq!(decision.consecutive_non_clean_loops, 5);
+    }
+
+    #[test]
+    fn review_loop_sixth_non_clean_path_routes_to_replan() {
+        let decision = review_loop_decision(
+            &[ReviewLoopFinding {
+                severity: ReviewLoopSeverity::P0,
+                root_cause_key: "architecture-contract".to_string(),
+            }],
+            5,
+        );
+
+        assert_eq!(decision.next_branch, ReviewLoopNextBranch::Replan);
+        assert_eq!(decision.blocking_findings, 1);
+        assert_eq!(decision.unique_blocking_root_causes, 1);
+        assert_eq!(decision.consecutive_non_clean_loops, 6);
     }
 
     #[test]
@@ -5393,12 +7305,62 @@ features.codex_hooks = false
             evidence: EvidencePaths {
                 report_path: std::path::PathBuf::from("/repo/report.json"),
                 latest_path: std::path::PathBuf::from("/repo/latest.json"),
+                gate_evidence_dir: std::path::PathBuf::from("/repo/gates"),
             },
         };
 
         let payload = serde_json::to_value(&report).expect("serialize qualification report");
         assert!(payload.get("qualified_at").is_some());
         assert!(payload.get("tested_at").is_some());
+    }
+
+    #[test]
+    fn persist_gate_evidence_writes_raw_gate_payloads() {
+        let temp_dir = TempDir::new().expect("tempdir should succeed");
+        let gate_dir = temp_dir.path().join("gate-evidence");
+        let mut report = QualificationReport {
+            schema_version: "codex1.qualify.v1",
+            qualification_id: "qual-1".to_string(),
+            repo_root: temp_dir.path().to_path_buf(),
+            requested: RequestedQualification {
+                live: false,
+                self_hosting: false,
+            },
+            codex_build: "disabled".to_string(),
+            codex_build_details: None,
+            qualified_at: OffsetDateTime::UNIX_EPOCH,
+            tested_at: Some(OffsetDateTime::UNIX_EPOCH),
+            support_surface_signature: "sig".to_string(),
+            summary: QualificationSummary {
+                passed: 1,
+                failed: 0,
+                skipped: 0,
+                passed_all_required_gates: true,
+                qualification_scope: None,
+                supported_build_qualified: false,
+            },
+            gates: vec![QualificationGate::pass(
+                "native_exec_resume_flow",
+                "desc",
+                "message",
+                Some(json!({"raw_stdout": "FIRST", "raw_stderr": ""})),
+            )],
+            evidence_root: temp_dir.path().join(".codex1/qualification"),
+            evidence: EvidencePaths {
+                report_path: temp_dir.path().join("report.json"),
+                latest_path: temp_dir.path().join("latest.json"),
+                gate_evidence_dir: gate_dir.clone(),
+            },
+        };
+
+        persist_gate_evidence(&mut report).expect("gate evidence should persist");
+
+        let gate = report.gates.first().expect("gate should exist");
+        let evidence_path = gate.evidence_path.as_ref().expect("evidence path");
+        assert!(evidence_path.starts_with(&gate_dir));
+        let contents =
+            fs::read_to_string(evidence_path).expect("persisted gate evidence should be readable");
+        assert!(contents.contains("\"raw_stdout\": \"FIRST\""));
     }
 
     #[test]
@@ -5491,18 +7453,6 @@ features.codex_hooks = false
         }
     }
 
-    fn observed_tools() -> NativeMultiAgentObservedTools {
-        NativeMultiAgentObservedTools {
-            saw_spawn_agent_event: true,
-            saw_send_message_event: false,
-            saw_assign_task_event: false,
-            saw_followup_task_event: false,
-            saw_list_agents_event: true,
-            saw_wait_event: true,
-            saw_close_agent_event: true,
-        }
-    }
-
     #[test]
     fn native_multi_agent_assessment_passes_with_resume_critical_surface() {
         let assessment = assess_native_multi_agent_gate(
@@ -5511,7 +7461,6 @@ features.codex_hooks = false
             &smoke_step(true),
             &smoke_step(true),
             &native_summary(),
-            observed_tools(),
             Some("live_non_final"),
             Some("live_non_final"),
             Some("actionable_non_terminal"),
@@ -5526,8 +7475,6 @@ features.codex_hooks = false
     fn native_multi_agent_assessment_reports_required_tool_surface_gap() {
         let mut summary = native_summary();
         summary.used_list_agents = false;
-        let mut tools = observed_tools();
-        tools.saw_list_agents_event = false;
 
         let assessment = assess_native_multi_agent_gate(
             true,
@@ -5535,7 +7482,6 @@ features.codex_hooks = false
             &smoke_step(true),
             &smoke_step(true),
             &summary,
-            tools,
             Some("missing"),
             Some("missing"),
             Some("actionable_non_terminal"),
@@ -5557,7 +7503,6 @@ features.codex_hooks = false
             &smoke_step(false),
             &smoke_step(true),
             &native_summary(),
-            observed_tools(),
             Some("live_non_final"),
             Some("live_non_final"),
             Some("actionable_non_terminal"),
@@ -5578,7 +7523,6 @@ features.codex_hooks = false
             &smoke_step(true),
             &smoke_step(true),
             &native_summary(),
-            observed_tools(),
             Some("live_non_final"),
             Some("final_non_success"),
             Some("actionable_non_terminal"),
@@ -5621,6 +7565,60 @@ features.codex_hooks = false
         assert!(!summary.child_seen_after_close);
         assert_eq!(summary.child_status_after_close, Value::Null);
         assert_eq!(summary.list_agents_after_wait, Value::Null);
+    }
+
+    #[test]
+    fn native_multi_agent_raw_summary_prefers_raw_events_over_final_summary_claims() {
+        let events = parse_jsonl_events(
+            br#"{"type":"thread.started","thread_id":"thread-root"}
+{"type":"item.started","item":{"id":"item_1","type":"collab_tool_call","tool":"spawn_agent","status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"collab_tool_call","tool":"spawn_agent","receiver_thread_ids":["thread-child"],"agents_states":{"thread-child":{"status":"pending_init","message":null}},"status":"completed"}}
+{"type":"item.started","item":{"id":"item_2","type":"collab_tool_call","tool":"wait","status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_2","type":"collab_tool_call","tool":"wait","receiver_thread_ids":["thread-child"],"agents_states":{"thread-child":{"status":"completed","message":"PING"}},"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"{\"used_spawn_agent\":true,\"used_list_agents\":true,\"used_wait_agent\":true,\"used_close_agent\":true,\"child_task_path\":\"/root/qualify_child\",\"child_seen_before_wait\":true,\"child_status_before_wait\":\"running\",\"child_seen_after_wait\":true,\"child_status_after_wait\":\"running\",\"wait_summary_present\":true,\"list_agents_before_wait\":[{\"agent_name\":\"/root/qualify_child\",\"agent_status\":\"running\"}],\"list_agents_after_wait\":[{\"agent_name\":\"/root/qualify_child\",\"agent_status\":\"running\"}]}"}}"#,
+        )
+        .expect("events should parse");
+
+        let summary = summarize_native_multi_agent_events(&events);
+
+        assert!(summary.used_spawn_agent);
+        assert!(!summary.used_list_agents);
+        assert!(summary.used_wait_agent);
+        assert!(!summary.used_close_agent);
+        assert_eq!(summary.child_task_path, "thread-child");
+        assert_eq!(summary.child_status_after_wait, json!("completed"));
+        assert!(summary.wait_summary_present);
+        assert_eq!(summary.list_agents_before_wait, Value::Null);
+    }
+
+    #[test]
+    fn native_multi_agent_assessment_ignores_misleading_final_summary_without_raw_list_agents() {
+        let events = parse_jsonl_events(
+            br#"{"type":"item.completed","item":{"id":"item_1","type":"collab_tool_call","tool":"spawn_agent","receiver_thread_ids":["thread-child"],"agents_states":{"thread-child":{"status":"pending_init","message":null}},"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_2","type":"collab_tool_call","tool":"wait","receiver_thread_ids":["thread-child"],"agents_states":{"thread-child":{"status":"running","message":null}},"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_3","type":"collab_tool_call","tool":"close_agent","receiver_thread_ids":["thread-child"],"agents_states":{"thread-child":{"status":"shutdown","message":null}},"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_4","type":"agent_message","text":"{\"used_spawn_agent\":true,\"used_list_agents\":true,\"used_wait_agent\":true,\"used_close_agent\":true,\"child_task_path\":\"/root/qualify_child\",\"child_seen_before_wait\":true,\"child_status_before_wait\":\"running\",\"child_seen_after_wait\":true,\"child_status_after_wait\":\"running\",\"wait_summary_present\":true,\"list_agents_before_wait\":[{\"agent_name\":\"/root/qualify_child\",\"agent_status\":\"running\"}],\"list_agents_after_wait\":[{\"agent_name\":\"/root/qualify_child\",\"agent_status\":\"running\"}]}"}}"#,
+        )
+        .expect("events should parse");
+        let summary = summarize_native_multi_agent_events(&events);
+
+        let assessment = assess_native_multi_agent_gate(
+            true,
+            &smoke_step(true),
+            &smoke_step(true),
+            &smoke_step(true),
+            &summary,
+            Some("missing"),
+            Some("missing"),
+            Some("actionable_non_terminal"),
+        );
+
+        assert!(!assessment.success);
+        assert_eq!(
+            assessment.failure_classification,
+            Some("required_tool_surface_gap")
+        );
+        assert!(assessment.missing_required_tools.contains(&"list_agents"));
     }
 
     #[test]
@@ -5685,5 +7683,38 @@ features.codex_hooks = false
         assert!(config.contains("model = \"gpt-5.4\""));
         assert!(config.contains("trust_level = \"trusted\""));
         assert!(config.contains(&canonical_repo_root.display().to_string()));
+    }
+
+    #[test]
+    fn qualification_cli_support_surface_helper_flows_pass() {
+        let binary = assert_cmd::cargo::cargo_bin("codex1");
+        let previous = std::env::var_os("CODEX1_QUALIFY_EXECUTABLE");
+        unsafe {
+            std::env::set_var("CODEX1_QUALIFY_EXECUTABLE", &binary);
+        }
+        for gate in [
+            run_isolated_helper_flow().expect("isolated helper flow should run"),
+            run_helper_force_normalization_flow()
+                .expect("force normalization helper flow should run"),
+            run_helper_partial_install_repair_flow()
+                .expect("partial install repair flow should run"),
+            run_helper_drift_detection_flow().expect("drift detection flow should run"),
+        ] {
+            assert_eq!(
+                gate.status,
+                GateStatus::Pass,
+                "{} should pass qualification proof: {}",
+                gate.gate,
+                gate.message
+            );
+        }
+        match previous {
+            Some(value) => unsafe {
+                std::env::set_var("CODEX1_QUALIFY_EXECUTABLE", value);
+            },
+            None => unsafe {
+                std::env::remove_var("CODEX1_QUALIFY_EXECUTABLE");
+            },
+        }
     }
 }

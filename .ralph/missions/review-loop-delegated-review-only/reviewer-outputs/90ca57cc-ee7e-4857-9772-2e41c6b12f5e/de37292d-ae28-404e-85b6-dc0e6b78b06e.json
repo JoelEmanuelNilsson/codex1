@@ -1,0 +1,27 @@
+{
+  "mission_id": "review-loop-delegated-review-only",
+  "bundle_id": "90ca57cc-ee7e-4857-9772-2e41c6b12f5e",
+  "reviewer_id": "review_inbox_spec",
+  "reviewer_output_id": "de37292d-ae28-404e-85b6-dc0e6b78b06e",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P2",
+      "title": "Qualification smoke flows still cite legacy reviewer-output refs",
+      "evidence_refs": [
+        "crates/codex1/src/commands/qualify.rs:2520",
+        "crates/codex1/src/commands/qualify.rs:2688",
+        "crates/codex1/src/commands/qualify.rs:2771",
+        "crates/codex1/src/commands/qualify.rs:5859",
+        "crates/codex1/src/commands/qualify.rs:5912",
+        "crates/codex1-core/src/runtime.rs:4374",
+        "crates/codex1/tests/qualification_cli.rs:213"
+      ],
+      "rationale": "The reviewed change intentionally makes record-review-outcome reject arbitrary reviewer-output:<lane> evidence and require real inbox refs shaped reviewer-output:<bundle-id>:<output-id>. However the live qualify-codex runtime and parity smoke flows still call record-review-outcome with legacy refs such as reviewer-output:qualification-runtime-spec-review, reviewer-output:qualification-runtime-post-completion-review, reviewer-output:qualification-runtime-mission-close-review, reviewer-output:parity-spec-review, and reviewer-output:parity-mission-close-review. Those refs cannot satisfy parse_reviewer_output_evidence_ref because they have no output id and do not correspond to persisted inbox artifacts, so the required qualification success test will report failed runtime/parity gates even though the focused runtime_internal proof rows pass.",
+      "suggested_next_action": "Update the qualification smoke flows to capture the child evidence snapshot, call record-reviewer-output, and pass the returned evidence_ref into every record-review-outcome payload; adjust the parity helper payloads to accept the real reviewer-output evidence refs instead of hard-coded lane strings, then rerun the qualification CLI test."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/review-loop-delegated-review-only/review-evidence-snapshots/90ca57cc-ee7e-4857-9772-2e41c6b12f5e.json",
+  "source_evidence_snapshot_fingerprint": "sha256:088e511aeb95e5a2fadae7f09852a171fcfce445c321c89fcdc7140d1d7f66cc",
+  "recorded_at": "2026-04-16T20:54:14.320804Z"
+}

@@ -1,0 +1,23 @@
+{
+  "mission_id": "ralph-control-loop-boundary",
+  "bundle_id": "0f48c7d4-0074-489e-8576-7eab41d1c940",
+  "reviewer_id": "review_loop_surface_spec_intent",
+  "reviewer_output_id": "5ab7273f-18d7-4d5c-a3a2-3ccd72ddfe1b",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P2",
+      "title": "Proof receipt omits command transcripts for required proof rows",
+      "evidence_refs": [
+        ".ralph/missions/ralph-control-loop-boundary/review-evidence-snapshots/0f48c7d4-0074-489e-8576-7eab41d1c940.json:21",
+        "PLANS/ralph-control-loop-boundary/specs/loop_skill_surface_and_pause/SPEC.md:148",
+        "PLANS/ralph-control-loop-boundary/specs/loop_skill_surface_and_pause/RECEIPTS/2026-04-17-loop-skill-surface-proof.txt:17"
+      ],
+      "rationale": "The review bundle puts four executable verification rows under review, and the spec states that RECEIPTS/ stores proof output and command transcripts. The cited receipt only lists the commands at lines 17-21; it does not capture pass/fail status, stdout/stderr, timestamps, or any transcript showing those proof rows actually ran. A frozen reviewer therefore cannot verify the required proof from the submitted evidence alone, even though the skill and doc surfaces themselves appear aligned with the intended loop contract.",
+      "suggested_next_action": "Repair the receipt by adding captured outputs or durable pass/fail transcripts for the listed test, fmt, and validate commands, then rerun the local spec/evidence review."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/review-evidence-snapshots/0f48c7d4-0074-489e-8576-7eab41d1c940.json",
+  "source_evidence_snapshot_fingerprint": "sha256:ce4c439775784bffe29aaaa7c9b8b1c097a15e3257b7879f1d170a40b66d964d",
+  "recorded_at": "2026-04-17T09:22:04.937174Z"
+}

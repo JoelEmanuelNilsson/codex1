@@ -1,0 +1,48 @@
+{
+  "bundle_id": "a00a56a4-df29-4b25-8616-d4612283fad1",
+  "mission_id": "contract-centered-architecture",
+  "bundle_kind": "spec_review",
+  "source_package_id": "71804982-bc9d-40f4-ba6e-ff721e057850",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:4e35be4d1adaa85d5725d5fb4a891f47fe4bd24f5f25bec09c5f5249b7a93893",
+  "blueprint_revision": 8,
+  "blueprint_fingerprint": "sha256:8d3a2d6515b83aba2292b9cfb6810b6b974505ebf10d1ed42f5d8dd158cdaf51",
+  "governing_revision": "spec:qualification_evidence_pipeline:3",
+  "mandatory_review_lenses": [
+    "correctness",
+    "evidence_adequacy",
+    "operability_rollback_observability",
+    "spec_conformance",
+    "interface_compatibility",
+    "safety_security_policy",
+    "operability_rollback_observability."
+  ],
+  "target_spec_id": "qualification_evidence_pipeline",
+  "spec_revision": 3,
+  "spec_fingerprint": "sha256:dc9561e9ac4624b95a6d6b10843df9a3b2b99590d9d7c3c969fd6a6a823c2b8f",
+  "proof_rows_under_review": [
+    "live qualification reports preserve the raw artifacts needed to justify each pass or fail decision",
+    "native child-lane qualification can distinguish surface gaps from Codex1 reconcile bugs honestly",
+    "manual and autopilot parity and Ralph waiting proofs remain inspectable and stable",
+    "cargo test -p codex1 qualification_cli"
+  ],
+  "receipts": [
+    "PLANS/contract-centered-architecture/specs/qualification_evidence_pipeline/RECEIPTS/2026-04-15-qualification-evidence-proof.txt"
+  ],
+  "changed_files_or_diff": [
+    "crates/codex1/src/commands/qualify.rs",
+    "docs/qualification/README.md"
+  ],
+  "touched_interface_contracts": [
+    "qualification gate evidence path contract",
+    "qualification report evidence layout contract",
+    "qualification helper-flow proof contract"
+  ],
+  "mission_level_proof_rows": [],
+  "cross_spec_claim_refs": [],
+  "included_spec_refs": [],
+  "visible_artifact_refs": [],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [],
+  "generated_at": "2026-04-15T19:11:04.947896Z"
+}

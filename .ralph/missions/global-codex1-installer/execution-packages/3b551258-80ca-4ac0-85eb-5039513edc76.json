@@ -1,0 +1,158 @@
+{
+  "package_id": "3b551258-80ca-4ac0-85eb-5039513edc76",
+  "mission_id": "global-codex1-installer",
+  "target_type": "spec",
+  "target_id": "global_setup_backup",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:7314d24eea35d8d5439ddb2d0e3d87ac3c9af728e1eb2d2c1336c2eb5ac9cf39",
+  "blueprint_revision": 6,
+  "blueprint_fingerprint": "sha256:6250fe0d1ab5eda605be0adda7974655b796c3b253cd9c190d6c2b78b2b0bda7",
+  "dependency_snapshot_fingerprint": "sha256:ce94bf784c8716f7c6a20632a84816b3d37dd1f61be15c59009f258ea78b7a2d",
+  "wave_fingerprint": null,
+  "included_specs": [
+    {
+      "spec_id": "global_setup_backup",
+      "spec_revision": 4,
+      "spec_fingerprint": "sha256:b9d894ca3ed5849bff272234bb9bdd6564d4ee50d09cda49557b8c513f12d023"
+    }
+  ],
+  "dependency_satisfaction_state": [
+    {
+      "name": "lock_current",
+      "satisfied": true,
+      "detail": "OUTCOME-LOCK.md remains locked at revision 1."
+    },
+    {
+      "name": "blueprint_current",
+      "satisfied": true,
+      "detail": "PROGRAM-BLUEPRINT.md revision 6 governs global_setup_backup repair."
+    },
+    {
+      "name": "spec:cli_command_split",
+      "satisfied": true,
+      "detail": "cli_command_split remains clean and preserved."
+    }
+  ],
+  "read_scope": [
+    "crates/codex1/src/commands/setup.rs",
+    "crates/codex1/src/commands/restore.rs",
+    "crates/codex1/src/commands/uninstall.rs",
+    "crates/codex1/src/support_surface.rs",
+    "crates/codex1-core/src/backup.rs",
+    "crates/codex1/tests/qualification_cli.rs"
+  ],
+  "write_scope": [
+    "crates/codex1/src/commands/setup.rs",
+    "crates/codex1/src/commands/restore.rs",
+    "crates/codex1/src/commands/uninstall.rs",
+    "crates/codex1/src/support_surface.rs",
+    "crates/codex1/tests/qualification_cli.rs"
+  ],
+  "proof_obligations": [
+    "Targeted CLI tests prove codex1 setup writes only user-scope config.toml, hooks.json, and global managed skill files under temp CODEX_HOME/HOME.",
+    "Tests prove existing user files are backed up before mutation with manifest entries marked scope = user.",
+    "Tests prove setup is idempotent when the global config, hook, and skill surface are already desired.",
+    "Tests prove codex1 setup installs $clarify and $close into the global skill surface.",
+    "Tests prove codex1 init succeeds after global setup and does not add a duplicate project Stop hook when the global managed Stop hook is present.",
+    "Tests prove human setup output reports actual changed paths when global setup mutates user files.",
+    "Tests prove existing global setup backups can be restored through the CLI.",
+    "Tests prove relative CODEX_HOME global setup backups can be restored and uninstalled without duplicated target paths.",
+    "Relevant cargo test -p codex1 subset compiles and passes."
+  ],
+  "review_obligations": [
+    "correctness",
+    "protected-surface safety",
+    "backup/restore integrity",
+    "test adequacy",
+    "command UX clarity"
+  ],
+  "replan_boundary": {
+    "local_repair_allowed": false,
+    "trigger_matrix": [
+      {
+        "trigger_code": "write_scope_expansion",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "interface_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "dependency_truth_change",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "proof_obligation_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "review_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "protected_surface_change",
+        "reopen_layer": "mission_lock"
+      },
+      {
+        "trigger_code": "migration_rollout_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "outcome_lock_change",
+        "reopen_layer": "mission_lock"
+      }
+    ]
+  },
+  "wave_context": null,
+  "wave_specs": [],
+  "gate_checks": [
+    {
+      "gate_id": "target_resolution",
+      "passed": true,
+      "detail": "resolved spec:global_setup_backup"
+    },
+    {
+      "gate_id": "dependency_truth_current",
+      "passed": true,
+      "detail": "dependency satisfaction is explicit, revision-bearing, and fully satisfied"
+    },
+    {
+      "gate_id": "scope_declared",
+      "passed": true,
+      "detail": "read and write scope are explicit"
+    },
+    {
+      "gate_id": "scope_bounded_to_frontier",
+      "passed": true,
+      "detail": "package scope stays inside the declared execution frontier"
+    },
+    {
+      "gate_id": "proof_contract_declared",
+      "passed": true,
+      "detail": "proof obligations are explicit"
+    },
+    {
+      "gate_id": "review_contract_declared",
+      "passed": true,
+      "detail": "review obligations are explicit"
+    },
+    {
+      "gate_id": "included_specs_runnable",
+      "passed": true,
+      "detail": "included specs are active executable frontier specs"
+    },
+    {
+      "gate_id": "planning_truth_current",
+      "passed": true,
+      "detail": "lock, blueprint, and included spec bindings are current"
+    },
+    {
+      "gate_id": "wave_validation",
+      "passed": true,
+      "detail": "wave same-workspace safety rules are satisfied"
+    }
+  ],
+  "validation_failures": [],
+  "validated_at": "2026-04-17T20:59:33.854264Z",
+  "status": "passed"
+}

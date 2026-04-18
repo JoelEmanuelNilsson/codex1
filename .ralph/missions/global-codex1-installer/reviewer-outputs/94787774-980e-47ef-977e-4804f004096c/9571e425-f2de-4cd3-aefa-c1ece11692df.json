@@ -1,0 +1,35 @@
+{
+  "mission_id": "global-codex1-installer",
+  "bundle_id": "94787774-980e-47ef-977e-4804f004096c",
+  "reviewer_id": "review_mission_close_intent_947_1",
+  "reviewer_output_id": "9571e425-f2de-4cd3-aefa-c1ece11692df",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P1",
+      "title": "No-lease reviewer can still mint parent authority by beginning a lease",
+      "evidence_refs": [
+        "crates/codex1-core/src/runtime.rs:5397",
+        "crates/codex1-core/src/runtime.rs:5591",
+        "PLANS/global-codex1-installer/specs/reviewer_writeback_authority_enforcement/SPEC.md:42"
+      ],
+      "rationale": "The repaired writeback guard correctly rejects capture/record without an active verifier-backed lease, but begin_ralph_loop_lease itself is callable when no lease exists and immediately returns a parent_authority_token. A findings-only reviewer in a no-lease context can therefore create the missing lease, set CODEX1_PARENT_LOOP_AUTHORITY_TOKEN, then capture review truth and record an outcome, so P7 remains dependent on parent workflow discipline rather than runtime enforcement.",
+      "suggested_next_action": "Add a runtime/CLI guard or capability source that child lanes cannot invoke for begin-loop-lease, and add a regression that a no-lease child cannot begin a parent review lease and then capture/write back review truth."
+    },
+    {
+      "severity": "P2",
+      "title": "Multiple generic reviewer outputs can still satisfy distinct required lanes",
+      "evidence_refs": [
+        "crates/codex1-core/src/runtime.rs:4472",
+        "crates/codex1-core/src/runtime.rs:4534",
+        "crates/codex1-core/src/runtime.rs:4556",
+        "PLANS/global-codex1-installer/PROGRAM-BLUEPRINT.md:98"
+      ],
+      "rationale": "The lane-completion repair prevents reusing the same reviewer-output id, but reviewer_output_satisfies_required_lane still returns true for any generic legacy review_* id. Two generic outputs such as review_runtime_flow and review_runtime_flow_2 can therefore satisfy code_bug_correctness and spec_intent_or_proof without either output being lane/profile-specific, which weakens the P6 invariant that every required reviewer lane/profile has durable evidence.",
+      "suggested_next_action": "Restrict generic legacy combined-lane acceptance to genuinely historical artifacts or require lane-specific reviewer ids for new clean writeback, then add a regression where two generic reviewer outputs fail required code/spec lane coverage."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/global-codex1-installer/review-evidence-snapshots/94787774-980e-47ef-977e-4804f004096c.json",
+  "source_evidence_snapshot_fingerprint": "sha256:8af2dd7dcded44a2e8f2aee19a810c12e91e43eb3614f39eb8e5e6d954f49bcf",
+  "recorded_at": "2026-04-17T23:34:32.574891Z"
+}

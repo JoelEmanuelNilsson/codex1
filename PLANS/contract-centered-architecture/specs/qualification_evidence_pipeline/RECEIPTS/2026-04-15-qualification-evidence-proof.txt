@@ -1,0 +1,21 @@
+qualification_evidence_pipeline proof receipt
+date: 2026-04-15
+mission: contract-centered-architecture
+spec: qualification_evidence_pipeline
+
+implemented changes
+- qualification reports now persist per-gate evidence payloads under the report-specific evidence directory
+- each gate can now point at its persisted raw evidence via `evidence_path`
+- report evidence layout is documented in docs/qualification/README.md
+- added a qualification-cli test that exercises the real support-surface helper flows through the built `codex1` binary
+- the live native multi-agent gate now normalizes its decisive proof from raw JSONL tool events instead of the final model-authored summary
+- the live native multi-agent gate now persists full raw stdout/stderr in gate evidence so large native traces are not silently truncated
+
+verification
+- cargo test -p codex1 qualification_cli --quiet
+- cargo test -p codex1-core --quiet
+- cargo test -p codex1 --test runtime_internal --quiet
+
+notes
+- this slice improves the evidence-first report contract without replacing the existing summary report schema
+- gate details remain in the report for compatibility, but the decisive raw payloads are now written to dedicated evidence files and judged from raw events first

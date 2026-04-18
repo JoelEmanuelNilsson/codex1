@@ -4,10 +4,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
-use codex1_core::Fingerprint;
-use serde::{Deserialize, Serialize};
+use codex1_core::{
+    ManagedBackupManifest as BackupManifest, ManagedManifestPathEntry as ManifestPathEntry,
+    SupportSurfaceManifestMode, SupportSurfaceMutation, SupportSurfaceMutationKind,
+    absolute_root_path as core_absolute_root_path,
+    default_support_surface_backup_root as core_default_backup_root,
+    execute_support_surface_transaction, support_surface_content_hash as core_content_hash,
+    write_managed_backup_manifest as core_write_manifest,
+};
+use serde::Serialize;
 use serde_json::{Map, Value};
-use tempfile::NamedTempFile;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use toml::Value as TomlValue;
@@ -20,7 +26,7 @@ use crate::support_surface::{
     AGENTS_TEST_COMMAND_PLACEHOLDER, AgentsScaffoldStatus, MANAGED_STOP_HOOK_STATUS,
     ManagedAgentsBlockSpan, ManagedSkillFile, OBSERVATIONAL_STOP_HOOK_FLAG,
     OBSERVATIONAL_STOP_HOOK_FLAG_CAMEL, SkillInstallMode, SkillSurfaceInspection,
-    SkillSurfaceStatus, default_skill_root, inspect_agents_scaffold_details,
+    SkillSurfaceStatus, default_skill_root, detect_toml_bool, inspect_agents_scaffold_details,
     inspect_skill_surface_with_source, is_managed_stop_handler, locate_managed_agents_block_span,
     managed_agents_block_is_malformed, managed_skill_files, render_managed_agents_block,
     render_managed_agents_block_with_markers, resolve_source_skills_root,
@@ -53,33 +59,15 @@ pub struct ChangedPathReport {
     pub component: &'static str,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct BackupManifest {
-    backup_id: String,
-    created_at: String,
-    repo_root: String,
-    codex1_version: Option<String>,
-    skill_install_mode: Option<String>,
-    paths: Vec<ManifestPathEntry>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct ManifestPathEntry {
-    path: String,
-    scope: String,
-    change_kind: String,
-    managed_by: String,
-    component: String,
-    install_mode: String,
-    ownership_mode: String,
-    managed_selector: String,
-    origin: String,
-    backup_path: Option<String>,
-    before_hash: Option<String>,
-    after_hash: Option<String>,
-    restore_action: String,
-    #[serde(default = "default_manifest_applied")]
-    applied: bool,
+#[derive(Debug, Serialize)]
+pub struct GlobalSetupReport {
+    pub scope: &'static str,
+    pub codex_home: String,
+    pub backup_root: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backup_id: Option<String>,
+    pub changed_paths: Vec<ChangedPathReport>,
+    pub notes: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -129,6 +117,230 @@ impl<'a> ConfigValue<'a> {
 }
 
 pub fn run(args: SetupArgs) -> Result<()> {
+    if args.common.repo_root.is_some() {
+        bail!(
+            "codex1 setup is global and does not accept --repo-root; use codex1 init --repo-root <PATH> to configure a project"
+        );
+    }
+
+    let codex_home = absolute_root_path(&codex_home()?)?;
+    let backup_root = match args.backup_root {
+        Some(path) => path,
+        None => default_backup_root()?,
+    };
+    let source_skill_root = resolve_source_skills_root()?;
+    let managed_hook_command = managed_hook_command()?;
+    let config_path = codex_home.join("config.toml");
+    let hooks_path = codex_home.join("hooks.json");
+    let mut planned_changes = Vec::new();
+
+    let existing_config = read_optional_string(&config_path)?;
+    let next_config = build_global_config(existing_config.as_deref());
+    if !global_config_is_desired(existing_config.as_deref(), &next_config) {
+        planned_changes.push(PlannedChange {
+            path: config_path,
+            component: "user_config",
+            ownership_mode: "managed_entry",
+            managed_selector: "features.codex_hooks".to_string(),
+            change_kind: if existing_config.is_some() {
+                "modified"
+            } else {
+                "created"
+            },
+            restore_action: if existing_config.is_some() {
+                "restore_backup"
+            } else {
+                "delete_if_created"
+            },
+            previous_contents: existing_config,
+            next_contents: next_config,
+        });
+    }
+
+    let existing_hooks = read_optional_string(&hooks_path)?;
+    let next_hooks =
+        build_hooks_json(existing_hooks.as_deref(), args.force, &managed_hook_command)?;
+    if !json_values_match(existing_hooks.as_deref(), &next_hooks) {
+        planned_changes.push(PlannedChange {
+            path: hooks_path,
+            component: "user_hooks",
+            ownership_mode: "managed_entry",
+            managed_selector: format!("hooks.Stop.command:{managed_hook_command}"),
+            change_kind: if existing_hooks.is_some() {
+                "modified"
+            } else {
+                "created"
+            },
+            restore_action: if existing_hooks.is_some() {
+                "restore_backup"
+            } else {
+                "delete_if_created"
+            },
+            previous_contents: existing_hooks,
+            next_contents: next_hooks,
+        });
+    }
+
+    planned_changes.extend(plan_copied_skill_changes(
+        &codex_home.join("skills"),
+        &managed_skill_files(&source_skill_root)?,
+    )?);
+
+    if planned_changes.is_empty() {
+        let report = GlobalSetupReport {
+            scope: "global",
+            codex_home: codex_home.display().to_string(),
+            backup_root: backup_root.display().to_string(),
+            backup_id: None,
+            changed_paths: Vec::new(),
+            notes: vec![
+                "global setup is already in the desired state".to_string(),
+                "no project-local .codex directory or AGENTS.md file was changed".to_string(),
+            ],
+        };
+        return emit_report(
+            args.common.json,
+            &report,
+            render_global_setup_report(&report),
+        );
+    }
+
+    let preflight = render_setup_preflight(&planned_changes);
+    if args.common.json {
+        eprintln!("{preflight}");
+    } else {
+        println!("{preflight}");
+    }
+
+    let backup_id = new_backup_id()?;
+    let backup_dir = backup_root.join(&backup_id);
+    let backup_files_dir = backup_dir.join("files");
+    fs::create_dir_all(&backup_files_dir).with_context(|| {
+        format!(
+            "create backup directory for setup at {}",
+            backup_files_dir.display()
+        )
+    })?;
+    let backup_files_dir = fs::canonicalize(&backup_files_dir).with_context(|| {
+        format!(
+            "canonicalize backup directory {}",
+            backup_files_dir.display()
+        )
+    })?;
+
+    let created_at = OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .context("format backup timestamp")?;
+
+    let mut manifest_paths = Vec::new();
+    for (index, change) in planned_changes.iter().enumerate() {
+        let backup_path = if let Some(previous_contents) = change.previous_contents.as_ref() {
+            let path = backup_files_dir.join(format!("{index:02}_{}.bak", change.component));
+            fs::write(&path, previous_contents)
+                .with_context(|| format!("write backup copy to {}", path.display()))?;
+            Some(
+                fs::canonicalize(&path)
+                    .with_context(|| format!("canonicalize backup copy {}", path.display()))?,
+            )
+        } else {
+            None
+        };
+
+        manifest_paths.push(ManifestPathEntry {
+            path: change.path.display().to_string(),
+            scope: "user".to_string(),
+            change_kind: change.change_kind.to_string(),
+            managed_by: "codex1".to_string(),
+            component: change.component.to_string(),
+            install_mode: if change.component == "skill_file" {
+                SkillInstallMode::CopiedSkills.as_str().to_string()
+            } else {
+                "support_surface".to_string()
+            },
+            ownership_mode: change.ownership_mode.to_string(),
+            managed_selector: change.managed_selector.clone(),
+            origin: "codex1 setup".to_string(),
+            backup_path: backup_path.map(|path| path.display().to_string()),
+            before_hash: change
+                .previous_contents
+                .as_ref()
+                .map(|text| content_hash(text)),
+            after_hash: Some(content_hash(&change.next_contents)),
+            restore_action: change.restore_action.to_string(),
+            applied: false,
+        });
+    }
+
+    let manifest_path = backup_dir.join("manifest.json");
+    let mut manifest = BackupManifest {
+        backup_id: backup_id.clone(),
+        created_at,
+        repo_root: codex_home.display().to_string(),
+        codex1_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+        skill_install_mode: None,
+        paths: manifest_paths,
+    };
+    write_manifest(&manifest_path, &manifest)?;
+
+    let mutations = planned_changes
+        .iter()
+        .enumerate()
+        .map(|(index, change)| SupportSurfaceMutation {
+            path: change.path.clone(),
+            manifest_index: Some(index),
+            kind: SupportSurfaceMutationKind::WriteFile {
+                contents: change.next_contents.clone(),
+            },
+            success_label: format!("applied_{}", change.component),
+            failure_label: "failed_write_file".to_string(),
+            missing_label: None,
+        })
+        .collect::<Vec<_>>();
+    let transaction = execute_support_surface_transaction(
+        &mut manifest,
+        &manifest_path,
+        &mutations,
+        SupportSurfaceManifestMode::MarkAppliedPerStep,
+    )
+    .context("execute global support-surface setup transaction")?;
+    if transaction.failures > 0 {
+        return Err(anyhow!(
+            "{}",
+            transaction
+                .first_error
+                .unwrap_or_else(|| "global setup transaction failed".to_string())
+        ));
+    }
+
+    let report = GlobalSetupReport {
+        scope: "global",
+        codex_home: codex_home.display().to_string(),
+        backup_root: backup_root.display().to_string(),
+        backup_id: Some(backup_id.clone()),
+        changed_paths: planned_changes
+            .iter()
+            .map(|change| ChangedPathReport {
+                path: change.path.display().to_string(),
+                change_kind: change.change_kind,
+                component: change.component,
+            })
+            .collect(),
+        notes: vec![
+            "created a reversible user-scope backup manifest before mutating managed files"
+                .to_string(),
+            format!("backup id: {backup_id}"),
+            "no project-local .codex directory or AGENTS.md file was changed".to_string(),
+        ],
+    };
+
+    emit_report(
+        args.common.json,
+        &report,
+        render_global_setup_report(&report),
+    )
+}
+
+pub(crate) fn run_project_setup(args: SetupArgs) -> Result<()> {
     let repo_root = resolve_repo_root(args.common.repo_root.as_deref())?;
     let trusted_repo = is_repo_trusted(&repo_root)?;
     let source_skill_root = resolve_source_skills_root()?;
@@ -144,7 +356,9 @@ pub fn run(args: SetupArgs) -> Result<()> {
 
     let user_hooks_path = codex_home()?.join("hooks.json");
     let user_hook_authority = user_stop_hook_authority(&user_hooks_path)?;
-    if user_hook_authority.authoritative() > 0 {
+    let using_global_managed_stop_hook =
+        user_hook_authority.authoritative() == 1 && user_hook_authority.managed == 1;
+    if user_hook_authority.authoritative() > 0 && !using_global_managed_stop_hook {
         bail!(
             "{} contains {} user-level authoritative Stop handler(s); supported Codex1 environments require one authoritative Stop pipeline across config layers, so remove or mark those handlers observational before running setup",
             user_hooks_path.display(),
@@ -196,27 +410,48 @@ pub fn run(args: SetupArgs) -> Result<()> {
     }
 
     let existing_hooks = read_optional_string(&hooks_path)?;
-    let next_hooks =
-        build_hooks_json(existing_hooks.as_deref(), args.force, &managed_hook_command)?;
-    if existing_hooks.as_deref() != Some(next_hooks.as_str()) {
-        planned_changes.push(PlannedChange {
-            path: hooks_path,
-            component: "hooks",
-            ownership_mode: "managed_entry",
-            managed_selector: format!("hooks.Stop.command:{managed_hook_command}"),
-            change_kind: if existing_hooks.is_some() {
-                "modified"
-            } else {
-                "created"
-            },
-            restore_action: if existing_hooks.is_some() {
-                "restore_backup"
-            } else {
-                "delete_if_created"
-            },
-            previous_contents: existing_hooks,
-            next_contents: next_hooks,
-        });
+    if using_global_managed_stop_hook {
+        if existing_hooks.is_some() {
+            let next_hooks = build_project_hooks_json_for_global_pipeline(
+                existing_hooks.as_deref(),
+                args.force,
+            )?;
+            if existing_hooks.as_deref() != Some(next_hooks.as_str()) {
+                planned_changes.push(PlannedChange {
+                    path: hooks_path,
+                    component: "hooks",
+                    ownership_mode: "managed_entry",
+                    managed_selector: "hooks.Stop:global-managed-pipeline".to_string(),
+                    change_kind: "modified",
+                    restore_action: "restore_backup",
+                    previous_contents: existing_hooks,
+                    next_contents: next_hooks,
+                });
+            }
+        }
+    } else {
+        let next_hooks =
+            build_hooks_json(existing_hooks.as_deref(), args.force, &managed_hook_command)?;
+        if existing_hooks.as_deref() != Some(next_hooks.as_str()) {
+            planned_changes.push(PlannedChange {
+                path: hooks_path,
+                component: "hooks",
+                ownership_mode: "managed_entry",
+                managed_selector: format!("hooks.Stop.command:{managed_hook_command}"),
+                change_kind: if existing_hooks.is_some() {
+                    "modified"
+                } else {
+                    "created"
+                },
+                restore_action: if existing_hooks.is_some() {
+                    "restore_backup"
+                } else {
+                    "delete_if_created"
+                },
+                previous_contents: existing_hooks,
+                next_contents: next_hooks,
+            });
+        }
     }
 
     let existing_agents = read_optional_string(&agents_path)?;
@@ -407,36 +642,34 @@ pub fn run(args: SetupArgs) -> Result<()> {
     };
     write_manifest(&manifest_path, &manifest)?;
 
-    let mut applied_indices = Vec::new();
-    for (index, change) in planned_changes.iter().enumerate() {
-        if let Some(parent) = change.path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("create parent directory {}", parent.display()))?;
-        }
-        if let Err(error) = atomic_write_string(&change.path, &change.next_contents)
-            .with_context(|| format!("write {}", change.path.display()))
-        {
-            rollback_setup_changes(
-                &planned_changes,
-                &applied_indices,
-                &mut manifest,
-                &manifest_path,
-            )
-            .context("rollback setup changes after failed write")?;
-            return Err(error);
-        }
-        applied_indices.push(index);
-        manifest.paths[index].applied = true;
-        if let Err(error) = write_manifest(&manifest_path, &manifest) {
-            rollback_setup_changes(
-                &planned_changes,
-                &applied_indices,
-                &mut manifest,
-                &manifest_path,
-            )
-            .context("rollback setup changes after failed manifest write")?;
-            return Err(error);
-        }
+    let mutations = planned_changes
+        .iter()
+        .enumerate()
+        .map(|(index, change)| SupportSurfaceMutation {
+            path: change.path.clone(),
+            manifest_index: Some(index),
+            kind: SupportSurfaceMutationKind::WriteFile {
+                contents: change.next_contents.clone(),
+            },
+            success_label: format!("applied_{}", change.component),
+            failure_label: "failed_write_file".to_string(),
+            missing_label: None,
+        })
+        .collect::<Vec<_>>();
+    let transaction = execute_support_surface_transaction(
+        &mut manifest,
+        &manifest_path,
+        &mutations,
+        SupportSurfaceManifestMode::MarkAppliedPerStep,
+    )
+    .context("execute support-surface setup transaction")?;
+    if transaction.failures > 0 {
+        return Err(anyhow!(
+            "{}",
+            transaction
+                .first_error
+                .unwrap_or_else(|| "setup transaction failed".to_string())
+        ));
     }
 
     let report = SetupReport {
@@ -460,42 +693,12 @@ pub fn run(args: SetupArgs) -> Result<()> {
     emit_report(args.common.json, &report, render_setup_report(&report))
 }
 
-fn rollback_setup_changes(
-    planned_changes: &[PlannedChange],
-    applied_indices: &[usize],
-    manifest: &mut BackupManifest,
-    manifest_path: &Path,
-) -> Result<()> {
-    for index in applied_indices.iter().rev().copied() {
-        restore_planned_change(&planned_changes[index])?;
-        manifest.paths[index].applied = false;
-    }
-    write_manifest(manifest_path, manifest)
-}
-
-fn restore_planned_change(change: &PlannedChange) -> Result<()> {
-    match &change.previous_contents {
-        Some(previous_contents) => {
-            if let Some(parent) = change.path.parent() {
-                fs::create_dir_all(parent)
-                    .with_context(|| format!("create parent directory {}", parent.display()))?;
-            }
-            fs::write(&change.path, previous_contents)
-                .with_context(|| format!("rollback {}", change.path.display()))?;
-        }
-        None => {
-            if change.path.exists() {
-                fs::remove_file(&change.path)
-                    .with_context(|| format!("remove {}", change.path.display()))?;
-            }
-        }
-    }
-    Ok(())
-}
-
 fn default_backup_root() -> Result<PathBuf> {
-    let home = env::var_os("HOME").ok_or_else(|| anyhow!("HOME is not set"))?;
-    Ok(PathBuf::from(home).join(".codex1/backups"))
+    core_default_backup_root().map_err(anyhow::Error::new)
+}
+
+fn absolute_root_path(path: &Path) -> Result<PathBuf> {
+    core_absolute_root_path(path).map_err(anyhow::Error::new)
 }
 
 fn codex_home() -> Result<PathBuf> {
@@ -595,6 +798,37 @@ fn build_project_config(existing: Option<&str>, clear_skills_config_bridges: boo
         ConfigValue::String(CONFIG_HARD_CODING_REASONING_EFFORT),
     );
     ensure_trailing_newline(text)
+}
+
+fn build_global_config(existing: Option<&str>) -> String {
+    let text = existing.unwrap_or_default().to_string();
+    ensure_trailing_newline(upsert_config_value(
+        &text,
+        Some("features"),
+        "codex_hooks",
+        ConfigValue::Bool(true),
+    ))
+}
+
+fn global_config_is_desired(existing: Option<&str>, next_config: &str) -> bool {
+    let Some(existing) = existing else {
+        return false;
+    };
+    existing == next_config
+        || detect_toml_bool(existing, Some("features"), "codex_hooks") == Some(true)
+}
+
+fn json_values_match(existing: Option<&str>, next_json: &str) -> bool {
+    let Some(existing) = existing else {
+        return false;
+    };
+    match (
+        serde_json::from_str::<Value>(existing),
+        serde_json::from_str::<Value>(next_json),
+    ) {
+        (Ok(existing), Ok(next)) => existing == next,
+        _ => existing == next_json,
+    }
 }
 
 fn build_hooks_json(
@@ -744,6 +978,54 @@ fn build_hooks_json(
     stop_groups.extend(observational_groups);
 
     serde_json::to_string_pretty(&root).context("serialize hooks.json")
+}
+
+fn build_project_hooks_json_for_global_pipeline(
+    existing: Option<&str>,
+    force: bool,
+) -> Result<String> {
+    let mut root = match existing {
+        Some(raw) if !raw.trim().is_empty() => {
+            serde_json::from_str::<Value>(raw).or_else(|error| {
+                if force {
+                    Ok(Value::Object(Map::new()))
+                } else {
+                    Err(error)
+                }
+            })?
+        }
+        _ => Value::Object(Map::new()),
+    };
+    let stop_counts = summarize_stop_authority_with_observational(&root);
+    if stop_counts.authoritative() == 0 {
+        return serde_json::to_string_pretty(&root).context("serialize idempotent hooks.json");
+    }
+    if !force {
+        bail!(
+            "project hooks.json contains authoritative Stop handlers while the global managed Codex1 Stop hook is installed; rerun codex1 init --force to remove the duplicate project Stop pipeline"
+        );
+    }
+
+    let root_object = root
+        .as_object_mut()
+        .ok_or_else(|| anyhow!("hooks.json root must be a JSON object"))?;
+    let hooks_value = root_object
+        .entry("hooks".to_string())
+        .or_insert_with(|| Value::Object(Map::new()));
+    let hooks_object = hooks_value
+        .as_object_mut()
+        .ok_or_else(|| anyhow!("hooks field in hooks.json must be a JSON object"))?;
+    let stop_value = hooks_object
+        .entry("Stop".to_string())
+        .or_insert_with(|| Value::Array(Vec::new()));
+    let stop_groups = stop_value
+        .as_array_mut()
+        .ok_or_else(|| anyhow!("hooks.Stop must be a JSON array"))?;
+    let observational_groups = collect_observational_stop_groups(stop_groups);
+    *stop_groups = observational_groups;
+
+    serde_json::to_string_pretty(&root)
+        .context("serialize hooks.json without project Stop authority")
 }
 
 fn stop_group_is_observational(value: &Value) -> bool {
@@ -1205,6 +1487,32 @@ fn render_setup_report(report: &SetupReport) -> String {
     output.trim_end().to_string()
 }
 
+fn render_global_setup_report(report: &GlobalSetupReport) -> String {
+    let mut output = String::new();
+    let _ = writeln!(&mut output, "scope: {}", report.scope);
+    let _ = writeln!(&mut output, "codex home: {}", report.codex_home);
+    let _ = writeln!(&mut output, "backup root: {}", report.backup_root);
+    if report.changed_paths.is_empty() {
+        let _ = writeln!(&mut output, "changed paths: none");
+    } else {
+        let _ = writeln!(&mut output, "changed paths:");
+        for path in &report.changed_paths {
+            let _ = writeln!(
+                &mut output,
+                "- {} ({}, {})",
+                path.path, path.change_kind, path.component
+            );
+        }
+    }
+    if !report.notes.is_empty() {
+        let _ = writeln!(&mut output, "notes:");
+        for note in &report.notes {
+            let _ = writeln!(&mut output, "- {note}");
+        }
+    }
+    output.trim_end().to_string()
+}
+
 fn render_setup_preflight(planned_changes: &[PlannedChange]) -> String {
     let mut output = String::new();
     let _ = writeln!(&mut output, "planned Codex surface changes before apply:");
@@ -1278,36 +1586,11 @@ fn new_backup_id() -> Result<String> {
 }
 
 fn content_hash(text: &str) -> String {
-    Fingerprint::from_bytes(text.as_bytes()).to_string()
+    core_content_hash(text)
 }
 
 fn write_manifest(path: &Path, manifest: &BackupManifest) -> Result<()> {
-    let manifest_json = serde_json::to_string_pretty(manifest).context("serialize manifest")?;
-    atomic_write_string(path, &manifest_json)
-        .with_context(|| format!("write manifest to {}", path.display()))
-}
-
-fn atomic_write_string(path: &Path, contents: &str) -> Result<()> {
-    let parent = path
-        .parent()
-        .with_context(|| format!("{} has no parent directory", path.display()))?;
-    fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
-    let mut temp = NamedTempFile::new_in(parent)
-        .with_context(|| format!("create temp file in {}", parent.display()))?;
-    use std::io::Write as _;
-    temp.write_all(contents.as_bytes())
-        .with_context(|| format!("write temp file for {}", path.display()))?;
-    temp.as_file()
-        .sync_all()
-        .with_context(|| format!("fsync temp file for {}", path.display()))?;
-    temp.persist(path)
-        .map_err(|error| error.error)
-        .with_context(|| format!("persist {}", path.display()))?;
-    Ok(())
-}
-
-const fn default_manifest_applied() -> bool {
-    true
+    core_write_manifest(path, manifest).map_err(anyhow::Error::new)
 }
 
 fn ensure_trailing_newline(mut text: String) -> String {
@@ -1673,7 +1956,7 @@ mod tests {
             "<!-- codex1:begin -->\n",
             "## Codex1\n",
             "### Workflow Stance\n",
-            "- Use the native Codex skills surface for `clarify`, `plan`, `execute`, `review`, and `autopilot`.\n",
+            "- Use the native Codex skills surface for `clarify`, `plan`, `execute`, `review-loop`, and `autopilot`.\n",
             "- Keep mission truth in visible repo artifacts instead of hidden chat state.\n",
             "- Replan stays internal unless the repo truth explicitly says otherwise.\n\n",
             "### Quality Bar\n",

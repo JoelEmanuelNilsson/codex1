@@ -34,6 +34,226 @@ pub trait TypedArtifactFrontmatter:
     fn artifact_kind(&self) -> ArtifactKind;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VisibleArtifactTextKind {
+    MissionReadme,
+    ReviewLedger,
+    ReplanLog,
+}
+
+impl VisibleArtifactTextKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::MissionReadme => "mission_readme",
+            Self::ReviewLedger => "review_ledger",
+            Self::ReplanLog => "replan_log",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisibleArtifactSectionRequirement {
+    pub heading: String,
+    #[serde(default)]
+    pub required_phrases: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisibleArtifactTextRequirement {
+    pub kind: VisibleArtifactTextKind,
+    #[serde(default)]
+    pub required_headings: Vec<String>,
+    #[serde(default)]
+    pub required_phrases: Vec<String>,
+    #[serde(default)]
+    pub section_requirements: Vec<VisibleArtifactSectionRequirement>,
+}
+
+#[must_use]
+pub fn visible_artifact_text_requirement(
+    kind: VisibleArtifactTextKind,
+) -> VisibleArtifactTextRequirement {
+    match kind {
+        VisibleArtifactTextKind::MissionReadme => VisibleArtifactTextRequirement {
+            kind,
+            required_headings: vec![
+                "Snapshot".to_string(),
+                "Start Here".to_string(),
+                "Objective Summary".to_string(),
+                "Active Frontier".to_string(),
+                "Current Risks Or Blockers".to_string(),
+                "Canonical Artifacts".to_string(),
+            ],
+            required_phrases: vec![
+                "Mission id:".to_string(),
+                "Current phase:".to_string(),
+                "Current verdict:".to_string(),
+                "Next recommended action:".to_string(),
+                "Current blocker:".to_string(),
+            ],
+            section_requirements: vec![
+                VisibleArtifactSectionRequirement {
+                    heading: "Start Here".to_string(),
+                    required_phrases: vec![
+                        "OUTCOME-LOCK.md".to_string(),
+                        "PROGRAM-BLUEPRINT.md".to_string(),
+                    ],
+                },
+                VisibleArtifactSectionRequirement {
+                    heading: "Active Frontier".to_string(),
+                    required_phrases: vec![
+                        "Selected target:".to_string(),
+                        "Why it is next:".to_string(),
+                        "Expected proof, review, or package gate:".to_string(),
+                    ],
+                },
+                VisibleArtifactSectionRequirement {
+                    heading: "Canonical Artifacts".to_string(),
+                    required_phrases: vec![
+                        "MISSION-STATE.md".to_string(),
+                        "OUTCOME-LOCK.md".to_string(),
+                        "PROGRAM-BLUEPRINT.md".to_string(),
+                    ],
+                },
+            ],
+        },
+        VisibleArtifactTextKind::ReviewLedger => VisibleArtifactTextRequirement {
+            kind,
+            required_headings: vec![
+                "Open Blocking Findings".to_string(),
+                "Non-Blocking Findings".to_string(),
+                "Review Events".to_string(),
+                "Dispositions".to_string(),
+                "Mission-Close Review".to_string(),
+            ],
+            required_phrases: vec!["Mission id:".to_string()],
+            section_requirements: vec![VisibleArtifactSectionRequirement {
+                heading: "Mission-Close Review".to_string(),
+                required_phrases: vec![
+                    "Bundle id:".to_string(),
+                    "Source package id:".to_string(),
+                    "Governing refs:".to_string(),
+                    "Verdict:".to_string(),
+                ],
+            }],
+        },
+        VisibleArtifactTextKind::ReplanLog => VisibleArtifactTextRequirement {
+            kind,
+            required_headings: vec!["Notes".to_string()],
+            required_phrases: vec![
+                "Mission id:".to_string(),
+                "| Replan id |".to_string(),
+                "| Reopened layer |".to_string(),
+                "| Trigger |".to_string(),
+                "| Cause ref |".to_string(),
+                "| Preserved work |".to_string(),
+                "| Invalidated work |".to_string(),
+                "| Artifact updates |".to_string(),
+            ],
+            section_requirements: vec![VisibleArtifactSectionRequirement {
+                heading: "Notes".to_string(),
+                required_phrases: vec![
+                    "Preserve valid work".to_string(),
+                    "invalidated".to_string(),
+                ],
+            }],
+        },
+    }
+}
+
+fn normalize_markdown_heading(heading: &str) -> String {
+    heading
+        .trim()
+        .trim_start_matches('#')
+        .trim()
+        .to_ascii_lowercase()
+}
+
+fn markdown_sections(body: &str) -> Vec<(String, String)> {
+    let mut sections = Vec::new();
+    let mut current_heading = String::new();
+    let mut current_lines: Vec<String> = Vec::new();
+
+    for line in body.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') {
+            if !current_heading.is_empty() {
+                sections.push((current_heading.clone(), current_lines.join("\n")));
+            }
+            current_heading = normalize_markdown_heading(trimmed);
+            current_lines.clear();
+            continue;
+        }
+
+        if !current_heading.is_empty() {
+            current_lines.push(line.to_string());
+        }
+    }
+
+    if !current_heading.is_empty() {
+        sections.push((current_heading, current_lines.join("\n")));
+    }
+
+    sections
+}
+
+#[must_use]
+pub fn validate_visible_artifact_text(
+    kind: VisibleArtifactTextKind,
+    contents: &str,
+) -> Vec<String> {
+    let requirement = visible_artifact_text_requirement(kind);
+    let mut findings = Vec::new();
+    if contents.trim().is_empty() {
+        findings.push("artifact is empty".to_string());
+        return findings;
+    }
+
+    let sections = markdown_sections(contents);
+    for heading in &requirement.required_headings {
+        let normalized = normalize_markdown_heading(heading);
+        if !sections
+            .iter()
+            .any(|(candidate, _)| candidate == &normalized)
+        {
+            findings.push(format!("artifact is missing required section `{heading}`"));
+        }
+    }
+
+    for phrase in &requirement.required_phrases {
+        if !contents.contains(phrase) {
+            findings.push(format!("artifact is missing required phrase `{phrase}`"));
+        }
+    }
+
+    for section_requirement in &requirement.section_requirements {
+        let normalized = normalize_markdown_heading(&section_requirement.heading);
+        if let Some((_, section_body)) = sections
+            .iter()
+            .find(|(candidate, _)| candidate == &normalized)
+        {
+            if section_body.trim().is_empty() {
+                findings.push(format!(
+                    "artifact section `{}` must not be empty",
+                    section_requirement.heading
+                ));
+            }
+            for phrase in &section_requirement.required_phrases {
+                if !section_body.contains(phrase) {
+                    findings.push(format!(
+                        "artifact section `{}` is missing required phrase `{}`",
+                        section_requirement.heading, phrase
+                    ));
+                }
+            }
+        }
+    }
+
+    findings
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtifactDocument<F> {
     pub frontmatter: F,
@@ -356,7 +576,7 @@ impl TypedArtifactFrontmatter for WorkstreamSpecFrontmatter {
 mod tests {
     use super::{
         ArtifactDocument, ArtifactKind, ClarifyStatus, MissionStateFrontmatter,
-        TypedArtifactFrontmatter,
+        TypedArtifactFrontmatter, VisibleArtifactTextKind, validate_visible_artifact_text,
     };
 
     #[test]
@@ -396,5 +616,28 @@ Body text.
 
         assert_eq!(document, reparsed);
         assert!(document.fingerprint().is_ok());
+    }
+
+    #[test]
+    fn readme_template_satisfies_registered_contract() {
+        let contents = include_str!("../../../templates/mission/README.md");
+        let findings =
+            validate_visible_artifact_text(VisibleArtifactTextKind::MissionReadme, contents);
+        assert!(findings.is_empty(), "unexpected findings: {findings:?}");
+    }
+
+    #[test]
+    fn review_ledger_template_satisfies_registered_contract() {
+        let contents = include_str!("../../../templates/mission/REVIEW-LEDGER.md");
+        let findings =
+            validate_visible_artifact_text(VisibleArtifactTextKind::ReviewLedger, contents);
+        assert!(findings.is_empty(), "unexpected findings: {findings:?}");
+    }
+
+    #[test]
+    fn replan_log_template_satisfies_registered_contract() {
+        let contents = include_str!("../../../templates/mission/REPLAN-LOG.md");
+        let findings = validate_visible_artifact_text(VisibleArtifactTextKind::ReplanLog, contents);
+        assert!(findings.is_empty(), "unexpected findings: {findings:?}");
     }
 }

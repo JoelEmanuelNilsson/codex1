@@ -1,0 +1,11 @@
+{
+  "mission_id": "global-codex1-installer",
+  "bundle_id": "804edb4a-fcf3-4449-b3ec-19f06a9ae76e",
+  "reviewer_id": "review_mission_close_intent_2",
+  "reviewer_output_id": "0631bbc4-e60b-4d27-9fc1-dbef8624a0c1",
+  "output_kind": "none",
+  "findings": [],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/global-codex1-installer/review-evidence-snapshots/804edb4a-fcf3-4449-b3ec-19f06a9ae76e.json",
+  "source_evidence_snapshot_fingerprint": "sha256:7796a36f714f31ac5f5b7e586a1e1f4c674dfd02f97c399eb4e2d8e3f5fb0d11",
+  "recorded_at": "2026-04-17T22:11:07.440938Z"
+}

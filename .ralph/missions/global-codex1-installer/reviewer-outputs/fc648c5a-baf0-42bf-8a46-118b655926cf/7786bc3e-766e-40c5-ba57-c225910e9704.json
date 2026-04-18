@@ -1,0 +1,25 @@
+{
+  "mission_id": "global-codex1-installer",
+  "bundle_id": "fc648c5a-baf0-42bf-8a46-118b655926cf",
+  "reviewer_id": "review_code_bug_correctness_authority_repair_final",
+  "reviewer_output_id": "7786bc3e-766e-40c5-ba57-c225910e9704",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P1",
+      "title": "Child lanes can bypass parent mutation authority by pausing/clearing and re-minting loop lease",
+      "evidence_refs": [
+        "crates/codex1-core/src/runtime.rs:5428",
+        "crates/codex1-core/src/runtime.rs:5462",
+        "crates/codex1-core/src/runtime.rs:5395",
+        "crates/codex1-core/src/runtime.rs:5537",
+        "crates/codex1/src/internal/mod.rs:1151"
+      ],
+      "rationale": "`pause_ralph_loop_lease` and `clear_ralph_loop_lease` are callable without validating `CODEX1_PARENT_LOOP_AUTHORITY_TOKEN`. Once a child lane pauses or clears the active lease, `begin_ralph_loop_lease` can mint a fresh parent authority token (its guard only blocks replacement of an active lease), and `validate_parent_loop_authority_for_mission_mutation` no longer protects the mission when no active lease is present. This allows a child lane to seize effective parent authority and execute protected mission-truth mutations, defeating the intended boundary.",
+      "suggested_next_action": "Require parent-loop authority token (or an explicit trusted parent override path) for `pause-loop-lease` and `clear-loop-lease` when a lease with `parent_authority_verifier` exists, and add regression tests proving child lanes without the token cannot pause/clear/re-mint authority before protected mutations."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/global-codex1-installer/review-evidence-snapshots/fc648c5a-baf0-42bf-8a46-118b655926cf.json",
+  "source_evidence_snapshot_fingerprint": "sha256:ac85da462901d931664daf30e954ebe0e68b726979b933c7316185868b3fc60d",
+  "recorded_at": "2026-04-17T22:50:25.727376Z"
+}

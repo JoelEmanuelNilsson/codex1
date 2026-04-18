@@ -1,0 +1,50 @@
+{
+  "bundle_id": "9faee4ea-0b93-4ca1-b5d9-0bff844a29cc",
+  "mission_id": "contract-centered-architecture",
+  "bundle_kind": "spec_review",
+  "source_package_id": "abe189bb-04c5-4a22-b94a-61dfe8cb5e54",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:4e35be4d1adaa85d5725d5fb4a891f47fe4bd24f5f25bec09c5f5249b7a93893",
+  "blueprint_revision": 10,
+  "blueprint_fingerprint": "sha256:0e73f4340105227393ea58ff06a5ef2e5784a282c52f4b7d420d5f71bca87a3d",
+  "governing_revision": "spec:qualification_evidence_pipeline:3",
+  "mandatory_review_lenses": [
+    "correctness",
+    "safety_security_policy",
+    "operability_rollback_observability",
+    "evidence_adequacy",
+    "spec_conformance",
+    "interface_compatibility",
+    "operability_rollback_observability."
+  ],
+  "target_spec_id": "qualification_evidence_pipeline",
+  "spec_revision": 3,
+  "spec_fingerprint": "sha256:8c97dd53ae7af6164bcfe917558e084e896248163feb808b47061b66ee2cf74c",
+  "proof_rows_under_review": [
+    "execute never starts without a passed package and remains honest about review, repair, and replan branches",
+    "autopilot produces the same artifact truth and gate outcomes as the manual path",
+    "no-false-terminal, child-lane reconciliation, and waiting-identity proofs remain green after the touched changes",
+    "the fully autonomous execution promise is backed by explicit runtime and qualification evidence",
+    "live qualification reports preserve the raw artifacts needed to justify each pass or fail decision",
+    "native child-lane qualification can distinguish surface gaps from Codex1 reconcile bugs honestly",
+    "manual and autopilot parity and Ralph waiting proofs remain inspectable and stable",
+    "cargo test -p codex1 qualification_cli",
+    "current package dependency rebind"
+  ],
+  "receipts": [
+    "PLANS/contract-centered-architecture/specs/qualification_evidence_pipeline/RECEIPTS/2026-04-15-qualification-evidence-proof.txt"
+  ],
+  "changed_files_or_diff": [
+    "PLANS/contract-centered-architecture/specs/qualification_evidence_pipeline/SPEC.md"
+  ],
+  "touched_interface_contracts": [
+    "current package dependency rebind"
+  ],
+  "mission_level_proof_rows": [],
+  "cross_spec_claim_refs": [],
+  "included_spec_refs": [],
+  "visible_artifact_refs": [],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [],
+  "generated_at": "2026-04-15T19:48:58.839162Z"
+}

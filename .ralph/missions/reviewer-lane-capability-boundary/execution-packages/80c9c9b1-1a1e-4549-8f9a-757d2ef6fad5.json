@@ -1,0 +1,164 @@
+{
+  "package_id": "80c9c9b1-1a1e-4549-8f9a-757d2ef6fad5",
+  "mission_id": "reviewer-lane-capability-boundary",
+  "target_type": "mission",
+  "target_id": "reviewer-lane-capability-boundary",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:d9664160591908a6f7cc392f337353c1a4dd29393df3375d6d1fecb832730b38",
+  "blueprint_revision": 5,
+  "blueprint_fingerprint": "sha256:fca0b3985a2f59f6a9217d7937e5f3ac326c82936265fa26199aae69b40c73c4",
+  "dependency_snapshot_fingerprint": "sha256:da3dd10d4fe4944793de37e7a960e84bf3cf293536b703a261b4b1fbb2a87d11",
+  "wave_fingerprint": null,
+  "included_specs": [
+    {
+      "spec_id": "reviewer_lane_mutation_guard",
+      "spec_revision": 1,
+      "spec_fingerprint": "sha256:ad7c5813d8846c74c6a964a8a55901a3b6e20f780dd8e758a489d697dc23e397"
+    },
+    {
+      "spec_id": "reviewer_evidence_snapshot_contract",
+      "spec_revision": 1,
+      "spec_fingerprint": "sha256:4114c9cfb134afacaaa7e5f7e2b7973983ec1ec98ecd4f2fa18cebb3af04c66f"
+    },
+    {
+      "spec_id": "reviewer_capability_qualification",
+      "spec_revision": 1,
+      "spec_fingerprint": "sha256:a8f22f76cb548b6887cabf6a9c36b8b75266835ed4e07bbc35adb67430455dd9"
+    }
+  ],
+  "dependency_satisfaction_state": [
+    {
+      "name": "lock_current",
+      "satisfied": true,
+      "detail": "Outcome Lock revision 1 is current and locked."
+    },
+    {
+      "name": "blueprint_current",
+      "satisfied": true,
+      "detail": "Program Blueprint revision 5 has all planned specs complete and review-clean."
+    }
+  ],
+  "read_scope": [
+    "crates/codex1-core/src",
+    "crates/codex1/src",
+    "crates/codex1/tests",
+    ".codex/skills",
+    "docs",
+    "PLANS/reviewer-lane-capability-boundary"
+  ],
+  "write_scope": [
+    "crates/codex1-core/src",
+    "crates/codex1/src",
+    "crates/codex1/tests",
+    ".codex/skills",
+    "docs",
+    "PLANS/reviewer-lane-capability-boundary"
+  ],
+  "proof_obligations": [
+    "all specs complete",
+    "all spec reviews clean",
+    "validate-mission-artifacts",
+    "mission-close review"
+  ],
+  "review_obligations": [
+    "mission_close",
+    "spec_conformance",
+    "cross_spec_integration",
+    "evidence_adequacy"
+  ],
+  "replan_boundary": {
+    "local_repair_allowed": false,
+    "trigger_matrix": [
+      {
+        "trigger_code": "write_scope_expansion",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "interface_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "dependency_truth_change",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "proof_obligation_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "review_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "protected_surface_change",
+        "reopen_layer": "mission_lock"
+      },
+      {
+        "trigger_code": "migration_rollout_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "outcome_lock_change",
+        "reopen_layer": "mission_lock"
+      }
+    ]
+  },
+  "wave_context": null,
+  "wave_specs": [],
+  "gate_checks": [
+    {
+      "gate_id": "target_resolution",
+      "passed": false,
+      "detail": "resolved mission:reviewer-lane-capability-boundary"
+    },
+    {
+      "gate_id": "dependency_truth_current",
+      "passed": true,
+      "detail": "dependency satisfaction is explicit, revision-bearing, and fully satisfied"
+    },
+    {
+      "gate_id": "scope_declared",
+      "passed": true,
+      "detail": "read and write scope are explicit"
+    },
+    {
+      "gate_id": "scope_bounded_to_frontier",
+      "passed": false,
+      "detail": "package scope stays inside the declared execution frontier"
+    },
+    {
+      "gate_id": "proof_contract_declared",
+      "passed": true,
+      "detail": "proof obligations are explicit"
+    },
+    {
+      "gate_id": "review_contract_declared",
+      "passed": true,
+      "detail": "review obligations are explicit"
+    },
+    {
+      "gate_id": "included_specs_runnable",
+      "passed": true,
+      "detail": "included specs are active executable frontier specs"
+    },
+    {
+      "gate_id": "planning_truth_current",
+      "passed": true,
+      "detail": "lock, blueprint, and included spec bindings are current"
+    },
+    {
+      "gate_id": "wave_validation",
+      "passed": true,
+      "detail": "wave same-workspace safety rules are satisfied"
+    }
+  ],
+  "validation_failures": [
+    "planning_selected_target_mismatch:spec:reviewer_capability_qualification!=package:mission:reviewer-lane-capability-boundary",
+    "package_read_scope_outside_frontier:plans/reviewer-lane-capability-boundary",
+    "package_write_scope_outside_frontier:plans/reviewer-lane-capability-boundary",
+    "gate_check_failed:target_resolution",
+    "gate_check_failed:scope_bounded_to_frontier"
+  ],
+  "validated_at": "2026-04-16T17:05:58.227655Z",
+  "status": "failed"
+}

@@ -1,0 +1,55 @@
+{
+  "bundle_id": "4c843ba7-db7c-42d2-8563-47a3473692e8",
+  "mission_id": "contract-centered-architecture",
+  "bundle_kind": "spec_review",
+  "source_package_id": "e0e16656-d3f6-4e45-9959-3495868a50a6",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:4e35be4d1adaa85d5725d5fb4a891f47fe4bd24f5f25bec09c5f5249b7a93893",
+  "blueprint_revision": 7,
+  "blueprint_fingerprint": "sha256:98193e5456fdf406977d3e44676121bc024487aff0b36db6cb4adab1eac49dc7",
+  "governing_revision": "spec:artifact_contract_registry:2",
+  "mandatory_review_lenses": [
+    "correctness",
+    "operability_rollback_observability",
+    "evidence_adequacy",
+    "spec_conformance",
+    "interface_compatibility",
+    "safety_security_policy",
+    "operability_rollback_observability."
+  ],
+  "target_spec_id": "artifact_contract_registry",
+  "spec_revision": 2,
+  "spec_fingerprint": "sha256:7c82d007f50805f1c0c20e24615464b100684a44909ae0740d995d141d0fab66",
+  "proof_rows_under_review": [
+    "interrupted or failed helper-surface mutations can be diagnosed and rolled back from journal truth",
+    "setup, restore, and uninstall stop duplicating manifest schema and mutation semantics",
+    "helper qualification gates still pass or become stronger",
+    "cargo test -p codex1 qualification_cli",
+    "visible-artifact validation fails for structurally weak artifacts that previously passed marker checks",
+    "templates and validators stay in parity for the moved artifact classes",
+    "cargo test -p codex1-core",
+    "cargo test -p codex1 runtime_internal",
+    "artifact validators reject structurally weak visible artifacts that previously passed marker checks",
+    "cargo test -p codex1 --test runtime_internal"
+  ],
+  "receipts": [
+    "PLANS/contract-centered-architecture/specs/artifact_contract_registry/RECEIPTS/2026-04-15-artifact-registry-proof.txt"
+  ],
+  "changed_files_or_diff": [
+    "crates/codex1-core/src/artifacts.rs",
+    "crates/codex1-core/src/lib.rs",
+    "crates/codex1/src/internal/mod.rs"
+  ],
+  "touched_interface_contracts": [
+    "visible artifact text contract registry",
+    "visible artifact validator contract",
+    "template parity contract"
+  ],
+  "mission_level_proof_rows": [],
+  "cross_spec_claim_refs": [],
+  "included_spec_refs": [],
+  "visible_artifact_refs": [],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [],
+  "generated_at": "2026-04-15T18:21:47.131084Z"
+}

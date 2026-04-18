@@ -1,0 +1,24 @@
+{
+  "mission_id": "global-codex1-installer",
+  "bundle_id": "9d5a0680-42e6-48dc-9719-7f0b300cf740",
+  "reviewer_id": "review_spec_intent_proof_mission_close_9d5a",
+  "reviewer_output_id": "27deb808-8291-479e-bb64-f057558b6350",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P2",
+      "title": "Mission-close proof skips the blocking P4 full-suite contract",
+      "evidence_refs": [
+        "PLANS/global-codex1-installer/PROGRAM-BLUEPRINT.md:91-99",
+        ".ralph/missions/global-codex1-installer/bundles/9d5a0680-42e6-48dc-9719-7f0b300cf740.json:30-45",
+        ".ralph/missions/global-codex1-installer/review-evidence-snapshots/9d5a0680-42e6-48dc-9719-7f0b300cf740.json:29-44",
+        "PLANS/global-codex1-installer/specs/reviewer_writeback_authority_enforcement/RECEIPTS/2026-04-17-reviewer-writeback-authority-proof.md:36-42"
+      ],
+      "rationale": "The approved blueprint marks P4 as a blocking mission proof row and specifies `cargo test -p codex1` as the required evidence for the existing test suite remaining green. The mission-close bundle and frozen snapshot do not include P4 in cross-spec claims and record only targeted `runtime_internal` and `qualification_cli` test rows plus fmt/check/validators. The latest included receipt likewise records targeted `qualification_cli`, fmt, and check rows, not the blueprint-required full `cargo test -p codex1` row. Without that exact blocking proof row represented in the close evidence, the integrated outcome cannot honestly claim every blueprint proof contract is satisfied.",
+      "suggested_next_action": "Run and record the blueprint-required `cargo test -p codex1` proof row, include P4 in the mission-close checked claims/evidence, regenerate the close evidence snapshot, and rerun mission-close review."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/global-codex1-installer/review-evidence-snapshots/9d5a0680-42e6-48dc-9719-7f0b300cf740.json",
+  "source_evidence_snapshot_fingerprint": "sha256:21ecb01adc0f9ac9579a18540f1ae16a7bc3ae1a18c9e2bce3b43adc0aadc908",
+  "recorded_at": "2026-04-18T00:09:08.823981Z"
+}

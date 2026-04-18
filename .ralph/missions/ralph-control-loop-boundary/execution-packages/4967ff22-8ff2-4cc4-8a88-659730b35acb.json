@@ -1,0 +1,163 @@
+{
+  "package_id": "4967ff22-8ff2-4cc4-8a88-659730b35acb",
+  "mission_id": "ralph-control-loop-boundary",
+  "target_type": "spec",
+  "target_id": "loop_skill_surface_and_pause",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:5cbaab0b13c64a004ec37eaa7217fd9b06349887f5b8f42611793ffed1c848a2",
+  "blueprint_revision": 11,
+  "blueprint_fingerprint": "sha256:cda1004ca9f5b3cb8f5f6350eac4fcefec1cea2a9886a4e6287b5e7440d3a28a",
+  "dependency_snapshot_fingerprint": "sha256:d0e4a0116cb2aa57e04c2696b3dd8c3ae05a88662509f02629c0963fe150d056",
+  "wave_fingerprint": null,
+  "included_specs": [
+    {
+      "spec_id": "loop_skill_surface_and_pause",
+      "spec_revision": 5,
+      "spec_fingerprint": "sha256:64c1b93b8d4f8b76884e6ec3cb1b7e8120ec874f8cbf23ba3f6c0fe8f2684006"
+    }
+  ],
+  "dependency_satisfaction_state": [
+    {
+      "name": "lock_current",
+      "satisfied": true,
+      "detail": "Outcome Lock revision 1 is locked and current."
+    },
+    {
+      "name": "blueprint_current",
+      "satisfied": true,
+      "detail": "Program Blueprint revision 11 selects spec:loop_skill_surface_and_pause."
+    },
+    {
+      "name": "spec:ralph_loop_lease_runtime",
+      "satisfied": true,
+      "detail": "Runtime lease spec is complete and review-clean via bundle 0bd25295-e526-4e4f-90f4-080468f77b9b."
+    },
+    {
+      "name": "blocked_review_wave_repaired",
+      "satisfied": true,
+      "detail": "Review wave 0f48c7d4-0074-489e-8576-7eab41d1c940 blocked on receipt transcript detail and $close public-list drift; both were repaired and proof reran."
+    }
+  ],
+  "read_scope": [
+    ".codex/skills",
+    "docs/runtime-backend.md",
+    "crates/codex1/tests/runtime_internal.rs",
+    "PLANS/ralph-control-loop-boundary"
+  ],
+  "write_scope": [
+    ".codex/skills/plan/SKILL.md",
+    ".codex/skills/execute/SKILL.md",
+    ".codex/skills/review-loop/SKILL.md",
+    ".codex/skills/autopilot/SKILL.md",
+    ".codex/skills/clarify/SKILL.md",
+    ".codex/skills/internal-orchestration/SKILL.md",
+    ".codex/skills/close/SKILL.md",
+    "docs/runtime-backend.md",
+    "crates/codex1/tests/runtime_internal.rs",
+    "PLANS/ralph-control-loop-boundary/specs/loop_skill_surface_and_pause"
+  ],
+  "proof_obligations": [
+    "cargo test -p codex1 --test runtime_internal loop_skill_surface_documents_lease_and_close_contract --quiet",
+    "cargo test -p codex1 --test runtime_internal ralph_control_loop_boundary --quiet",
+    "cargo fmt --all --check",
+    "codex1 internal validate-mission-artifacts --mission-id ralph-control-loop-boundary"
+  ],
+  "review_obligations": [
+    "spec_conformance",
+    "intent_alignment",
+    "interface_compatibility",
+    "evidence_adequacy"
+  ],
+  "replan_boundary": {
+    "local_repair_allowed": false,
+    "trigger_matrix": [
+      {
+        "trigger_code": "write_scope_expansion",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "interface_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "dependency_truth_change",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "proof_obligation_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "review_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "protected_surface_change",
+        "reopen_layer": "mission_lock"
+      },
+      {
+        "trigger_code": "migration_rollout_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "outcome_lock_change",
+        "reopen_layer": "mission_lock"
+      }
+    ]
+  },
+  "wave_context": null,
+  "wave_specs": [],
+  "gate_checks": [
+    {
+      "gate_id": "target_resolution",
+      "passed": true,
+      "detail": "resolved spec:loop_skill_surface_and_pause"
+    },
+    {
+      "gate_id": "dependency_truth_current",
+      "passed": false,
+      "detail": "dependency satisfaction is explicit, revision-bearing, and fully satisfied"
+    },
+    {
+      "gate_id": "scope_declared",
+      "passed": true,
+      "detail": "read and write scope are explicit"
+    },
+    {
+      "gate_id": "scope_bounded_to_frontier",
+      "passed": true,
+      "detail": "package scope stays inside the declared execution frontier"
+    },
+    {
+      "gate_id": "proof_contract_declared",
+      "passed": true,
+      "detail": "proof obligations are explicit"
+    },
+    {
+      "gate_id": "review_contract_declared",
+      "passed": true,
+      "detail": "review obligations are explicit"
+    },
+    {
+      "gate_id": "included_specs_runnable",
+      "passed": true,
+      "detail": "included specs are active executable frontier specs"
+    },
+    {
+      "gate_id": "planning_truth_current",
+      "passed": true,
+      "detail": "lock, blueprint, and included spec bindings are current"
+    },
+    {
+      "gate_id": "wave_validation",
+      "passed": true,
+      "detail": "wave same-workspace safety rules are satisfied"
+    }
+  ],
+  "validation_failures": [
+    "dependency_governing_ref_missing:blocked_review_wave_repaired",
+    "gate_check_failed:dependency_truth_current"
+  ],
+  "validated_at": "2026-04-17T09:25:13.159957Z",
+  "status": "failed"
+}

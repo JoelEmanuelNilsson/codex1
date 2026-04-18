@@ -1,0 +1,68 @@
+{
+  "packet_id": "aecc6d92-e2f2-4bb5-9874-c128329dd12d",
+  "mission_id": "global-codex1-installer",
+  "source_package_id": "81deb594-2b52-434f-aa38-867d1134cd62",
+  "target_spec_id": "global_setup_backup",
+  "blueprint_revision": 5,
+  "spec_revision": 3,
+  "allowed_read_paths": [
+    "crates/codex1-core/src/backup.rs",
+    "crates/codex1/src/commands/restore.rs",
+    "crates/codex1/src/commands/setup.rs",
+    "crates/codex1/src/commands/uninstall.rs",
+    "crates/codex1/tests/qualification_cli.rs"
+  ],
+  "allowed_write_paths": [
+    "crates/codex1/src/commands/restore.rs",
+    "crates/codex1/src/commands/setup.rs",
+    "crates/codex1/src/commands/uninstall.rs",
+    "crates/codex1/tests/qualification_cli.rs"
+  ],
+  "proof_rows": [
+    "Targeted CLI tests prove codex1 setup writes only user-scope config.toml and hooks.json under temp CODEX_HOME/HOME.",
+    "Tests prove existing user files are backed up before mutation with manifest entries marked scope = user.",
+    "Tests prove setup is semantically idempotent when TOML/JSON are already desired.",
+    "Tests prove existing global setup backups can be restored or uninstalled through the CLI.",
+    "Relevant cargo test -p codex1 subset compiles and passes."
+  ],
+  "required_checks": [],
+  "review_lenses": [],
+  "replan_boundary": {
+    "local_repair_allowed": false,
+    "trigger_matrix": [
+      {
+        "trigger_code": "write_scope_expansion",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "interface_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "dependency_truth_change",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "proof_obligation_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "review_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "protected_surface_change",
+        "reopen_layer": "mission_lock"
+      },
+      {
+        "trigger_code": "migration_rollout_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "outcome_lock_change",
+        "reopen_layer": "mission_lock"
+      }
+    ]
+  },
+  "explicitly_disallowed_decisions": []
+}

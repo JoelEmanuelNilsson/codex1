@@ -1,0 +1,54 @@
+{
+  "bundle_id": "fa37cf0c-9554-4d4d-b82b-c3a793bde96a",
+  "mission_id": "review-lane-role-contract",
+  "bundle_kind": "spec_review",
+  "source_package_id": "eaab6037-736c-43fe-bf85-17c417e67713",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:f2433c3c91ee7ea5e86efbf420e7286dad6dfa3a7d77877826af23864c90d524",
+  "blueprint_revision": 5,
+  "blueprint_fingerprint": "sha256:c6855d6695ef23c9c9a5d6864a7f28f5b372155be0bfeff7605147b1dec80e83",
+  "governing_revision": "spec:reviewer_profile_contracts:2",
+  "mandatory_review_lenses": [
+    "spec_conformance",
+    "correctness",
+    "evidence_adequacy",
+    "interface_compatibility",
+    "operability_rollback_observability."
+  ],
+  "target_spec_id": "reviewer_profile_contracts",
+  "spec_revision": 2,
+  "spec_fingerprint": "sha256:d39be732e20f8b4a409aa49bf0bdaf81928a840f8b8bf1614100278b9873c29e",
+  "proof_rows_under_review": [
+    "review profiles encode locked model routing",
+    "child output schema is explicit",
+    "P0/P1/P2 and six-loop semantics are explicit",
+    "validate-mission-artifacts succeeds for review-lane-role-contract",
+    "Profiles document lane name, purpose, model, count policy, input bundle, and output schema.",
+    "P0/P1/P2 and P3 cleanliness semantics are explicit.",
+    "Six-loop cap and replan routing are explicit."
+  ],
+  "receipts": [
+    "PLANS/review-lane-role-contract/specs/reviewer_profile_contracts/RECEIPTS/2026-04-16-reviewer-profile-contracts-proof.txt"
+  ],
+  "changed_files_or_diff": [
+    ".codex/skills/review-loop/SKILL.md",
+    ".codex/skills/internal-orchestration/SKILL.md",
+    "docs/MULTI-AGENT-V2-GUIDE.md",
+    "docs/runtime-backend.md",
+    "PLANS/review-lane-role-contract/specs/reviewer_profile_contracts/SPEC.md",
+    "PLANS/review-lane-role-contract/specs/reviewer_profile_contracts/NOTES.md"
+  ],
+  "touched_interface_contracts": [
+    "reviewer profile contract",
+    "child reviewer output schema",
+    "review severity semantics",
+    "model routing guidance"
+  ],
+  "mission_level_proof_rows": [],
+  "cross_spec_claim_refs": [],
+  "included_spec_refs": [],
+  "visible_artifact_refs": [],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [],
+  "generated_at": "2026-04-16T15:00:43.783339Z"
+}

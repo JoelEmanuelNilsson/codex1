@@ -1,0 +1,97 @@
+{
+  "mission_id": "review-loop-delegated-review-only",
+  "bundle_id": "f40feaca-3f23-4b3e-b2ee-2952c00dbe54",
+  "bundle_kind": "spec_review",
+  "source_package_id": "fcc41a12-cffc-462e-bbeb-0a0221b08a25",
+  "target_spec_id": "reviewer_lane_canonical_write_isolation",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:3de1e1e3042357e940a4dbb53251c54a8a7fc31288505ad9d8b4ae9b4c39b785",
+  "blueprint_revision": 11,
+  "blueprint_fingerprint": "sha256:596b669a070cea5376140aed77477e0a296a26ecc54ed3690299152d96d490b0",
+  "spec_revision": 1,
+  "spec_fingerprint": "sha256:2c96371f1646ea7e28e14ca96efd70b4b1087cac2bf70436ce40d9d326c6f528",
+  "mandatory_review_lenses": [
+    "code_bug_correctness",
+    "local_spec_intent",
+    "evidence_adequacy",
+    "interface_compatibility",
+    "operability_rollback_observability",
+    "correctness",
+    "spec_conformance",
+    "operability_rollback_observability."
+  ],
+  "proof_rows_under_review": [
+    "cargo test -p codex1 --test runtime_internal reviewer_lane_canonical_write_isolation --quiet",
+    "cargo test -p codex1 --test runtime_internal delegated_review_authority --quiet",
+    "cargo test -p codex1 --test runtime_internal reviewer_lane_mutation_guard --quiet",
+    "cargo fmt --all --check",
+    "cargo run -p codex1 -- internal validate-mission-artifacts --mission-id review-loop-delegated-review-only",
+    "Test proves capture-review-evidence-snapshot output omits the full review_truth_snapshot field while preserving guard binding metadata and required review context.",
+    "Test proves validate-review-evidence-snapshot still rejects weak reviewer briefs and accepts the new non-capability evidence snapshot shape.",
+    "Test proves record-review-outcome still rejects writeback without a parent-supplied review_truth_snapshot.",
+    "Test or source assertion proves $review-loop reviewer lanes must use explorer-style findings-only spawn protocol with fork_turns none and must not use default/worker reviewer lanes for blocking review.",
+    "cargo test -p codex1 --test runtime_internal reviewer_lane_canonical_write_isolation --quiet or equivalent passes.",
+    "cargo fmt --all --check passes.",
+    "P1: Child-visible review evidence snapshots omit the full parent review truth snapshot while preserving enough non-capability guard metadata for validation.",
+    "P2: record-review-outcome still requires a parent-supplied review truth snapshot and reviewer-output evidence before clearing review.",
+    "P3: Public workflow docs require explorer-style findings-only reviewer lanes, fork_turns none, and no mutation-capable default/worker reviewer lanes for blocking review.",
+    "P4: Preserved delegated_review_authority_contract implementation remains green under the new split.",
+    "Re-review after failed bundle d345a761-f166-48d5-b486-fa2c5268c28b caused by missing reviewer output, not implementation finding."
+  ],
+  "receipts": [
+    "PLANS/review-loop-delegated-review-only/specs/reviewer_lane_canonical_write_isolation/RECEIPTS/2026-04-16-reviewer-lane-canonical-write-isolation-proof.txt"
+  ],
+  "changed_files_or_diff": [
+    ".codex/skills/review-loop/SKILL.md",
+    ".codex/skills/internal-orchestration/SKILL.md",
+    "docs/runtime-backend.md",
+    "docs/MULTI-AGENT-V2-GUIDE.md",
+    "crates/codex1-core/src/runtime.rs",
+    "crates/codex1-core/src/lib.rs",
+    "crates/codex1/src/internal/mod.rs",
+    "crates/codex1/tests/runtime_internal.rs",
+    "PLANS/review-loop-delegated-review-only/specs/reviewer_lane_canonical_write_isolation/RECEIPTS/2026-04-16-reviewer-lane-canonical-write-isolation-proof.txt"
+  ],
+  "touched_interface_contracts": [
+    "ReviewEvidenceSnapshot child-visible schema",
+    "ReviewTruthSnapshot parent writeback capability",
+    "capture-review-evidence-snapshot output contract",
+    "validate-review-evidence-snapshot guard binding contract",
+    "$review-loop reviewer spawn protocol",
+    "Stop-hook findings-only reviewer lane detection"
+  ],
+  "mission_level_proof_rows": [],
+  "cross_spec_claim_refs": [],
+  "visible_artifact_refs": [],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [
+    "Prior review wave failed because reviewer lanes produced no output after wait and interrupt. This re-review uses explorer-style reviewer lanes."
+  ],
+  "evidence_refs": [
+    "/Users/joel/codex1/.ralph/missions/review-loop-delegated-review-only/bundles/f40feaca-3f23-4b3e-b2ee-2952c00dbe54.json",
+    "/Users/joel/codex1/.ralph/missions/review-loop-delegated-review-only/execution-packages/fcc41a12-cffc-462e-bbeb-0a0221b08a25.json",
+    "PLANS/review-loop-delegated-review-only/specs/reviewer_lane_canonical_write_isolation/RECEIPTS/2026-04-16-reviewer-lane-canonical-write-isolation-proof.txt",
+    ".codex/skills/review-loop/SKILL.md",
+    ".codex/skills/internal-orchestration/SKILL.md",
+    "docs/runtime-backend.md",
+    "docs/MULTI-AGENT-V2-GUIDE.md",
+    "crates/codex1-core/src/runtime.rs",
+    "crates/codex1-core/src/lib.rs",
+    "crates/codex1/src/internal/mod.rs",
+    "crates/codex1/tests/runtime_internal.rs"
+  ],
+  "reviewer_instructions": [
+    "Review only this frozen evidence snapshot and the refs it names.",
+    "Return exactly NONE or structured findings with severity, evidence refs, rationale, and suggested next action.",
+    "Do not mutate mission truth, clear gates, write artifacts, call record-review-outcome, or decide mission completion.",
+    "This evidence snapshot is not a writeback capability; only the parent keeps the full review truth snapshot for record-review-outcome.",
+    "If live repo reads are necessary, the parent review-loop must keep its parent-held review truth snapshot guard active."
+  ],
+  "review_truth_guard": {
+    "bundle_id": "f40feaca-3f23-4b3e-b2ee-2952c00dbe54",
+    "captured_at": "2026-04-16T19:08:57.441602Z",
+    "artifact_fingerprint_count": 48,
+    "guard_fingerprint": "sha256:689edc0023ea626b469319799ccbb637ac6620a42c6545c73a910cab52e15b2f"
+  },
+  "generated_at": "2026-04-16T19:08:57.478662Z"
+}

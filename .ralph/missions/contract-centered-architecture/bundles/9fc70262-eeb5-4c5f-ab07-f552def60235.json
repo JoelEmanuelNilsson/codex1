@@ -1,0 +1,57 @@
+{
+  "bundle_id": "9fc70262-eeb5-4c5f-ab07-f552def60235",
+  "mission_id": "contract-centered-architecture",
+  "bundle_kind": "spec_review",
+  "source_package_id": "91626fbb-2e03-4f0f-b38d-73223ef3428e",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:4e35be4d1adaa85d5725d5fb4a891f47fe4bd24f5f25bec09c5f5249b7a93893",
+  "blueprint_revision": 6,
+  "blueprint_fingerprint": "sha256:8badc46dd9712d3ce3fed5703b68ff2ca4c63fc869171bc82cac9ab9a625653c",
+  "governing_revision": "spec:mission_contract_kernel:1",
+  "mandatory_review_lenses": [
+    "correctness",
+    "evidence_adequacy",
+    "interface_compatibility",
+    "spec_conformance",
+    "safety_security_policy",
+    "operability_rollback_observability.",
+    "protected_surface_integrity",
+    "operability_rollback_observability"
+  ],
+  "target_spec_id": "mission_contract_kernel",
+  "spec_revision": 1,
+  "spec_fingerprint": "sha256:707a770579fa644e8abcd88f1ac7613b07213abcede8adc3cd316f2c6b6f119f",
+  "proof_rows_under_review": [
+    "artifact validators reject structurally weak visible artifacts that previously passed marker checks",
+    "templates and validators stay in parity for the moved artifact classes",
+    "cargo test -p codex1-core",
+    "cargo test -p codex1 --test runtime_internal",
+    "cargo test -p codex1 runtime_internal",
+    "codex1 internal validate-mission-artifacts --mission-id contract-centered-architecture",
+    "touched legality transitions have explicit regression coverage for no-false-terminal and projection parity behavior",
+    "resolve-resume no longer reports false program_blueprint_fingerprint_drift for the current blueprint contract",
+    "runtime fingerprint checking now uses the full blueprint contract fingerprint"
+  ],
+  "receipts": [
+    "PLANS/contract-centered-architecture/specs/mission_contract_kernel/RECEIPTS/2026-04-15-kernel-proof.txt"
+  ],
+  "changed_files_or_diff": [
+    "crates/codex1-core/src/mission_contract.rs",
+    "crates/codex1-core/src/ralph.rs",
+    "crates/codex1-core/src/lib.rs",
+    "crates/codex1-core/src/runtime.rs"
+  ],
+  "touched_interface_contracts": [
+    "RalphState cached-state projection contract",
+    "closeout legality contract",
+    "resume snapshot derivation contract",
+    "blueprint contract fingerprint drift detection"
+  ],
+  "mission_level_proof_rows": [],
+  "cross_spec_claim_refs": [],
+  "included_spec_refs": [],
+  "visible_artifact_refs": [],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [],
+  "generated_at": "2026-04-15T17:57:55.83599Z"
+}

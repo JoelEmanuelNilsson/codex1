@@ -11,8 +11,8 @@ use serde_json::Value;
 
 use crate::commands::{DoctorArgs, resolve_repo_root};
 use crate::support_surface::{
-    AgentsCommandStatus, AgentsScaffoldStatus, SkillSurfaceInspection, SkillSurfaceStatus,
-    compute_support_surface_signature, extract_managed_agents_block,
+    AgentsCommandStatus, AgentsScaffoldStatus, REQUIRED_PUBLIC_SKILLS, SkillSurfaceInspection,
+    SkillSurfaceStatus, compute_support_surface_signature, extract_managed_agents_block,
     inspect_agents_scaffold_details, inspect_skill_surface, lookup_toml_value,
     summarize_stop_authority_with_observational, toml_repo_is_trusted,
 };
@@ -293,7 +293,7 @@ pub fn run(args: DoctorArgs) -> Result<()> {
                     entry.key, entry.source_layer
                 ),
                 remediation: Some(format!(
-                    "run codex1 setup to pin {} in .codex/config.toml",
+                    "run codex1 init to pin {} in .codex/config.toml",
                     entry.key
                 )),
             }),
@@ -312,34 +312,79 @@ pub fn run(args: DoctorArgs) -> Result<()> {
         }
     }
 
-    let hook_summary = inspect_hooks(&hooks_path, hooks_config.as_deref())?;
     let user_hook_summary = inspect_hooks(&user_hooks_path, user_hooks.as_deref())?;
+    let global_managed_stop_authority = user_hook_summary.valid_json
+        && user_hook_summary
+            .total_stop_handlers
+            .saturating_sub(user_hook_summary.observational_stop_handlers)
+            == 1
+        && user_hook_summary.managed_stop_handlers == 1;
+    findings.push(global_config_finding(user_config.as_deref()));
+    findings.push(global_hooks_finding(&user_hook_summary));
+    findings.push(global_skill_surface_finding(&codex_home()?));
+
+    let hook_summary = inspect_hooks(&hooks_path, hooks_config.as_deref())?;
+    let project_authoritative_stop_handlers = hook_summary
+        .total_stop_handlers
+        .saturating_sub(hook_summary.observational_stop_handlers);
     findings.push(match (
         hook_summary.file_present,
         hook_summary.valid_json,
-        hook_summary
-            .total_stop_handlers
-            .saturating_sub(hook_summary.observational_stop_handlers),
+        project_authoritative_stop_handlers,
         hook_summary.total_stop_handlers,
         hook_summary.observational_stop_handlers,
     ) {
+        (false, _, _, _, _) if global_managed_stop_authority => DoctorFinding {
+            status: FindingStatus::Pass,
+            check: "hooks_json".to_string(),
+            message: "the managed Codex1 Stop hook is installed globally".to_string(),
+            remediation: None,
+        },
         (false, _, _, _, _) => DoctorFinding {
             status: FindingStatus::Fail,
             check: "hooks_json".to_string(),
-            message: format!("{} is missing", hook_summary.file_path),
-            remediation: Some("run codex1 setup to install the managed Stop hook".to_string()),
+            message: format!(
+                "{} is missing and no global Codex1 Stop hook is installed",
+                hook_summary.file_path
+            ),
+            remediation: Some(
+                "run codex1 setup to install the global Stop hook, or codex1 init for project-local setup"
+                    .to_string(),
+            ),
         },
         (true, false, _, _, _) => DoctorFinding {
             status: FindingStatus::Fail,
             check: "hooks_json".to_string(),
             message: format!("{} is not valid JSON", hook_summary.file_path),
-            remediation: Some("repair .codex/hooks.json or rerun codex1 setup --force".to_string()),
+            remediation: Some("repair .codex/hooks.json or rerun codex1 init --force".to_string()),
+        },
+        (true, true, authoritative, _, _) if global_managed_stop_authority && authoritative > 0 => {
+            DoctorFinding {
+                status: FindingStatus::Fail,
+                check: "hooks_json".to_string(),
+                message: "both global and project Stop hooks are authoritative; supported Codex1 environments need exactly one authoritative Stop pipeline".to_string(),
+                remediation: Some(
+                    "remove the duplicate project Stop hook or rerun codex1 init after global setup so it reuses the global managed hook".to_string(),
+                ),
+            }
+        }
+        (true, true, 0, _, observational) if global_managed_stop_authority => DoctorFinding {
+            status: FindingStatus::Pass,
+            check: "hooks_json".to_string(),
+            message: if observational > 0 {
+                format!(
+                    "the managed Codex1 Stop hook is installed globally, with {observational} observational project Stop hook(s) preserved"
+                )
+            } else {
+                "the managed Codex1 Stop hook is installed globally".to_string()
+            },
+            remediation: None,
         },
         (true, true, 0, _, _) => DoctorFinding {
             status: FindingStatus::Fail,
             check: "hooks_json".to_string(),
             message: "the Codex1 Stop hook is not registered".to_string(),
-            remediation: Some("run codex1 setup to install the managed Stop hook".to_string()),
+            remediation: Some("run codex1 setup to install the global Stop hook".to_string()),
         },
         (true, true, authoritative, total, observational) if authoritative == 1 => DoctorFinding {
             status: if hook_summary.managed_stop_handlers == 1 {
@@ -363,7 +408,7 @@ pub fn run(args: DoctorArgs) -> Result<()> {
                 None
             } else {
                 Some(
-                    "verify the repo Stop handler is the intended Ralph aggregator or rerun codex1 setup --force to normalize it".to_string(),
+                    "verify the repo Stop handler is the intended Ralph aggregator or rerun codex1 init --force to normalize it".to_string(),
                 )
             },
         },
@@ -394,6 +439,14 @@ pub fn run(args: DoctorArgs) -> Result<()> {
             status: FindingStatus::Pass,
             check: "user_stop_hook_conflict".to_string(),
             message: "no user-level Stop hook conflicts with the repo-local Codex1 Stop pipeline".to_string(),
+            remediation: None,
+        }
+    } else if global_managed_stop_authority {
+        DoctorFinding {
+            status: FindingStatus::Pass,
+            check: "user_stop_hook_conflict".to_string(),
+            message: "the user-level authoritative Stop hook is the managed Codex1 pipeline"
+                .to_string(),
             remediation: None,
         }
     } else if user_hook_summary.total_stop_handlers
@@ -454,14 +507,14 @@ pub fn run(args: DoctorArgs) -> Result<()> {
             status: FindingStatus::Warn,
             check: "agents_md".to_string(),
             message: "AGENTS.md is missing".to_string(),
-            remediation: Some("run codex1 setup to install the thin Codex1 scaffold".to_string()),
+            remediation: Some("run codex1 init to install the thin Codex1 scaffold".to_string()),
         },
         AgentsScaffoldStatus::MissingBlock => DoctorFinding {
             status: FindingStatus::Warn,
             check: "agents_md".to_string(),
             message: "AGENTS.md exists but the Codex1 managed block is missing".to_string(),
             remediation: Some(
-                "run codex1 setup to reapply the managed AGENTS.md block".to_string(),
+                "run codex1 init to reapply the managed AGENTS.md block".to_string(),
             ),
         },
         AgentsScaffoldStatus::DriftedBlock => DoctorFinding {
@@ -470,7 +523,7 @@ pub fn run(args: DoctorArgs) -> Result<()> {
             message: "AGENTS.md contains Codex1 markers, but the managed block has drifted"
                 .to_string(),
             remediation: Some(
-                "repair the managed AGENTS.md block manually or rerun codex1 setup --force"
+                "repair the managed AGENTS.md block manually or rerun codex1 init --force"
                     .to_string(),
             ),
         },
@@ -479,7 +532,7 @@ pub fn run(args: DoctorArgs) -> Result<()> {
             check: "agents_md".to_string(),
             message: "AGENTS.md has malformed Codex1 markers".to_string(),
             remediation: Some(
-                "repair the markers manually or rerun codex1 setup --force".to_string(),
+                "repair the markers manually or rerun codex1 init --force".to_string(),
             ),
         },
     });
@@ -630,6 +683,113 @@ fn is_repo_trusted(repo_root: &Path, user_config: Option<&str>) -> bool {
     user_config.is_some_and(|raw| toml_repo_is_trusted(raw, repo_root))
 }
 
+fn global_config_finding(user_config: Option<&str>) -> DoctorFinding {
+    match user_config.and_then(|raw| lookup_toml_value(raw, Some("features"), "codex_hooks")) {
+        Some(value) if value == "true" => DoctorFinding {
+            status: FindingStatus::Pass,
+            check: "global_config".to_string(),
+            message: "user-level Codex hooks are enabled".to_string(),
+            remediation: None,
+        },
+        Some(value) => DoctorFinding {
+            status: FindingStatus::Fail,
+            check: "global_config".to_string(),
+            message: format!("user-level features.codex_hooks is {value}, expected true"),
+            remediation: Some("run codex1 setup to enable global Codex1 hooks".to_string()),
+        },
+        None => DoctorFinding {
+            status: FindingStatus::Fail,
+            check: "global_config".to_string(),
+            message: "user-level features.codex_hooks is missing".to_string(),
+            remediation: Some("run codex1 setup to install global Codex1 config".to_string()),
+        },
+    }
+}
+
+fn global_hooks_finding(user_hook_summary: &HookSummary) -> DoctorFinding {
+    if !user_hook_summary.file_present {
+        return DoctorFinding {
+            status: FindingStatus::Fail,
+            check: "global_hooks".to_string(),
+            message: format!("{} is missing", user_hook_summary.file_path),
+            remediation: Some(
+                "run codex1 setup to install the global Codex1 Stop hook".to_string(),
+            ),
+        };
+    }
+    if !user_hook_summary.valid_json {
+        return DoctorFinding {
+            status: FindingStatus::Fail,
+            check: "global_hooks".to_string(),
+            message: format!("{} is not valid JSON", user_hook_summary.file_path),
+            remediation: Some(
+                "repair the user-level hooks file or rerun codex1 setup --force".to_string(),
+            ),
+        };
+    }
+
+    let authoritative = user_hook_summary
+        .total_stop_handlers
+        .saturating_sub(user_hook_summary.observational_stop_handlers);
+    if authoritative == 1 && user_hook_summary.managed_stop_handlers == 1 {
+        DoctorFinding {
+            status: FindingStatus::Pass,
+            check: "global_hooks".to_string(),
+            message: "the global managed Codex1 Stop hook is installed".to_string(),
+            remediation: None,
+        }
+    } else if authoritative == 0 {
+        DoctorFinding {
+            status: FindingStatus::Fail,
+            check: "global_hooks".to_string(),
+            message: "no authoritative global Codex1 Stop hook is installed".to_string(),
+            remediation: Some(
+                "run codex1 setup to install the global Codex1 Stop hook".to_string(),
+            ),
+        }
+    } else {
+        DoctorFinding {
+            status: FindingStatus::Fail,
+            check: "global_hooks".to_string(),
+            message: format!(
+                "found {authoritative} authoritative user-level Stop handler(s), but not exactly one managed Codex1 hook"
+            ),
+            remediation: Some("remove unrelated authoritative user-level Stop hooks or rerun codex1 setup --force".to_string()),
+        }
+    }
+}
+
+fn global_skill_surface_finding(codex_home: &Path) -> DoctorFinding {
+    let global_skill_root = codex_home.join("skills");
+    let missing = REQUIRED_PUBLIC_SKILLS
+        .iter()
+        .filter(|skill| !global_skill_root.join(skill).join("SKILL.md").is_file())
+        .map(|skill| (*skill).to_string())
+        .collect::<Vec<_>>();
+    if missing.is_empty() {
+        DoctorFinding {
+            status: FindingStatus::Pass,
+            check: "global_skill_surface".to_string(),
+            message: format!(
+                "required public skills are installed globally at {}",
+                global_skill_root.display()
+            ),
+            remediation: None,
+        }
+    } else {
+        DoctorFinding {
+            status: FindingStatus::Fail,
+            check: "global_skill_surface".to_string(),
+            message: format!(
+                "global skill surface at {} is missing required public skills: {}",
+                global_skill_root.display(),
+                missing.join(", ")
+            ),
+            remediation: Some("run codex1 setup to install global Codex1 skills".to_string()),
+        }
+    }
+}
+
 fn inspect_config_key(
     runtime_overrides: &BTreeMap<String, String>,
     trusted_repo: bool,
@@ -778,7 +938,7 @@ fn render_skill_surface_finding(inspection: &SkillSurfaceInspection) -> DoctorFi
                 inspection.missing_required_public_skills.join(", ")
             ),
             remediation: Some(
-                "run codex1 setup to install the managed copied skill surface, or configure a valid `[[skills.config]]` bridge"
+                "run codex1 init to install the managed copied skill surface, or configure a valid `[[skills.config]]` bridge"
                     .to_string(),
             ),
         },
@@ -800,7 +960,7 @@ fn render_skill_surface_finding(inspection: &SkillSurfaceInspection) -> DoctorFi
                 }
             ),
             remediation: Some(
-                "rerun codex1 setup --force to rewrite the managed copied skill surface, or repair the bridged or linked skill root"
+                "rerun codex1 init --force to rewrite the managed copied skill surface, or repair the bridged or linked skill root"
                     .to_string(),
             ),
         },
@@ -816,7 +976,7 @@ fn render_skill_surface_finding(inspection: &SkillSurfaceInspection) -> DoctorFi
                     .unwrap_or("invalid bridge target")
             ),
             remediation: Some(
-                "repair or remove the stale `[[skills.config]]` bridge, or rerun codex1 setup --force to reinstall the managed copied skill surface".to_string(),
+                "repair or remove the stale `[[skills.config]]` bridge, or rerun codex1 init --force to reinstall the managed copied skill surface".to_string(),
             ),
         },
     }

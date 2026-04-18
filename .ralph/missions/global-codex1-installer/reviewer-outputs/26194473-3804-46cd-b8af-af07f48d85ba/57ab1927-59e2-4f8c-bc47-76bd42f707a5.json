@@ -1,0 +1,24 @@
+{
+  "mission_id": "global-codex1-installer",
+  "bundle_id": "26194473-3804-46cd-b8af-af07f48d85ba",
+  "reviewer_id": "local_spec_intent",
+  "reviewer_output_id": "57ab1927-59e2-4f8c-bc47-76bd42f707a5",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P2",
+      "title": "Global setup proof overclaims uninstall and human-output coverage",
+      "evidence_refs": [
+        "PLANS/global-codex1-installer/specs/global_setup_backup/SPEC.md:98-105",
+        "PLANS/global-codex1-installer/specs/global_setup_backup/RECEIPTS/2026-04-17-global-setup-replan-proof.md:14-20",
+        "crates/codex1/tests/qualification_cli.rs:245-352",
+        "crates/codex1/tests/qualification_cli.rs:477-528"
+      ],
+      "rationale": "The locked/replanned spec requires proof that global setup backups can be restored or uninstalled through the CLI and that human setup output reports actual changed paths. The named regression tests prove global setup writes user-scope files and manifest entries, and they prove restore_accepts_global_setup_user_scope_backup, but there is no corresponding global setup uninstall test in qualification_cli.rs; the only matching global recovery test is restore. The global changed-path assertions are made against the JSON report, while the only no-json/preflight setup-output test in the named file exercises project init, not global setup human output. This leaves the bundle's proof stronger than the evidence actually supports, so the slice is not yet review-clean on test adequacy/honest reporting even though the implemented code appears to have the intended paths.",
+      "suggested_next_action": "Add focused CLI regression coverage that runs non-json codex1 setup against a temp CODEX_HOME and asserts the human changed-path list includes the actual user config/hooks/skill paths, and add a temp CODEX_HOME global setup backup uninstall test that verifies created global managed skill files are removed or original user files are restored through codex1 uninstall. Then rerun the targeted qualification_cli setup_ subset and refresh the receipt/bundle."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/global-codex1-installer/review-evidence-snapshots/26194473-3804-46cd-b8af-af07f48d85ba.json",
+  "source_evidence_snapshot_fingerprint": "sha256:45e0a2096dcc087b2d4583c94bfc2a9ade73622bdb3cd5ab736cc3a7a49e87f9",
+  "recorded_at": "2026-04-17T20:51:23.989244Z"
+}

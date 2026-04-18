@@ -1,0 +1,38 @@
+{
+  "mission_id": "global-codex1-installer",
+  "bundle_id": "9d5a0680-42e6-48dc-9719-7f0b300cf740",
+  "reviewer_id": "review_code_bug_correctness_mission_close_9d5a",
+  "reviewer_output_id": "4f6060e5-1aa8-4c9c-9563-78dc8b049987",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P2",
+      "title": "Global restore/uninstall skill pruning can walk above CODEX_HOME",
+      "evidence_refs": [
+        "crates/codex1/src/commands/restore.rs:177",
+        "crates/codex1/src/commands/restore.rs:342",
+        "crates/codex1/src/commands/restore.rs:353",
+        "crates/codex1/src/commands/restore.rs:360",
+        "crates/codex1/src/commands/restore.rs:363",
+        "crates/codex1/src/commands/uninstall.rs:195",
+        "crates/codex1/src/commands/uninstall.rs:741",
+        "crates/codex1/src/commands/uninstall.rs:752",
+        "crates/codex1/src/commands/uninstall.rs:759",
+        "crates/codex1/src/commands/uninstall.rs:762",
+        "crates/codex1/src/commands/restore.rs:245",
+        "crates/codex1/src/commands/restore.rs:247",
+        "crates/codex1/src/commands/uninstall.rs:339",
+        "crates/codex1/src/commands/uninstall.rs:341",
+        "crates/codex1/tests/qualification_cli.rs:611",
+        "crates/codex1/tests/qualification_cli.rs:656",
+        "crates/codex1/tests/qualification_cli.rs:763",
+        "crates/codex1/tests/qualification_cli.rs:775"
+      ],
+      "rationale": "After a successful restore or uninstall, both commands call prune_empty_skill_dirs with repo_root as the stopping boundary. The helper derives parent directories directly from manifest skill_file paths and prune_empty_dir_chain only stops when the current directory equals repo_root. For global setup manifests, target resolution already treats scope=user paths as living under CODEX_HOME/user_root, which can be outside the project repo. In a global rollback where setup created config.toml, hooks.json, and copied skills under an otherwise empty CODEX_HOME, the transaction deletes those files and the pruning loop can remove CODEX_HOME and continue into its empty parent because repo_root is unrelated. Existing qualification tests verify config/hooks restoration and that selected files disappear, but they do not assert that CODEX_HOME or its parent remain intact for the all-created global setup case.",
+      "suggested_next_action": "Make skill directory pruning scope-aware: resolve each skill_file entry to its target path and stop at repo_root for project scope and user_root/CODEX_HOME for user scope. Add restore and uninstall regression tests where global setup creates every managed path under a CODEX_HOME outside repo_root, then verify rollback does not prune above CODEX_HOME."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/global-codex1-installer/review-evidence-snapshots/9d5a0680-42e6-48dc-9719-7f0b300cf740.json",
+  "source_evidence_snapshot_fingerprint": "sha256:21ecb01adc0f9ac9579a18540f1ae16a7bc3ae1a18c9e2bce3b43adc0aadc908",
+  "recorded_at": "2026-04-18T00:09:44.025235Z"
+}

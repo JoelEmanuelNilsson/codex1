@@ -29,24 +29,64 @@ Deterministic backend:
   truth
 - see `docs/runtime-backend.md` for the machine-side contract
 
+## Ralph Lease
+
+Manual `$clarify` is an interactive intake workflow, not a parent Ralph loop by
+default. Do not acquire a parent loop lease just because the user invoked
+`$clarify`. When the lock is ratified, leave the manual handoff to `$plan`.
+
+`$autopilot` may acquire an `autopilot_loop` lease and consume a clarified
+handoff into planning, but that lease belongs to `$autopilot`, not manual
+`$clarify`.
+
+## Clarify Posture
+
+- Clarify is an interview, not a form fill.
+- Optimize for branch-reduction value per question, not field coverage.
+- Ask the user only for facts or preferences that are genuinely human-owned.
+- Read the repo first whenever repo evidence can answer the question better than
+  the user can.
+- Use the strongest ask-user mechanism available in the current Codex surface,
+  but keep the interaction to one main question at a time by default.
+
+## Ambiguity Scorecard
+
+Keep an explicit scorecard in your head and in `MISSION-STATE.md` across these
+dimensions:
+
+- objective and intent clarity
+- success proof and finish bar
+- scope boundary
+- non-goals
+- protected surfaces and irreversible risk
+- autonomy boundary
+- tradeoff vetoes
+- baseline facts and repo-grounded constraints
+- rollout, migration, or environment limits
+- decision boundaries for what Codex may choose without asking again
+
 ## Workflow
 
-1. Resolve whether this is a new mission or a resume of an existing one.
-2. Create or refresh the mission package before asking the next question.
-3. Parse the user ask into provisional lock fields.
-4. Read the repo whenever that reduces technical ambiguity or reveals protected
+1. Resolve whether this is a new mission, a resume, or a mission-selection
+   ambiguity.
+2. Create or refresh the mission package before continuing.
+3. Parse the user ask into a provisional destination contract:
+   objective, outcome, proof bar, non-goals, constraints, protected surfaces,
+   and autonomy posture.
+4. Read the repo whenever that can collapse ambiguity or reveal protected
    surfaces.
-5. Score ambiguity across these dimensions: objective clarity, success proof,
-   protected surfaces, tradeoff vetoes, scope boundary, autonomy boundary,
-   baseline facts, and rollout or migration constraints.
-6. Choose the next question by branch-reduction value, not by missing-field
-   order.
+5. Record provenance in `MISSION-STATE.md`:
+   user-stated facts, repo-grounded facts, and Codex inferences must stay
+   visibly distinct.
+6. Choose the next question by leverage:
+   prefer questions that collapse whole branches of planning or execution risk.
 7. Ask one main high-leverage question at a time by default. Ask two or three
-   only when the questions are tightly coupled and separating them would reduce
-   clarity.
-8. Keep `MISSION-STATE.md` current with provenance for user-stated facts,
-   repo-grounded facts, and Codex inferences.
-9. Ratify `OUTCOME-LOCK.md` only when the lock rule passes.
+   only when they are tightly coupled and separating them would reduce clarity.
+8. After every answer, rescore the ambiguity dimensions and update the
+   provisional lock truth before asking again.
+9. Run bounded feasibility probes only when repo reality may materially
+   constrain the locked destination.
+10. Ratify `OUTCOME-LOCK.md` only when the lock rule passes.
 
 ## Lock Rule
 
@@ -60,6 +100,8 @@ Lock only when all of the following are true:
 - unacceptable tradeoffs are explicit
 - non-goals are explicit
 - autonomy boundary is explicit
+- decision boundaries are explicit enough that planning will know what Codex may
+  choose autonomously
 - at most three low-impact assumptions remain, and all are written down
 
 Use `lock_posture = constrained` when the destination is ratified but bounded by
@@ -78,11 +120,27 @@ Probe rules:
 - if uncertainty remains after bounded probing, record it honestly instead of
   inventing certainty
 
+## Interview Rules
+
+- Prefer why-before-how until the destination is stable enough that planning
+  will not invent architecture.
+- Force boundaries explicitly:
+  what is out of scope, what must not be broken, and what tradeoffs are
+  unacceptable.
+- Revisit earlier answers when needed; do not rotate dimensions just for
+  coverage.
+- If the user gives a vague success bar, push until the finish condition is
+  observable.
+- If the mission implies risky autonomy, surface that explicitly in the lock
+  rather than assuming a conservative default.
+
 ## Must Not
 
 - drift into architecture selection or detailed sequencing
 - invent fake completeness because a few fields are filled in
 - flatten user intent, repo facts, and inference into one voice
+- stop because the destination sounds good but still has hidden decision
+  boundaries
 - use `needs_user` before bounded repo reading or probing has exhausted the
   autonomous path
 
@@ -98,4 +156,9 @@ If the lock is ready, leave:
 - a refreshed mission `README.md`
 - a current `MISSION-STATE.md`
 - a ratified `OUTCOME-LOCK.md`
-- a clean handoff to `$plan`
+- a clean manual handoff to `$plan`
+
+For manual `$clarify`, do not continue into planning automatically after the
+lock is ratified. Leave durable handoff truth so the user can invoke `$plan`
+explicitly. `$autopilot` is the workflow that may consume the clarify handoff
+and continue into planning without another user command.

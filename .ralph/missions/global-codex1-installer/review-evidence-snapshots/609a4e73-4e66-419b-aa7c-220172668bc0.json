@@ -1,0 +1,78 @@
+{
+  "mission_id": "global-codex1-installer",
+  "bundle_id": "609a4e73-4e66-419b-aa7c-220172668bc0",
+  "bundle_kind": "mission_close",
+  "source_package_id": "d60fd68d-e84f-491e-b00b-4fe1caaabf15",
+  "target_spec_id": null,
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:7314d24eea35d8d5439ddb2d0e3d87ac3c9af728e1eb2d2c1336c2eb5ac9cf39",
+  "blueprint_revision": 9,
+  "blueprint_fingerprint": "sha256:93b7d201928fb9931ce297e2a7ee5f8de2be02f13c7cce252efc697eb01561be",
+  "spec_revision": null,
+  "spec_fingerprint": null,
+  "mandatory_review_lenses": [
+    "spec_conformance",
+    "correctness",
+    "interface_compatibility",
+    "safety_security_policy",
+    "operability_rollback_observability",
+    "evidence_adequacy",
+    "protected-surface safety",
+    "backup/restore integrity",
+    "command UX clarity",
+    "test adequacy."
+  ],
+  "proof_rows_under_review": [],
+  "receipts": [],
+  "changed_files_or_diff": [],
+  "touched_interface_contracts": [],
+  "mission_level_proof_rows": [
+    "cargo test -p codex1 --test runtime_internal: 48 passed, 0 failed",
+    "cargo test -p codex1 --test qualification_cli: 37 passed, 0 failed",
+    "cargo fmt --all --check: passed",
+    "cargo check -p codex1: passed",
+    "codex1 internal validate-mission-artifacts --mission-id global-codex1-installer: passed",
+    "codex1 internal validate-gates --mission-id global-codex1-installer: passed"
+  ],
+  "cross_spec_claim_refs": [
+    "P1: codex1 setup is global/user-level and does not mutate project repos by default",
+    "P2: codex1 init preserves explicit project setup",
+    "P3: doctor distinguishes global setup health from project init health",
+    "P5: global setup installs managed public skills including close and coexists with init",
+    "P6: clean review writeback requires required reviewer-output lane coverage",
+    "P7: parent review writeback authority is unavailable to findings-only reviewer lanes"
+  ],
+  "visible_artifact_refs": [
+    "/Users/joel/codex1/PLANS/global-codex1-installer/OUTCOME-LOCK.md",
+    "/Users/joel/codex1/PLANS/global-codex1-installer/PROGRAM-BLUEPRINT.md",
+    "/Users/joel/codex1/PLANS/global-codex1-installer/REVIEW-LEDGER.md",
+    "/Users/joel/codex1/PLANS/global-codex1-installer/REPLAN-LOG.md"
+  ],
+  "deferred_descoped_follow_on_refs": [
+    "Release packaging/publishing remains deferred by blueprint scope"
+  ],
+  "open_finding_summary": [],
+  "evidence_refs": [
+    "/Users/joel/codex1/.ralph/missions/global-codex1-installer/bundles/609a4e73-4e66-419b-aa7c-220172668bc0.json",
+    "/Users/joel/codex1/.ralph/missions/global-codex1-installer/execution-packages/d60fd68d-e84f-491e-b00b-4fe1caaabf15.json",
+    "/Users/joel/codex1/PLANS/global-codex1-installer/OUTCOME-LOCK.md",
+    "/Users/joel/codex1/PLANS/global-codex1-installer/PROGRAM-BLUEPRINT.md",
+    "/Users/joel/codex1/PLANS/global-codex1-installer/REVIEW-LEDGER.md",
+    "/Users/joel/codex1/PLANS/global-codex1-installer/REPLAN-LOG.md",
+    "Release packaging/publishing remains deferred by blueprint scope"
+  ],
+  "reviewer_instructions": [
+    "Review only this frozen evidence snapshot and the refs it names.",
+    "Return exactly NONE or structured findings with severity, evidence refs, rationale, and suggested next action, then persist only that bounded result with record-reviewer-output.",
+    "Do not mutate mission truth, clear gates, write artifacts outside the reviewer-output inbox, call record-review-outcome, or decide mission completion.",
+    "This evidence snapshot is not a writeback capability; only the parent keeps the full review truth snapshot for record-review-outcome.",
+    "If live repo reads are necessary, the parent review-loop must keep its parent-held review truth snapshot guard active."
+  ],
+  "review_truth_guard": {
+    "bundle_id": "609a4e73-4e66-419b-aa7c-220172668bc0",
+    "captured_at": "2026-04-17T23:07:39.46883Z",
+    "artifact_fingerprint_count": 86,
+    "guard_fingerprint": "sha256:058ce7ec4983da376ac6c54221ec74e0a4e6de65a76414b6aeacdeb3e13d30d2"
+  },
+  "generated_at": "2026-04-17T23:07:39.519546Z"
+}

@@ -1,0 +1,28 @@
+{
+  "mission_id": "global-codex1-installer",
+  "bundle_id": "dbef8e3c-3ba7-4e85-9d2e-55b99b01d6c9",
+  "reviewer_id": "review_cli_split_intent",
+  "reviewer_output_id": "3b2781e1-da5b-4ca1-ae16-6edaabb8ad45",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P2",
+      "title": "Doctor remediations still point project repair at setup",
+      "evidence_refs": [
+        "/Users/joel/codex1/crates/codex1/src/main.rs:17-31",
+        "/Users/joel/codex1/crates/codex1/src/commands/init.rs:5-10",
+        "/Users/joel/codex1/crates/codex1/src/commands/doctor.rs:296-297",
+        "/Users/joel/codex1/crates/codex1/src/commands/doctor.rs:330-342",
+        "/Users/joel/codex1/crates/codex1/src/commands/doctor.rs:457-464",
+        "/Users/joel/codex1/crates/codex1/src/commands/doctor.rs:473-482",
+        "/Users/joel/codex1/crates/codex1/src/commands/doctor.rs:781-803",
+        "/Users/joel/codex1/crates/codex1/src/commands/doctor.rs:819-820"
+      ],
+      "rationale": "The split makes `codex1 init` the preserved project-scoped repair path, but `doctor` still tells users to run `codex1 setup` for repo-local fixes such as missing hooks, AGENTS.md drift, and skill-surface repair. After this change, `setup` is only the global boundary stub, so those remediations now point users at the wrong command and will not repair the project surface they are diagnosing.",
+      "suggested_next_action": "Update doctor remediation text for project-scoped findings to instruct `codex1 init` instead of `codex1 setup`, while keeping `setup` guidance only for global machine-level repair once that implementation lands."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/global-codex1-installer/review-evidence-snapshots/dbef8e3c-3ba7-4e85-9d2e-55b99b01d6c9.json",
+  "source_evidence_snapshot_fingerprint": "sha256:8d48556e0f36f5f1cd27203399031c67d6e028f541c335c78f30ecb91fbcce6e",
+  "recorded_at": "2026-04-17T19:11:44.480108Z"
+}

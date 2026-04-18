@@ -1,0 +1,49 @@
+{
+  "bundle_id": "4d1bb052-0db9-4b3c-916a-bdfc191353ae",
+  "mission_id": "manual-clarify-handoff-boundary",
+  "bundle_kind": "mission_close",
+  "source_package_id": "299d50b8-8210-4bf0-915e-112ab904081c",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:cd30b99ea6e3f3e120931fd18666defeea9ad70793f9115a319687950cb44918",
+  "blueprint_revision": 1,
+  "blueprint_fingerprint": "sha256:1bb89621f7c85816dbf8dc0d4138bb0da02e547100ea086685ed6480da26c97c",
+  "governing_revision": "mission:manual-clarify-handoff-boundary:close",
+  "mandatory_review_lenses": [
+    "spec_conformance",
+    "correctness",
+    "interface_compatibility",
+    "safety_security_policy",
+    "operability_rollback_observability",
+    "evidence_adequacy",
+    "evidence_adequacy."
+  ],
+  "target_spec_id": null,
+  "spec_revision": null,
+  "spec_fingerprint": null,
+  "proof_rows_under_review": [],
+  "receipts": [],
+  "changed_files_or_diff": [],
+  "touched_interface_contracts": [],
+  "mission_level_proof_rows": [
+    "Manual ratified clarify Stop-hook emits no block decision and no `Start $plan` blocking reason.",
+    "Manual ratified clarify state contains a durable request for explicit `$plan` invocation.",
+    "Autopilot skill contract still says it continues from clarify to plan.",
+    "Existing runtime and mission validation remain green.",
+    "Spec review bundle c886ad01-876e-4323-a6cc-8f9dd9050b90 passed with zero blocking findings."
+  ],
+  "cross_spec_claim_refs": [],
+  "included_spec_refs": [
+    "manual_clarify_handoff_runtime"
+  ],
+  "visible_artifact_refs": [
+    "/Users/joel/codex1/PLANS/manual-clarify-handoff-boundary/OUTCOME-LOCK.md",
+    "/Users/joel/codex1/PLANS/manual-clarify-handoff-boundary/PROGRAM-BLUEPRINT.md",
+    "/Users/joel/codex1/PLANS/manual-clarify-handoff-boundary/REVIEW-LEDGER.md",
+    "/Users/joel/codex1/PLANS/manual-clarify-handoff-boundary/specs/manual_clarify_handoff_runtime/SPEC.md",
+    "/Users/joel/codex1/PLANS/manual-clarify-handoff-boundary/specs/manual_clarify_handoff_runtime/REVIEW.md",
+    "/Users/joel/codex1/PLANS/manual-clarify-handoff-boundary/specs/manual_clarify_handoff_runtime/RECEIPTS/2026-04-16-manual-clarify-handoff-proof.txt"
+  ],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [],
+  "generated_at": "2026-04-16T16:17:05.827382Z"
+}

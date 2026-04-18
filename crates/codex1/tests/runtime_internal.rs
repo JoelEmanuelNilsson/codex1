@@ -4,13 +4,32 @@ use assert_cmd::Command;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
+fn test_parent_authority_token_path(repo_root: &Path) -> std::path::PathBuf {
+    repo_root.join(".ralph/test-parent-authority-token")
+}
+
+fn test_parent_authority_token(repo_root: &Path) -> Option<String> {
+    std::fs::read_to_string(test_parent_authority_token_path(repo_root))
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 fn run_json(repo_root: &Path, args: &[&str], input: Value) -> Value {
     let binary = assert_cmd::cargo::cargo_bin("codex1");
-    let output = Command::new(binary)
+    let mut command = Command::new(binary);
+    command
         .args(args)
         .arg("--repo-root")
         .arg(repo_root)
-        .arg("--json")
+        .arg("--json");
+    if args.contains(&"begin-loop-lease") {
+        command.env("CODEX1_PARENT_LOOP_BEGIN", "1");
+    }
+    if let Some(token) = test_parent_authority_token(repo_root) {
+        command.env("CODEX1_PARENT_LOOP_AUTHORITY_TOKEN", token);
+    }
+    let output = command
         .write_stdin(serde_json::to_vec(&input).expect("encode input"))
         .output()
         .expect("run codex1 internal command");
@@ -26,6 +45,35 @@ fn run_json(repo_root: &Path, args: &[&str], input: Value) -> Value {
 }
 
 fn run_json_failure(repo_root: &Path, args: &[&str], input: Value) -> String {
+    let binary = assert_cmd::cargo::cargo_bin("codex1");
+    let mut command = Command::new(binary);
+    command
+        .args(args)
+        .arg("--repo-root")
+        .arg(repo_root)
+        .arg("--json");
+    if args.contains(&"begin-loop-lease") {
+        command.env("CODEX1_PARENT_LOOP_BEGIN", "1");
+    }
+    if let Some(token) = test_parent_authority_token(repo_root) {
+        command.env("CODEX1_PARENT_LOOP_AUTHORITY_TOKEN", token);
+    }
+    let output = command
+        .write_stdin(serde_json::to_vec(&input).expect("encode input"))
+        .output()
+        .expect("run codex1 internal command");
+
+    assert!(
+        !output.status.success(),
+        "command {:?} unexpectedly succeeded with stdout: {}",
+        args,
+        String::from_utf8_lossy(&output.stdout)
+    );
+
+    String::from_utf8_lossy(&output.stderr).to_string()
+}
+
+fn run_json_failure_without_parent_begin(repo_root: &Path, args: &[&str], input: Value) -> String {
     let binary = assert_cmd::cargo::cargo_bin("codex1");
     let output = Command::new(binary)
         .args(args)
@@ -44,6 +92,34 @@ fn run_json_failure(repo_root: &Path, args: &[&str], input: Value) -> String {
     );
 
     String::from_utf8_lossy(&output.stderr).to_string()
+}
+
+fn run_json_with_parent_authority(
+    repo_root: &Path,
+    args: &[&str],
+    input: Value,
+    authority_token: &str,
+) -> Value {
+    let binary = assert_cmd::cargo::cargo_bin("codex1");
+    let output = Command::new(binary)
+        .args(args)
+        .arg("--repo-root")
+        .arg(repo_root)
+        .arg("--json")
+        .env("CODEX1_PARENT_LOOP_AUTHORITY_TOKEN", authority_token)
+        .env("CODEX1_PARENT_LOOP_BEGIN", "1")
+        .write_stdin(serde_json::to_vec(&input).expect("encode input"))
+        .output()
+        .expect("run codex1 internal command");
+
+    assert!(
+        output.status.success(),
+        "command {:?} failed with stderr: {}",
+        args,
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    serde_json::from_slice(&output.stdout).expect("stdout should contain JSON")
 }
 
 fn run_stop_hook(repo_root: &Path) -> Value {
@@ -79,6 +155,2221 @@ fn run_stop_hook_raw(repo_root: &Path) -> std::process::Output {
         .expect("run stop-hook")
 }
 
+fn run_stop_hook_with_payload(repo_root: &Path, payload: Value) -> Value {
+    let binary = assert_cmd::cargo::cargo_bin("codex1");
+    let output = Command::new(binary)
+        .args(["internal", "stop-hook"])
+        .current_dir(repo_root)
+        .write_stdin(serde_json::to_vec(&payload).expect("encode stop-hook input"))
+        .output()
+        .expect("run stop-hook");
+
+    assert!(
+        output.status.success(),
+        "stop-hook failed with stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).expect("stop-hook stdout should contain JSON")
+}
+
+fn setup_review_wave(repo: &TempDir, mission_id: &str) -> (String, String) {
+    run_json(
+        repo.path(),
+        &["internal", "init-mission"],
+        json!({
+            "mission_id": mission_id,
+            "title": "Reviewer Lane Guard",
+            "objective": "Prove reviewer lane mutation guard.",
+            "clarify_status": "ratified",
+            "lock_status": "locked"
+        }),
+    );
+    run_json(
+        repo.path(),
+        &["internal", "materialize-plan"],
+        json!({
+            "mission_id": mission_id,
+            "body_markdown": canonical_blueprint_body("Use one guarded review slice."),
+            "plan_level": 5,
+            "problem_size": "M",
+            "status": "approved",
+            "proof_matrix": [{"claim_ref": "claim:default-proof", "statement": "The selected route has explicit proof coverage.", "required_evidence": ["RECEIPTS/test-output.txt"], "review_lenses": ["correctness"], "governing_contract_refs": ["blueprint"]}],
+            "decision_obligations": [],
+            "selected_target_ref": "spec:runtime_core",
+            "specs": [{
+                "spec_id": "runtime_core",
+                "purpose": "Create a guarded review gate.",
+                "body_markdown": canonical_spec_body("Create a guarded review gate."),
+                "artifact_status": "active",
+                "packetization_status": "runnable",
+                "execution_status": "packaged"
+            }]
+        }),
+    );
+    let package = run_json(
+        repo.path(),
+        &["internal", "compile-execution-package"],
+        json!({
+            "mission_id": mission_id,
+            "target_type": "spec",
+            "target_id": "runtime_core",
+            "included_spec_ids": ["runtime_core"],
+            "dependency_satisfaction_state": [
+                {"name": "lock_current", "satisfied": true, "detail": "Outcome Lock revision is current."}
+            ],
+            "read_scope": ["crates/codex1", "crates/codex1-core"],
+            "write_scope": ["crates/codex1", "crates/codex1-core"],
+            "proof_obligations": ["cargo test"],
+            "review_obligations": ["correctness"]
+        }),
+    );
+    let package_id = package["package_id"]
+        .as_str()
+        .expect("package id")
+        .to_string();
+    let bundle = run_json(
+        repo.path(),
+        &["internal", "compile-review-bundle"],
+        json!({
+            "mission_id": mission_id,
+            "source_package_id": package_id,
+            "bundle_kind": "spec_review",
+            "mandatory_review_lenses": ["correctness", "evidence_adequacy"],
+            "target_spec_id": "runtime_core",
+            "proof_rows_under_review": ["cargo test"],
+            "receipts": ["RECEIPTS/test-output.txt"],
+            "changed_files_or_diff": ["crates/codex1/src/internal/mod.rs"],
+            "touched_interface_contracts": ["internal command JSON contract"]
+        }),
+    );
+    let bundle_id = bundle["bundle_id"].as_str().expect("bundle id").to_string();
+    (package_id, bundle_id)
+}
+
+fn capture_review_truth_snapshot(repo_root: &Path, mission_id: &str, bundle_id: &str) -> Value {
+    if test_parent_authority_token(repo_root).is_none() {
+        let lease = run_json(
+            repo_root,
+            &["internal", "begin-loop-lease"],
+            json!({
+                "mission_id": mission_id,
+                "mode": "review_loop",
+                "owner": "parent-review-loop-test",
+                "reason": "Test helper parent review authority."
+            }),
+        );
+        let token = lease["parent_authority_token"]
+            .as_str()
+            .expect("parent authority token");
+        std::fs::create_dir_all(repo_root.join(".ralph")).expect("create ralph root");
+        std::fs::write(test_parent_authority_token_path(repo_root), token)
+            .expect("write parent authority token");
+    }
+    run_json(
+        repo_root,
+        &[
+            "internal",
+            "capture-review-truth-snapshot",
+            "--mission-id",
+            mission_id,
+            "--bundle-id",
+            bundle_id,
+        ],
+        json!({}),
+    )
+}
+
+fn capture_review_evidence_snapshot(repo_root: &Path, mission_id: &str, bundle_id: &str) -> Value {
+    run_json(
+        repo_root,
+        &[
+            "internal",
+            "capture-review-evidence-snapshot",
+            "--mission-id",
+            mission_id,
+            "--bundle-id",
+            bundle_id,
+        ],
+        json!({}),
+    )
+}
+
+fn record_none_reviewer_output(
+    repo_root: &Path,
+    mission_id: &str,
+    bundle_id: &str,
+    reviewer_id: &str,
+) -> Value {
+    run_json(
+        repo_root,
+        &["internal", "record-reviewer-output"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer_id": reviewer_id,
+            "output_kind": "none",
+            "findings": []
+        }),
+    )
+}
+
+fn record_blocking_reviewer_output(
+    repo_root: &Path,
+    mission_id: &str,
+    bundle_id: &str,
+    reviewer_id: &str,
+) -> Value {
+    run_json(
+        repo_root,
+        &["internal", "record-reviewer-output"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer_id": reviewer_id,
+            "output_kind": "findings",
+            "findings": [{
+                "severity": "P1",
+                "title": "Blocking reviewer finding",
+                "evidence_refs": ["crates/codex1-core/src/runtime.rs:1"],
+                "rationale": "This reviewer output intentionally blocks the reviewed target.",
+                "suggested_next_action": "Repair the reviewed target."
+            }]
+        }),
+    )
+}
+
+#[test]
+fn public_execute_and_autopilot_skills_require_mission_close_review() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("canonical repo root");
+
+    let execute_skill = std::fs::read_to_string(repo_root.join(".codex/skills/execute/SKILL.md"))
+        .expect("read execute skill");
+    let autopilot_skill =
+        std::fs::read_to_string(repo_root.join(".codex/skills/autopilot/SKILL.md"))
+            .expect("read autopilot skill");
+    let runtime_backend = std::fs::read_to_string(repo_root.join("docs/runtime-backend.md"))
+        .expect("read runtime backend doc");
+    let qualification_readme =
+        std::fs::read_to_string(repo_root.join("docs/qualification/README.md"))
+            .expect("read qualification readme");
+    let qualification_gates =
+        std::fs::read_to_string(repo_root.join("docs/qualification/gates.md"))
+            .expect("read qualification gates doc");
+
+    assert!(
+        execute_skill.contains(
+            "If the current frontier is clean and the remaining owed gate is\n   mission-close review, route into `$review-loop` for the mission-close bundle"
+        ),
+        "execute skill should explicitly route the clean final frontier into mission-close review"
+    );
+    assert!(
+        autopilot_skill.contains(
+            "If the frontier is clean and the remaining owed gate is mission-close review,\n  the next branch is `review-loop` for the mission-close bundle"
+        ),
+        "autopilot skill should explicitly route the clean final frontier into mission-close review"
+    );
+    assert!(
+        runtime_backend.contains(
+            "$execute` owns bounded target advancement under a passed package, including\n  honest routing into review, mission-close review, repair, replan, and durable\n  waiting branches."
+        ),
+        "runtime backend doc should reflect mission-close review as an execute/autopilot responsibility"
+    );
+    assert!(
+        qualification_readme.contains(
+            "The fully autonomous execute or autopilot promise is not proven by one gate."
+        ),
+        "qualification readme should state that public execute/autopilot proof is broader than one parity gate"
+    );
+    assert!(
+        qualification_gates.contains(
+            "Together they form the autonomy-governance proof surface for execute and autopilot."
+        ),
+        "qualification gates doc should frame parity as one component of the broader execute/autopilot proof surface"
+    );
+}
+
+#[test]
+fn loop_skill_surface_documents_lease_and_close_contract() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("canonical repo root");
+    let plan = std::fs::read_to_string(repo_root.join(".codex/skills/plan/SKILL.md"))
+        .expect("read plan skill");
+    let execute = std::fs::read_to_string(repo_root.join(".codex/skills/execute/SKILL.md"))
+        .expect("read execute skill");
+    let review_loop = std::fs::read_to_string(repo_root.join(".codex/skills/review-loop/SKILL.md"))
+        .expect("read review-loop skill");
+    assert!(
+        !repo_root.join(".codex/skills/review/SKILL.md").exists(),
+        "$review removal is intentional; $review-loop is the public parent review workflow"
+    );
+    let autopilot = std::fs::read_to_string(repo_root.join(".codex/skills/autopilot/SKILL.md"))
+        .expect("read autopilot skill");
+    let clarify = std::fs::read_to_string(repo_root.join(".codex/skills/clarify/SKILL.md"))
+        .expect("read clarify skill");
+    let orchestration =
+        std::fs::read_to_string(repo_root.join(".codex/skills/internal-orchestration/SKILL.md"))
+            .expect("read internal-orchestration skill");
+    let close = std::fs::read_to_string(repo_root.join(".codex/skills/close/SKILL.md"))
+        .expect("read close skill");
+    let runtime_backend = std::fs::read_to_string(repo_root.join("docs/runtime-backend.md"))
+        .expect("read runtime backend doc");
+
+    assert!(plan.contains("mode = \"planning_loop\""));
+    assert!(execute.contains("mode = \"execution_loop\""));
+    assert!(review_loop.contains("mode = \"review_loop\""));
+    assert!(autopilot.contains("mode = \"autopilot_loop\""));
+    assert!(clarify.contains("Do not acquire a parent loop lease"));
+    assert!(orchestration.contains("Child agents never acquire Ralph loop leases"));
+    assert!(close.contains("codex1 internal pause-loop-lease"));
+    assert!(close.contains("codex1 internal clear-loop-lease"));
+    let public_skill_tokens: Vec<&str> = runtime_backend
+        .lines()
+        .take_while(|line| *line != "## Public Skill Responsibilities")
+        .filter(|line| line.starts_with("- `$"))
+        .filter_map(|line| line.split('`').nth(1))
+        .map(|token| token.trim_start_matches('$'))
+        .collect();
+    assert!(public_skill_tokens.contains(&"close"));
+    assert!(public_skill_tokens.contains(&"review-loop"));
+    assert!(
+        !public_skill_tokens.contains(&"review"),
+        "legacy $review must not reappear as a public parent workflow"
+    );
+    assert!(
+        runtime_backend.contains("`$close` owns the user escape hatch"),
+        "runtime backend responsibilities should explain close/pause ownership"
+    );
+    assert!(runtime_backend.contains("`$close` pauses or clears the active lease"));
+}
+
+#[test]
+fn findings_only_reviewer_stop_hook_bypasses_parent_review_gate_block() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "review-lane-stop-hook";
+    run_json(
+        repo.path(),
+        &["internal", "init-mission"],
+        json!({
+            "mission_id": mission_id,
+            "title": "Review Lane Stop Hook",
+            "objective": "Prove child review lanes can return findings while parent review gate is open.",
+            "clarify_status": "ratified",
+            "lock_status": "locked"
+        }),
+    );
+    run_json(
+        repo.path(),
+        &["internal", "materialize-plan"],
+        json!({
+            "mission_id": mission_id,
+            "body_markdown": canonical_blueprint_body("Use one bounded runtime slice."),
+            "plan_level": 5,
+            "problem_size": "M",
+            "status": "approved",
+            "proof_matrix": [{"claim_ref": "claim:default-proof", "statement": "The selected route has explicit proof coverage.", "required_evidence": ["RECEIPTS/test-output.txt"], "review_lenses": ["correctness"], "governing_contract_refs": ["blueprint"]}],
+            "decision_obligations": [],
+            "selected_target_ref": "spec:runtime_core",
+            "specs": [{
+                "spec_id": "runtime_core",
+                "purpose": "Create a review gate for the parent.",
+                "body_markdown": canonical_spec_body("Create a review gate for the parent."),
+                "artifact_status": "active",
+                "packetization_status": "runnable",
+                "execution_status": "packaged"
+            }]
+        }),
+    );
+    let package = run_json(
+        repo.path(),
+        &["internal", "compile-execution-package"],
+        json!({
+            "mission_id": mission_id,
+            "target_type": "spec",
+            "target_id": "runtime_core",
+            "included_spec_ids": ["runtime_core"],
+            "dependency_satisfaction_state": [
+                {"name": "lock_current", "satisfied": true, "detail": "Outcome Lock revision is current."}
+            ],
+            "read_scope": ["crates/codex1", "crates/codex1-core"],
+            "write_scope": ["crates/codex1", "crates/codex1-core"],
+            "proof_obligations": ["cargo test"],
+            "review_obligations": ["correctness"]
+        }),
+    );
+    let package_id = package["package_id"].as_str().expect("package id");
+    run_json(
+        repo.path(),
+        &["internal", "compile-review-bundle"],
+        json!({
+            "mission_id": mission_id,
+            "source_package_id": package_id,
+            "bundle_kind": "spec_review",
+            "mandatory_review_lenses": ["correctness"],
+            "target_spec_id": "runtime_core",
+            "proof_rows_under_review": ["cargo test"],
+            "receipts": ["RECEIPTS/test-output.txt"],
+            "changed_files_or_diff": ["crates/codex1/src/internal/mod.rs"],
+            "touched_interface_contracts": ["internal command JSON contract"]
+        }),
+    );
+
+    let parent_stop_without_lease = run_stop_hook_with_payload(
+        repo.path(),
+        json!({ "cwd": repo.path().display().to_string() }),
+    );
+    assert_eq!(parent_stop_without_lease["decision"], Value::Null);
+    assert!(
+        parent_stop_without_lease["systemMessage"]
+            .as_str()
+            .expect("parent no-lease message")
+            .contains("Ralph loop is not active")
+    );
+
+    run_json(
+        repo.path(),
+        &["internal", "begin-loop-lease"],
+        json!({
+            "mission_id": mission_id,
+            "mode": "review_loop",
+            "owner": "parent-review-loop",
+            "reason": "Prove active parent leases still enforce review gates."
+        }),
+    );
+    let parent_stop = run_stop_hook_with_payload(
+        repo.path(),
+        json!({ "cwd": repo.path().display().to_string() }),
+    );
+    assert_eq!(parent_stop["decision"], "block");
+    assert!(
+        parent_stop["reason"]
+            .as_str()
+            .expect("parent reason")
+            .contains("review gate")
+    );
+
+    let reviewer_stop = run_stop_hook_with_payload(
+        repo.path(),
+        json!({
+            "cwd": repo.path().display().to_string(),
+            "laneRole": "findings_only_reviewer",
+            "childLaneKind": "local_spec_intent"
+        }),
+    );
+    assert_eq!(reviewer_stop["decision"], Value::Null);
+    assert!(
+        reviewer_stop["systemMessage"]
+            .as_str()
+            .expect("reviewer system message")
+            .contains("Subagent lane may stop")
+    );
+}
+
+#[test]
+fn ralph_control_loop_boundary_scopes_stop_hook_to_active_parent_lease() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "ralph-control-loop-boundary-runtime";
+    let (_package_id, _bundle_id) = setup_review_wave(&repo, mission_id);
+
+    let no_lease_stop = run_stop_hook(repo.path());
+    assert_eq!(no_lease_stop["decision"], Value::Null);
+    assert!(
+        no_lease_stop["systemMessage"]
+            .as_str()
+            .expect("no lease message")
+            .contains("Ralph loop is not active")
+    );
+
+    let child_stop = run_stop_hook_with_payload(
+        repo.path(),
+        json!({
+            "cwd": repo.path().display().to_string(),
+            "laneRole": "child_helper",
+            "agentName": "/root/explorer"
+        }),
+    );
+    assert_eq!(child_stop["decision"], Value::Null);
+    assert!(
+        child_stop["systemMessage"]
+            .as_str()
+            .expect("child stop message")
+            .contains("Subagent lane may stop")
+    );
+
+    let lease = run_json(
+        repo.path(),
+        &["internal", "begin-loop-lease"],
+        json!({
+            "mission_id": mission_id,
+            "mode": "review_loop",
+            "owner": "parent-review-loop",
+            "reason": "Review loop is intentionally active."
+        }),
+    );
+    assert_eq!(lease["status"], "active");
+    assert_eq!(lease["mode"], "review_loop");
+    let loop_authority_token = lease["parent_authority_token"]
+        .as_str()
+        .expect("loop authority token");
+
+    let active_parent_stop = run_stop_hook(repo.path());
+    assert_eq!(active_parent_stop["decision"], "block");
+    assert!(
+        active_parent_stop["reason"]
+            .as_str()
+            .expect("active lease reason")
+            .contains("review gate")
+    );
+    let validation_after_block = run_json(
+        repo.path(),
+        &[
+            "internal",
+            "validate-mission-artifacts",
+            "--mission-id",
+            mission_id,
+        ],
+        json!({}),
+    );
+    assert_eq!(
+        validation_after_block["success"], true,
+        "open-gate Stop-hook reporting must not poison cached mission state"
+    );
+
+    let pause_without_authority = run_json_failure(
+        repo.path(),
+        &["internal", "pause-loop-lease"],
+        json!({
+            "mission_id": mission_id,
+            "paused_by": "user",
+            "reason": "Missing parent authority should not pause an active verifier-backed lease."
+        }),
+    );
+    assert!(
+        pause_without_authority.contains("requires parent loop authority"),
+        "unexpected error: {pause_without_authority}"
+    );
+
+    let paused = run_json_with_parent_authority(
+        repo.path(),
+        &["internal", "pause-loop-lease"],
+        json!({
+            "mission_id": mission_id,
+            "paused_by": "user",
+            "reason": "User paused Ralph to discuss."
+        }),
+        loop_authority_token,
+    );
+    assert_eq!(paused["lease"]["status"], "paused");
+    let paused_stop = run_stop_hook(repo.path());
+    assert_eq!(paused_stop["decision"], Value::Null);
+    assert!(
+        paused_stop["systemMessage"]
+            .as_str()
+            .expect("paused message")
+            .contains("Ralph loop is not active")
+    );
+
+    let replace_paused_without_authority = run_json_failure(
+        repo.path(),
+        &["internal", "begin-loop-lease"],
+        json!({
+            "mission_id": mission_id,
+            "mode": "review_loop",
+            "owner": "reviewer-child",
+            "reason": "A child must not replace a paused verifier-backed parent lease."
+        }),
+    );
+    assert!(
+        replace_paused_without_authority.contains("already owns parent authority"),
+        "unexpected error: {replace_paused_without_authority}"
+    );
+
+    let clear_without_authority =
+        run_json_failure(repo.path(), &["internal", "clear-loop-lease"], json!({}));
+    assert!(
+        clear_without_authority.contains("requires parent loop authority"),
+        "unexpected error: {clear_without_authority}"
+    );
+
+    let cleared = run_json_with_parent_authority(
+        repo.path(),
+        &["internal", "clear-loop-lease"],
+        json!({}),
+        loop_authority_token,
+    );
+    assert_eq!(cleared["lease"]["status"], "paused");
+    let inspected = run_json(repo.path(), &["internal", "inspect-loop-lease"], json!({}));
+    assert_eq!(inspected["lease"], Value::Null);
+}
+
+#[test]
+fn manual_ratified_clarify_yields_for_explicit_plan_instead_of_blocking() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "manual-clarify-handoff";
+    run_json(
+        repo.path(),
+        &["internal", "init-mission"],
+        json!({
+            "mission_id": mission_id,
+            "title": "Manual Clarify Handoff",
+            "objective": "Prove manual clarify waits for explicit plan invocation.",
+            "clarify_status": "ratified",
+            "lock_status": "locked"
+        }),
+    );
+
+    let stop = run_stop_hook(repo.path());
+    assert_eq!(stop["decision"], Value::Null);
+    assert_eq!(stop["reason"], Value::Null);
+    assert!(
+        stop["systemMessage"]
+            .as_str()
+            .expect("manual clarify handoff message")
+            .contains("Invoke $plan manually")
+    );
+
+    let state: Value = serde_json::from_slice(
+        &std::fs::read(
+            repo.path()
+                .join(".ralph/missions/manual-clarify-handoff/state.json"),
+        )
+        .expect("read mission state"),
+    )
+    .expect("parse mission state");
+    assert_eq!(state["verdict"], "needs_user");
+    assert_eq!(state["resume_mode"], "yield_to_user");
+    assert_eq!(state["waiting_for"], "manual_plan_invocation");
+    assert_eq!(state["next_phase"], "planning");
+}
+
+#[test]
+fn reviewer_lane_mutation_guard_rejects_contaminated_review_wave() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "reviewer-lane-mutation-rejects";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let snapshot = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+    capture_review_evidence_snapshot(repo.path(), mission_id, &bundle_id);
+    let code_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        &bundle_id,
+        "review_code_bug_mutation_rejects",
+    );
+    let spec_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        &bundle_id,
+        "review_spec_intent_mutation_rejects",
+    );
+
+    std::fs::write(
+        repo.path()
+            .join("PLANS/reviewer-lane-mutation-rejects/REVIEW-LEDGER.md"),
+        "# contaminated by child reviewer\n",
+    )
+    .expect("mutate review ledger");
+
+    let error = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                code_output["evidence_ref"].as_str().expect("code evidence ref"),
+                spec_output["evidence_ref"].as_str().expect("spec evidence ref"),
+                "RECEIPTS/test-output.txt"
+            ],
+            "findings": [],
+            "disposition_notes": ["Child reviewer returned NONE."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot
+        }),
+    );
+    assert!(
+        error.contains("reviewer_lane_truth_mutation_detected"),
+        "unexpected error: {error}"
+    );
+
+    let gates: Value = serde_json::from_slice(
+        &std::fs::read(
+            repo.path()
+                .join(".ralph/missions/reviewer-lane-mutation-rejects/gates.json"),
+        )
+        .expect("read gates"),
+    )
+    .expect("parse gates");
+    let review_gate = gates["gates"]
+        .as_array()
+        .expect("gates array")
+        .iter()
+        .find(|gate| gate["evaluated_against_ref"].as_str() == Some(bundle_id.as_str()))
+        .expect("review gate");
+    assert_eq!(review_gate["status"], "open");
+}
+
+#[test]
+fn reviewer_lane_mutation_guard_accepts_clean_parent_writeback() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "reviewer-lane-mutation-clean";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let snapshot = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+    capture_review_evidence_snapshot(repo.path(), mission_id, &bundle_id);
+    let code_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        &bundle_id,
+        "review_code_bug_mutation_clean",
+    );
+    let spec_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        &bundle_id,
+        "review_spec_intent_mutation_clean",
+    );
+
+    let review = run_json(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                code_output["evidence_ref"].as_str().expect("code evidence ref"),
+                spec_output["evidence_ref"].as_str().expect("spec evidence ref"),
+                "RECEIPTS/test-output.txt"
+            ],
+            "findings": [],
+            "disposition_notes": ["Child reviewer returned NONE and mission truth stayed unchanged."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot
+        }),
+    );
+    assert_eq!(review["blocking_findings"], 0);
+
+    let gates = run_json(
+        repo.path(),
+        &["internal", "validate-gates", "--mission-id", mission_id],
+        json!({}),
+    );
+    assert_eq!(gates["valid"], true);
+    let closeouts = run_json(
+        repo.path(),
+        &["internal", "validate-closeouts", "--mission-id", mission_id],
+        json!({}),
+    );
+    assert_eq!(closeouts["valid"], true);
+}
+
+#[test]
+fn reviewer_parent_writeback_guard_rejects_reviewer_lane_self_clear() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "reviewer-parent-writeback-clean-reject";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let snapshot = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+
+    let error = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "review_qual_gate_fast",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                format!("reviewer-output:review_qual_gate_fast:{bundle_id}"),
+                "RECEIPTS/test-output.txt"
+            ],
+            "findings": [],
+            "disposition_notes": ["Reviewer lane attempted to self-clear the gate."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot
+        }),
+    );
+    assert!(
+        error.contains("writeback is parent-owned"),
+        "unexpected error: {error}"
+    );
+
+    let gates: Value = serde_json::from_slice(
+        &std::fs::read(
+            repo.path()
+                .join(".ralph/missions/reviewer-parent-writeback-clean-reject/gates.json"),
+        )
+        .expect("read gates"),
+    )
+    .expect("parse gates");
+    let review_gate = gates["gates"]
+        .as_array()
+        .expect("gates array")
+        .iter()
+        .find(|gate| gate["evaluated_against_ref"].as_str() == Some(bundle_id.as_str()))
+        .expect("review gate");
+    assert_eq!(review_gate["status"], "open");
+}
+
+#[test]
+fn reviewer_parent_writeback_guard_rejects_self_referential_reviewer_output() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "reviewer-parent-writeback-evidence-reject";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let snapshot = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+
+    let error = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                format!("reviewer-output:review_qual_gate_fast:{bundle_id}"),
+                "RECEIPTS/test-output.txt"
+            ],
+            "findings": [],
+            "disposition_notes": ["Reviewer output evidence is not writeback authority."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot
+        }),
+    );
+    assert!(
+        error.contains("reviewer-output evidence")
+            && error.contains("child reviewer self-writeback"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn reviewer_parent_writeback_guard_rejects_reviewer_lane_blocking_writeback() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "reviewer-parent-writeback-blocked-reject";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let snapshot = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+
+    let error = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "/root/review_bug_correctness_1",
+            "verdict": "blocked",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                format!("reviewer-output:review_bug_correctness_1:{bundle_id}"),
+                "RECEIPTS/test-output.txt"
+            ],
+            "findings": [{
+                "class": "B-Proof",
+                "summary": "Reviewer lane attempted parent-owned writeback.",
+                "blocking": true,
+                "evidence_refs": [format!("reviewer-output:review_bug_correctness_1:{bundle_id}")],
+                "disposition": "return bounded output instead"
+            }],
+            "disposition_notes": ["Reviewer lane attempted to write a blocking disposition."],
+            "next_required_branch": "repair",
+            "review_truth_snapshot": snapshot
+        }),
+    );
+    assert!(
+        error.contains("writeback is parent-owned"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn review_writeback_authority_token_is_required_for_parent_writeback() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "review-writeback-token-required";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let snapshot = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+    capture_review_evidence_snapshot(repo.path(), mission_id, &bundle_id);
+    let code_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        &bundle_id,
+        "review_code_bug_token_required",
+    );
+    let spec_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        &bundle_id,
+        "review_spec_intent_token_required",
+    );
+
+    assert!(
+        snapshot["writeback_authority_token"].is_string(),
+        "parent command output should include plaintext token: {snapshot}"
+    );
+    assert!(
+        snapshot["writeback_authority_verifier"].is_string(),
+        "parent command output should include persisted verifier: {snapshot}"
+    );
+
+    let persisted_path = repo.path().join(format!(
+        ".ralph/missions/{mission_id}/review-truth-snapshots/{bundle_id}.json"
+    ));
+    let persisted: Value =
+        serde_json::from_slice(&std::fs::read(&persisted_path).expect("read persisted snapshot"))
+            .expect("parse persisted snapshot");
+    assert!(
+        persisted.get("writeback_authority_token").is_none(),
+        "persisted repo-visible snapshot must not expose the plaintext token: {persisted}"
+    );
+    assert_eq!(
+        persisted["writeback_authority_verifier"],
+        snapshot["writeback_authority_verifier"]
+    );
+
+    let missing_token_error = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                code_output["evidence_ref"].as_str().expect("code evidence ref"),
+                spec_output["evidence_ref"].as_str().expect("spec evidence ref"),
+                "RECEIPTS/test-output.txt"
+            ],
+            "findings": [],
+            "disposition_notes": ["Repo-visible snapshot should not be enough."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": persisted
+        }),
+    );
+    assert!(
+        missing_token_error.contains("writeback_authority_token is required"),
+        "unexpected error: {missing_token_error}"
+    );
+
+    let review = run_json(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                code_output["evidence_ref"].as_str().expect("code evidence ref"),
+                spec_output["evidence_ref"].as_str().expect("spec evidence ref"),
+                "RECEIPTS/test-output.txt"
+            ],
+            "findings": [],
+            "disposition_notes": ["Parent-held token authorizes writeback."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot
+        }),
+    );
+    assert_eq!(review["blocking_findings"], 0);
+}
+
+#[test]
+fn review_writeback_authority_token_rejects_mismatch() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "review-writeback-token-mismatch";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let mut snapshot = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+    capture_review_evidence_snapshot(repo.path(), mission_id, &bundle_id);
+    let code_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        &bundle_id,
+        "review_code_bug_token_mismatch",
+    );
+    let spec_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        &bundle_id,
+        "review_spec_intent_token_mismatch",
+    );
+    snapshot["writeback_authority_token"] = json!("wrong-token");
+
+    let error = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                code_output["evidence_ref"].as_str().expect("code evidence ref"),
+                spec_output["evidence_ref"].as_str().expect("spec evidence ref"),
+                "RECEIPTS/test-output.txt"
+            ],
+            "findings": [],
+            "disposition_notes": ["Wrong token should not authorize writeback."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot
+        }),
+    );
+    assert!(
+        error.contains("writeback_authority_token does not match verifier"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn review_writeback_authority_token_survives_child_evidence_snapshot_capture() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "review-writeback-token-evidence-lifecycle";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let parent_truth = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+
+    let child_evidence = run_json(
+        repo.path(),
+        &[
+            "internal",
+            "capture-review-evidence-snapshot",
+            "--mission-id",
+            mission_id,
+            "--bundle-id",
+            &bundle_id,
+        ],
+        json!({}),
+    );
+
+    assert!(
+        child_evidence.get("review_truth_snapshot").is_none(),
+        "child evidence must not expose the parent writeback snapshot: {child_evidence}"
+    );
+    assert!(
+        child_evidence
+            .to_string()
+            .find(
+                parent_truth["writeback_authority_token"]
+                    .as_str()
+                    .expect("token")
+            )
+            .is_none(),
+        "child evidence leaked the parent writeback token: {child_evidence}"
+    );
+
+    let persisted_path = repo.path().join(format!(
+        ".ralph/missions/{mission_id}/review-truth-snapshots/{bundle_id}.json"
+    ));
+    let persisted: Value =
+        serde_json::from_slice(&std::fs::read(&persisted_path).expect("read persisted snapshot"))
+            .expect("parse persisted snapshot");
+    assert_eq!(
+        persisted["writeback_authority_verifier"],
+        parent_truth["writeback_authority_verifier"]
+    );
+    let code_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        &bundle_id,
+        "review_code_bug_token_lifecycle",
+    );
+    let spec_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        &bundle_id,
+        "review_spec_intent_token_lifecycle",
+    );
+
+    let review = run_json(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                code_output["evidence_ref"].as_str().expect("code evidence ref"),
+                spec_output["evidence_ref"].as_str().expect("spec evidence ref"),
+                "RECEIPTS/test-output.txt"
+            ],
+            "findings": [],
+            "disposition_notes": ["Original parent-held token still authorizes writeback after child evidence capture."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": parent_truth
+        }),
+    );
+    assert_eq!(review["blocking_findings"], 0);
+}
+
+#[test]
+fn review_writeback_authority_cannot_be_reminted_for_same_bundle() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "review-writeback-single-capture";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+    capture_review_evidence_snapshot(repo.path(), mission_id, &bundle_id);
+    record_none_reviewer_output(repo.path(), mission_id, &bundle_id, "review_single_capture");
+
+    let error = run_json_failure(
+        repo.path(),
+        &[
+            "internal",
+            "capture-review-truth-snapshot",
+            "--mission-id",
+            mission_id,
+            "--bundle-id",
+            &bundle_id,
+        ],
+        json!({}),
+    );
+    assert!(
+        error.contains("refusing to remint parent writeback authority"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn review_writeback_requires_parent_loop_authority_even_without_existing_lease() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "review-writeback-no-lease-authority";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    std::fs::remove_file(test_parent_authority_token_path(repo.path())).ok();
+    std::fs::remove_file(repo.path().join(".ralph/loop-lease.json")).ok();
+
+    let error = run_json_failure(
+        repo.path(),
+        &[
+            "internal",
+            "capture-review-truth-snapshot",
+            "--mission-id",
+            mission_id,
+            "--bundle-id",
+            &bundle_id,
+        ],
+        json!({}),
+    );
+    assert!(
+        error.contains("requires parent loop authority"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn begin_loop_lease_requires_parent_begin_authority_without_existing_lease() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "review-begin-no-parent-authority";
+    setup_review_wave(&repo, mission_id);
+    std::fs::remove_file(test_parent_authority_token_path(repo.path())).ok();
+    std::fs::remove_file(repo.path().join(".ralph/loop-lease.json")).ok();
+
+    let error = run_json_failure_without_parent_begin(
+        repo.path(),
+        &["internal", "begin-loop-lease"],
+        json!({
+            "mission_id": mission_id,
+            "mode": "review_loop",
+            "owner": "reviewer-child",
+            "reason": "Child should not be able to mint parent authority from no-lease state."
+        }),
+    );
+    assert!(
+        error.contains("requires parent begin authority"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn review_writeback_rejects_truth_snapshot_captured_after_reviewer_output() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "review-writeback-ordering";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let mut snapshot = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+    capture_review_evidence_snapshot(repo.path(), mission_id, &bundle_id);
+    let output =
+        record_none_reviewer_output(repo.path(), mission_id, &bundle_id, "review_ordering_check");
+
+    snapshot["captured_at"] = json!("2099-01-01T00:00:00Z");
+    let mut persisted = snapshot.clone();
+    persisted
+        .as_object_mut()
+        .expect("snapshot object")
+        .remove("writeback_authority_token");
+    let persisted_path = repo.path().join(format!(
+        ".ralph/missions/{mission_id}/review-truth-snapshots/{bundle_id}.json"
+    ));
+    std::fs::write(
+        persisted_path,
+        serde_json::to_vec_pretty(&persisted).expect("encode persisted snapshot"),
+    )
+    .expect("write persisted snapshot");
+
+    let error = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [output["evidence_ref"].as_str().expect("evidence ref"), "RECEIPTS/test-output.txt"],
+            "findings": [],
+            "disposition_notes": ["Reviewer output must be downstream of parent truth capture."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot
+        }),
+    );
+    assert!(
+        error.contains("was recorded before parent review_truth_snapshot capture"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn parent_loop_authority_blocks_child_mission_truth_mutations() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "review-parent-loop-authority";
+    let (package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let lease = run_json(
+        repo.path(),
+        &["internal", "begin-loop-lease"],
+        json!({
+            "mission_id": mission_id,
+            "mode": "review_loop",
+            "owner": "parent-review-loop",
+            "reason": "Protect parent-owned review writeback."
+        }),
+    );
+    let authority_token = lease["parent_authority_token"]
+        .as_str()
+        .expect("parent authority token");
+    assert!(
+        lease["parent_authority_verifier"].is_string(),
+        "lease should include a persisted verifier: {lease}"
+    );
+
+    let inspect = run_json(repo.path(), &["internal", "inspect-loop-lease"], json!({}));
+    assert!(
+        inspect["lease"].get("parent_authority_token").is_none(),
+        "persisted lease must not expose the parent authority token: {inspect}"
+    );
+
+    let clear_without_authority =
+        run_json_failure(repo.path(), &["internal", "clear-loop-lease"], json!({}));
+    assert!(
+        clear_without_authority.contains("requires parent loop authority"),
+        "unexpected error: {clear_without_authority}"
+    );
+    let pause_without_authority = run_json_failure(
+        repo.path(),
+        &["internal", "pause-loop-lease"],
+        json!({
+            "mission_id": mission_id,
+            "paused_by": "reviewer-child",
+            "reason": "Child should not be able to pause the parent lease."
+        }),
+    );
+    assert!(
+        pause_without_authority.contains("requires parent loop authority"),
+        "unexpected error: {pause_without_authority}"
+    );
+    let begin_without_authority = run_json_failure(
+        repo.path(),
+        &["internal", "begin-loop-lease"],
+        json!({
+            "mission_id": mission_id,
+            "mode": "review_loop",
+            "owner": "reviewer-child",
+            "reason": "Child should not be able to replace the parent lease."
+        }),
+    );
+    assert!(
+        begin_without_authority.contains("already owns parent authority"),
+        "unexpected error: {begin_without_authority}"
+    );
+
+    let capture_without_authority = run_json_failure(
+        repo.path(),
+        &[
+            "internal",
+            "capture-review-truth-snapshot",
+            "--mission-id",
+            mission_id,
+            "--bundle-id",
+            &bundle_id,
+        ],
+        json!({}),
+    );
+    assert!(
+        capture_without_authority.contains("requires parent loop authority"),
+        "unexpected error: {capture_without_authority}"
+    );
+
+    let bundle_compile_without_authority = run_json_failure(
+        repo.path(),
+        &["internal", "compile-review-bundle"],
+        json!({
+            "mission_id": mission_id,
+            "source_package_id": package_id,
+            "bundle_kind": "spec_review",
+            "mandatory_review_lenses": ["correctness"],
+            "target_spec_id": "runtime_core",
+            "proof_rows_under_review": ["cargo test"],
+            "receipts": ["RECEIPTS/test-output.txt"],
+            "changed_files_or_diff": ["src/lib.rs"],
+            "touched_interface_contracts": ["runtime contract"]
+        }),
+    );
+    assert!(
+        bundle_compile_without_authority.contains("requires parent loop authority"),
+        "unexpected error: {bundle_compile_without_authority}"
+    );
+
+    let snapshot = run_json_with_parent_authority(
+        repo.path(),
+        &[
+            "internal",
+            "capture-review-truth-snapshot",
+            "--mission-id",
+            mission_id,
+            "--bundle-id",
+            &bundle_id,
+        ],
+        json!({}),
+        authority_token,
+    );
+    run_json_with_parent_authority(
+        repo.path(),
+        &[
+            "internal",
+            "capture-review-evidence-snapshot",
+            "--mission-id",
+            mission_id,
+            "--bundle-id",
+            &bundle_id,
+        ],
+        json!({}),
+        authority_token,
+    );
+    let code_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        &bundle_id,
+        "review_code_bug_authority_guard",
+    );
+    let spec_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        &bundle_id,
+        "review_spec_intent_authority_guard",
+    );
+
+    let record_without_authority = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                code_output["evidence_ref"].as_str().expect("code evidence ref"),
+                spec_output["evidence_ref"].as_str().expect("spec evidence ref"),
+                "RECEIPTS/test-output.txt"
+            ],
+            "findings": [],
+            "disposition_notes": ["Missing parent loop authority should fail."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot.clone()
+        }),
+    );
+    assert!(
+        record_without_authority.contains("requires parent loop authority"),
+        "unexpected error: {record_without_authority}"
+    );
+
+    let review = run_json_with_parent_authority(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                code_output["evidence_ref"].as_str().expect("code evidence ref"),
+                spec_output["evidence_ref"].as_str().expect("spec evidence ref"),
+                "RECEIPTS/test-output.txt"
+            ],
+            "findings": [],
+            "disposition_notes": ["Parent loop authority plus parent truth snapshot authorizes writeback."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot
+        }),
+        authority_token,
+    );
+    assert_eq!(review["blocking_findings"], 0);
+}
+
+#[test]
+fn single_generic_reviewer_output_cannot_satisfy_all_required_lanes() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "review-lane-generic-single";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let snapshot = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+    capture_review_evidence_snapshot(repo.path(), mission_id, &bundle_id);
+    let generic_output =
+        record_none_reviewer_output(repo.path(), mission_id, &bundle_id, "review_runtime_flow");
+
+    let error = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [generic_output["evidence_ref"].as_str().expect("generic evidence ref")],
+            "findings": [],
+            "disposition_notes": ["A single generic legacy reviewer output must not satisfy every required lane."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot
+        }),
+    );
+    assert!(
+        error.contains("missing required reviewer-output lane coverage"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn multiple_generic_reviewer_outputs_cannot_satisfy_distinct_required_lanes() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "review-lane-generic-multiple";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let snapshot = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+    capture_review_evidence_snapshot(repo.path(), mission_id, &bundle_id);
+    let generic_a =
+        record_none_reviewer_output(repo.path(), mission_id, &bundle_id, "review_runtime_flow");
+    let generic_b = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        &bundle_id,
+        "review_runtime_flow_followup",
+    );
+
+    let error = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                generic_a["evidence_ref"].as_str().expect("generic evidence ref"),
+                generic_b["evidence_ref"].as_str().expect("generic followup evidence ref")
+            ],
+            "findings": [],
+            "disposition_notes": ["Generic reviewer outputs must not impersonate profile coverage."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot
+        }),
+    );
+    assert!(
+        error.contains("missing required reviewer-output lane coverage"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn begin_loop_lease_rejects_non_verifier_upgrade_without_parent_begin_authority() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "legacy-lease-upgrade";
+    run_json(
+        repo.path(),
+        &["internal", "init-mission"],
+        json!({
+            "mission_id": mission_id,
+            "title": "Legacy Lease Upgrade",
+            "objective": "Prove non-verifier leases cannot mint parent authority.",
+            "clarify_status": "ratified",
+            "lock_status": "locked"
+        }),
+    );
+    std::fs::write(
+        repo.path().join(".ralph/loop-lease.json"),
+        serde_json::to_vec_pretty(&json!({
+            "mission_id": mission_id,
+            "mode": "review_loop",
+            "status": "active",
+            "owner": "legacy-parent",
+            "reason": "Legacy lease without verifier.",
+            "acquired_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z"
+        }))
+        .expect("encode legacy lease"),
+    )
+    .expect("write legacy lease");
+
+    let binary = assert_cmd::cargo::cargo_bin("codex1");
+    let output = Command::new(binary)
+        .args(["internal", "begin-loop-lease"])
+        .arg("--repo-root")
+        .arg(repo.path())
+        .arg("--json")
+        .write_stdin(
+            serde_json::to_vec(&json!({
+                "mission_id": mission_id,
+                "mode": "review_loop",
+                "owner": "reviewer-child",
+                "reason": "Child tries to upgrade legacy lease."
+            }))
+            .expect("encode input"),
+        )
+        .output()
+        .expect("run begin-loop-lease");
+    assert!(
+        !output.status.success(),
+        "legacy lease upgrade unexpectedly succeeded: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("cannot upgrade non-verifier lease"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+#[test]
+fn reviewer_output_inbox_contract_records_bounded_output_without_advancing_truth() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "reviewer-output-inbox-bounded";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+    capture_review_evidence_snapshot(repo.path(), mission_id, &bundle_id);
+    let gates_before = std::fs::read(
+        repo.path()
+            .join(format!(".ralph/missions/{mission_id}/gates.json")),
+    )
+    .expect("read gates before");
+    let closeouts_before = std::fs::read(
+        repo.path()
+            .join(format!(".ralph/missions/{mission_id}/closeouts.ndjson")),
+    )
+    .expect("read closeouts before");
+
+    let output =
+        record_none_reviewer_output(repo.path(), mission_id, &bundle_id, "review_spec_intent_1");
+
+    assert_eq!(output["mission_id"], mission_id);
+    assert_eq!(output["bundle_id"], bundle_id);
+    assert!(
+        output["evidence_ref"]
+            .as_str()
+            .expect("evidence ref")
+            .starts_with(&format!("reviewer-output:{bundle_id}:"))
+    );
+    let output_path = output["path"].as_str().expect("output path");
+    let artifact: Value =
+        serde_json::from_slice(&std::fs::read(output_path).expect("read reviewer output artifact"))
+            .expect("parse reviewer output artifact");
+    assert_eq!(artifact["output_kind"], "none");
+    assert_eq!(artifact["findings"].as_array().expect("findings").len(), 0);
+    assert_eq!(
+        std::fs::read(
+            repo.path()
+                .join(format!(".ralph/missions/{mission_id}/gates.json"))
+        )
+        .expect("read gates after"),
+        gates_before,
+        "reviewer-output inbox write must not mutate gates"
+    );
+    assert_eq!(
+        std::fs::read(
+            repo.path()
+                .join(format!(".ralph/missions/{mission_id}/closeouts.ndjson"))
+        )
+        .expect("read closeouts after"),
+        closeouts_before,
+        "reviewer-output inbox write must not append closeouts"
+    );
+}
+
+#[test]
+fn reviewer_output_inbox_contract_requires_real_inbox_artifact_for_parent_writeback() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "reviewer-output-inbox-writeback";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let snapshot = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+    capture_review_evidence_snapshot(repo.path(), mission_id, &bundle_id);
+
+    let fake_ref_error = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [format!("reviewer-output:{bundle_id}:not-a-real-output")],
+            "findings": [],
+            "disposition_notes": ["Fake reviewer-output refs must not clear gates."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot
+        }),
+    );
+    assert!(
+        fake_ref_error.contains("invalid reviewer-output evidence ref"),
+        "unexpected error: {fake_ref_error}"
+    );
+
+    capture_review_evidence_snapshot(repo.path(), mission_id, &bundle_id);
+    let spec_output =
+        record_none_reviewer_output(repo.path(), mission_id, &bundle_id, "review_spec_intent_1");
+    let code_output =
+        record_none_reviewer_output(repo.path(), mission_id, &bundle_id, "review_code_bug_1");
+    let review = run_json(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                spec_output["evidence_ref"].as_str().expect("spec evidence ref"),
+                code_output["evidence_ref"].as_str().expect("code evidence ref")
+            ],
+            "findings": [],
+            "disposition_notes": ["Real reviewer-output inbox artifact authorizes delegated evidence."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot
+        }),
+    );
+    assert_eq!(review["blocking_findings"], 0);
+}
+
+#[test]
+fn clean_code_review_writeback_requires_code_and_spec_reviewer_outputs() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "review-lane-completion-guard";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let snapshot = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+    capture_review_evidence_snapshot(repo.path(), mission_id, &bundle_id);
+    let spec_output =
+        record_none_reviewer_output(repo.path(), mission_id, &bundle_id, "review_spec_intent_1");
+
+    let missing_code_error = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [spec_output["evidence_ref"].as_str().expect("spec evidence ref")],
+            "findings": [],
+            "disposition_notes": ["Spec-only reviewer output must not clear code correctness review."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot
+        }),
+    );
+    assert!(
+        missing_code_error
+            .contains("missing required reviewer-output lane coverage: code_bug_correctness"),
+        "unexpected error: {missing_code_error}"
+    );
+
+    let code_output =
+        record_none_reviewer_output(repo.path(), mission_id, &bundle_id, "review_code_bug_1");
+    let review = run_json(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                spec_output["evidence_ref"].as_str().expect("spec evidence ref"),
+                code_output["evidence_ref"].as_str().expect("code evidence ref")
+            ],
+            "findings": [],
+            "disposition_notes": ["Both required reviewer lanes are present and clean."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot
+        }),
+    );
+    assert_eq!(review["blocking_findings"], 0);
+}
+
+#[test]
+fn reviewer_output_inbox_contract_rejects_clean_writeback_with_blocking_reviewer_finding() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "reviewer-output-inbox-blocking";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let snapshot = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+    capture_review_evidence_snapshot(repo.path(), mission_id, &bundle_id);
+    let output =
+        record_blocking_reviewer_output(repo.path(), mission_id, &bundle_id, "review_code_bug_1");
+
+    let error = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [output["evidence_ref"].as_str().expect("evidence ref")],
+            "findings": [],
+            "disposition_notes": ["A clean parent outcome cannot override blocking reviewer output."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot
+        }),
+    );
+    assert!(
+        error.contains(
+            "cannot be clean while cited reviewer-output artifact contains P0/P1/P2 findings"
+        ),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn delegated_review_authority_rejects_parent_only_clean_outcome() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "delegated-review-authority-clean";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let snapshot = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+
+    let error = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": ["RECEIPTS/test-output.txt"],
+            "findings": [],
+            "disposition_notes": ["Parent-local review should not be accepted as review evidence."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot
+        }),
+    );
+    assert!(
+        error.contains("requires reviewer-agent output evidence"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn delegated_review_authority_rejects_parent_only_blocking_finding() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "delegated-review-authority-blocking";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let snapshot = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+
+    let error = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "blocked",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": ["RECEIPTS/test-output.txt"],
+            "findings": [{
+                "class": "B-Spec",
+                "summary": "Parent-local blocking review judgment is not enough.",
+                "blocking": true,
+                "evidence_refs": ["RECEIPTS/test-output.txt"],
+                "disposition": "repair"
+            }],
+            "disposition_notes": ["A blocking finding must cite reviewer-agent output evidence."],
+            "next_required_branch": "repair",
+            "review_truth_snapshot": snapshot
+        }),
+    );
+    assert!(
+        error.contains("requires reviewer-agent output evidence"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn delegated_review_authority_allows_contaminated_replan_route_without_clearing_clean() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "delegated-review-authority-contaminated";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let snapshot = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+
+    let review = run_json(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "blocked",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": ["review-wave-contaminated:missing-reviewer-output"],
+            "findings": [{
+                "class": "B-Proof",
+                "summary": "Review wave cannot prove delegated reviewer judgment.",
+                "blocking": true,
+                "evidence_refs": ["review-wave-contaminated:missing-reviewer-output"],
+                "disposition": "replan"
+            }],
+            "disposition_notes": ["The wave is invalid and must route away instead of clearing review."],
+            "next_required_branch": "replan",
+            "review_truth_snapshot": snapshot
+        }),
+    );
+    assert_eq!(review["blocking_findings"], 1);
+}
+
+#[test]
+fn delegated_review_authority_contract_is_documented_on_public_surfaces() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("canonical repo root");
+    let review_loop = std::fs::read_to_string(repo_root.join(".codex/skills/review-loop/SKILL.md"))
+        .expect("read review-loop skill");
+    let internal_orchestration =
+        std::fs::read_to_string(repo_root.join(".codex/skills/internal-orchestration/SKILL.md"))
+            .expect("read internal-orchestration skill");
+    let runtime_backend = std::fs::read_to_string(repo_root.join("docs/runtime-backend.md"))
+        .expect("read runtime backend doc");
+    let multi_agent_guide = std::fs::read_to_string(repo_root.join("docs/MULTI-AGENT-V2-GUIDE.md"))
+        .expect("read multi-agent guide");
+
+    for (name, contents) in [
+        ("review-loop", review_loop.as_str()),
+        ("internal-orchestration", internal_orchestration.as_str()),
+        ("runtime-backend", runtime_backend.as_str()),
+        ("multi-agent-guide", multi_agent_guide.as_str()),
+    ] {
+        assert!(
+            contents.contains("reviewer-agent output"),
+            "{name} should require reviewer-agent output evidence"
+        );
+        assert!(
+            contents.contains("parent") && contents.contains("judgment"),
+            "{name} should distinguish parent orchestration from review judgment"
+        );
+    }
+
+    assert!(
+        review_loop.contains("must not substitute its own code, spec, intent,\nintegration, or mission-close judgment"),
+        "review-loop must explicitly forbid parent self-review without a small-slice loophole"
+    );
+}
+
+#[test]
+fn reviewer_lane_mutation_guard_requires_parent_truth_snapshot() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "reviewer-lane-mutation-requires-snapshot";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+
+    let error = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "would-be-child-reviewer",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": ["reviewer-output:no-snapshot-lane", "RECEIPTS/test-output.txt"],
+            "findings": [],
+            "disposition_notes": ["No snapshot should be rejected."],
+            "next_required_branch": "execution"
+        }),
+    );
+    assert!(
+        error.contains("requires review_truth_snapshot"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn reviewer_evidence_snapshot_contract_captures_and_validates_bounded_brief() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "reviewer-evidence-snapshot";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+
+    let snapshot = run_json(
+        repo.path(),
+        &[
+            "internal",
+            "capture-review-evidence-snapshot",
+            "--mission-id",
+            mission_id,
+            "--bundle-id",
+            &bundle_id,
+        ],
+        json!({}),
+    );
+    assert_eq!(snapshot["bundle_id"], bundle_id);
+    assert_eq!(snapshot["source_package_id"].is_string(), true);
+    assert!(
+        snapshot["reviewer_instructions"]
+            .as_array()
+            .expect("instructions")
+            .iter()
+            .any(|instruction| instruction.as_str().expect("instruction").contains("NONE"))
+    );
+    assert!(
+        snapshot["evidence_refs"]
+            .as_array()
+            .expect("evidence refs")
+            .iter()
+            .any(|reference| reference
+                .as_str()
+                .expect("reference")
+                .contains("RECEIPTS/test-output.txt"))
+    );
+    assert!(
+        snapshot.get("review_truth_snapshot").is_none(),
+        "child-visible review evidence snapshot must not include the parent writeback snapshot"
+    );
+    assert_eq!(snapshot["review_truth_guard"]["bundle_id"], bundle_id);
+    assert!(
+        snapshot["review_truth_guard"]["guard_fingerprint"]
+            .as_str()
+            .expect("guard fingerprint")
+            .starts_with("sha256:")
+    );
+
+    let validation = run_json(
+        repo.path(),
+        &[
+            "internal",
+            "validate-review-evidence-snapshot",
+            "--mission-id",
+            mission_id,
+            "--bundle-id",
+            &bundle_id,
+        ],
+        json!({}),
+    );
+    assert_eq!(validation["valid"], true);
+
+    let snapshot_path = repo.path().join(format!(
+        ".ralph/missions/{mission_id}/review-evidence-snapshots/{bundle_id}.json"
+    ));
+    let mut tampered: Value =
+        serde_json::from_slice(&std::fs::read(&snapshot_path).expect("read snapshot"))
+            .expect("parse snapshot");
+    tampered["proof_rows_under_review"] = json!([]);
+    std::fs::write(
+        &snapshot_path,
+        serde_json::to_vec_pretty(&tampered).expect("encode tampered snapshot"),
+    )
+    .expect("write tampered snapshot");
+
+    let tampered_validation = run_json(
+        repo.path(),
+        &[
+            "internal",
+            "validate-review-evidence-snapshot",
+            "--mission-id",
+            mission_id,
+            "--bundle-id",
+            &bundle_id,
+        ],
+        json!({}),
+    );
+    assert_eq!(tampered_validation["valid"], false);
+    assert!(
+        tampered_validation["findings"]
+            .as_array()
+            .expect("findings")
+            .iter()
+            .any(|finding| finding == "proof_rows_under_review_missing")
+    );
+    assert!(
+        tampered_validation["findings"]
+            .as_array()
+            .expect("findings")
+            .iter()
+            .any(|finding| finding == "proof_rows_under_review_mismatch")
+    );
+}
+
+#[test]
+fn reviewer_lane_canonical_write_isolation_redacts_parent_truth_snapshot_from_child_evidence() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "reviewer-lane-canonical-write-isolation";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+
+    let snapshot = run_json(
+        repo.path(),
+        &[
+            "internal",
+            "capture-review-evidence-snapshot",
+            "--mission-id",
+            mission_id,
+            "--bundle-id",
+            &bundle_id,
+        ],
+        json!({}),
+    );
+
+    assert!(
+        snapshot.get("review_truth_snapshot").is_none(),
+        "review evidence snapshot leaked the parent writeback capability: {snapshot}"
+    );
+    assert_eq!(snapshot["review_truth_guard"]["bundle_id"], bundle_id);
+    assert!(
+        snapshot["review_truth_guard"]["artifact_fingerprint_count"]
+            .as_u64()
+            .expect("artifact count")
+            > 0
+    );
+
+    let canonical_truth_path = repo.path().join(format!(
+        ".ralph/missions/{mission_id}/review-truth-snapshots/{bundle_id}.json"
+    ));
+    assert!(
+        canonical_truth_path.is_file(),
+        "parent-held canonical truth snapshot should still exist"
+    );
+}
+
+#[test]
+fn reviewer_evidence_snapshot_rejects_tampered_review_truth_guard_binding() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "reviewer-evidence-truth-binding";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let parent_truth = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+
+    run_json(
+        repo.path(),
+        &[
+            "internal",
+            "capture-review-evidence-snapshot",
+            "--mission-id",
+            mission_id,
+            "--bundle-id",
+            &bundle_id,
+        ],
+        json!({}),
+    );
+    let snapshot_path = repo.path().join(format!(
+        ".ralph/missions/{mission_id}/review-evidence-snapshots/{bundle_id}.json"
+    ));
+    let mut tampered: Value =
+        serde_json::from_slice(&std::fs::read(&snapshot_path).expect("read snapshot"))
+            .expect("parse snapshot");
+    tampered["review_truth_guard"]["artifact_fingerprint_count"] = json!(0);
+    std::fs::write(
+        &snapshot_path,
+        serde_json::to_vec_pretty(&tampered).expect("encode tampered snapshot"),
+    )
+    .expect("write tampered snapshot");
+
+    let validation = run_json(
+        repo.path(),
+        &[
+            "internal",
+            "validate-review-evidence-snapshot",
+            "--mission-id",
+            mission_id,
+            "--bundle-id",
+            &bundle_id,
+        ],
+        json!({}),
+    );
+    assert_eq!(validation["valid"], false);
+    assert!(
+        validation["findings"]
+            .as_array()
+            .expect("findings")
+            .iter()
+            .filter_map(|finding| finding.as_str())
+            .any(|finding| finding.starts_with("review_truth_guard_binding_invalid:")),
+        "unexpected findings: {validation}"
+    );
+
+    capture_review_evidence_snapshot(repo.path(), mission_id, &bundle_id);
+    let persisted_truth_code_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        &bundle_id,
+        "review_code_bug_persisted_parent_truth",
+    );
+    let persisted_truth_spec_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        &bundle_id,
+        "review_spec_intent_persisted_parent_truth",
+    );
+
+    let parent_truth_path = repo.path().join(format!(
+        ".ralph/missions/{mission_id}/review-truth-snapshots/{bundle_id}.json"
+    ));
+    let persisted_parent_truth: Value =
+        serde_json::from_slice(&std::fs::read(&parent_truth_path).expect("read parent truth"))
+            .expect("parse parent truth");
+    let missing_token_error = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                persisted_truth_code_output["evidence_ref"].as_str().expect("code evidence ref"),
+                persisted_truth_spec_output["evidence_ref"].as_str().expect("spec evidence ref"),
+                "RECEIPTS/test-output.txt"
+            ],
+            "findings": [],
+            "disposition_notes": ["Persisted parent truth is a verifier, not writeback authority."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": persisted_parent_truth
+        }),
+    );
+    assert!(
+        missing_token_error.contains("writeback_authority_token is required"),
+        "unexpected error: {missing_token_error}"
+    );
+
+    let error = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                persisted_truth_code_output["evidence_ref"].as_str().expect("code evidence ref"),
+                persisted_truth_spec_output["evidence_ref"].as_str().expect("spec evidence ref"),
+                "RECEIPTS/test-output.txt"
+            ],
+            "findings": [],
+            "disposition_notes": ["Tampered snapshot should not be accepted."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": tampered["review_truth_guard"].clone()
+        }),
+    );
+    assert!(
+        error.contains("missing field") || error.contains("artifact_fingerprints"),
+        "unexpected error: {error}"
+    );
+
+    capture_review_evidence_snapshot(repo.path(), mission_id, &bundle_id);
+    let parent_truth_code_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        &bundle_id,
+        "review_code_bug_parent_held_truth",
+    );
+    let parent_truth_spec_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        &bundle_id,
+        "review_spec_intent_parent_held_truth",
+    );
+    let review = run_json(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                parent_truth_code_output["evidence_ref"].as_str().expect("code evidence ref"),
+                parent_truth_spec_output["evidence_ref"].as_str().expect("spec evidence ref"),
+                "RECEIPTS/test-output.txt"
+            ],
+            "findings": [],
+            "disposition_notes": ["Parent-held truth snapshot remains the writeback capability."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": parent_truth
+        }),
+    );
+    assert_eq!(review["blocking_findings"], 0);
+}
+
+#[test]
+fn reviewer_lane_canonical_write_isolation_stop_hook_detects_review_task_path() {
+    let repo = TempDir::new().expect("temp repo");
+    let stop = run_stop_hook_with_payload(
+        repo.path(),
+        json!({
+            "cwd": repo.path().display().to_string(),
+            "taskPath": "/root/review_authority_code_1"
+        }),
+    );
+    assert_eq!(stop["decision"], Value::Null);
+    assert!(
+        stop["systemMessage"]
+            .as_str()
+            .expect("reviewer system message")
+            .contains("Subagent lane may stop")
+    );
+}
+
 #[test]
 fn internal_help_prefers_canonical_command_names() {
     let binary = assert_cmd::cargo::cargo_bin("codex1");
@@ -96,6 +2387,8 @@ fn internal_help_prefers_canonical_command_names() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("materialize-plan"));
     assert!(stdout.contains("record-review-outcome"));
+    assert!(stdout.contains("capture-review-evidence-snapshot"));
+    assert!(stdout.contains("validate-review-evidence-snapshot"));
     assert!(stdout.contains("append-closeout"));
     assert!(stdout.contains("repair-state"));
     assert!(stdout.contains("validate-mission-artifacts"));
@@ -276,6 +2569,20 @@ fn internal_runtime_flow_creates_mission_package_and_review_contracts() {
     );
     assert_eq!(bundle_validation["valid"], true);
 
+    let review_snapshot = capture_review_truth_snapshot(repo.path(), mission_id, bundle_id);
+    capture_review_evidence_snapshot(repo.path(), mission_id, bundle_id);
+    let code_reviewer_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        bundle_id,
+        "review_code_bug_runtime_flow",
+    );
+    let spec_reviewer_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        bundle_id,
+        "review_spec_intent_runtime_flow",
+    );
     let review = run_json(
         repo.path(),
         &["internal", "record-review-outcome"],
@@ -286,10 +2593,15 @@ fn internal_runtime_flow_creates_mission_package_and_review_contracts() {
             "verdict": "clean",
             "target_spec_id": "runtime_core",
             "governing_refs": ["bundle"],
-            "evidence_refs": ["RECEIPTS/test-output.txt"],
+            "evidence_refs": [
+                code_reviewer_output["evidence_ref"].as_str().expect("code evidence ref"),
+                spec_reviewer_output["evidence_ref"].as_str().expect("spec evidence ref"),
+                "RECEIPTS/test-output.txt"
+            ],
             "findings": [],
             "disposition_notes": ["Review bundle is fresh and clean."],
-            "next_required_branch": "execution"
+            "next_required_branch": "execution",
+            "review_truth_snapshot": review_snapshot
         }),
     );
     assert_eq!(review["blocking_findings"], 0);
@@ -332,6 +2644,21 @@ fn internal_runtime_flow_creates_mission_package_and_review_contracts() {
     let post_completion_bundle_id = post_completion_bundle["bundle_id"]
         .as_str()
         .expect("post-completion bundle id");
+    let post_completion_snapshot =
+        capture_review_truth_snapshot(repo.path(), mission_id, post_completion_bundle_id);
+    capture_review_evidence_snapshot(repo.path(), mission_id, post_completion_bundle_id);
+    let post_completion_code_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        post_completion_bundle_id,
+        "review_code_bug_clean_before_ledger_removal",
+    );
+    let post_completion_spec_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        post_completion_bundle_id,
+        "review_spec_intent_clean_before_ledger_removal",
+    );
     let post_completion_review = run_json(
         repo.path(),
         &["internal", "record-review-outcome"],
@@ -342,10 +2669,15 @@ fn internal_runtime_flow_creates_mission_package_and_review_contracts() {
             "verdict": "clean",
             "target_spec_id": "runtime_core",
             "governing_refs": ["bundle"],
-            "evidence_refs": ["RECEIPTS/test-output.txt"],
+            "evidence_refs": [
+                post_completion_code_output["evidence_ref"].as_str().expect("code evidence ref"),
+                post_completion_spec_output["evidence_ref"].as_str().expect("spec evidence ref"),
+                "RECEIPTS/test-output.txt"
+            ],
             "findings": [],
             "disposition_notes": ["Post-completion review bundle is fresh and clean."],
-            "next_required_branch": "mission_close"
+            "next_required_branch": "mission_close",
+            "review_truth_snapshot": post_completion_snapshot
         }),
     );
     assert_eq!(post_completion_review["blocking_findings"], 0);
@@ -387,6 +2719,49 @@ fn internal_runtime_flow_creates_mission_package_and_review_contracts() {
     let mission_close_bundle_id = mission_close_bundle["bundle_id"]
         .as_str()
         .expect("mission-close bundle id");
+    let mission_close_snapshot =
+        capture_review_truth_snapshot(repo.path(), mission_id, mission_close_bundle_id);
+    capture_review_evidence_snapshot(repo.path(), mission_id, mission_close_bundle_id);
+    let mission_close_generic_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        mission_close_bundle_id,
+        "review_mission_close_generic",
+    );
+    let missing_mission_close_lanes = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": mission_close_bundle_id,
+            "reviewer": "integration-test",
+            "verdict": "complete",
+            "governing_refs": ["mission-close-bundle"],
+            "evidence_refs": [
+                mission_close_generic_output["evidence_ref"].as_str().expect("generic evidence ref"),
+                "RECEIPTS/test-output.txt"
+            ],
+            "findings": [],
+            "disposition_notes": ["Mission-close review cannot close with only a generic reviewer output."],
+            "review_truth_snapshot": mission_close_snapshot.clone()
+        }),
+    );
+    assert!(
+        missing_mission_close_lanes.contains("missing required reviewer-output lane coverage"),
+        "unexpected error: {missing_mission_close_lanes}"
+    );
+    let mission_close_code_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        mission_close_bundle_id,
+        "review_code_bug_mission_close",
+    );
+    let mission_close_spec_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        mission_close_bundle_id,
+        "review_spec_intent_mission_close",
+    );
 
     let mission_close_review = run_json(
         repo.path(),
@@ -397,9 +2772,14 @@ fn internal_runtime_flow_creates_mission_package_and_review_contracts() {
             "reviewer": "integration-test",
             "verdict": "complete",
             "governing_refs": ["mission-close-bundle"],
-            "evidence_refs": ["RECEIPTS/test-output.txt"],
+            "evidence_refs": [
+                mission_close_code_output["evidence_ref"].as_str().expect("code evidence ref"),
+                mission_close_spec_output["evidence_ref"].as_str().expect("spec evidence ref"),
+                "RECEIPTS/test-output.txt"
+            ],
             "findings": [],
-            "disposition_notes": ["Mission-close review is clean."]
+            "disposition_notes": ["Mission-close review is clean."],
+            "review_truth_snapshot": mission_close_snapshot
         }),
     );
     assert_eq!(mission_close_review["blocking_findings"], 0);
@@ -1175,6 +3555,20 @@ fn visible_artifact_validation_requires_review_ledger_after_review_history() {
         }),
     );
     let bundle_id = bundle["bundle_id"].as_str().expect("bundle id");
+    let snapshot = capture_review_truth_snapshot(repo.path(), mission_id, bundle_id);
+    capture_review_evidence_snapshot(repo.path(), mission_id, bundle_id);
+    let code_reviewer_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        bundle_id,
+        "review_code_bug_ledger_removal",
+    );
+    let spec_reviewer_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        bundle_id,
+        "review_spec_intent_ledger_removal",
+    );
     run_json(
         repo.path(),
         &["internal", "record-review-outcome"],
@@ -1185,10 +3579,15 @@ fn visible_artifact_validation_requires_review_ledger_after_review_history() {
             "verdict": "clean",
             "target_spec_id": "runtime_core",
             "governing_refs": ["bundle"],
-            "evidence_refs": ["RECEIPTS/test-output.txt"],
+            "evidence_refs": [
+                code_reviewer_output["evidence_ref"].as_str().expect("code evidence ref"),
+                spec_reviewer_output["evidence_ref"].as_str().expect("spec evidence ref"),
+                "RECEIPTS/test-output.txt"
+            ],
             "findings": [],
             "disposition_notes": ["Review bundle is fresh and clean."],
-            "next_required_branch": "execution"
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot
         }),
     );
 
@@ -1282,6 +3681,24 @@ fn halt_hard_blocked_contradictions_stay_non_terminal_until_reviewed_closeout() 
     assert_eq!(state["verdict"], "replan_required");
     assert_eq!(state["terminality"], "actionable_non_terminal");
 
+    let stop = run_stop_hook(repo.path());
+    assert_eq!(stop["decision"], Value::Null);
+    assert!(
+        stop["systemMessage"]
+            .as_str()
+            .is_some_and(|message| message.contains("Ralph loop is not active"))
+    );
+
+    run_json(
+        repo.path(),
+        &["internal", "begin-loop-lease"],
+        json!({
+            "mission_id": "blocked-mission",
+            "mode": "execution_loop",
+            "owner": "parent-execute",
+            "reason": "Explicit execution loop should still block on hard-block review requirements."
+        }),
+    );
     let stop = run_stop_hook(repo.path());
     assert_eq!(stop["decision"], "block");
     assert!(
@@ -1462,6 +3879,20 @@ fn newer_packages_and_bundles_stale_older_artifacts() {
         }),
     );
     let bundle_one_id = bundle_one["bundle_id"].as_str().expect("bundle one id");
+    let stale_snapshot = capture_review_truth_snapshot(repo.path(), mission_id, bundle_one_id);
+    capture_review_evidence_snapshot(repo.path(), mission_id, bundle_one_id);
+    let stale_code_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        bundle_one_id,
+        "review_code_bug_stale_bundle",
+    );
+    let stale_spec_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        bundle_one_id,
+        "review_spec_intent_stale_bundle",
+    );
 
     let package_two = run_json(
         repo.path(),
@@ -1577,10 +4008,15 @@ fn newer_packages_and_bundles_stale_older_artifacts() {
             "verdict": "clean",
             "target_spec_id": "runtime_core",
             "governing_refs": ["bundle"],
-            "evidence_refs": ["RECEIPTS/test-output.txt"],
+            "evidence_refs": [
+                stale_code_output["evidence_ref"].as_str().expect("code evidence ref"),
+                stale_spec_output["evidence_ref"].as_str().expect("spec evidence ref"),
+                "RECEIPTS/test-output.txt"
+            ],
             "findings": [],
             "disposition_notes": ["Should fail because the bundle is stale."],
-            "next_required_branch": "execution"
+            "next_required_branch": "execution",
+            "review_truth_snapshot": stale_snapshot
         }),
     );
     assert!(stale_review_error.contains("review bundle"));

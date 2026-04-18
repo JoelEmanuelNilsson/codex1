@@ -1,0 +1,58 @@
+{
+  "bundle_id": "90ca57cc-ee7e-4857-9772-2e41c6b12f5e",
+  "mission_id": "review-loop-delegated-review-only",
+  "bundle_kind": "spec_review",
+  "source_package_id": "68eb86c9-e17d-4920-be1a-2e0b7680422f",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:3de1e1e3042357e940a4dbb53251c54a8a7fc31288505ad9d8b4ae9b4c39b785",
+  "blueprint_revision": 16,
+  "blueprint_fingerprint": "sha256:cded0d54c8006846633e31bb172ffa0ba686ccbc69a147d8b1cdca40528173ca",
+  "governing_revision": "spec:reviewer_output_inbox_contract:1",
+  "mandatory_review_lenses": [
+    "correctness",
+    "evidence_adequacy",
+    "operability_rollback_observability",
+    "interface_compatibility",
+    "spec_conformance",
+    "operability_rollback_observability."
+  ],
+  "target_spec_id": "reviewer_output_inbox_contract",
+  "spec_revision": 1,
+  "spec_fingerprint": "sha256:14c6821955de0298e1bb262b526ff81cea964853b8f131b0c50d4f9eb6c103d1",
+  "proof_rows_under_review": [
+    "cargo test -p codex1 --test runtime_internal reviewer_output_inbox_contract --quiet",
+    "cargo test -p codex1 --test runtime_internal review_writeback_authority_token --quiet",
+    "cargo test -p codex1 --test runtime_internal delegated_review_authority --quiet",
+    "cargo fmt --all --check",
+    "codex1 internal validate-mission-artifacts --mission-id review-loop-delegated-review-only",
+    "cargo test -p codex1 --test runtime_internal --quiet",
+    "cargo build -p codex1"
+  ],
+  "receipts": [
+    "PLANS/review-loop-delegated-review-only/specs/reviewer_output_inbox_contract/RECEIPTS/2026-04-16-reviewer-output-inbox-proof.txt"
+  ],
+  "changed_files_or_diff": [
+    "crates/codex1-core/src/runtime.rs",
+    "crates/codex1-core/src/paths.rs",
+    "crates/codex1-core/src/lib.rs",
+    "crates/codex1/src/internal/mod.rs",
+    "crates/codex1/tests/runtime_internal.rs",
+    ".codex/skills/review-loop/SKILL.md",
+    ".codex/skills/internal-orchestration/SKILL.md",
+    "docs/runtime-backend.md",
+    "PLANS/review-loop-delegated-review-only/specs/reviewer_output_inbox_contract/RECEIPTS/2026-04-16-reviewer-output-inbox-proof.txt"
+  ],
+  "touched_interface_contracts": [
+    "Reviewer output inbox artifact schema.",
+    "record-reviewer-output internal command.",
+    "record-review-outcome reviewer evidence validation.",
+    "Parent/child review-loop authority contract."
+  ],
+  "mission_level_proof_rows": [],
+  "cross_spec_claim_refs": [],
+  "included_spec_refs": [],
+  "visible_artifact_refs": [],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [],
+  "generated_at": "2026-04-16T20:49:44.666065Z"
+}

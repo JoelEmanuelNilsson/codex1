@@ -1,0 +1,29 @@
+{
+  "mission_id": "global-codex1-installer",
+  "bundle_id": "94787774-980e-47ef-977e-4804f004096c",
+  "reviewer_id": "review_mission_close_intent_94787774",
+  "reviewer_output_id": "065b4a2a-436e-450f-9079-594706770e82",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P2",
+      "title": "Mission-close bundle only machine-checks the final repair spec",
+      "evidence_refs": [
+        ".ralph/missions/global-codex1-installer/bundles/94787774-980e-47ef-977e-4804f004096c.json:46-48",
+        "PLANS/global-codex1-installer/specs/cli_command_split/SPEC.md:7-12",
+        "PLANS/global-codex1-installer/specs/global_setup_backup/SPEC.md:7-12",
+        "PLANS/global-codex1-installer/specs/doctor_restore_verification/SPEC.md:7-12",
+        "PLANS/global-codex1-installer/specs/review_lane_completion_guard/SPEC.md:7-12",
+        "crates/codex1-core/src/runtime.rs:10245-10270",
+        "crates/codex1-core/src/runtime.rs:10301-10350",
+        "PLANS/global-codex1-installer/OUTCOME-LOCK.md:19-31",
+        "PLANS/global-codex1-installer/PROGRAM-BLUEPRINT.md:91-117"
+      ],
+      "rationale": "The mission-close bundle is supposed to support terminal judgment over the full locked installer mission, including setup/init, global backups, doctor/restore, lane coverage, and authority repairs. However its machine-bound included_spec_refs contains only reviewer_writeback_authority_enforcement. The earlier active and complete workstreams remain at blueprint revisions 4, 6, 7, and 8, while load_mission_close_spec_ids only includes active non-descoped specs whose blueprint_revision equals the bundle blueprint revision. As a result mission_close_eligibility_findings checks completion and passed review only for the final repair spec, so a clean parent writeback could complete the mission without machine-checking the earlier active completed specs that satisfy the locked done-when criteria and proof matrix.",
+      "suggested_next_action": "Repair mission-close package/bundle construction so carried-forward active completed specs are included in mission-close eligibility, either by refreshing their blueprint bindings or by loading all active non-descoped mission specs regardless of historical blueprint revision when they are preserved work. Recompile the mission-close bundle and rerun the two mission-close reviewer lanes before recording a terminal outcome."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/global-codex1-installer/review-evidence-snapshots/94787774-980e-47ef-977e-4804f004096c.json",
+  "source_evidence_snapshot_fingerprint": "sha256:8af2dd7dcded44a2e8f2aee19a810c12e91e43eb3614f39eb8e5e6d954f49bcf",
+  "recorded_at": "2026-04-17T23:33:31.810295Z"
+}

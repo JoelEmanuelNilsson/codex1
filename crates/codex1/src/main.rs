@@ -15,6 +15,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum TopLevelCommand {
     Setup(commands::SetupArgs),
+    Init(commands::InitArgs),
     Doctor(commands::DoctorArgs),
     QualifyCodex(commands::QualifyArgs),
     Restore(commands::RestoreArgs),
@@ -27,6 +28,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         TopLevelCommand::Setup(args) => commands::setup::run(args),
+        TopLevelCommand::Init(args) => commands::init::run(args),
         TopLevelCommand::Doctor(args) => commands::doctor::run(args),
         TopLevelCommand::QualifyCodex(args) => commands::qualify::run(args),
         TopLevelCommand::Restore(args) => commands::restore::run(args),

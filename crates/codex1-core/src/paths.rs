@@ -205,6 +205,52 @@ impl MissionPaths {
     }
 
     #[must_use]
+    pub fn review_evidence_snapshots_dir(&self) -> PathBuf {
+        self.hidden_mission_root().join("review-evidence-snapshots")
+    }
+
+    #[must_use]
+    pub fn review_evidence_snapshot(&self, bundle_id: &str) -> PathBuf {
+        self.review_evidence_snapshots_dir().join(format!(
+            "{}.json",
+            checked_id_component("bundle_id", bundle_id)
+        ))
+    }
+
+    #[must_use]
+    pub fn review_truth_snapshots_dir(&self) -> PathBuf {
+        self.hidden_mission_root().join("review-truth-snapshots")
+    }
+
+    #[must_use]
+    pub fn review_truth_snapshot(&self, bundle_id: &str) -> PathBuf {
+        self.review_truth_snapshots_dir().join(format!(
+            "{}.json",
+            checked_id_component("bundle_id", bundle_id)
+        ))
+    }
+
+    #[must_use]
+    pub fn reviewer_outputs_dir(&self) -> PathBuf {
+        self.hidden_mission_root().join("reviewer-outputs")
+    }
+
+    #[must_use]
+    pub fn reviewer_outputs_for_bundle_dir(&self, bundle_id: &str) -> PathBuf {
+        self.reviewer_outputs_dir()
+            .join(checked_id_component("bundle_id", bundle_id))
+    }
+
+    #[must_use]
+    pub fn reviewer_output(&self, bundle_id: &str, output_id: &str) -> PathBuf {
+        self.reviewer_outputs_for_bundle_dir(bundle_id)
+            .join(format!(
+                "{}.json",
+                checked_id_component("reviewer_output_id", output_id)
+            ))
+    }
+
+    #[must_use]
     pub fn execution_graph(&self) -> PathBuf {
         self.hidden_mission_root().join("execution-graph.json")
     }
@@ -217,6 +263,11 @@ impl MissionPaths {
     #[must_use]
     pub fn selection_state(&self) -> PathBuf {
         self.ralph_root().join("selection-state.json")
+    }
+
+    #[must_use]
+    pub fn loop_lease(&self) -> PathBuf {
+        self.ralph_root().join("loop-lease.json")
     }
 }
 

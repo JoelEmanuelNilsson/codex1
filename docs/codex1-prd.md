@@ -287,7 +287,7 @@ The public workflow surface for V1 is:
 - `$autopilot`
 - `$plan`
 - `$execute`
-- `$review`
+- `$review-loop`
 
 These names are simple, obvious, and durable. V1 should not rename them.
 
@@ -295,7 +295,7 @@ These names are simple, obvious, and durable. V1 should not rename them.
 
 - `$clarify` is the only mandatory primitive the user must understand
 - `$autopilot` is the preferred one-command workflow in the final product
-- `$plan`, `$execute`, and `$review` remain public operator workflows
+- `$plan`, `$execute`, and `$review-loop` remain public operator workflows
 - `replan` remains internal
 
 Public-surface rule:
@@ -325,7 +325,7 @@ Rules:
 | `$autopilot` | run the end-to-end mission flow under Ralph discipline | user ask or existing mission | continuation until an honest terminal verdict (`complete` or `hard_blocked`) or a durable waiting non-terminal verdict (`needs_user`) |
 | `$plan` | run the planning loop for a locked mission until the planning completion gate is reached, a durable waiting non-terminal verdict occurs, or an honest terminal verdict is reached | mission id or current locked mission | `PROGRAM-BLUEPRINT.md`, frontier `SPEC.md` files, and a passed execution package for the next target |
 | `$execute` | run the execution loop for an already-packaged mission/spec/wave target until the next honest gate, durable waiting non-terminal verdict, or terminal verdict | mission/spec/wave target | receipts, state updates, review-ready output |
-| `$review` | perform risk-first review against a bounded target and its proof | mission/spec/wave/diff target | findings plus continuation verdict |
+| `$review-loop` | orchestrate risk-first review loops against a bounded target and its proof | mission/spec/wave/diff target | findings plus continuation verdict |
 
 ### Happy path
 
@@ -334,7 +334,7 @@ Rules:
 3. `$clarify` creates the mission package, gathers truth, asks high-leverage questions, and writes the first sacred mission artifact.
 4. Once the mission is locked enough, `$plan` produces the planning package and packages the next execution-safe target.
 5. `$execute` advances the packaged target under Ralph discipline.
-6. `$review` remains available directly and also participates inside the execution loop.
+6. `$review-loop` remains available directly as the parent/orchestrator review workflow and also participates inside the execution loop.
 7. If reality breaks assumptions, structured replan signals are raised.
 8. The mission continues until the default done bar is reached, an honest terminal verdict is reached, or the mission enters a durable non-terminal waiting state that is explicitly waiting on the user.
 
@@ -361,7 +361,7 @@ Plain-language interpretation:
 - `$autopilot` is "advance the same Ralph-governed mission cycle repeatedly until the mission is truly terminal or is durably waiting on the user"
 - if the next branch is known and Codex can keep acting without new user input, `$autopilot` must keep going
 - if only the user can answer the next question after bounded autonomous attempts have failed, `$autopilot` may yield the turn but must leave the mission open and resumable
-- a builder must be able to remove the word `$autopilot` from the interaction, drive the same mission manually through `$clarify` / `$plan` / `$execute` / `$review`, and observe the same mission truth, verdict family, and closeout behavior
+- a builder must be able to remove the word `$autopilot` from the interaction, drive the same mission manually through `$clarify` / `$plan` / `$execute` / `$review-loop`, and observe the same mission truth, verdict family, and closeout behavior
 
 Remaining open detail:
 
@@ -559,7 +559,7 @@ Narrower operator ergonomics may still require later Codex research, but impleme
 V1 naming decisions are:
 
 - Product name: `Codex1 Harness`
-- Public workflows: `$clarify`, `$autopilot`, `$plan`, `$execute`, `$review`
+- Public workflows: `$clarify`, `$autopilot`, `$plan`, `$execute`, `$review-loop`
 - Internal workflow: `replan`
 - Clarification working artifact: `Mission State`
 - Sacred artifact: `Outcome Lock`
@@ -1064,7 +1064,7 @@ V1-core thread-cap rule:
 
 Authorization rule:
 
-- invocation of a public workflow such as `$plan`, `$execute`, `$review`, or `$autopilot` counts as user authorization for the main thread to use bounded internal subagents under the safety rules in this PRD
+- invocation of a public workflow such as `$plan`, `$execute`, `$review-loop`, or `$autopilot` counts as user authorization for the main thread to use bounded internal subagents under the safety rules in this PRD
 - this does not authorize unbounded delegation, hidden parallel write sprawl, or delegation that escapes the declared mission contracts
 
 Platform-default clarification:
@@ -1469,7 +1469,7 @@ Execution loop rule:
 - `$execute` must not start from blueprint approval alone; it starts only from a passed execution package for the selected target
 - `$execute` continues until the target honestly reaches a terminal outcome for that looped target: `hard_blocked` or `complete`
 - `needs_user` is not terminal for `$execute`; it writes durable waiting state, yields control to the user, and leaves the target open for later resume
-- if the current execution cycle reaches a blocking review gate, the main orchestrating thread invokes `$review`, records durable state, and then continues the execution loop from the post-review truth
+- if the current execution cycle reaches a blocking review gate, the main orchestrating thread invokes `$review-loop`, records durable state, and then continues the execution loop from the post-review truth
 - if the current execution cycle needs bounded repair inside the current execution contract, the main orchestrating thread invokes bounded repair subagents, records durable state, and then continues the execution loop
 - if the current execution cycle crosses the declared replan boundary or breaks a broader assumption/contract, the main orchestrating thread invokes the internal `replan` skill, updates the reopened layer honestly, and then continues from the reopened truth
 - if the selected next frontier is not currently packaged, the mission must return to `execution_package` rather than letting `$execute` improvise
@@ -1735,8 +1735,8 @@ Blocking findings must block completion until repaired, explicitly descoped, or 
 Execution-to-review rule:
 
 - review is not a parallel product outside execution discipline; it is one of the required gates inside the mission loop
-- when a selected target reaches a blocking review gate, `$execute` must route into `$review` rather than pretending the target is finished
-- after `$review`, the main orchestrating thread must either continue execution, invoke bounded repair, invoke replan, yield in durable `needs_user` waiting state, or end only with `hard_blocked` or `complete`
+- when a selected target reaches a blocking review gate, `$execute` must route into `$review-loop` rather than pretending the target is finished
+- after `$review-loop`, the main orchestrating thread must either continue execution, invoke bounded repair, invoke replan, yield in durable `needs_user` waiting state, or end only with `hard_blocked` or `complete`
 
 Independence rule:
 
@@ -1866,7 +1866,7 @@ Rules:
 The following operator and edge mechanics are intentionally deferred and must be resolved through Codex research before implementation:
 
 - exact operator UX for running the `execution_package` phase and gate in Codex CLI
-- exact operator UX for invoking `$review`, bounded repair, and `replan` from inside `$execute`
+- exact operator UX for invoking `$review-loop`, bounded repair, and `replan` from inside `$execute`
 - exact review-loop ergonomics in Codex CLI once the frozen Ralph continuity contract is already in place
 - exact operator-facing UX for observing and steering already-frozen native-subagent ownership/session reconciliation during execute/review/repair across resumes
 - mission-close operator continuation ergonomics
@@ -2107,7 +2107,7 @@ The verdict model should at least express:
 Verdict interpretation rule:
 
 - `continue_required`, `review_required`, `repair_required`, `replan_required`, and `needs_user` are continuation verdicts, not honest final completion claims
-- `review_required` means the orchestrating thread must invoke `$review`
+- `review_required` means the orchestrating thread must invoke `$review-loop`
 - `repair_required` means the orchestrating thread must invoke bounded repair work inside the current execution layer when still valid
 - `replan_required` means the orchestrating thread must invoke the internal `replan` skill and reopen the correct layer before continuing
 - `needs_user` means bounded autonomous attempts have already failed and the remaining blocker is a genuine human-only authority or intervention gap; the mission remains open in a durable waiting state and may yield control to the user, but Ralph must not mark the mission terminal or complete
@@ -2621,7 +2621,7 @@ Native subagent reconciliation rule on resume:
 
 Reference scenarios:
 
-- **Normal continue**: `$execute` ends a cycle with `review_required`; closeout names the review bundle; Stop blocks and the next turn routes into `$review`
+- **Normal continue**: `$execute` ends a cycle with `review_required`; closeout names the review bundle; Stop blocks and the next turn routes into `$review-loop`
 - **Normal waiting yield**: `$plan` reaches a product decision only the user can make; closeout records `needs_user` plus the exact question; the turn may yield, but the mission remains open
 - **Interrupted mid-cycle**: process dies after writing `ACTIVE-CYCLE` but before closeout; on resume, the system treats the cycle as interrupted and re-enters from the safest non-complete state
 - **True completion**: mission-close review passes, final closeout is `complete`, and later clean stop is allowed

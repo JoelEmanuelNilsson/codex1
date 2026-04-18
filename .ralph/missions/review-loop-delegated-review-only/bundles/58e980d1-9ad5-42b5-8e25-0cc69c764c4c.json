@@ -1,0 +1,62 @@
+{
+  "bundle_id": "58e980d1-9ad5-42b5-8e25-0cc69c764c4c",
+  "mission_id": "review-loop-delegated-review-only",
+  "bundle_kind": "spec_review",
+  "source_package_id": "fac8c579-05c9-4e6d-872c-e84b41491609",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:3de1e1e3042357e940a4dbb53251c54a8a7fc31288505ad9d8b4ae9b4c39b785",
+  "blueprint_revision": 2,
+  "blueprint_fingerprint": "sha256:65030aaeeeb6c24f35b26dd28cd072c1dd67fbd1b9b68e4e632fcfc397705805",
+  "governing_revision": "spec:delegated_review_authority_contract:2",
+  "mandatory_review_lenses": [
+    "code_bug_correctness",
+    "local_spec_intent",
+    "evidence_adequacy",
+    "interface_compatibility",
+    "operability_rollback_observability",
+    "spec_conformance",
+    "correctness",
+    "operability_rollback_observability."
+  ],
+  "target_spec_id": "delegated_review_authority_contract",
+  "spec_revision": 2,
+  "spec_fingerprint": "sha256:9be688cffe662ac71b3721c08371adf6d824f0627805cfe9abcf49b1e21617c8",
+  "proof_rows_under_review": [
+    "cargo test -p codex1 --test runtime_internal delegated_review_authority --quiet",
+    "cargo fmt --all --check",
+    "cargo run -p codex1 -- internal validate-mission-artifacts --mission-id review-loop-delegated-review-only",
+    "Test proves a parent-only clean review outcome without reviewer-agent output evidence is rejected or cannot clear the review gate.",
+    "Test proves a clean parent-owned writeback with reviewer-agent output evidence and a clean review truth snapshot succeeds.",
+    "Test proves a blocking finding outcome must also cite reviewer-agent evidence rather than parent-only judgment.",
+    "Source assertions prove $review-loop, internal-orchestration, and runtime docs forbid parent self-review and preserve allowed parent orchestration responsibilities.",
+    "cargo test -p codex1 --test runtime_internal delegated_review_authority --quiet or an equivalent targeted test passes.",
+    "cargo run -p codex1 -- internal validate-mission-artifacts --mission-id review-loop-delegated-review-only passes after receipt writeback.",
+    "P1: Public and internal workflow docs forbid parent self-review with no small-slice or high-context exception.",
+    "P2: record-review-outcome rejects or marks invalid review outcomes lacking reviewer-agent output evidence and lacking contamination/replan reason.",
+    "P3: Parent-owned clean writeback succeeds when reviewer-agent outputs are cited and the review truth snapshot is clean."
+  ],
+  "receipts": [
+    "PLANS/review-loop-delegated-review-only/specs/delegated_review_authority_contract/RECEIPTS/2026-04-16-delegated-review-authority-proof.txt"
+  ],
+  "changed_files_or_diff": [
+    ".codex/skills/review-loop/SKILL.md",
+    ".codex/skills/internal-orchestration/SKILL.md",
+    "docs/runtime-backend.md",
+    "docs/MULTI-AGENT-V2-GUIDE.md",
+    "crates/codex1-core/src/runtime.rs",
+    "crates/codex1/tests/runtime_internal.rs",
+    "PLANS/review-loop-delegated-review-only/specs/delegated_review_authority_contract/RECEIPTS/2026-04-16-delegated-review-authority-proof.txt"
+  ],
+  "touched_interface_contracts": [
+    "ReviewResultInput evidence acceptance contract",
+    "record-review-outcome guarded writeback contract",
+    "$review-loop parent/orchestrator authority boundary"
+  ],
+  "mission_level_proof_rows": [],
+  "cross_spec_claim_refs": [],
+  "included_spec_refs": [],
+  "visible_artifact_refs": [],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [],
+  "generated_at": "2026-04-16T18:22:38.22447Z"
+}

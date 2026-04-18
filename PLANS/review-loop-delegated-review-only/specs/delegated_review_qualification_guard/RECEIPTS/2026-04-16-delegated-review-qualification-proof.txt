@@ -1,0 +1,33 @@
+delegated_review_qualification_guard proof receipt
+date: 2026-04-16
+mission: review-loop-delegated-review-only
+spec: delegated_review_qualification_guard
+
+implemented changes
+- added the `delegated_review_authority` qualification gate
+- gate checks public `$review-loop` and internal orchestration wording for the delegated-review-only authority split
+- gate rejects review outcome writeback without reviewer-agent output evidence
+- gate rejects review outcome writeback without a review truth snapshot
+- repaired execution-package dependency binding so `spec:<id>` graph dependencies are accepted as revision-bearing dependency truth
+- added a regression proving a dependent spec package can satisfy graph dependencies with a `spec:<id>` dependency row
+- updated existing qualification review writeback smoke flows to cite reviewer-output evidence refs under the stricter review outcome contract
+- updated qualification docs to list and explain the delegated review authority gate
+
+verification
+- package: c1db1c9d-8eb8-435e-b0ec-d89f5a12461f
+- cargo test -p codex1-core compile_execution_package_accepts_spec_dependency_governing_refs --quiet
+- cargo test -p codex1 --test qualification_cli delegated_review --quiet
+- cargo run -p codex1 -- qualify-codex --json --live=false --self-hosting=false
+- cargo fmt --all --check
+- codex1 internal validate-execution-package --mission-id review-loop-delegated-review-only --package-id c1db1c9d-8eb8-435e-b0ec-d89f5a12461f --json
+
+qualification gate evidence
+- `delegated_review_authority`: pass
+- missing reviewer-agent output evidence rejected: true
+- missing review truth snapshot rejected: true
+- public docs checks passed: true
+- full offline qualification summary: 33 passed, 0 failed, 5 skipped; live/self-hosting gates intentionally disabled for this targeted run
+
+notes
+- The qualification command was run in offline mode with live native-Codex checks disabled and self-hosting disabled, which is the equivalent targeted gate run for this slice.
+- The gate remains skills-first: it inspects public workflow text and deterministic runtime behavior rather than introducing wrapper orchestration.

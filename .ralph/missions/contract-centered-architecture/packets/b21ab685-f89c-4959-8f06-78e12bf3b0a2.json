@@ -1,0 +1,73 @@
+{
+  "packet_id": "b21ab685-f89c-4959-8f06-78e12bf3b0a2",
+  "mission_id": "contract-centered-architecture",
+  "source_package_id": "e0e16656-d3f6-4e45-9959-3495868a50a6",
+  "target_spec_id": "support_surface_txn",
+  "blueprint_revision": 7,
+  "spec_revision": 2,
+  "allowed_read_paths": [
+    "crates/codex1-core/src",
+    "crates/codex1/src/commands",
+    "crates/codex1/tests"
+  ],
+  "allowed_write_paths": [
+    "crates/codex1-core/src",
+    "crates/codex1/src/commands",
+    "crates/codex1/tests"
+  ],
+  "proof_rows": [
+    "interrupted or failed helper-surface mutations can be diagnosed and rolled back from journal truth",
+    "setup, restore, and uninstall stop duplicating manifest schema and mutation semantics",
+    "helper qualification gates still pass or become stronger",
+    "cargo test -p codex1 qualification_cli"
+  ],
+  "required_checks": [
+    "cargo test -p codex1 qualification_cli"
+  ],
+  "review_lenses": [
+    "correctness",
+    "operability_rollback_observability",
+    "evidence_adequacy"
+  ],
+  "replan_boundary": {
+    "local_repair_allowed": false,
+    "trigger_matrix": [
+      {
+        "trigger_code": "write_scope_expansion",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "interface_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "dependency_truth_change",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "proof_obligation_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "review_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "protected_surface_change",
+        "reopen_layer": "mission_lock"
+      },
+      {
+        "trigger_code": "migration_rollout_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "outcome_lock_change",
+        "reopen_layer": "mission_lock"
+      }
+    ]
+  },
+  "explicitly_disallowed_decisions": [
+    "do not expand write scope",
+    "do not redesign public helper commands"
+  ]
+}

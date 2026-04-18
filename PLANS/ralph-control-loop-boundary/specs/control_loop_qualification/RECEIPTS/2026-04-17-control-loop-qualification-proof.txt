@@ -1,0 +1,49 @@
+control_loop_qualification proof receipt
+date: 2026-04-17
+mission: ralph-control-loop-boundary
+spec: control_loop_qualification
+package: f0baab23-a024-4d23-bbf2-a686e58ec7f2
+
+implemented changes
+- added required `control_loop_boundary` qualification gate
+- gate proves an installed Stop-hook surface is safe because Ralph enforcement is lease-scoped
+- gate exercises no-lease parent yield, generic subagent yield, active parent lease blocking, and paused lease yield
+- repaired qualification smoke flows to persist real `reviewer-output:<bundle-id>:<output-id>` inbox artifacts before `record-review-outcome`
+- repaired delegated-review authority doc check to normalize whitespace rather than depend on markdown line wrapping
+- documented the new control-loop qualification gate in qualification docs
+
+verification
+- cargo test -p codex1 --test qualification_cli control_loop --quiet
+  result: exit 0
+  output:
+    running 1 test
+    .
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 25 filtered out; finished in 4.74s
+- cargo fmt --all --check
+  result: exit 0
+  output: no output
+- codex1 internal validate-mission-artifacts --mission-id ralph-control-loop-boundary
+  result: exit 0
+  output:
+    findings: []
+    success: true
+- cargo run -p codex1 -- qualify-codex --json --live=false --self-hosting=false
+  result: exit 1 in this source workspace because `.codex/hooks.json` is intentionally paused by the user
+  output:
+    failing gate: project_hooks_file_present
+    message: Missing project `.codex/hooks.json`.
+    all other gates passed or skipped under the requested non-live/non-self-hosting mode
+  source report:
+    /Users/joel/codex1/.codex1/qualification/reports/20260417T101944Z--unknown--fa604827.json
+  control_loop_boundary evidence:
+    /Users/joel/codex1/.codex1/qualification/reports/20260417T101944Z--unknown--fa604827/control_loop_boundary.json
+    status: pass
+    checks: hook_surface_installed=true, no_lease_yielded=true, subagent_yielded=true, lease_active=true, active_parent_blocked=true, lease_paused=true, paused_parent_yielded=true, lease_cleared=true
+    failed_steps: []
+
+notes
+- The source workspace hook remains intentionally paused as `.codex/hooks.json.paused`; this slice does not restore it.
+- The targeted qualification test proves the full supported non-live qualification path in an isolated repo with an installed authoritative Stop hook.
+- The source qualification caveat is accepted only for the paused-hook environment; it is not a product bypass for installed-hook qualification.
+- Review wave db3632de-8872-47f5-bc9d-ee8d536686b1 found delegated-review proof robustness issues and a failed cleanup step in otherwise passing control-loop evidence; those were repaired before the latest report above.
+- Review wave e16bae9e-9f81-4e2f-81b4-2310663c3ea4 found cleanup success was not part of the pass predicate; `control_loop_boundary` now requires `lease_cleared=true`, and the targeted test asserts passing gate evidence contains no failed smoke steps.

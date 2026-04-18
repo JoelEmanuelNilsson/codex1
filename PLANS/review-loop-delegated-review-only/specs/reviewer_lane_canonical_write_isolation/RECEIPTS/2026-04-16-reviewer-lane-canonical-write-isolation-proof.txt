@@ -1,0 +1,28 @@
+reviewer_lane_canonical_write_isolation proof receipt
+date: 2026-04-16
+mission: review-loop-delegated-review-only
+spec: reviewer_lane_canonical_write_isolation
+executed_package: fcc41a12-cffc-462e-bbeb-0a0221b08a25
+
+implemented changes
+- split child-visible review evidence from parent writeback authority
+- ReviewEvidenceSnapshot now carries review_truth_guard metadata instead of embedding the full ReviewTruthSnapshot
+- capture-review-evidence-snapshot still captures and persists the parent-held canonical review truth snapshot under review-truth-snapshots/
+- validate-review-evidence-snapshot validates the non-capability guard binding against the parent-held canonical truth snapshot
+- record-review-outcome still requires the parent-supplied full review_truth_snapshot and reviewer-output evidence before guarded writeback
+- Stop-hook reviewer-lane detection now recognizes review task paths such as /root/review_* so findings-only lanes can return bounded payloads even when explicit laneRole metadata is missing
+- $review-loop, internal orchestration, runtime backend, and Multi-Agent V2 docs now state that child reviewers receive only frozen evidence and that parent-held review truth snapshots are not child evidence
+- public docs now require read-only/explorer-style reviewer lanes with fork_turns none for blocking review and forbid mutation-capable worker/default reviewer lanes as the blocking review role
+
+verification
+- cargo test -p codex1 --test runtime_internal reviewer_lane_canonical_write_isolation --quiet
+- cargo test -p codex1 --test runtime_internal reviewer_evidence_snapshot --quiet
+- cargo test -p codex1 --test runtime_internal delegated_review_authority --quiet
+- cargo test -p codex1 --test runtime_internal reviewer_lane_mutation_guard --quiet
+- cargo test -p codex1 --test runtime_internal --quiet
+- cargo check -p codex1
+- cargo fmt --all --check
+
+notes
+- This is not a platform-level malicious filesystem sandbox. It removes the accidental parent writeback capability from child reviewer evidence and improves reviewer stop-hook recognition so reviewers are less likely to become mini parent controllers.
+- The parent review-loop still must capture and retain the full review truth snapshot separately before spawning reviewer lanes.

@@ -1,0 +1,66 @@
+{
+  "bundle_id": "223b824c-c50a-40e2-8257-1a1a61fd1b42",
+  "mission_id": "reviewer-lane-capability-boundary",
+  "bundle_kind": "spec_review",
+  "source_package_id": "4e8b50f7-0934-4c12-90ce-79ccb8ccb489",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:d9664160591908a6f7cc392f337353c1a4dd29393df3375d6d1fecb832730b38",
+  "blueprint_revision": 4,
+  "blueprint_fingerprint": "sha256:8f20640edb478b927b7905d999a501914c4dc4c1d335a99a0a81b9a7a1988684",
+  "governing_revision": "spec:reviewer_evidence_snapshot_contract:1",
+  "mandatory_review_lenses": [
+    "spec_conformance",
+    "evidence_adequacy",
+    "operability_rollback_observability",
+    "correctness",
+    "interface_compatibility",
+    "operability_rollback_observability."
+  ],
+  "target_spec_id": "reviewer_evidence_snapshot_contract",
+  "spec_revision": 1,
+  "spec_fingerprint": "sha256:6540451a0e6c8337f07d0e24a1998b7ff15229a8cb17775c0bf300444f64e2a7",
+  "proof_rows_under_review": [
+    "snapshot validation test",
+    "validate-review-bundle regression",
+    "cargo test -p codex1 --test runtime_internal reviewer_evidence_snapshot_contract --quiet",
+    "cargo run -p codex1 -- internal validate-mission-artifacts --mission-id reviewer-lane-capability-boundary",
+    "cargo fmt --all --check",
+    "Snapshot artifact includes bundle id, source package id, governing fingerprints, proof rows, receipts, changed-file context, and review instructions.",
+    "Validation rejects snapshots that omit required governing refs or evidence rows.",
+    "Docs/skills route child reviewers to snapshot refs first and live paths only under the mutation guard.",
+    "snapshot artifact includes bundle id, source package id, governing fingerprints, proof rows, receipts, changed-file context, and review instructions",
+    "validation rejects missing and mismatched source-bundle evidence fields",
+    "review truth snapshots avoid self-contamination from parent-created evidence snapshots",
+    "docs/skills route child reviewers to snapshot refs first and live paths only under the mutation guard"
+  ],
+  "receipts": [
+    "PLANS/reviewer-lane-capability-boundary/specs/reviewer_evidence_snapshot_contract/RECEIPTS/2026-04-16-reviewer-evidence-snapshot-proof.txt"
+  ],
+  "changed_files_or_diff": [
+    "crates/codex1-core/src/paths.rs",
+    "crates/codex1-core/src/runtime.rs",
+    "crates/codex1-core/src/lib.rs",
+    "crates/codex1/src/internal/mod.rs",
+    "crates/codex1/tests/runtime_internal.rs",
+    ".codex/skills/review-loop/SKILL.md",
+    ".codex/skills/internal-orchestration/SKILL.md",
+    "docs/runtime-backend.md",
+    "docs/MULTI-AGENT-V2-GUIDE.md",
+    "PLANS/reviewer-lane-capability-boundary/specs/reviewer_evidence_snapshot_contract/NOTES.md",
+    "PLANS/reviewer-lane-capability-boundary/specs/reviewer_evidence_snapshot_contract/RECEIPTS/2026-04-16-reviewer-evidence-snapshot-proof.txt"
+  ],
+  "touched_interface_contracts": [
+    "review evidence snapshot contract",
+    "review bundle consumption contract",
+    "child reviewer frozen brief contract",
+    "evidence adequacy for findings-only lanes",
+    "review truth snapshot mutation guard exclusions"
+  ],
+  "mission_level_proof_rows": [],
+  "cross_spec_claim_refs": [],
+  "included_spec_refs": [],
+  "visible_artifact_refs": [],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [],
+  "generated_at": "2026-04-16T16:55:32.4912Z"
+}

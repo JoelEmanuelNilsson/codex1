@@ -1,0 +1,85 @@
+{
+  "mission_id": "ralph-control-loop-boundary",
+  "bundle_id": "fb9c9715-9915-4f13-9e1e-d725938dd422",
+  "bundle_kind": "spec_review",
+  "source_package_id": "d77ae34d-c93f-4390-aeec-013f182da449",
+  "target_spec_id": "loop_skill_surface_and_pause",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:5cbaab0b13c64a004ec37eaa7217fd9b06349887f5b8f42611793ffed1c848a2",
+  "blueprint_revision": 10,
+  "blueprint_fingerprint": "sha256:561a1b377535a9a89a93a4616fd84273eb9c9a29c0eb89e5e402f60819775df0",
+  "spec_revision": 4,
+  "spec_fingerprint": "sha256:dbfcfa8b58bb4eba3fbc4d53db9b3dab035fe147b1114829121104da7a904500",
+  "mandatory_review_lenses": [
+    "spec_conformance",
+    "intent_alignment",
+    "interface_compatibility",
+    "evidence_adequacy",
+    "correctness",
+    "operability_rollback_observability."
+  ],
+  "proof_rows_under_review": [
+    "skill-surface test asserts loop skills mention begin-loop-lease and close/pause semantics",
+    "docs/runtime-backend.md mentions the public pause/close path",
+    "cargo test -p codex1 --test runtime_internal ralph_control_loop_boundary --quiet",
+    "cargo fmt --all --check",
+    "codex1 internal validate-mission-artifacts --mission-id ralph-control-loop-boundary",
+    "Skill-surface test asserts loop skills mention lease acquisition and close/pause semantics.",
+    "Runtime doc mentions the public pause/close path.",
+    "cargo test -p codex1 --test runtime_internal loop_skill_surface_documents_lease_and_close_contract --quiet"
+  ],
+  "receipts": [
+    "PLANS/ralph-control-loop-boundary/specs/loop_skill_surface_and_pause/RECEIPTS/2026-04-17-loop-skill-surface-proof.txt"
+  ],
+  "changed_files_or_diff": [
+    ".codex/skills/plan/SKILL.md",
+    ".codex/skills/execute/SKILL.md",
+    ".codex/skills/review-loop/SKILL.md",
+    ".codex/skills/autopilot/SKILL.md",
+    ".codex/skills/clarify/SKILL.md",
+    ".codex/skills/internal-orchestration/SKILL.md",
+    ".codex/skills/close/SKILL.md",
+    "docs/runtime-backend.md",
+    "crates/codex1/tests/runtime_internal.rs",
+    "PLANS/ralph-control-loop-boundary/specs/loop_skill_surface_and_pause/RECEIPTS/2026-04-17-loop-skill-surface-proof.txt"
+  ],
+  "touched_interface_contracts": [
+    "Public loop skill lease acquisition contract.",
+    "Public close/pause Ralph escape contract.",
+    "Subagent Ralph-exemption contract.",
+    "Runtime backend loop lease documentation."
+  ],
+  "mission_level_proof_rows": [],
+  "cross_spec_claim_refs": [],
+  "visible_artifact_refs": [],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [],
+  "evidence_refs": [
+    "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/bundles/fb9c9715-9915-4f13-9e1e-d725938dd422.json",
+    "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/d77ae34d-c93f-4390-aeec-013f182da449.json",
+    "PLANS/ralph-control-loop-boundary/specs/loop_skill_surface_and_pause/RECEIPTS/2026-04-17-loop-skill-surface-proof.txt",
+    ".codex/skills/plan/SKILL.md",
+    ".codex/skills/execute/SKILL.md",
+    ".codex/skills/review-loop/SKILL.md",
+    ".codex/skills/autopilot/SKILL.md",
+    ".codex/skills/clarify/SKILL.md",
+    ".codex/skills/internal-orchestration/SKILL.md",
+    ".codex/skills/close/SKILL.md",
+    "docs/runtime-backend.md",
+    "crates/codex1/tests/runtime_internal.rs"
+  ],
+  "reviewer_instructions": [
+    "Review only this frozen evidence snapshot and the refs it names.",
+    "Return exactly NONE or structured findings with severity, evidence refs, rationale, and suggested next action, then persist only that bounded result with record-reviewer-output.",
+    "Do not mutate mission truth, clear gates, write artifacts outside the reviewer-output inbox, call record-review-outcome, or decide mission completion.",
+    "This evidence snapshot is not a writeback capability; only the parent keeps the full review truth snapshot for record-review-outcome.",
+    "If live repo reads are necessary, the parent review-loop must keep its parent-held review truth snapshot guard active."
+  ],
+  "review_truth_guard": {
+    "bundle_id": "fb9c9715-9915-4f13-9e1e-d725938dd422",
+    "captured_at": "2026-04-17T09:09:12.65905Z",
+    "artifact_fingerprint_count": 30,
+    "guard_fingerprint": "sha256:f1928f56ab1ee80f0c919e0ba66d86d9990e4313c76e7e6ef327c74e8f4e3565"
+  },
+  "generated_at": "2026-04-17T09:09:12.707596Z"
+}

@@ -1,0 +1,56 @@
+{
+  "bundle_id": "554f7fb3-076a-47a8-98d8-d3e08c729142",
+  "mission_id": "ralph-control-loop-boundary",
+  "bundle_kind": "spec_review",
+  "source_package_id": "8b4bd058-052c-43b0-b59c-ca8a9b914dc8",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:5cbaab0b13c64a004ec37eaa7217fd9b06349887f5b8f42611793ffed1c848a2",
+  "blueprint_revision": 14,
+  "blueprint_fingerprint": "sha256:7b0bdfae9be3384ae45e5ffeb0a68404bfd36fb71f934b4d4181705b25b8de01",
+  "governing_revision": "spec:control_loop_qualification:5",
+  "mandatory_review_lenses": [
+    "evidence_adequacy",
+    "release_gate_integrity",
+    "operability_rollback_observability",
+    "interface_compatibility",
+    "correctness",
+    "spec_conformance",
+    "operability_rollback_observability."
+  ],
+  "target_spec_id": "control_loop_qualification",
+  "spec_revision": 5,
+  "spec_fingerprint": "sha256:20f5dab17c1872cdac2aac0842b128c9e5fd55e2946f5d9979bb254283996b6b",
+  "proof_rows_under_review": [
+    "cargo test -p codex1 --test qualification_cli control_loop --quiet",
+    "cargo run -p codex1 -- qualify-codex --json --live=false --self-hosting=false",
+    "cargo fmt --all --check",
+    "codex1 internal validate-mission-artifacts --mission-id ralph-control-loop-boundary",
+    "cargo test -p codex1 --test qualification_cli control_loop --quiet or equivalent targeted qualification test.",
+    "cargo run -p codex1 -- qualify-codex --json --live=false --self-hosting=false produces non-zero checks for the scoped control-loop gate.",
+    "If the source workspace hook is intentionally paused, the source qualification"
+  ],
+  "receipts": [
+    "PLANS/ralph-control-loop-boundary/specs/control_loop_qualification/RECEIPTS/2026-04-17-control-loop-qualification-proof.txt"
+  ],
+  "changed_files_or_diff": [
+    "crates/codex1/src/commands/qualify.rs",
+    "crates/codex1/tests/qualification_cli.rs",
+    "docs/qualification/README.md",
+    "docs/qualification/gates.md",
+    "PLANS/ralph-control-loop-boundary/specs/control_loop_qualification"
+  ],
+  "touched_interface_contracts": [
+    "Qualification gate registry.",
+    "Qualification report semantics.",
+    "Hook support documentation.",
+    "Reviewer-output evidence requirements in qualification smoke flows.",
+    "Paused-hook source qualification proof caveat."
+  ],
+  "mission_level_proof_rows": [],
+  "cross_spec_claim_refs": [],
+  "included_spec_refs": [],
+  "visible_artifact_refs": [],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [],
+  "generated_at": "2026-04-17T10:04:46.098547Z"
+}

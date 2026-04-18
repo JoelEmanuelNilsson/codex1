@@ -1,0 +1,145 @@
+{
+  "package_id": "4fdfbe5d-6e08-45f5-9daa-424167ebe936",
+  "mission_id": "review-loop-delegated-review-only",
+  "target_type": "spec",
+  "target_id": "delegated_review_qualification_guard",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:3de1e1e3042357e940a4dbb53251c54a8a7fc31288505ad9d8b4ae9b4c39b785",
+  "blueprint_revision": 3,
+  "blueprint_fingerprint": "sha256:f821cad62afa5d273096b9cee8884c3c1d3d7ad5e5c66b1c723d5be3c23d1ebf",
+  "dependency_snapshot_fingerprint": "sha256:a59b63968a9af8738ebc39766118babb64708ab61c3e33e23923ac3269cce2a3",
+  "wave_fingerprint": null,
+  "included_specs": [
+    {
+      "spec_id": "delegated_review_qualification_guard",
+      "spec_revision": 2,
+      "spec_fingerprint": "sha256:a30792d04c33eed76f6209415074f65ff444fe73d4cbb773a951f82ac9067de4"
+    }
+  ],
+  "dependency_satisfaction_state": [
+    {
+      "name": "lock_current",
+      "satisfied": true,
+      "detail": "Outcome Lock revision 1 is current and locked."
+    },
+    {
+      "name": "blueprint_current",
+      "satisfied": true,
+      "detail": "Program Blueprint revision 3 selects spec:delegated_review_qualification_guard and has a valid execution graph."
+    }
+  ],
+  "read_scope": [
+    "crates/codex1/src/commands",
+    "crates/codex1/tests",
+    "docs/qualification",
+    ".codex/skills/review-loop/SKILL.md",
+    "docs/runtime-backend.md"
+  ],
+  "write_scope": [
+    "crates/codex1/src/commands/qualify.rs",
+    "crates/codex1/tests/qualification_cli.rs",
+    "docs/qualification/README.md",
+    "docs/qualification/gates.md",
+    "PLANS/review-loop-delegated-review-only/specs/delegated_review_qualification_guard"
+  ],
+  "proof_obligations": [
+    "cargo test -p codex1 --test qualification_cli delegated_review --quiet",
+    "cargo run -p codex1 -- qualify-codex --json --live=false --self-hosting=false",
+    "cargo fmt --all --check"
+  ],
+  "review_obligations": [
+    "local_spec_intent",
+    "evidence_adequacy",
+    "release_gate_integrity",
+    "operability_rollback_observability"
+  ],
+  "replan_boundary": {
+    "local_repair_allowed": false,
+    "trigger_matrix": [
+      {
+        "trigger_code": "write_scope_expansion",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "interface_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "dependency_truth_change",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "proof_obligation_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "review_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "protected_surface_change",
+        "reopen_layer": "mission_lock"
+      },
+      {
+        "trigger_code": "migration_rollout_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "outcome_lock_change",
+        "reopen_layer": "mission_lock"
+      }
+    ]
+  },
+  "wave_context": null,
+  "wave_specs": [],
+  "gate_checks": [
+    {
+      "gate_id": "target_resolution",
+      "passed": true,
+      "detail": "resolved spec:delegated_review_qualification_guard"
+    },
+    {
+      "gate_id": "dependency_truth_current",
+      "passed": true,
+      "detail": "dependency satisfaction is explicit, revision-bearing, and fully satisfied"
+    },
+    {
+      "gate_id": "scope_declared",
+      "passed": true,
+      "detail": "read and write scope are explicit"
+    },
+    {
+      "gate_id": "scope_bounded_to_frontier",
+      "passed": true,
+      "detail": "package scope stays inside the declared execution frontier"
+    },
+    {
+      "gate_id": "proof_contract_declared",
+      "passed": true,
+      "detail": "proof obligations are explicit"
+    },
+    {
+      "gate_id": "review_contract_declared",
+      "passed": true,
+      "detail": "review obligations are explicit"
+    },
+    {
+      "gate_id": "included_specs_runnable",
+      "passed": true,
+      "detail": "included specs are active executable frontier specs"
+    },
+    {
+      "gate_id": "planning_truth_current",
+      "passed": true,
+      "detail": "lock, blueprint, and included spec bindings are current"
+    },
+    {
+      "gate_id": "wave_validation",
+      "passed": true,
+      "detail": "wave same-workspace safety rules are satisfied"
+    }
+  ],
+  "validation_failures": [],
+  "validated_at": "2026-04-16T18:31:43.522781Z",
+  "status": "passed"
+}

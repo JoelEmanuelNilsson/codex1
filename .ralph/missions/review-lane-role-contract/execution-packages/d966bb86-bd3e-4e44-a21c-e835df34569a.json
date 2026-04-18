@@ -1,0 +1,166 @@
+{
+  "package_id": "d966bb86-bd3e-4e44-a21c-e835df34569a",
+  "mission_id": "review-lane-role-contract",
+  "target_type": "mission",
+  "target_id": "review-lane-role-contract",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:f2433c3c91ee7ea5e86efbf420e7286dad6dfa3a7d77877826af23864c90d524",
+  "blueprint_revision": 9,
+  "blueprint_fingerprint": "sha256:bb27087dd69a0d000ff644aee4045f80f9cadd682a8393c4eea7cfdc7913f8be",
+  "dependency_snapshot_fingerprint": "sha256:e62c85d3fcdb209c5789f816eafb965d102c0a821ea922b406644cd5db520b02",
+  "wave_fingerprint": null,
+  "included_specs": [
+    {
+      "spec_id": "review_loop_skill_surface",
+      "spec_revision": 1,
+      "spec_fingerprint": "sha256:4d37fd3b917490bee5d22d9f5848f18bb5edd87b97d2c1afafeb17bd6234d79f"
+    },
+    {
+      "spec_id": "reviewer_profile_contracts",
+      "spec_revision": 2,
+      "spec_fingerprint": "sha256:d7bb23926e4d0c764cc51acba0894f54eac04641370021c812ae710d35913f03"
+    },
+    {
+      "spec_id": "ralph_review_lane_isolation",
+      "spec_revision": 2,
+      "spec_fingerprint": "sha256:84d7f33c522da4a1443e8b4c3b088c46c8fef759c3e120e2a95aed90c49906ec"
+    },
+    {
+      "spec_id": "review_loop_orchestration",
+      "spec_revision": 2,
+      "spec_fingerprint": "sha256:97019e69bdb5125bb02ca22a237476f6dbfee448a1b405832ee273f0806e7ac7"
+    }
+  ],
+  "dependency_satisfaction_state": [
+    {
+      "name": "lock_current",
+      "satisfied": true,
+      "detail": "Outcome Lock revision 1 is locked and current."
+    },
+    {
+      "name": "blueprint_current",
+      "satisfied": true,
+      "detail": "Program Blueprint revision 9 has all planned slices complete and review-clean."
+    }
+  ],
+  "read_scope": [
+    ".codex/skills",
+    "docs",
+    "crates/codex1/src",
+    "crates/codex1-core/src",
+    "crates/codex1/tests"
+  ],
+  "write_scope": [
+    ".codex/skills",
+    "docs",
+    "crates/codex1/src",
+    "crates/codex1-core/src",
+    "crates/codex1/tests"
+  ],
+  "proof_obligations": [
+    "$review-loop skill surface is canonical and $review is removed",
+    "reviewer profile contracts are explicit and review-clean",
+    "Ralph child review lane isolation is implemented and review-clean",
+    "review-loop orchestration decision contract is product-visible and review-clean",
+    "validate-mission-artifacts succeeds for review-lane-role-contract"
+  ],
+  "review_obligations": [
+    "mission close",
+    "spec_conformance",
+    "correctness",
+    "evidence_adequacy",
+    "operability_rollback_observability"
+  ],
+  "replan_boundary": {
+    "local_repair_allowed": false,
+    "trigger_matrix": [
+      {
+        "trigger_code": "write_scope_expansion",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "interface_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "dependency_truth_change",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "proof_obligation_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "review_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "protected_surface_change",
+        "reopen_layer": "mission_lock"
+      },
+      {
+        "trigger_code": "migration_rollout_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "outcome_lock_change",
+        "reopen_layer": "mission_lock"
+      }
+    ]
+  },
+  "wave_context": null,
+  "wave_specs": [],
+  "gate_checks": [
+    {
+      "gate_id": "target_resolution",
+      "passed": false,
+      "detail": "resolved mission:review-lane-role-contract"
+    },
+    {
+      "gate_id": "dependency_truth_current",
+      "passed": true,
+      "detail": "dependency satisfaction is explicit, revision-bearing, and fully satisfied"
+    },
+    {
+      "gate_id": "scope_declared",
+      "passed": true,
+      "detail": "read and write scope are explicit"
+    },
+    {
+      "gate_id": "scope_bounded_to_frontier",
+      "passed": true,
+      "detail": "package scope stays inside the declared execution frontier"
+    },
+    {
+      "gate_id": "proof_contract_declared",
+      "passed": true,
+      "detail": "proof obligations are explicit"
+    },
+    {
+      "gate_id": "review_contract_declared",
+      "passed": true,
+      "detail": "review obligations are explicit"
+    },
+    {
+      "gate_id": "included_specs_runnable",
+      "passed": true,
+      "detail": "included specs are active executable frontier specs"
+    },
+    {
+      "gate_id": "planning_truth_current",
+      "passed": true,
+      "detail": "lock, blueprint, and included spec bindings are current"
+    },
+    {
+      "gate_id": "wave_validation",
+      "passed": true,
+      "detail": "wave same-workspace safety rules are satisfied"
+    }
+  ],
+  "validation_failures": [
+    "planning_selected_target_mismatch:spec:review_loop_orchestration!=package:mission:review-lane-role-contract",
+    "gate_check_failed:target_resolution"
+  ],
+  "validated_at": "2026-04-16T15:45:16.504407Z",
+  "status": "failed"
+}

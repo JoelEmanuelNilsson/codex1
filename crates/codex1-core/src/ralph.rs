@@ -8,7 +8,10 @@ use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
-use crate::fingerprint::Fingerprint;
+use crate::mission_contract::{
+    MissionContractSnapshot, contradictory_snapshot, derive_snapshot_from_closeouts,
+    orphan_active_cycle_snapshot, validate_closeout_contract,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -136,10 +139,20 @@ impl Default for ChildLaneIntegrationStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ChildLaneRole {
+    Worker,
+    Scout,
+    FindingsOnlyReviewer,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ChildLaneExpectation {
     pub task_path: String,
     pub lane_kind: String,
     pub expected_deliverable_ref: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lane_role: Option<ChildLaneRole>,
     #[serde(default)]
     pub integration_status: ChildLaneIntegrationStatus,
     #[serde(default)]
@@ -232,6 +245,7 @@ impl ActiveCycleState {
                 task_path: task_path.clone(),
                 lane_kind: "unknown".to_string(),
                 expected_deliverable_ref: format!("lane:{task_path}"),
+                lane_role: None,
                 integration_status: ChildLaneIntegrationStatus::Pending,
                 target_ref: None,
             })
@@ -247,53 +261,7 @@ impl ActiveCycleState {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct RalphState {
-    pub mission_id: String,
-    pub phase: String,
-    #[serde(default, rename = "current_target", alias = "target")]
-    pub target: Option<String>,
-    pub verdict: Verdict,
-    pub terminality: Terminality,
-    pub resume_mode: ResumeMode,
-    pub next_phase: Option<String>,
-    pub next_action: String,
-    #[serde(default)]
-    pub lock_revision: Option<u64>,
-    #[serde(default)]
-    pub lock_fingerprint: Option<String>,
-    #[serde(default)]
-    pub blueprint_revision: Option<u64>,
-    #[serde(default)]
-    pub blueprint_fingerprint: Option<String>,
-    #[serde(default)]
-    pub governing_revision: Option<String>,
-    #[serde(default)]
-    pub reason_code: Option<String>,
-    #[serde(default)]
-    pub summary: Option<String>,
-    #[serde(default)]
-    pub continuation_prompt: Option<String>,
-    pub last_valid_closeout_seq: u64,
-    #[serde(default)]
-    pub last_valid_closeout_ref: Option<String>,
-    pub last_applied_closeout_seq: u64,
-    pub active_cycle_id: Option<String>,
-    #[serde(default)]
-    pub waiting_request_id: Option<String>,
-    #[serde(default)]
-    pub waiting_for: Option<String>,
-    #[serde(default)]
-    pub canonical_waiting_request: Option<String>,
-    #[serde(default)]
-    pub resume_condition: Option<String>,
-    #[serde(default)]
-    pub request_emitted_at: Option<String>,
-    #[serde(default)]
-    pub active_child_task_paths: Vec<String>,
-    #[serde(default)]
-    pub artifact_fingerprints: BTreeMap<String, String>,
-}
+pub type RalphState = MissionContractSnapshot;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StopHookDecision {
@@ -321,251 +289,22 @@ pub enum ActiveCycleLoad {
     Malformed,
 }
 
-fn is_machine_reason_code(value: &str) -> bool {
-    !value.is_empty()
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
-}
-
 pub fn validate_closeout(record: &CloseoutRecord) -> Result<()> {
-    for (label, value) in [
-        ("closeout_id", record.closeout_id.as_deref()),
-        ("cycle_id", record.cycle_id.as_deref()),
-        ("reason_code", record.reason_code.as_deref()),
-    ] {
-        if value.is_none_or(str::is_empty) {
-            bail!("closeout is missing {label}");
-        }
-    }
-    if record.activity.trim().is_empty() {
-        bail!("closeout activity must not be empty");
-    }
-    if record.target.as_deref().is_none_or(str::is_empty) {
-        bail!("closeout target must not be empty");
-    }
-    if !is_machine_reason_code(record.reason_code.as_deref().unwrap_or_default()) {
-        bail!("closeout reason_code must be lowercase snake_case");
-    }
-    if record.cycle_kind.is_none() {
-        bail!("closeout cycle_kind must be present");
-    }
-    if record
-        .governing_revision
-        .as_deref()
-        .is_none_or(str::is_empty)
-    {
-        bail!("closeout governing_revision must not be empty");
-    }
-    if record.artifact_fingerprints.is_empty() {
-        bail!("closeout artifact_fingerprints must not be empty");
-    }
-    for (label, value) in [
-        ("lock_fingerprint", record.lock_fingerprint.as_deref()),
-        (
-            "blueprint_fingerprint",
-            record.blueprint_fingerprint.as_deref(),
-        ),
-    ] {
-        if let Some(value) = value {
-            Fingerprint::parse(value)
-                .map_err(anyhow::Error::new)
-                .with_context(|| format!("closeout {label} is invalid"))?;
-        }
-    }
-    for (artifact, value) in &record.artifact_fingerprints {
-        Fingerprint::parse(value)
-            .map_err(anyhow::Error::new)
-            .with_context(|| format!("closeout artifact_fingerprints[{artifact}] is invalid"))?;
-    }
-    match record.verdict {
-        Verdict::Complete | Verdict::HardBlocked => {
-            if record.terminality != Terminality::Terminal {
-                bail!("terminal verdict must use terminal terminality");
-            }
-            if record.resume_mode != ResumeMode::AllowStop {
-                bail!("terminal verdict must use allow_stop resume mode");
-            }
-            if record
-                .next_phase
-                .as_deref()
-                .is_some_and(|phase| phase != "complete")
-            {
-                bail!("terminal closeouts may only use next_phase `complete` or null");
-            }
-        }
-        Verdict::NeedsUser => {
-            if record.terminality != Terminality::WaitingNonTerminal {
-                bail!("needs_user must use waiting_non_terminal terminality");
-            }
-            if record.resume_mode != ResumeMode::YieldToUser {
-                bail!("needs_user must use yield_to_user resume mode");
-            }
-            for (label, value) in [
-                ("waiting_request_id", &record.waiting_request_id),
-                ("waiting_for", &record.waiting_for),
-                (
-                    "canonical_waiting_request",
-                    &record.canonical_waiting_request,
-                ),
-                ("resume_condition", &record.resume_condition),
-            ] {
-                if value.as_deref().is_none_or(str::is_empty) {
-                    bail!("needs_user closeout is missing {label}");
-                }
-            }
-        }
-        Verdict::ContinueRequired
-        | Verdict::ReviewRequired
-        | Verdict::RepairRequired
-        | Verdict::ReplanRequired => {
-            if record.terminality != Terminality::ActionableNonTerminal {
-                bail!("actionable verdict must use actionable_non_terminal terminality");
-            }
-            if record.resume_mode != ResumeMode::Continue {
-                bail!("actionable verdict must use continue resume mode");
-            }
-            if record
-                .continuation_prompt
-                .as_deref()
-                .is_none_or(str::is_empty)
-            {
-                bail!("actionable closeout must include continuation_prompt");
-            }
-        }
-    }
-
-    if !matches!(record.verdict, Verdict::Complete | Verdict::HardBlocked)
-        && record.next_phase.as_deref().is_none_or(str::is_empty)
-    {
-        bail!("non-terminal closeouts must declare next_phase");
-    }
-
-    if record.next_action.trim().is_empty() {
-        bail!("closeout next_action must not be empty");
-    }
-
-    if record.closeout_seq == 0 {
-        bail!("closeout_seq must be greater than zero");
-    }
-
-    Ok(())
+    validate_closeout_contract(record)
 }
 
 pub fn rebuild_state_from_closeouts(
     closeouts: &[CloseoutRecord],
     active_cycle: Option<&ActiveCycleState>,
 ) -> Result<RalphState> {
-    let latest = closeouts
-        .last()
-        .context("cannot rebuild state without closeouts")?;
-    validate_closeout(latest)?;
-    let interrupted_cycle = active_cycle.filter(|cycle| {
-        cycle.mission_id == latest.mission_id
-            && latest.cycle_id.as_deref() != Some(cycle.cycle_id.as_str())
-            && cycle
-                .opened_after_closeout_seq
-                .is_none_or(|opened_after| opened_after >= latest.closeout_seq)
-            && !closeouts
-                .iter()
-                .any(|record| record.cycle_id.as_deref() == Some(cycle.cycle_id.as_str()))
-    });
-
-    Ok(RalphState {
-        mission_id: latest.mission_id.clone(),
-        phase: latest.phase.clone(),
-        target: latest.target.clone(),
-        verdict: if interrupted_cycle.is_some() {
-            Verdict::ContinueRequired
-        } else {
-            latest.verdict.clone()
-        },
-        terminality: if interrupted_cycle.is_some() {
-            Terminality::ActionableNonTerminal
-        } else {
-            latest.terminality.clone()
-        },
-        resume_mode: if interrupted_cycle.is_some() {
-            ResumeMode::Continue
-        } else {
-            latest.resume_mode.clone()
-        },
-        next_phase: latest.next_phase.clone(),
-        next_action: interrupted_cycle.map_or_else(
-            || latest.next_action.clone(),
-            |cycle| {
-                format!(
-                    "Recover interrupted cycle {} before continuing.",
-                    cycle.cycle_id
-                )
-            },
-        ),
-        lock_revision: latest.lock_revision,
-        lock_fingerprint: latest.lock_fingerprint.clone(),
-        blueprint_revision: latest.blueprint_revision,
-        blueprint_fingerprint: latest.blueprint_fingerprint.clone(),
-        governing_revision: latest.governing_revision.clone(),
-        reason_code: latest.reason_code.clone(),
-        summary: latest.summary.clone(),
-        continuation_prompt: interrupted_cycle.map_or_else(
-            || latest.continuation_prompt.clone(),
-            |_| Some("Recover interrupted cycle before yielding or continuing.".to_string()),
-        ),
-        last_valid_closeout_seq: latest.closeout_seq,
-        last_valid_closeout_ref: latest.closeout_id.clone(),
-        last_applied_closeout_seq: latest.closeout_seq,
-        active_cycle_id: interrupted_cycle.map(|cycle| cycle.cycle_id.clone()),
-        waiting_request_id: interrupted_cycle
-            .is_some()
-            .then_some(None)
-            .unwrap_or_else(|| latest.waiting_request_id.clone()),
-        waiting_for: interrupted_cycle
-            .is_some()
-            .then_some(None)
-            .unwrap_or_else(|| latest.waiting_for.clone()),
-        canonical_waiting_request: interrupted_cycle
-            .is_some()
-            .then_some(None)
-            .unwrap_or_else(|| latest.canonical_waiting_request.clone()),
-        resume_condition: interrupted_cycle
-            .is_some()
-            .then_some(None)
-            .unwrap_or_else(|| latest.resume_condition.clone()),
-        request_emitted_at: interrupted_cycle
-            .is_some()
-            .then_some(None)
-            .unwrap_or_else(|| latest.request_emitted_at.clone()),
-        active_child_task_paths: latest.active_child_task_paths.clone(),
-        artifact_fingerprints: latest.artifact_fingerprints.clone(),
-    })
+    derive_snapshot_from_closeouts(closeouts, active_cycle)
 }
 
 pub fn determine_stop_decision(state: &RalphState) -> StopHookDecision {
-    match state.resume_mode {
-        ResumeMode::AllowStop => StopHookDecision {
-            should_block: false,
-            should_stop: false,
-            reason: format!(
-                "mission {} may stop cleanly with verdict {:?}",
-                state.mission_id, state.verdict
-            ),
-        },
-        ResumeMode::Continue => StopHookDecision {
-            should_block: true,
-            should_stop: false,
-            reason: format!(
-                "mission {} remains active: next action is {}",
-                state.mission_id, state.next_action
-            ),
-        },
-        ResumeMode::YieldToUser => StopHookDecision {
-            should_block: false,
-            should_stop: false,
-            reason: state
-                .canonical_waiting_request
-                .clone()
-                .unwrap_or_else(|| "mission is waiting for user input".to_string()),
-        },
+    StopHookDecision {
+        should_block: state.blocks_clean_stop(),
+        should_stop: false,
+        reason: state.stop_reason(),
     }
 }
 
@@ -579,7 +318,7 @@ impl StopHookOutput {
                 reason: Some(decision.reason.clone()),
                 system_message: None,
             }
-        } else if state.resume_mode == ResumeMode::YieldToUser {
+        } else if state.yields_to_user() {
             Self {
                 continue_processing: true,
                 decision: None,
@@ -896,67 +635,11 @@ pub fn contradictory_active_cycle_state(
     active_cycle_id: Option<String>,
     next_action: &str,
 ) -> RalphState {
-    RalphState {
-        mission_id: latest.mission_id.clone(),
-        phase: latest.phase.clone(),
-        target: latest.target.clone(),
-        verdict: Verdict::ContinueRequired,
-        terminality: Terminality::ActionableNonTerminal,
-        resume_mode: ResumeMode::Continue,
-        next_phase: latest.next_phase.clone(),
-        next_action: next_action.to_string(),
-        lock_revision: latest.lock_revision,
-        lock_fingerprint: latest.lock_fingerprint.clone(),
-        blueprint_revision: latest.blueprint_revision,
-        blueprint_fingerprint: latest.blueprint_fingerprint.clone(),
-        governing_revision: latest.governing_revision.clone(),
-        reason_code: Some("contradictory_active_cycle".to_string()),
-        summary: latest.summary.clone(),
-        continuation_prompt: Some(next_action.to_string()),
-        last_valid_closeout_seq: latest.closeout_seq,
-        last_valid_closeout_ref: latest.closeout_id.clone(),
-        last_applied_closeout_seq: latest.closeout_seq,
-        active_cycle_id,
-        waiting_request_id: latest.waiting_request_id.clone(),
-        waiting_for: latest.waiting_for.clone(),
-        canonical_waiting_request: latest.canonical_waiting_request.clone(),
-        resume_condition: latest.resume_condition.clone(),
-        request_emitted_at: latest.request_emitted_at.clone(),
-        active_child_task_paths: latest.active_child_task_paths.clone(),
-        artifact_fingerprints: latest.artifact_fingerprints.clone(),
-    }
+    contradictory_snapshot(latest, active_cycle_id, next_action)
 }
 
 fn orphan_active_cycle_state(active_cycle: &ActiveCycleState, next_action: &str) -> RalphState {
-    RalphState {
-        mission_id: active_cycle.mission_id.clone(),
-        phase: active_cycle.phase.clone(),
-        target: active_cycle.current_target.clone(),
-        verdict: Verdict::ContinueRequired,
-        terminality: Terminality::ActionableNonTerminal,
-        resume_mode: ResumeMode::Continue,
-        next_phase: Some(active_cycle.phase.clone()),
-        next_action: format!("{next_action} ({})", active_cycle.cycle_id),
-        lock_revision: None,
-        lock_fingerprint: None,
-        blueprint_revision: None,
-        blueprint_fingerprint: None,
-        governing_revision: Some(format!("interrupted-cycle:{}", active_cycle.cycle_id)),
-        reason_code: Some("orphan_active_cycle".to_string()),
-        summary: Some("Recovered an interrupted mission from active-cycle state.".to_string()),
-        continuation_prompt: Some(next_action.to_string()),
-        last_valid_closeout_seq: 0,
-        last_valid_closeout_ref: None,
-        last_applied_closeout_seq: 0,
-        active_cycle_id: Some(active_cycle.cycle_id.clone()),
-        waiting_request_id: None,
-        waiting_for: None,
-        canonical_waiting_request: None,
-        resume_condition: None,
-        request_emitted_at: None,
-        active_child_task_paths: active_cycle.normalized_expected_child_task_paths(),
-        artifact_fingerprints: BTreeMap::new(),
-    }
+    orphan_active_cycle_snapshot(active_cycle, next_action)
 }
 
 fn atomic_remove_file(path: &Path) -> Result<()> {

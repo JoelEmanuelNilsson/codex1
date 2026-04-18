@@ -1,0 +1,24 @@
+support_surface_txn proof receipt
+date: 2026-04-15
+mission: contract-centered-architecture
+spec: support_surface_txn
+
+implemented changes
+- centralized support-surface manifest schema in crates/codex1-core/src/backup.rs
+- added a shared support-surface transaction executor in crates/codex1-core/src/backup.rs
+- exported shared support-surface manifest and transaction helpers from crates/codex1-core/src/lib.rs
+- rewired crates/codex1/src/commands/setup.rs to execute support-surface mutations through the shared core transaction path
+- rewired crates/codex1/src/commands/restore.rs to execute support-surface mutations through the shared core transaction path
+- rewired crates/codex1/src/commands/uninstall.rs to execute support-surface mutations through the shared core transaction path
+- added a `qualification_cli` support-surface helper-flow test that exercises the real setup/doctor/restore/setup/uninstall qualification path against the built codex1 binary
+- kept the earlier package and review validation normalization fixes in crates/codex1-core/src/runtime.rs so multi-spec mission packages remain valid across packaged->complete review transitions
+
+verification
+- cargo test -p codex1-core --quiet
+- cargo test -p codex1 --test runtime_internal --quiet
+- cargo test -p codex1 qualification_cli --quiet
+
+notes
+- support-surface preflight and command policy remain command-local where needed, but the mutation transaction path is now shared
+- `cargo test -p codex1 qualification_cli --quiet` now runs the support-surface helper-flow qualification proof instead of filtering out every test
+- this slice is ready for a fresh blocking review against the current package and blueprint revision 7

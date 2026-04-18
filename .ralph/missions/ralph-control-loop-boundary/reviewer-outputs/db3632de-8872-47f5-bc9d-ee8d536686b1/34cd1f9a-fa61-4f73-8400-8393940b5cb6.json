@@ -1,0 +1,34 @@
+{
+  "mission_id": "ralph-control-loop-boundary",
+  "bundle_id": "db3632de-8872-47f5-bc9d-ee8d536686b1",
+  "reviewer_id": "control_loop_qual_code_review_1",
+  "reviewer_output_id": "34cd1f9a-fa61-4f73-8400-8393940b5cb6",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P2",
+      "title": "record_none_reviewer_output_ref can pass even if evidence snapshot capture fails",
+      "evidence_refs": [
+        "crates/codex1/src/commands/qualify.rs:5095",
+        "crates/codex1/src/commands/qualify.rs:5112",
+        "crates/codex1/src/commands/qualify.rs:5133"
+      ],
+      "rationale": "The helper always pushes a capture-review-evidence-snapshot step, but only checks success on the final record-reviewer-output step. If capture fails while an older valid snapshot already exists for the bundle, the helper still returns success and qualification can report repaired reviewer-output flow without proving a fresh capture in that path.",
+      "suggested_next_action": "Fail fast when the capture-review-evidence-snapshot step returns success=false before attempting record-reviewer-output, and add a regression test that forces capture failure to verify the helper surfaces that failure."
+    },
+    {
+      "severity": "P2",
+      "title": "Delegated-review docs check still depends on exact markdown line wrapping",
+      "evidence_refs": [
+        "crates/codex1/src/commands/qualify.rs:893",
+        "crates/codex1/src/commands/qualify.rs:910",
+        "crates/codex1/src/commands/qualify.rs:911"
+      ],
+      "rationale": "The runtime-backend doc check now normalizes whitespace, but the internal-orchestration check still requires the literal substring \"not review\\njudgment authority\". A non-semantic line-wrap change in SKILL.md can flip the delegated_review_authority gate to fail despite unchanged policy text, which undermines gate correctness and stability.",
+      "suggested_next_action": "Normalize whitespace for review-loop/internal-orchestration content before substring matching (same approach used for runtime-backend text) and add a test case with equivalent wrapped/unwrapped wording."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/review-evidence-snapshots/db3632de-8872-47f5-bc9d-ee8d536686b1.json",
+  "source_evidence_snapshot_fingerprint": "sha256:323b007acef6e6b8bb0d1fc8d6838a0c3e01149ba82ddf7b5ac2004f6b7c2bd7",
+  "recorded_at": "2026-04-17T09:59:28.607835Z"
+}

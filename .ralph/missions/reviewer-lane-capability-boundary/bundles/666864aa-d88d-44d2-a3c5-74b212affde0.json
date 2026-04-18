@@ -1,0 +1,66 @@
+{
+  "bundle_id": "666864aa-d88d-44d2-a3c5-74b212affde0",
+  "mission_id": "reviewer-lane-capability-boundary",
+  "bundle_kind": "spec_review",
+  "source_package_id": "0d2b6a6e-b0c4-48f3-b765-6895b6d9934c",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:d9664160591908a6f7cc392f337353c1a4dd29393df3375d6d1fecb832730b38",
+  "blueprint_revision": 2,
+  "blueprint_fingerprint": "sha256:44261427b5ee2096b8abc80e0ab82f77332b548479fb1bd0c6fb9b7b04cbc77b",
+  "governing_revision": "spec:reviewer_lane_mutation_guard:1",
+  "mandatory_review_lenses": [
+    "correctness",
+    "evidence_adequacy",
+    "interface_compatibility",
+    "operability_rollback_observability",
+    "operability_rollback_observability."
+  ],
+  "target_spec_id": "reviewer_lane_mutation_guard",
+  "spec_revision": 1,
+  "spec_fingerprint": "sha256:d2336409c966ed2a6ae5117eacd6b6076a2eeeee66de1538d83158b5f72a9d87",
+  "proof_rows_under_review": [
+    "cargo test -p codex1 --test runtime_internal reviewer_lane_mutation_guard --quiet",
+    "cargo test -p codex1 --test runtime_internal findings_only_reviewer_stop_hook_bypasses_parent_review_gate_block --quiet",
+    "cargo run -p codex1 -- internal validate-mission-artifacts --mission-id reviewer-lane-capability-boundary",
+    "cargo fmt --all --check",
+    "Test proves a simulated child reviewer mutation to gates/closeouts/state/review ledger before parent aggregation is detected and blocks clean review writeback.",
+    "Test proves clean findings-only child output plus unchanged mission truth allows parent-owned `record-review-outcome` to pass the gate.",
+    "Test proves parent Stop-hook still blocks on open review gate while findings-only child Stop-hook may return results.",
+    "`validate-mission-artifacts`, `validate-gates`, and `validate-closeouts` remain green after clean parent-owned review.",
+    "contaminated child reviewer mutation is rejected before gate writeback",
+    "snapshot-less CLI review writeback is rejected",
+    "clean parent-owned snapshot-backed review writeback still passes",
+    "findings-only child stop-hook bypass remains non-blocking while parent gate blocks",
+    "mission artifacts validate after implementation"
+  ],
+  "receipts": [
+    "PLANS/reviewer-lane-capability-boundary/specs/reviewer_lane_mutation_guard/RECEIPTS/2026-04-16-reviewer-lane-mutation-guard-proof.txt"
+  ],
+  "changed_files_or_diff": [
+    "crates/codex1-core/src/runtime.rs",
+    "crates/codex1-core/src/lib.rs",
+    "crates/codex1/src/internal/mod.rs",
+    "crates/codex1/src/commands/qualify.rs",
+    "crates/codex1/tests/runtime_internal.rs",
+    ".codex/skills/review-loop/SKILL.md",
+    ".codex/skills/internal-orchestration/SKILL.md",
+    "docs/runtime-backend.md",
+    "docs/MULTI-AGENT-V2-GUIDE.md",
+    "PLANS/reviewer-lane-capability-boundary/specs/reviewer_lane_mutation_guard/NOTES.md",
+    "PLANS/reviewer-lane-capability-boundary/specs/reviewer_lane_mutation_guard/RECEIPTS/2026-04-16-reviewer-lane-mutation-guard-proof.txt"
+  ],
+  "touched_interface_contracts": [
+    "parent review-loop review-wave authority",
+    "record-review-outcome CLI acceptance contract",
+    "findings-only reviewer lane mutation boundary",
+    "Stop-hook parent versus findings-only child lane semantics",
+    "qualification review writeback payload contract"
+  ],
+  "mission_level_proof_rows": [],
+  "cross_spec_claim_refs": [],
+  "included_spec_refs": [],
+  "visible_artifact_refs": [],
+  "deferred_descoped_follow_on_refs": [],
+  "open_finding_summary": [],
+  "generated_at": "2026-04-16T16:40:29.191781Z"
+}

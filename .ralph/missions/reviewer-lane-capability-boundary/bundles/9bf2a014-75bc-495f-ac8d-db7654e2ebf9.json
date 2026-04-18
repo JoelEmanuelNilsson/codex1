@@ -1,0 +1,58 @@
+{
+  "bundle_id": "9bf2a014-75bc-495f-ac8d-db7654e2ebf9",
+  "mission_id": "reviewer-lane-capability-boundary",
+  "bundle_kind": "mission_close",
+  "source_package_id": "ebd703cc-9361-4a4a-9d29-39271f5cd63a",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:d9664160591908a6f7cc392f337353c1a4dd29393df3375d6d1fecb832730b38",
+  "blueprint_revision": 6,
+  "blueprint_fingerprint": "sha256:e96b3bbfc2372c1d3cd07d61853a9de922f9152549d1e96a2bedb7ce69cd60a2",
+  "governing_revision": "mission:reviewer-lane-capability-boundary:close",
+  "mandatory_review_lenses": [
+    "spec_conformance",
+    "correctness",
+    "interface_compatibility",
+    "safety_security_policy",
+    "operability_rollback_observability",
+    "evidence_adequacy",
+    "operability_rollback_observability."
+  ],
+  "target_spec_id": null,
+  "spec_revision": null,
+  "spec_fingerprint": null,
+  "proof_rows_under_review": [],
+  "receipts": [],
+  "changed_files_or_diff": [],
+  "touched_interface_contracts": [],
+  "mission_level_proof_rows": [
+    "all planned specs complete and review-clean",
+    "mutation guard rejects contaminated child-review writeback",
+    "frozen review evidence snapshot validates",
+    "qualification gate proves reviewer capability boundary",
+    "validate-mission-artifacts succeeds"
+  ],
+  "cross_spec_claim_refs": [
+    "claim:mutation-guard",
+    "claim:frozen-evidence",
+    "claim:qualification",
+    "claim:parent-writeback"
+  ],
+  "included_spec_refs": [
+    "reviewer_capability_qualification",
+    "reviewer_evidence_snapshot_contract",
+    "reviewer_lane_mutation_guard"
+  ],
+  "visible_artifact_refs": [
+    "/Users/joel/codex1/PLANS/reviewer-lane-capability-boundary/OUTCOME-LOCK.md",
+    "/Users/joel/codex1/PLANS/reviewer-lane-capability-boundary/PROGRAM-BLUEPRINT.md",
+    "/Users/joel/codex1/PLANS/reviewer-lane-capability-boundary/REVIEW-LEDGER.md",
+    "/Users/joel/codex1/PLANS/reviewer-lane-capability-boundary/specs/reviewer_lane_mutation_guard/RECEIPTS/2026-04-16-reviewer-lane-mutation-guard-proof.txt",
+    "/Users/joel/codex1/PLANS/reviewer-lane-capability-boundary/specs/reviewer_evidence_snapshot_contract/RECEIPTS/2026-04-16-reviewer-evidence-snapshot-proof.txt",
+    "/Users/joel/codex1/PLANS/reviewer-lane-capability-boundary/specs/reviewer_capability_qualification/RECEIPTS/2026-04-16-reviewer-capability-qualification-proof.txt"
+  ],
+  "deferred_descoped_follow_on_refs": [
+    "platform_readonly_sandbox deferred: true per-agent filesystem/tool sandboxing may require platform support outside this repo"
+  ],
+  "open_finding_summary": [],
+  "generated_at": "2026-04-16T17:07:55.532305Z"
+}

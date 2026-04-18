@@ -1,0 +1,888 @@
+{
+  "mission_id": "ralph-control-loop-boundary",
+  "current_phase": "mission_close",
+  "updated_at": "2026-04-17T10:31:19.381065Z",
+  "gates": [
+    {
+      "gate_id": "ralph-control-loop-boundary:outcome_lock:lock:1",
+      "gate_kind": "outcome_lock",
+      "target_ref": "mission:ralph-control-loop-boundary",
+      "governing_refs": [
+        "mission:ralph-control-loop-boundary"
+      ],
+      "status": "open",
+      "blocking": true,
+      "opened_at": "2026-04-16T21:13:19.137833Z",
+      "evaluated_at": null,
+      "evaluated_against_ref": null,
+      "evidence_refs": [],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:planning_completion:blueprint:3",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:ralph-control-loop-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:3"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T08:18:00.270787Z",
+      "evaluated_at": "2026-04-17T08:18:28.773508Z",
+      "evaluated_against_ref": "package:b3824cb2-9100-48f1-af92-8e90f5b9f3f1",
+      "evidence_refs": [
+        "/Users/joel/codex1/PLANS/ralph-control-loop-boundary/PROGRAM-BLUEPRINT.md",
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/b3824cb2-9100-48f1-af92-8e90f5b9f3f1.json"
+      ],
+      "failure_refs": [
+        "package_read_scope_outside_frontier:.codex/skills",
+        "package_read_scope_outside_frontier:.ralph/missions/ralph-control-loop-boundary",
+        "package_read_scope_outside_frontier:crates/codex1-core/src",
+        "package_read_scope_outside_frontier:crates/codex1/src/internal/mod.rs",
+        "package_read_scope_outside_frontier:crates/codex1/tests/runtime_internal.rs",
+        "package_read_scope_outside_frontier:docs/runtime-backend.md",
+        "package_read_scope_outside_frontier:plans/ralph-control-loop-boundary",
+        "package_write_scope_outside_frontier:crates/codex1-core/src/lib.rs",
+        "package_write_scope_outside_frontier:crates/codex1-core/src/paths.rs",
+        "package_write_scope_outside_frontier:crates/codex1-core/src/runtime.rs",
+        "package_write_scope_outside_frontier:crates/codex1/src/internal/mod.rs",
+        "package_write_scope_outside_frontier:crates/codex1/tests/runtime_internal.rs",
+        "package_write_scope_outside_frontier:docs/runtime-backend.md",
+        "package_write_scope_outside_frontier:plans/ralph-control-loop-boundary/specs/ralph_loop_lease_runtime",
+        "package_read_scope_missing_for_included_spec:ralph_loop_lease_runtime:`.codex/skills`",
+        "package_read_scope_missing_for_included_spec:ralph_loop_lease_runtime:`.ralph/missions/ralph-control-loop-boundary`",
+        "package_read_scope_missing_for_included_spec:ralph_loop_lease_runtime:`crates/codex1-core/src`",
+        "package_read_scope_missing_for_included_spec:ralph_loop_lease_runtime:`crates/codex1/src/internal/mod.rs`",
+        "package_read_scope_missing_for_included_spec:ralph_loop_lease_runtime:`crates/codex1/tests/runtime_internal.rs`",
+        "package_read_scope_missing_for_included_spec:ralph_loop_lease_runtime:`docs/runtime-backend.md`",
+        "package_read_scope_missing_for_included_spec:ralph_loop_lease_runtime:`plans/ralph-control-loop-boundary`",
+        "package_write_scope_missing_for_included_spec:ralph_loop_lease_runtime:`crates/codex1-core/src/lib.rs`",
+        "package_write_scope_missing_for_included_spec:ralph_loop_lease_runtime:`crates/codex1-core/src/paths.rs`",
+        "package_write_scope_missing_for_included_spec:ralph_loop_lease_runtime:`crates/codex1-core/src/runtime.rs`",
+        "package_write_scope_missing_for_included_spec:ralph_loop_lease_runtime:`crates/codex1/src/internal/mod.rs`",
+        "package_write_scope_missing_for_included_spec:ralph_loop_lease_runtime:`crates/codex1/tests/runtime_internal.rs`",
+        "package_write_scope_missing_for_included_spec:ralph_loop_lease_runtime:`docs/runtime-backend.md`",
+        "package_write_scope_missing_for_included_spec:ralph_loop_lease_runtime:`plans/ralph-control-loop-boundary/specs/ralph_loop_lease_runtime`",
+        "package_read_scope_outside_target_spec:.codex/skills",
+        "package_read_scope_outside_target_spec:.ralph/missions/ralph-control-loop-boundary",
+        "package_read_scope_outside_target_spec:crates/codex1-core/src",
+        "package_read_scope_outside_target_spec:crates/codex1/src/internal/mod.rs",
+        "package_read_scope_outside_target_spec:crates/codex1/tests/runtime_internal.rs",
+        "package_read_scope_outside_target_spec:docs/runtime-backend.md",
+        "package_read_scope_outside_target_spec:plans/ralph-control-loop-boundary",
+        "package_write_scope_outside_target_spec:crates/codex1-core/src/lib.rs",
+        "package_write_scope_outside_target_spec:crates/codex1-core/src/paths.rs",
+        "package_write_scope_outside_target_spec:crates/codex1-core/src/runtime.rs",
+        "package_write_scope_outside_target_spec:crates/codex1/src/internal/mod.rs",
+        "package_write_scope_outside_target_spec:crates/codex1/tests/runtime_internal.rs",
+        "package_write_scope_outside_target_spec:docs/runtime-backend.md",
+        "package_write_scope_outside_target_spec:plans/ralph-control-loop-boundary/specs/ralph_loop_lease_runtime",
+        "gate_check_failed:scope_bounded_to_frontier"
+      ],
+      "superseded_by": "ralph-control-loop-boundary:planning_completion:blueprint:5"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:execution_package:spec:ralph_loop_lease_runtime:b3824cb2-9100-48f1-af92-8e90f5b9f3f1",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:ralph_loop_lease_runtime",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:3"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T08:18:28.773503Z",
+      "evaluated_at": "2026-04-17T08:18:28.763266Z",
+      "evaluated_against_ref": "b3824cb2-9100-48f1-af92-8e90f5b9f3f1",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/b3824cb2-9100-48f1-af92-8e90f5b9f3f1.json"
+      ],
+      "failure_refs": [
+        "package_read_scope_outside_frontier:.codex/skills",
+        "package_read_scope_outside_frontier:.ralph/missions/ralph-control-loop-boundary",
+        "package_read_scope_outside_frontier:crates/codex1-core/src",
+        "package_read_scope_outside_frontier:crates/codex1/src/internal/mod.rs",
+        "package_read_scope_outside_frontier:crates/codex1/tests/runtime_internal.rs",
+        "package_read_scope_outside_frontier:docs/runtime-backend.md",
+        "package_read_scope_outside_frontier:plans/ralph-control-loop-boundary",
+        "package_write_scope_outside_frontier:crates/codex1-core/src/lib.rs",
+        "package_write_scope_outside_frontier:crates/codex1-core/src/paths.rs",
+        "package_write_scope_outside_frontier:crates/codex1-core/src/runtime.rs",
+        "package_write_scope_outside_frontier:crates/codex1/src/internal/mod.rs",
+        "package_write_scope_outside_frontier:crates/codex1/tests/runtime_internal.rs",
+        "package_write_scope_outside_frontier:docs/runtime-backend.md",
+        "package_write_scope_outside_frontier:plans/ralph-control-loop-boundary/specs/ralph_loop_lease_runtime",
+        "package_read_scope_missing_for_included_spec:ralph_loop_lease_runtime:`.codex/skills`",
+        "package_read_scope_missing_for_included_spec:ralph_loop_lease_runtime:`.ralph/missions/ralph-control-loop-boundary`",
+        "package_read_scope_missing_for_included_spec:ralph_loop_lease_runtime:`crates/codex1-core/src`",
+        "package_read_scope_missing_for_included_spec:ralph_loop_lease_runtime:`crates/codex1/src/internal/mod.rs`",
+        "package_read_scope_missing_for_included_spec:ralph_loop_lease_runtime:`crates/codex1/tests/runtime_internal.rs`",
+        "package_read_scope_missing_for_included_spec:ralph_loop_lease_runtime:`docs/runtime-backend.md`",
+        "package_read_scope_missing_for_included_spec:ralph_loop_lease_runtime:`plans/ralph-control-loop-boundary`",
+        "package_write_scope_missing_for_included_spec:ralph_loop_lease_runtime:`crates/codex1-core/src/lib.rs`",
+        "package_write_scope_missing_for_included_spec:ralph_loop_lease_runtime:`crates/codex1-core/src/paths.rs`",
+        "package_write_scope_missing_for_included_spec:ralph_loop_lease_runtime:`crates/codex1-core/src/runtime.rs`",
+        "package_write_scope_missing_for_included_spec:ralph_loop_lease_runtime:`crates/codex1/src/internal/mod.rs`",
+        "package_write_scope_missing_for_included_spec:ralph_loop_lease_runtime:`crates/codex1/tests/runtime_internal.rs`",
+        "package_write_scope_missing_for_included_spec:ralph_loop_lease_runtime:`docs/runtime-backend.md`",
+        "package_write_scope_missing_for_included_spec:ralph_loop_lease_runtime:`plans/ralph-control-loop-boundary/specs/ralph_loop_lease_runtime`",
+        "package_read_scope_outside_target_spec:.codex/skills",
+        "package_read_scope_outside_target_spec:.ralph/missions/ralph-control-loop-boundary",
+        "package_read_scope_outside_target_spec:crates/codex1-core/src",
+        "package_read_scope_outside_target_spec:crates/codex1/src/internal/mod.rs",
+        "package_read_scope_outside_target_spec:crates/codex1/tests/runtime_internal.rs",
+        "package_read_scope_outside_target_spec:docs/runtime-backend.md",
+        "package_read_scope_outside_target_spec:plans/ralph-control-loop-boundary",
+        "package_write_scope_outside_target_spec:crates/codex1-core/src/lib.rs",
+        "package_write_scope_outside_target_spec:crates/codex1-core/src/paths.rs",
+        "package_write_scope_outside_target_spec:crates/codex1-core/src/runtime.rs",
+        "package_write_scope_outside_target_spec:crates/codex1/src/internal/mod.rs",
+        "package_write_scope_outside_target_spec:crates/codex1/tests/runtime_internal.rs",
+        "package_write_scope_outside_target_spec:docs/runtime-backend.md",
+        "package_write_scope_outside_target_spec:plans/ralph-control-loop-boundary/specs/ralph_loop_lease_runtime",
+        "gate_check_failed:scope_bounded_to_frontier"
+      ],
+      "superseded_by": "ralph-control-loop-boundary:execution_package:spec:ralph_loop_lease_runtime:a31920b3-a02f-4b48-a74a-2807c7bd0cb5"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:planning_completion:blueprint:5",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:ralph-control-loop-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T08:18:50.245922Z",
+      "evaluated_at": "2026-04-17T08:19:17.727185Z",
+      "evaluated_against_ref": "package:a31920b3-a02f-4b48-a74a-2807c7bd0cb5",
+      "evidence_refs": [
+        "/Users/joel/codex1/PLANS/ralph-control-loop-boundary/PROGRAM-BLUEPRINT.md",
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/a31920b3-a02f-4b48-a74a-2807c7bd0cb5.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "ralph-control-loop-boundary:planning_completion:blueprint:9"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:execution_package:spec:ralph_loop_lease_runtime:a31920b3-a02f-4b48-a74a-2807c7bd0cb5",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:ralph_loop_lease_runtime",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5"
+      ],
+      "status": "stale",
+      "blocking": true,
+      "opened_at": "2026-04-17T08:19:17.727183Z",
+      "evaluated_at": "2026-04-17T08:19:17.713759Z",
+      "evaluated_against_ref": "a31920b3-a02f-4b48-a74a-2807c7bd0cb5",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/a31920b3-a02f-4b48-a74a-2807c7bd0cb5.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:BlockingReview:spec:ralph_loop_lease_runtime:67fe6d8f-f212-4a26-a442-7e45ead2aa33",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:ralph_loop_lease_runtime",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5",
+        "bundle:67fe6d8f-f212-4a26-a442-7e45ead2aa33"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T08:29:27.056024Z",
+      "evaluated_at": "2026-04-17T08:35:07.590719Z",
+      "evaluated_against_ref": "67fe6d8f-f212-4a26-a442-7e45ead2aa33",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/bundles/67fe6d8f-f212-4a26-a442-7e45ead2aa33.json",
+        "reviewer-output:67fe6d8f-f212-4a26-a442-7e45ead2aa33:10d9e644-86c2-4a76-b0e1-59dd6b01f3cf",
+        "PLANS/ralph-control-loop-boundary/specs/ralph_loop_lease_runtime/RECEIPTS/2026-04-17-ralph-loop-lease-runtime-proof.txt"
+      ],
+      "failure_refs": [
+        "Required mission-artifact validation proof does not reproduce."
+      ],
+      "superseded_by": "ralph-control-loop-boundary:BlockingReview:spec:ralph_loop_lease_runtime:a7792da5-92c9-4237-aad8-8fcdc1b0d9df"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:BlockingReview:spec:ralph_loop_lease_runtime:a7792da5-92c9-4237-aad8-8fcdc1b0d9df",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:ralph_loop_lease_runtime",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5",
+        "bundle:a7792da5-92c9-4237-aad8-8fcdc1b0d9df"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T08:36:50.702844Z",
+      "evaluated_at": "2026-04-17T08:41:39.47235Z",
+      "evaluated_against_ref": "a7792da5-92c9-4237-aad8-8fcdc1b0d9df",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/bundles/a7792da5-92c9-4237-aad8-8fcdc1b0d9df.json",
+        "reviewer-output:a7792da5-92c9-4237-aad8-8fcdc1b0d9df:8edfa6af-ba6b-4f2d-bc62-d3cf58ff4454",
+        "review-wave-contaminated:mission-truth-repaired-after-reviewer-output",
+        "PLANS/ralph-control-loop-boundary/specs/ralph_loop_lease_runtime/RECEIPTS/2026-04-17-ralph-loop-lease-runtime-proof.txt"
+      ],
+      "failure_refs": [
+        "Mission-artifact validation proof still did not reproduce for this review wave before parent repair."
+      ],
+      "superseded_by": "ralph-control-loop-boundary:BlockingReview:spec:ralph_loop_lease_runtime:0bd25295-e526-4e4f-90f4-080468f77b9b"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:BlockingReview:spec:ralph_loop_lease_runtime:0bd25295-e526-4e4f-90f4-080468f77b9b",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:ralph_loop_lease_runtime",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:5",
+        "bundle:0bd25295-e526-4e4f-90f4-080468f77b9b"
+      ],
+      "status": "stale",
+      "blocking": true,
+      "opened_at": "2026-04-17T08:42:29.975578Z",
+      "evaluated_at": "2026-04-17T08:47:56.247543Z",
+      "evaluated_against_ref": "0bd25295-e526-4e4f-90f4-080468f77b9b",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/bundles/0bd25295-e526-4e4f-90f4-080468f77b9b.json",
+        "reviewer-output:0bd25295-e526-4e4f-90f4-080468f77b9b:8ada14ad-4110-4831-a027-676434cf2fdc",
+        "reviewer-output:0bd25295-e526-4e4f-90f4-080468f77b9b:bcc77a5f-29c8-42fa-95a0-e75f6e6e2bf5",
+        "PLANS/ralph-control-loop-boundary/specs/ralph_loop_lease_runtime/RECEIPTS/2026-04-17-ralph-loop-lease-runtime-proof.txt"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:planning_completion:blueprint:9",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:ralph-control-loop-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:9"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T09:03:56.544986Z",
+      "evaluated_at": "2026-04-17T09:04:52.014373Z",
+      "evaluated_against_ref": null,
+      "evidence_refs": [
+        "/Users/joel/codex1/PLANS/ralph-control-loop-boundary/PROGRAM-BLUEPRINT.md",
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-graph.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "ralph-control-loop-boundary:planning_completion:blueprint:10"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:planning_completion:blueprint:10",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:ralph-control-loop-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:10"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T09:04:52.014378Z",
+      "evaluated_at": "2026-04-17T09:05:29.612114Z",
+      "evaluated_against_ref": "package:d77ae34d-c93f-4390-aeec-013f182da449",
+      "evidence_refs": [
+        "/Users/joel/codex1/PLANS/ralph-control-loop-boundary/PROGRAM-BLUEPRINT.md",
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-graph.json",
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/d77ae34d-c93f-4390-aeec-013f182da449.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "ralph-control-loop-boundary:planning_completion:blueprint:11"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:execution_package:spec:loop_skill_surface_and_pause:d77ae34d-c93f-4390-aeec-013f182da449",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:loop_skill_surface_and_pause",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:10"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T09:05:29.61211Z",
+      "evaluated_at": "2026-04-17T09:05:29.599596Z",
+      "evaluated_against_ref": "d77ae34d-c93f-4390-aeec-013f182da449",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/d77ae34d-c93f-4390-aeec-013f182da449.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "ralph-control-loop-boundary:execution_package:spec:loop_skill_surface_and_pause:4c8477b5-28b5-42dd-af32-ff10b7659677"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:BlockingReview:spec:loop_skill_surface_and_pause:fb9c9715-9915-4f13-9e1e-d725938dd422",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:loop_skill_surface_and_pause",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:10",
+        "bundle:fb9c9715-9915-4f13-9e1e-d725938dd422"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T09:08:46.730025Z",
+      "evaluated_at": "2026-04-17T09:15:08.677463Z",
+      "evaluated_against_ref": "fb9c9715-9915-4f13-9e1e-d725938dd422",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/bundles/fb9c9715-9915-4f13-9e1e-d725938dd422.json",
+        "reviewer-output:fb9c9715-9915-4f13-9e1e-d725938dd422:b1a3256a-6305-40e7-90d0-aefb843186cd",
+        "PLANS/ralph-control-loop-boundary/specs/loop_skill_surface_and_pause/RECEIPTS/2026-04-17-loop-skill-surface-proof.txt"
+      ],
+      "failure_refs": [
+        "Review found $review skill removal conflicts with the current non-breakage wording."
+      ],
+      "superseded_by": "ralph-control-loop-boundary:BlockingReview:spec:loop_skill_surface_and_pause:0f48c7d4-0074-489e-8576-7eab41d1c940"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:planning_completion:blueprint:11",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:ralph-control-loop-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:11"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T09:16:51.59459Z",
+      "evaluated_at": "2026-04-17T09:34:24.338752Z",
+      "evaluated_against_ref": "package:0d1b973f-38cd-445a-9174-878734e23595",
+      "evidence_refs": [
+        "/Users/joel/codex1/PLANS/ralph-control-loop-boundary/PROGRAM-BLUEPRINT.md",
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-graph.json",
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/4c8477b5-28b5-42dd-af32-ff10b7659677.json",
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/4967ff22-8ff2-4cc4-8a88-659730b35acb.json",
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/0288a802-041c-4a9d-95c6-1690df448ea9.json",
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/abe392a2-674e-4429-bd5c-365cc65304d3.json",
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/0d1b973f-38cd-445a-9174-878734e23595.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "ralph-control-loop-boundary:planning_completion:blueprint:12"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:execution_package:spec:loop_skill_surface_and_pause:4c8477b5-28b5-42dd-af32-ff10b7659677",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:loop_skill_surface_and_pause",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:11"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T09:18:36.209797Z",
+      "evaluated_at": "2026-04-17T09:18:36.197127Z",
+      "evaluated_against_ref": "4c8477b5-28b5-42dd-af32-ff10b7659677",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/4c8477b5-28b5-42dd-af32-ff10b7659677.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "ralph-control-loop-boundary:execution_package:spec:loop_skill_surface_and_pause:4967ff22-8ff2-4cc4-8a88-659730b35acb"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:BlockingReview:spec:loop_skill_surface_and_pause:0f48c7d4-0074-489e-8576-7eab41d1c940",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:loop_skill_surface_and_pause",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:11",
+        "bundle:0f48c7d4-0074-489e-8576-7eab41d1c940"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T09:19:05.888979Z",
+      "evaluated_at": "2026-04-17T09:23:55.180886Z",
+      "evaluated_against_ref": "0f48c7d4-0074-489e-8576-7eab41d1c940",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/bundles/0f48c7d4-0074-489e-8576-7eab41d1c940.json",
+        "reviewer-output:0f48c7d4-0074-489e-8576-7eab41d1c940:5ab7273f-18d7-4d5c-a3a2-3ccd72ddfe1b",
+        "reviewer-output:0f48c7d4-0074-489e-8576-7eab41d1c940:ca23386f-c19a-4c80-844d-5c1492dd98a4",
+        "reviewer-output:0f48c7d4-0074-489e-8576-7eab41d1c940:ccf2acbf-bdc1-46aa-8237-5ab1d6f7c0d7",
+        "PLANS/ralph-control-loop-boundary/specs/loop_skill_surface_and_pause/RECEIPTS/2026-04-17-loop-skill-surface-proof.txt"
+      ],
+      "failure_refs": [
+        "Proof receipt omits command transcripts for required proof rows.",
+        "Runtime backend public-skill list omits $close despite defining it as the pause/clear UX."
+      ],
+      "superseded_by": "ralph-control-loop-boundary:BlockingReview:spec:loop_skill_surface_and_pause:9999db00-fc68-4e44-8a66-038e935bff49"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:execution_package:spec:loop_skill_surface_and_pause:4967ff22-8ff2-4cc4-8a88-659730b35acb",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:loop_skill_surface_and_pause",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:11"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T09:25:13.182778Z",
+      "evaluated_at": "2026-04-17T09:25:13.159957Z",
+      "evaluated_against_ref": "4967ff22-8ff2-4cc4-8a88-659730b35acb",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/4967ff22-8ff2-4cc4-8a88-659730b35acb.json"
+      ],
+      "failure_refs": [
+        "dependency_governing_ref_missing:blocked_review_wave_repaired",
+        "gate_check_failed:dependency_truth_current"
+      ],
+      "superseded_by": "ralph-control-loop-boundary:execution_package:spec:loop_skill_surface_and_pause:0288a802-041c-4a9d-95c6-1690df448ea9"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:execution_package:spec:loop_skill_surface_and_pause:0288a802-041c-4a9d-95c6-1690df448ea9",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:loop_skill_surface_and_pause",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:11"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T09:25:28.321629Z",
+      "evaluated_at": "2026-04-17T09:25:28.306975Z",
+      "evaluated_against_ref": "0288a802-041c-4a9d-95c6-1690df448ea9",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/0288a802-041c-4a9d-95c6-1690df448ea9.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "ralph-control-loop-boundary:execution_package:spec:loop_skill_surface_and_pause:abe392a2-674e-4429-bd5c-365cc65304d3"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:BlockingReview:spec:loop_skill_surface_and_pause:9999db00-fc68-4e44-8a66-038e935bff49",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:loop_skill_surface_and_pause",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:11",
+        "bundle:9999db00-fc68-4e44-8a66-038e935bff49"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T09:25:44.558973Z",
+      "evaluated_at": "2026-04-17T09:29:21.486411Z",
+      "evaluated_against_ref": "9999db00-fc68-4e44-8a66-038e935bff49",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/bundles/9999db00-fc68-4e44-8a66-038e935bff49.json",
+        "reviewer-output:9999db00-fc68-4e44-8a66-038e935bff49:1fc66fd8-4021-4bc5-b495-7c6d1d789335",
+        "reviewer-output:9999db00-fc68-4e44-8a66-038e935bff49:f311d8a8-1046-44e3-87c6-5fbc8304373d",
+        "reviewer-output:9999db00-fc68-4e44-8a66-038e935bff49:3a1e7dee-b4b1-4d12-9956-820933d859d7"
+      ],
+      "failure_refs": [
+        "Formatting-coupled assertion makes the close-surface regression test brittle.",
+        "Runtime public-surface guard misses explicit $review-loop versus legacy $review doc contract."
+      ],
+      "superseded_by": "ralph-control-loop-boundary:BlockingReview:spec:loop_skill_surface_and_pause:741adc5f-83ed-4c15-99f2-9bdc84b68cd9"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:execution_package:spec:loop_skill_surface_and_pause:abe392a2-674e-4429-bd5c-365cc65304d3",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:loop_skill_surface_and_pause",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:11"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T09:30:05.566679Z",
+      "evaluated_at": "2026-04-17T09:30:05.553815Z",
+      "evaluated_against_ref": "abe392a2-674e-4429-bd5c-365cc65304d3",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/abe392a2-674e-4429-bd5c-365cc65304d3.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "ralph-control-loop-boundary:execution_package:spec:loop_skill_surface_and_pause:0d1b973f-38cd-445a-9174-878734e23595"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:BlockingReview:spec:loop_skill_surface_and_pause:741adc5f-83ed-4c15-99f2-9bdc84b68cd9",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:loop_skill_surface_and_pause",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:11",
+        "bundle:741adc5f-83ed-4c15-99f2-9bdc84b68cd9"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T09:30:19.811479Z",
+      "evaluated_at": "2026-04-17T09:33:39.595168Z",
+      "evaluated_against_ref": "741adc5f-83ed-4c15-99f2-9bdc84b68cd9",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/bundles/741adc5f-83ed-4c15-99f2-9bdc84b68cd9.json",
+        "reviewer-output:741adc5f-83ed-4c15-99f2-9bdc84b68cd9:8fd231dd-8086-45b7-bad7-a4586c5c22ea",
+        "reviewer-output:741adc5f-83ed-4c15-99f2-9bdc84b68cd9:4da45de3-d122-44ab-891f-84eaa737955b",
+        "reviewer-output:741adc5f-83ed-4c15-99f2-9bdc84b68cd9:2469cfa1-7411-41f6-8f6f-7afcb3d3b463"
+      ],
+      "failure_refs": [
+        "Public-skill doc assertion is brittle and can miss legacy $review regressions."
+      ],
+      "superseded_by": "ralph-control-loop-boundary:BlockingReview:spec:loop_skill_surface_and_pause:aa066862-c557-42e6-9a58-4b2e6f99c94a"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:execution_package:spec:loop_skill_surface_and_pause:0d1b973f-38cd-445a-9174-878734e23595",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:loop_skill_surface_and_pause",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:11"
+      ],
+      "status": "stale",
+      "blocking": true,
+      "opened_at": "2026-04-17T09:34:24.33875Z",
+      "evaluated_at": "2026-04-17T09:34:24.325958Z",
+      "evaluated_against_ref": "0d1b973f-38cd-445a-9174-878734e23595",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/0d1b973f-38cd-445a-9174-878734e23595.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:BlockingReview:spec:loop_skill_surface_and_pause:aa066862-c557-42e6-9a58-4b2e6f99c94a",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:loop_skill_surface_and_pause",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:11",
+        "bundle:aa066862-c557-42e6-9a58-4b2e6f99c94a"
+      ],
+      "status": "stale",
+      "blocking": true,
+      "opened_at": "2026-04-17T09:34:38.606705Z",
+      "evaluated_at": "2026-04-17T09:37:40.129627Z",
+      "evaluated_against_ref": "aa066862-c557-42e6-9a58-4b2e6f99c94a",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/bundles/aa066862-c557-42e6-9a58-4b2e6f99c94a.json",
+        "reviewer-output:aa066862-c557-42e6-9a58-4b2e6f99c94a:385f0197-82e8-4dc4-9905-20574aab84cd",
+        "reviewer-output:aa066862-c557-42e6-9a58-4b2e6f99c94a:328ba8d7-b491-47ae-a379-59af7fac53b6",
+        "PLANS/ralph-control-loop-boundary/specs/loop_skill_surface_and_pause/RECEIPTS/2026-04-17-loop-skill-surface-proof.txt"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:planning_completion:blueprint:12",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:ralph-control-loop-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:12"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T09:41:27.468437Z",
+      "evaluated_at": "2026-04-17T09:42:17.299017Z",
+      "evaluated_against_ref": null,
+      "evidence_refs": [
+        "/Users/joel/codex1/PLANS/ralph-control-loop-boundary/PROGRAM-BLUEPRINT.md",
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-graph.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "ralph-control-loop-boundary:planning_completion:blueprint:13"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:planning_completion:blueprint:13",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:ralph-control-loop-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:13"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T09:42:17.299023Z",
+      "evaluated_at": "2026-04-17T09:54:10.815851Z",
+      "evaluated_against_ref": "package:0d19df12-2c8f-444b-b25b-791084404c15",
+      "evidence_refs": [
+        "/Users/joel/codex1/PLANS/ralph-control-loop-boundary/PROGRAM-BLUEPRINT.md",
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-graph.json",
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/147bbc99-662a-423b-a3b6-dcfb66020d29.json",
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/0d19df12-2c8f-444b-b25b-791084404c15.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "ralph-control-loop-boundary:planning_completion:blueprint:14"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:execution_package:spec:control_loop_qualification:147bbc99-662a-423b-a3b6-dcfb66020d29",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:control_loop_qualification",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:13"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T09:42:53.368762Z",
+      "evaluated_at": "2026-04-17T09:42:53.353056Z",
+      "evaluated_against_ref": "147bbc99-662a-423b-a3b6-dcfb66020d29",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/147bbc99-662a-423b-a3b6-dcfb66020d29.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "ralph-control-loop-boundary:execution_package:spec:control_loop_qualification:0d19df12-2c8f-444b-b25b-791084404c15"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:execution_package:spec:control_loop_qualification:0d19df12-2c8f-444b-b25b-791084404c15",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:control_loop_qualification",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:13"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T09:54:10.815847Z",
+      "evaluated_at": "2026-04-17T09:54:10.797726Z",
+      "evaluated_against_ref": "0d19df12-2c8f-444b-b25b-791084404c15",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/0d19df12-2c8f-444b-b25b-791084404c15.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "ralph-control-loop-boundary:execution_package:spec:control_loop_qualification:8b4bd058-052c-43b0-b59c-ca8a9b914dc8"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:BlockingReview:spec:control_loop_qualification:db3632de-8872-47f5-bc9d-ee8d536686b1",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:control_loop_qualification",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:13",
+        "bundle:db3632de-8872-47f5-bc9d-ee8d536686b1"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T09:54:50.073303Z",
+      "evaluated_at": "2026-04-17T10:00:21.652234Z",
+      "evaluated_against_ref": "db3632de-8872-47f5-bc9d-ee8d536686b1",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/bundles/db3632de-8872-47f5-bc9d-ee8d536686b1.json",
+        "reviewer-output:db3632de-8872-47f5-bc9d-ee8d536686b1:8c194c6f-483c-464d-b64e-1e498e25930f",
+        "reviewer-output:db3632de-8872-47f5-bc9d-ee8d536686b1:34cd1f9a-fa61-4f73-8400-8393940b5cb6",
+        "reviewer-output:db3632de-8872-47f5-bc9d-ee8d536686b1:70fcbc9b-ccb5-4a49-8836-140693bada2e"
+      ],
+      "failure_refs": [
+        "Source qualification proof row remains failed under the paused-hook caveat.",
+        "Reviewer-output helper can continue after evidence snapshot capture failure.",
+        "Delegated-review docs checks still contain false-positive or line-wrapping risks."
+      ],
+      "superseded_by": "ralph-control-loop-boundary:BlockingReview:spec:control_loop_qualification:554f7fb3-076a-47a8-98d8-d3e08c729142"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:planning_completion:blueprint:14",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:ralph-control-loop-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:14"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T10:03:34.814548Z",
+      "evaluated_at": "2026-04-17T10:04:22.898747Z",
+      "evaluated_against_ref": "package:8b4bd058-052c-43b0-b59c-ca8a9b914dc8",
+      "evidence_refs": [
+        "/Users/joel/codex1/PLANS/ralph-control-loop-boundary/PROGRAM-BLUEPRINT.md",
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-graph.json",
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/8b4bd058-052c-43b0-b59c-ca8a9b914dc8.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "ralph-control-loop-boundary:planning_completion:blueprint:15"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:execution_package:spec:control_loop_qualification:8b4bd058-052c-43b0-b59c-ca8a9b914dc8",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:control_loop_qualification",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:14"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T10:04:22.898744Z",
+      "evaluated_at": "2026-04-17T10:04:22.888717Z",
+      "evaluated_against_ref": "8b4bd058-052c-43b0-b59c-ca8a9b914dc8",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/8b4bd058-052c-43b0-b59c-ca8a9b914dc8.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "ralph-control-loop-boundary:execution_package:spec:control_loop_qualification:da648e19-73c3-4ef0-8d40-c73a1889b8e1"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:BlockingReview:spec:control_loop_qualification:554f7fb3-076a-47a8-98d8-d3e08c729142",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:control_loop_qualification",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:14",
+        "bundle:554f7fb3-076a-47a8-98d8-d3e08c729142"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T10:04:46.098547Z",
+      "evaluated_at": "2026-04-17T10:10:11.242783Z",
+      "evaluated_against_ref": "554f7fb3-076a-47a8-98d8-d3e08c729142",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/bundles/554f7fb3-076a-47a8-98d8-d3e08c729142.json",
+        "reviewer-output:554f7fb3-076a-47a8-98d8-d3e08c729142:c0e0b285-3989-470b-842d-7ce5245c5fab",
+        "reviewer-output:554f7fb3-076a-47a8-98d8-d3e08c729142:b3888971-b36f-491b-84b1-bf8ed841a2f3"
+      ],
+      "failure_refs": [
+        "control_loop_boundary passes while recording a failed cleanup smoke step."
+      ],
+      "superseded_by": "ralph-control-loop-boundary:BlockingReview:spec:control_loop_qualification:e16bae9e-9f81-4e2f-81b4-2310663c3ea4"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:planning_completion:blueprint:15",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:ralph-control-loop-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:15"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T10:11:20.745069Z",
+      "evaluated_at": "2026-04-17T10:11:42.407217Z",
+      "evaluated_against_ref": "package:da648e19-73c3-4ef0-8d40-c73a1889b8e1",
+      "evidence_refs": [
+        "/Users/joel/codex1/PLANS/ralph-control-loop-boundary/PROGRAM-BLUEPRINT.md",
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-graph.json",
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/da648e19-73c3-4ef0-8d40-c73a1889b8e1.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "ralph-control-loop-boundary:planning_completion:blueprint:16"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:execution_package:spec:control_loop_qualification:da648e19-73c3-4ef0-8d40-c73a1889b8e1",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:control_loop_qualification",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:15"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T10:11:42.407215Z",
+      "evaluated_at": "2026-04-17T10:11:42.394473Z",
+      "evaluated_against_ref": "da648e19-73c3-4ef0-8d40-c73a1889b8e1",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/da648e19-73c3-4ef0-8d40-c73a1889b8e1.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "ralph-control-loop-boundary:execution_package:spec:control_loop_qualification:f0baab23-a024-4d23-bbf2-a686e58ec7f2"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:BlockingReview:spec:control_loop_qualification:e16bae9e-9f81-4e2f-81b4-2310663c3ea4",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:control_loop_qualification",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:15",
+        "bundle:e16bae9e-9f81-4e2f-81b4-2310663c3ea4"
+      ],
+      "status": "superseded",
+      "blocking": true,
+      "opened_at": "2026-04-17T10:12:05.396317Z",
+      "evaluated_at": "2026-04-17T10:20:18.177572Z",
+      "evaluated_against_ref": "e16bae9e-9f81-4e2f-81b4-2310663c3ea4",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/bundles/e16bae9e-9f81-4e2f-81b4-2310663c3ea4.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": "ralph-control-loop-boundary:BlockingReview:spec:control_loop_qualification:3df4d417-db54-4988-8dae-fcca6da974fe"
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:planning_completion:blueprint:16",
+      "gate_kind": "planning_completion",
+      "target_ref": "mission:ralph-control-loop-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:16"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-17T10:20:18.177573Z",
+      "evaluated_at": "2026-04-17T10:20:45.218248Z",
+      "evaluated_against_ref": "package:f0baab23-a024-4d23-bbf2-a686e58ec7f2",
+      "evidence_refs": [
+        "/Users/joel/codex1/PLANS/ralph-control-loop-boundary/PROGRAM-BLUEPRINT.md",
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-graph.json",
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/f0baab23-a024-4d23-bbf2-a686e58ec7f2.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:execution_package:spec:control_loop_qualification:f0baab23-a024-4d23-bbf2-a686e58ec7f2",
+      "gate_kind": "execution_package",
+      "target_ref": "spec:control_loop_qualification",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:16"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-17T10:20:45.218246Z",
+      "evaluated_at": "2026-04-17T10:20:45.203488Z",
+      "evaluated_against_ref": "f0baab23-a024-4d23-bbf2-a686e58ec7f2",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/execution-packages/f0baab23-a024-4d23-bbf2-a686e58ec7f2.json"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:BlockingReview:spec:control_loop_qualification:3df4d417-db54-4988-8dae-fcca6da974fe",
+      "gate_kind": "blocking_review",
+      "target_ref": "spec:control_loop_qualification",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:16",
+        "bundle:3df4d417-db54-4988-8dae-fcca6da974fe"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-17T10:21:09.508134Z",
+      "evaluated_at": "2026-04-17T10:26:59.725662Z",
+      "evaluated_against_ref": "3df4d417-db54-4988-8dae-fcca6da974fe",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/bundles/3df4d417-db54-4988-8dae-fcca6da974fe.json",
+        "reviewer-output:3df4d417-db54-4988-8dae-fcca6da974fe:098f6615-2ea1-4dcb-8e79-e41200b36f08",
+        "reviewer-output:3df4d417-db54-4988-8dae-fcca6da974fe:06717b49-d18a-402d-b9d1-f42759962995",
+        "PLANS/ralph-control-loop-boundary/specs/control_loop_qualification/RECEIPTS/2026-04-17-control-loop-qualification-proof.txt"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    },
+    {
+      "gate_id": "ralph-control-loop-boundary:MissionCloseReview:mission:ralph-control-loop-boundary:7c054b93-c388-4d8a-b1c7-2097564d4c10",
+      "gate_kind": "mission_close_review",
+      "target_ref": "mission:ralph-control-loop-boundary",
+      "governing_refs": [
+        "lock:1",
+        "blueprint:16",
+        "bundle:7c054b93-c388-4d8a-b1c7-2097564d4c10"
+      ],
+      "status": "passed",
+      "blocking": true,
+      "opened_at": "2026-04-17T10:28:03.259572Z",
+      "evaluated_at": "2026-04-17T10:31:19.381061Z",
+      "evaluated_against_ref": "7c054b93-c388-4d8a-b1c7-2097564d4c10",
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/bundles/7c054b93-c388-4d8a-b1c7-2097564d4c10.json",
+        "reviewer-output:7c054b93-c388-4d8a-b1c7-2097564d4c10:1dd7c570-627a-4651-b3f8-5821b5f1de59",
+        "reviewer-output:7c054b93-c388-4d8a-b1c7-2097564d4c10:f86b5b11-419b-43a7-985d-7f41878c4148",
+        "PLANS/ralph-control-loop-boundary/specs/ralph_loop_lease_runtime/RECEIPTS/2026-04-17-ralph-loop-lease-runtime-proof.txt",
+        "PLANS/ralph-control-loop-boundary/specs/loop_skill_surface_and_pause/RECEIPTS/2026-04-17-loop-skill-surface-proof.txt",
+        "PLANS/ralph-control-loop-boundary/specs/control_loop_qualification/RECEIPTS/2026-04-17-control-loop-qualification-proof.txt"
+      ],
+      "failure_refs": [],
+      "superseded_by": null
+    }
+  ]
+}

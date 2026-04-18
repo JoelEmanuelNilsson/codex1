@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 
 pub mod doctor;
+pub mod init;
 pub mod qualify;
 pub mod restore;
 pub mod setup;
@@ -20,6 +21,18 @@ pub struct CommonArgs {
 
 #[derive(Debug, Args, Clone)]
 pub struct SetupArgs {
+    #[command(flatten)]
+    pub common: CommonArgs,
+
+    #[arg(long, value_name = "PATH")]
+    pub backup_root: Option<PathBuf>,
+
+    #[arg(long, default_value_t = false)]
+    pub force: bool,
+}
+
+#[derive(Debug, Args, Clone)]
+pub struct InitArgs {
     #[command(flatten)]
     pub common: CommonArgs,
 
@@ -78,6 +91,7 @@ pub struct QualifyArgs {
 #[derive(Debug, Subcommand, Clone)]
 pub enum Command {
     Setup(SetupArgs),
+    Init(InitArgs),
     Doctor(DoctorArgs),
     QualifyCodex(QualifyArgs),
     Restore(RestoreArgs),

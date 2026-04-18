@@ -10,17 +10,22 @@ use codex1_core::{
     ExecutionGraphValidationReport, ExecutionPackageInput, MissionBootstrapReport,
     MissionGateIndex, MissionInitInput, MissionPaths, MissionStateFrontmatter,
     OutcomeLockFrontmatter, PackageValidationReport, PlanningWriteInput,
-    ProgramBlueprintFrontmatter, ReplanLogInput, ResolveResumeInput, ResolveResumeReport,
-    ReviewBundleInput, ReviewBundleValidationReport, ReviewResultInput,
+    ProgramBlueprintFrontmatter, RalphLoopLeaseInput, RalphLoopLeasePauseInput, ReplanLogInput,
+    ResolveResumeInput, ResolveResumeReport, ReviewBundleInput, ReviewBundleValidationReport,
+    ReviewEvidenceSnapshotValidationReport, ReviewResultInput, ReviewerOutputInput,
     SelectionAcknowledgementInput, SelectionConsumptionInput, SelectionResolutionInput,
-    SelectionState, SelectionStateInput, WaitingRequestAcknowledgementInput,
-    WorkstreamSpecFrontmatter, WriterPacketInput, WriterPacketValidationReport,
-    acknowledge_selection_request, acknowledge_waiting_request, append_contradiction,
-    append_replan_log, compile_execution_package, compile_review_bundle, consume_selection_wait,
-    derive_writer_packet, initialize_mission, load_closeouts, load_state, open_selection_wait,
-    rebuild_state_from_files, record_review_result, resolve_resume, resolve_selection_wait,
-    resolve_stop_hook_output, validate_execution_graph, validate_execution_package,
-    validate_review_bundle, validate_writer_packet, write_closeout, write_planning_artifacts,
+    SelectionState, SelectionStateInput, VisibleArtifactTextKind,
+    WaitingRequestAcknowledgementInput, WorkstreamSpecFrontmatter, WriterPacketInput,
+    WriterPacketValidationReport, acknowledge_selection_request, acknowledge_waiting_request,
+    append_contradiction, append_replan_log, begin_ralph_loop_lease,
+    capture_review_evidence_snapshot, capture_review_truth_snapshot, clear_ralph_loop_lease,
+    compile_execution_package, compile_review_bundle, consume_selection_wait, derive_writer_packet,
+    initialize_mission, inspect_ralph_loop_lease, load_closeouts, load_state, open_selection_wait,
+    pause_ralph_loop_lease, rebuild_state_from_files, record_review_result, record_reviewer_output,
+    resolve_resume, resolve_selection_wait, resolve_stop_hook_output, validate_execution_graph,
+    validate_execution_package, validate_review_bundle, validate_review_evidence_snapshot,
+    validate_visible_artifact_text, validate_writer_packet, write_closeout,
+    write_planning_artifacts,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -174,6 +179,45 @@ enum InternalCommand {
         #[arg(long, default_value_t = true)]
         json: bool,
     },
+    CaptureReviewTruthSnapshot {
+        #[arg(long, value_name = "PATH")]
+        repo_root: Option<PathBuf>,
+        #[arg(long)]
+        mission_id: String,
+        #[arg(long)]
+        bundle_id: String,
+        #[arg(long, default_value_t = true)]
+        json: bool,
+    },
+    CaptureReviewEvidenceSnapshot {
+        #[arg(long, value_name = "PATH")]
+        repo_root: Option<PathBuf>,
+        #[arg(long)]
+        mission_id: String,
+        #[arg(long)]
+        bundle_id: String,
+        #[arg(long, default_value_t = true)]
+        json: bool,
+    },
+    ValidateReviewEvidenceSnapshot {
+        #[arg(long, value_name = "PATH")]
+        repo_root: Option<PathBuf>,
+        #[arg(long)]
+        mission_id: String,
+        #[arg(long)]
+        bundle_id: String,
+        #[arg(long, default_value_t = true)]
+        json: bool,
+    },
+    #[command(name = "record-reviewer-output")]
+    RecordReviewerOutput {
+        #[arg(long, value_name = "PATH")]
+        repo_root: Option<PathBuf>,
+        #[arg(long, default_value = "-")]
+        input_json: String,
+        #[arg(long, default_value_t = true)]
+        json: bool,
+    },
     #[command(name = "record-review-outcome", visible_alias = "record-review-result")]
     RecordReviewResult {
         #[arg(long, value_name = "PATH")]
@@ -250,6 +294,34 @@ enum InternalCommand {
         repo_root: Option<PathBuf>,
         #[arg(long, default_value = "-")]
         input_json: String,
+        #[arg(long, default_value_t = true)]
+        json: bool,
+    },
+    BeginLoopLease {
+        #[arg(long, value_name = "PATH")]
+        repo_root: Option<PathBuf>,
+        #[arg(long, default_value = "-")]
+        input_json: String,
+        #[arg(long, default_value_t = true)]
+        json: bool,
+    },
+    PauseLoopLease {
+        #[arg(long, value_name = "PATH")]
+        repo_root: Option<PathBuf>,
+        #[arg(long, default_value = "-")]
+        input_json: String,
+        #[arg(long, default_value_t = true)]
+        json: bool,
+    },
+    ClearLoopLease {
+        #[arg(long, value_name = "PATH")]
+        repo_root: Option<PathBuf>,
+        #[arg(long, default_value_t = true)]
+        json: bool,
+    },
+    InspectLoopLease {
+        #[arg(long, value_name = "PATH")]
+        repo_root: Option<PathBuf>,
         #[arg(long, default_value_t = true)]
         json: bool,
     },
@@ -350,6 +422,29 @@ pub fn run(args: InternalArgs) -> Result<()> {
             bundle_id,
             json,
         } => run_validate_review_bundle(repo_root, &mission_id, &bundle_id, json),
+        InternalCommand::CaptureReviewTruthSnapshot {
+            repo_root,
+            mission_id,
+            bundle_id,
+            json,
+        } => run_capture_review_truth_snapshot(repo_root, &mission_id, &bundle_id, json),
+        InternalCommand::CaptureReviewEvidenceSnapshot {
+            repo_root,
+            mission_id,
+            bundle_id,
+            json,
+        } => run_capture_review_evidence_snapshot(repo_root, &mission_id, &bundle_id, json),
+        InternalCommand::ValidateReviewEvidenceSnapshot {
+            repo_root,
+            mission_id,
+            bundle_id,
+            json,
+        } => run_validate_review_evidence_snapshot(repo_root, &mission_id, &bundle_id, json),
+        InternalCommand::RecordReviewerOutput {
+            repo_root,
+            input_json,
+            json,
+        } => run_record_reviewer_output(repo_root, &input_json, json),
         InternalCommand::RecordReviewResult {
             repo_root,
             input_json,
@@ -402,6 +497,22 @@ pub fn run(args: InternalArgs) -> Result<()> {
             input_json,
             json,
         } => run_acknowledge_selection_request(repo_root, &input_json, json),
+        InternalCommand::BeginLoopLease {
+            repo_root,
+            input_json,
+            json,
+        } => run_begin_loop_lease(repo_root, &input_json, json),
+        InternalCommand::PauseLoopLease {
+            repo_root,
+            input_json,
+            json,
+        } => run_pause_loop_lease(repo_root, &input_json, json),
+        InternalCommand::ClearLoopLease { repo_root, json } => {
+            run_clear_loop_lease(repo_root, json)
+        }
+        InternalCommand::InspectLoopLease { repo_root, json } => {
+            run_inspect_loop_lease(repo_root, json)
+        }
         InternalCommand::WriteCloseout {
             repo_root,
             mission_id,
@@ -415,6 +526,25 @@ pub fn run(args: InternalArgs) -> Result<()> {
 #[serde(rename_all = "camelCase")]
 struct StopHookInput {
     cwd: String,
+    #[serde(default, alias = "lane_role")]
+    lane_role: Option<StopHookLaneRole>,
+    #[serde(default, alias = "child_lane_kind")]
+    child_lane_kind: Option<String>,
+    #[serde(
+        default,
+        alias = "task_path",
+        alias = "agentName",
+        alias = "agent_name"
+    )]
+    task_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum StopHookLaneRole {
+    ParentController,
+    FindingsOnlyReviewer,
+    ChildHelper,
 }
 
 #[derive(Debug, Serialize)]
@@ -469,13 +599,65 @@ struct MachineStateValidationReport {
 
 fn run_stop_hook() -> Result<()> {
     let input: StopHookInput = read_stdin_json()?;
-    let repo_root = PathBuf::from(input.cwd);
-    let output = resolve_stop_hook_output(&repo_root, &[])?;
+    let repo_root = PathBuf::from(&input.cwd);
+    let output = if stop_hook_input_is_subagent_lane(&input) {
+        codex1_core::StopHookOutput {
+            continue_processing: true,
+            decision: None,
+            reason: None,
+            system_message: Some(
+                "Subagent lane may stop normally; parent mission gates and Ralph loop continuation remain parent-owned.".to_string(),
+            ),
+        }
+    } else {
+        resolve_stop_hook_output(&repo_root, &[])?
+    };
     println!(
         "{}",
         serde_json::to_string(&output).context("failed to serialize stop-hook output")?
     );
     Ok(())
+}
+
+fn stop_hook_input_is_subagent_lane(input: &StopHookInput) -> bool {
+    matches!(
+        input.lane_role,
+        Some(StopHookLaneRole::ChildHelper | StopHookLaneRole::FindingsOnlyReviewer)
+    ) || input
+        .child_lane_kind
+        .as_deref()
+        .is_some_and(|kind| !kind.trim().is_empty() && kind != "parent_controller")
+        || input.task_path.as_deref().is_some_and(|task_path| {
+            let normalized = task_path.trim().trim_end_matches('/').to_ascii_lowercase();
+            !normalized.is_empty() && normalized != "/root" && normalized != "root"
+        })
+        || stop_hook_input_is_findings_only_review_lane(input)
+}
+
+fn stop_hook_input_is_findings_only_review_lane(input: &StopHookInput) -> bool {
+    matches!(
+        input.lane_role,
+        Some(StopHookLaneRole::FindingsOnlyReviewer)
+    ) || input.child_lane_kind.as_deref().is_some_and(|kind| {
+        matches!(
+            kind,
+            "findings_only_reviewer"
+                | "reviewer"
+                | "local_spec_intent"
+                | "integration_intent"
+                | "mission_close"
+                | "code_bug_correctness"
+        )
+    }) || input.task_path.as_deref().is_some_and(|task_path| {
+        let normalized = task_path
+            .trim()
+            .trim_start_matches("/root/")
+            .to_ascii_lowercase();
+        normalized.starts_with("review_")
+            || normalized.starts_with("reviewer_")
+            || normalized.contains("_review_")
+            || normalized.contains("_reviewer_")
+    })
 }
 
 fn run_rebuild_state(
@@ -718,6 +900,68 @@ fn run_validate_review_bundle(
     )
 }
 
+fn run_capture_review_truth_snapshot(
+    repo_root: Option<PathBuf>,
+    mission_id: &str,
+    bundle_id: &str,
+    json_output: bool,
+) -> Result<()> {
+    let repo_root = resolve_repo_root(repo_root)?;
+    let paths = MissionPaths::try_new(&repo_root, mission_id.to_string())?;
+    let snapshot = capture_review_truth_snapshot(&paths, bundle_id)?;
+    emit(
+        json_output,
+        &serde_json::to_value(snapshot).context("failed to serialize review truth snapshot")?,
+    )
+}
+
+fn run_capture_review_evidence_snapshot(
+    repo_root: Option<PathBuf>,
+    mission_id: &str,
+    bundle_id: &str,
+    json_output: bool,
+) -> Result<()> {
+    let repo_root = resolve_repo_root(repo_root)?;
+    let paths = MissionPaths::try_new(&repo_root, mission_id.to_string())?;
+    let snapshot = capture_review_evidence_snapshot(&paths, bundle_id)?;
+    emit(
+        json_output,
+        &serde_json::to_value(snapshot).context("failed to serialize review evidence snapshot")?,
+    )
+}
+
+fn run_validate_review_evidence_snapshot(
+    repo_root: Option<PathBuf>,
+    mission_id: &str,
+    bundle_id: &str,
+    json_output: bool,
+) -> Result<()> {
+    let repo_root = resolve_repo_root(repo_root)?;
+    let paths = MissionPaths::try_new(&repo_root, mission_id.to_string())?;
+    let report: ReviewEvidenceSnapshotValidationReport =
+        validate_review_evidence_snapshot(&paths, bundle_id)?;
+    emit(
+        json_output,
+        &serde_json::to_value(report)
+            .context("failed to serialize review evidence snapshot validation")?,
+    )
+}
+
+fn run_record_reviewer_output(
+    repo_root: Option<PathBuf>,
+    input_json: &str,
+    json_output: bool,
+) -> Result<()> {
+    let repo_root = resolve_repo_root(repo_root)?;
+    let input: ReviewerOutputInput = load_input_json(input_json)?;
+    let paths = MissionPaths::try_new(&repo_root, input.mission_id.clone())?;
+    let report = record_reviewer_output(&paths, &input)?;
+    emit(
+        json_output,
+        &serde_json::to_value(report).context("failed to serialize reviewer output report")?,
+    )
+}
+
 fn run_record_review_result(
     repo_root: Option<PathBuf>,
     input_json: &str,
@@ -725,6 +969,11 @@ fn run_record_review_result(
 ) -> Result<()> {
     let repo_root = resolve_repo_root(repo_root)?;
     let input: ReviewResultInput = load_input_json(input_json)?;
+    if input.review_truth_snapshot.is_none() {
+        anyhow::bail!(
+            "record-review-outcome requires review_truth_snapshot; capture it before launching reviewer lanes"
+        );
+    }
     let paths = MissionPaths::try_new(&repo_root, input.mission_id.clone())?;
     let report = record_review_result(&paths, &input)?;
     emit(
@@ -885,6 +1134,52 @@ fn run_acknowledge_selection_request(
     )
 }
 
+fn run_begin_loop_lease(
+    repo_root: Option<PathBuf>,
+    input_json: &str,
+    json_output: bool,
+) -> Result<()> {
+    let repo_root = resolve_repo_root(repo_root)?;
+    let input: RalphLoopLeaseInput = load_input_json(input_json)?;
+    let lease = begin_ralph_loop_lease(&repo_root, &input)?;
+    emit(
+        json_output,
+        &serde_json::to_value(lease).context("failed to serialize Ralph loop lease")?,
+    )
+}
+
+fn run_pause_loop_lease(
+    repo_root: Option<PathBuf>,
+    input_json: &str,
+    json_output: bool,
+) -> Result<()> {
+    let repo_root = resolve_repo_root(repo_root)?;
+    let input: RalphLoopLeasePauseInput = load_input_json(input_json)?;
+    let report = pause_ralph_loop_lease(&repo_root, &input)?;
+    emit(
+        json_output,
+        &serde_json::to_value(report).context("failed to serialize Ralph loop lease report")?,
+    )
+}
+
+fn run_clear_loop_lease(repo_root: Option<PathBuf>, json_output: bool) -> Result<()> {
+    let repo_root = resolve_repo_root(repo_root)?;
+    let report = clear_ralph_loop_lease(&repo_root)?;
+    emit(
+        json_output,
+        &serde_json::to_value(report).context("failed to serialize Ralph loop lease report")?,
+    )
+}
+
+fn run_inspect_loop_lease(repo_root: Option<PathBuf>, json_output: bool) -> Result<()> {
+    let repo_root = resolve_repo_root(repo_root)?;
+    let report = inspect_ralph_loop_lease(&repo_root)?;
+    emit(
+        json_output,
+        &serde_json::to_value(report).context("failed to serialize Ralph loop lease report")?,
+    )
+}
+
 fn run_write_closeout(
     repo_root: Option<PathBuf>,
     mission_id: &str,
@@ -1013,18 +1308,10 @@ impl ArtifactValidationReport {
 impl VisibleArtifactsValidationReport {
     fn run(paths: &MissionPaths) -> Result<Self> {
         let mut findings = Vec::new();
-        validate_text_artifact(
+        validate_registered_text_artifact(
             &paths.readme(),
+            VisibleArtifactTextKind::MissionReadme,
             &mut findings,
-            &[
-                "## Snapshot",
-                "Mission id:",
-                "Current phase:",
-                "Current verdict:",
-                "Next recommended action:",
-                "## Start Here",
-                "## Active Frontier",
-            ],
         );
         validate_markdown::<MissionStateFrontmatter>(&paths.mission_state(), &mut findings);
         validate_markdown::<OutcomeLockFrontmatter>(&paths.outcome_lock(), &mut findings);
@@ -1042,10 +1329,18 @@ impl VisibleArtifactsValidationReport {
         }
 
         if review_history_required(paths)? {
-            validate_text_artifact(&paths.review_ledger(), &mut findings, &["# ", "##"]);
+            validate_registered_text_artifact(
+                &paths.review_ledger(),
+                VisibleArtifactTextKind::ReviewLedger,
+                &mut findings,
+            );
         }
         if replan_history_required(paths)? {
-            validate_text_artifact(&paths.replan_log(), &mut findings, &["# ", "##"]);
+            validate_registered_text_artifact(
+                &paths.replan_log(),
+                VisibleArtifactTextKind::ReplanLog,
+                &mut findings,
+            );
         }
 
         Ok(Self {
@@ -1328,31 +1623,19 @@ where
     }
 }
 
-fn validate_text_artifact(
+fn validate_registered_text_artifact(
     path: &Path,
+    kind: VisibleArtifactTextKind,
     findings: &mut Vec<ArtifactFinding>,
-    required_markers: &[&str],
 ) {
     match fs::read_to_string(path) {
         Ok(contents) => {
-            if contents.trim().is_empty() {
+            for message in validate_visible_artifact_text(kind, &contents) {
                 findings.push(ArtifactFinding {
                     level: "error",
                     path: path.to_path_buf(),
-                    message: "artifact is empty".to_string(),
+                    message,
                 });
-            } else {
-                for marker in required_markers {
-                    if !contents.contains(marker) {
-                        findings.push(ArtifactFinding {
-                            level: "error",
-                            path: path.to_path_buf(),
-                            message: format!(
-                                "artifact is missing required content marker `{marker}`"
-                            ),
-                        });
-                    }
-                }
             }
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {

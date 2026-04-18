@@ -1,0 +1,11 @@
+{
+  "mission_id": "ralph-control-loop-boundary",
+  "bundle_id": "741adc5f-83ed-4c15-99f2-9bdc84b68cd9",
+  "reviewer_id": "review_loop_surface_final_code_bug_2",
+  "reviewer_output_id": "4da45de3-d122-44ab-891f-84eaa737955b",
+  "output_kind": "none",
+  "findings": [],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/ralph-control-loop-boundary/review-evidence-snapshots/741adc5f-83ed-4c15-99f2-9bdc84b68cd9.json",
+  "source_evidence_snapshot_fingerprint": "sha256:035307ad3c42e4e324440b7bc70f0abeced6abcb0006ee3ad133e8995bdc6a2e",
+  "recorded_at": "2026-04-17T09:32:33.47821Z"
+}

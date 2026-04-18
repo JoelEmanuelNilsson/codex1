@@ -1,0 +1,301 @@
+{
+  "mission_id": "review-lane-role-contract",
+  "blueprint_revision": 10,
+  "blueprint_fingerprint": "sha256:73643e5ae5a1c12e2c80c3b51aafda42fd133e8eb835b7c9d1e19d72be9bd665",
+  "nodes": [
+    {
+      "spec_id": "ralph_review_lane_isolation",
+      "spec_revision": 2,
+      "spec_fingerprint": "sha256:86c09045a32096b1953d454d1e0b9ea047f6ec01556559f9dff78a5f76cd277b",
+      "depends_on": [],
+      "produces": [
+        "runtime:review_lane_isolation"
+      ],
+      "read_paths": [
+        "crates/codex1-core/src",
+        "crates/codex1/tests",
+        "docs"
+      ],
+      "write_paths": [
+        "crates/codex1-core/src",
+        "crates/codex1/tests",
+        "docs"
+      ],
+      "exclusive_resources": [
+        "ralph_runtime"
+      ],
+      "coupling_tags": [
+        "ralph",
+        "multi_agent",
+        "stop_hook"
+      ],
+      "ownership_domains": [
+        "runtime"
+      ],
+      "risk_class": "normal",
+      "acceptance_checks": [
+        "ralph_review_lane_isolation_complete"
+      ],
+      "evidence_type": "runtime_tests"
+    },
+    {
+      "spec_id": "review_loop_orchestration",
+      "spec_revision": 2,
+      "spec_fingerprint": "sha256:1ff03af6d1ac41fd7ec9b16d878c51067a69b9e49f5d21f8af93637b55134ed1",
+      "depends_on": [],
+      "produces": [
+        "workflow:review_loop"
+      ],
+      "read_paths": [
+        ".codex/skills",
+        "docs",
+        "crates/codex1/src/commands",
+        "crates/codex1/tests"
+      ],
+      "write_paths": [
+        ".codex/skills",
+        "docs",
+        "crates/codex1/src/commands",
+        "crates/codex1/tests"
+      ],
+      "exclusive_resources": [
+        "review_loop_workflow"
+      ],
+      "coupling_tags": [
+        "review_loop",
+        "qualification"
+      ],
+      "ownership_domains": [
+        "workflow"
+      ],
+      "risk_class": "normal",
+      "acceptance_checks": [
+        "review_loop_orchestration_complete"
+      ],
+      "evidence_type": "integration_tests"
+    },
+    {
+      "spec_id": "review_loop_skill_surface",
+      "spec_revision": 1,
+      "spec_fingerprint": "sha256:44bb1a2729e824a20e3d58a983ff07bc4d3bb6f9e21ccce7f7313e03b7e7a0cd",
+      "depends_on": [],
+      "produces": [
+        "skill:review-loop",
+        "support_surface:skills"
+      ],
+      "read_paths": [
+        ".codex/skills",
+        "crates/codex1/src",
+        "crates/codex1/tests",
+        "docs"
+      ],
+      "write_paths": [
+        ".codex/skills",
+        "crates/codex1/src",
+        "crates/codex1/tests",
+        "docs"
+      ],
+      "exclusive_resources": [
+        "skill_surface"
+      ],
+      "coupling_tags": [
+        "skills",
+        "support_surface",
+        "qualification"
+      ],
+      "ownership_domains": [
+        "public_skills",
+        "support_surface"
+      ],
+      "risk_class": "normal",
+      "acceptance_checks": [
+        "review_loop_skill_surface_complete"
+      ],
+      "evidence_type": "source_and_tests"
+    },
+    {
+      "spec_id": "reviewer_profile_contracts",
+      "spec_revision": 2,
+      "spec_fingerprint": "sha256:77ab5eb07aa6813b38391bf6dfb01c90a536f6d966c224d64b112f347c943fd9",
+      "depends_on": [],
+      "produces": [
+        "contract:reviewer_profiles"
+      ],
+      "read_paths": [
+        ".codex/skills",
+        "docs",
+        "crates/codex1/src/commands/qualify.rs"
+      ],
+      "write_paths": [
+        ".codex/skills",
+        "docs"
+      ],
+      "exclusive_resources": [
+        "review_profile_contract"
+      ],
+      "coupling_tags": [
+        "review_profiles",
+        "model_routing"
+      ],
+      "ownership_domains": [
+        "review_contracts"
+      ],
+      "risk_class": "normal",
+      "acceptance_checks": [
+        "reviewer_profile_contracts_complete"
+      ],
+      "evidence_type": "docs_and_skill_contract"
+    }
+  ],
+  "obligations": [
+    {
+      "obligation_id": "graph:ralph_review_lane_isolation_complete",
+      "kind": "validation",
+      "target_spec_id": "ralph_review_lane_isolation",
+      "target_spec_revision": 2,
+      "target_spec_fingerprint": "sha256:86c09045a32096b1953d454d1e0b9ea047f6ec01556559f9dff78a5f76cd277b",
+      "discharges_claim_ref": "claim:ralph_child_review_isolation",
+      "proof_rows": [
+        "child reviewer lanes can return under parent blocking gates"
+      ],
+      "acceptance_checks": [
+        "ralph_review_lane_isolation_complete"
+      ],
+      "required_evidence": [
+        "crates/codex1-core/src/ralph.rs",
+        "crates/codex1-core/src/runtime.rs"
+      ],
+      "review_lenses": [
+        "correctness"
+      ],
+      "blocking": true,
+      "status": "satisfied",
+      "satisfied_by": [
+        "gate:review-lane-role-contract:BlockingReview:spec:ralph_review_lane_isolation:2c95ab19-dfdb-4e0c-928f-28dd4761d966",
+        "bundle:2c95ab19-dfdb-4e0c-928f-28dd4761d966"
+      ],
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/review-lane-role-contract/bundles/2c95ab19-dfdb-4e0c-928f-28dd4761d966.json",
+        "PLANS/review-lane-role-contract/specs/ralph_review_lane_isolation/RECEIPTS/2026-04-16-ralph-review-lane-isolation-proof.txt",
+        "crates/codex1-core/src/ralph.rs",
+        "crates/codex1-core/src/runtime.rs",
+        "crates/codex1/src/internal/mod.rs",
+        "crates/codex1/tests/runtime_internal.rs",
+        "docs/MULTI-AGENT-V2-GUIDE.md",
+        "docs/runtime-backend.md"
+      ]
+    },
+    {
+      "obligation_id": "graph:review_loop_orchestration_complete",
+      "kind": "validation",
+      "target_spec_id": "review_loop_orchestration",
+      "target_spec_revision": 2,
+      "target_spec_fingerprint": "sha256:1ff03af6d1ac41fd7ec9b16d878c51067a69b9e49f5d21f8af93637b55134ed1",
+      "discharges_claim_ref": "claim:review_loop_orchestration",
+      "proof_rows": [
+        "clean review-loop path is proven",
+        "non-clean repair/re-review path is proven",
+        "six-loop replan path is proven"
+      ],
+      "acceptance_checks": [
+        "review_loop_orchestration_complete"
+      ],
+      "required_evidence": [
+        ".codex/skills/review-loop/SKILL.md",
+        "docs/runtime-backend.md",
+        "crates/codex1/src/commands/qualify.rs"
+      ],
+      "review_lenses": [
+        "spec_conformance",
+        "correctness",
+        "evidence_adequacy",
+        "operability_rollback_observability"
+      ],
+      "blocking": true,
+      "status": "satisfied",
+      "satisfied_by": [
+        "gate:review-lane-role-contract:BlockingReview:spec:review_loop_orchestration:39fcc561-7dd4-4cbf-8a69-19c1f31e3831",
+        "bundle:39fcc561-7dd4-4cbf-8a69-19c1f31e3831"
+      ],
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/review-lane-role-contract/bundles/39fcc561-7dd4-4cbf-8a69-19c1f31e3831.json",
+        "PLANS/review-lane-role-contract/specs/review_loop_orchestration/RECEIPTS/2026-04-16-review-loop-orchestration-proof.txt",
+        "crates/codex1/src/commands/qualify.rs",
+        ".codex/skills/review-loop/SKILL.md",
+        "docs/runtime-backend.md",
+        "docs/qualification/README.md",
+        "docs/qualification/gates.md"
+      ]
+    },
+    {
+      "obligation_id": "graph:review_loop_skill_surface_complete",
+      "kind": "validation",
+      "target_spec_id": "review_loop_skill_surface",
+      "target_spec_revision": 1,
+      "target_spec_fingerprint": "sha256:44bb1a2729e824a20e3d58a983ff07bc4d3bb6f9e21ccce7f7313e03b7e7a0cd",
+      "discharges_claim_ref": "claim:review_loop_skill_surface",
+      "proof_rows": [
+        "skill discovery expects review-loop and not review"
+      ],
+      "acceptance_checks": [
+        "review_loop_skill_surface_complete"
+      ],
+      "required_evidence": [
+        ".codex/skills/review-loop/SKILL.md"
+      ],
+      "review_lenses": [
+        "spec_conformance"
+      ],
+      "blocking": true,
+      "status": "satisfied",
+      "satisfied_by": [
+        "gate:review-lane-role-contract:BlockingReview:spec:review_loop_skill_surface:408f1b2a-ccd6-4f5c-83c9-59dc547f6864",
+        "bundle:408f1b2a-ccd6-4f5c-83c9-59dc547f6864"
+      ],
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/review-lane-role-contract/bundles/408f1b2a-ccd6-4f5c-83c9-59dc547f6864.json",
+        "PLANS/review-lane-role-contract/specs/review_loop_skill_surface/RECEIPTS/2026-04-16-review-loop-skill-surface-proof.txt",
+        ".codex/skills/review-loop/SKILL.md",
+        "crates/codex1/src/support_surface.rs",
+        "crates/codex1/tests/qualification_cli.rs",
+        "crates/codex1/tests/runtime_internal.rs",
+        "docs/runtime-backend.md"
+      ]
+    },
+    {
+      "obligation_id": "graph:reviewer_profile_contracts_complete",
+      "kind": "validation",
+      "target_spec_id": "reviewer_profile_contracts",
+      "target_spec_revision": 2,
+      "target_spec_fingerprint": "sha256:77ab5eb07aa6813b38391bf6dfb01c90a536f6d966c224d64b112f347c943fd9",
+      "discharges_claim_ref": "claim:findings_only_reviewer_profiles",
+      "proof_rows": [
+        "review profiles encode locked model routing"
+      ],
+      "acceptance_checks": [
+        "reviewer_profile_contracts_complete"
+      ],
+      "required_evidence": [
+        ".codex/skills/review-loop/SKILL.md"
+      ],
+      "review_lenses": [
+        "spec_conformance"
+      ],
+      "blocking": true,
+      "status": "satisfied",
+      "satisfied_by": [
+        "gate:review-lane-role-contract:BlockingReview:spec:reviewer_profile_contracts:fa37cf0c-9554-4d4d-b82b-c3a793bde96a",
+        "bundle:fa37cf0c-9554-4d4d-b82b-c3a793bde96a"
+      ],
+      "evidence_refs": [
+        "/Users/joel/codex1/.ralph/missions/review-lane-role-contract/bundles/fa37cf0c-9554-4d4d-b82b-c3a793bde96a.json",
+        "PLANS/review-lane-role-contract/specs/reviewer_profile_contracts/RECEIPTS/2026-04-16-reviewer-profile-contracts-proof.txt",
+        ".codex/skills/review-loop/SKILL.md",
+        ".codex/skills/internal-orchestration/SKILL.md",
+        "docs/MULTI-AGENT-V2-GUIDE.md",
+        "docs/runtime-backend.md"
+      ]
+    }
+  ],
+  "generated_at": "2026-04-16T15:45:56.59541Z"
+}

@@ -1,0 +1,24 @@
+{
+  "mission_id": "review-loop-delegated-review-only",
+  "bundle_id": "90ca57cc-ee7e-4857-9772-2e41c6b12f5e",
+  "reviewer_id": "review_inbox_code",
+  "reviewer_output_id": "780e0c7d-b96a-4166-b135-3f33a3e68aaf",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P2",
+      "title": "Malformed reviewer-output refs can panic writeback validation",
+      "evidence_refs": [
+        "crates/codex1-core/src/runtime.rs:4374",
+        "crates/codex1-core/src/runtime.rs:4391",
+        "crates/codex1-core/src/runtime.rs:4371",
+        "crates/codex1-core/src/paths.rs:269"
+      ],
+      "rationale": "parse_reviewer_output_evidence_ref accepts output IDs that become invalid path components after trimming (for example, `.json` -> empty, or `..`), and load_reviewer_output_from_evidence_ref forwards that value into MissionPaths::reviewer_output. MissionPaths uses checked_id_component(...).expect(...), so invalid components trigger a panic instead of a structured invalid-evidence error.",
+      "suggested_next_action": "Validate both parsed bundle_id and output_id with validate_id_component before calling MissionPaths::reviewer_output (and reject empty post-trim output IDs), then add a regression test that record-review-outcome returns an error for refs like reviewer-output:<bundle>:.json and reviewer-output:<bundle>:.. without panicking."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/review-loop-delegated-review-only/review-evidence-snapshots/90ca57cc-ee7e-4857-9772-2e41c6b12f5e.json",
+  "source_evidence_snapshot_fingerprint": "sha256:088e511aeb95e5a2fadae7f09852a171fcfce445c321c89fcdc7140d1d7f66cc",
+  "recorded_at": "2026-04-16T20:55:01.695191Z"
+}

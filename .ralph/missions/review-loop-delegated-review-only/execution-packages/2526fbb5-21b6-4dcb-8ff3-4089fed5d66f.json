@@ -1,0 +1,193 @@
+{
+  "package_id": "2526fbb5-21b6-4dcb-8ff3-4089fed5d66f",
+  "mission_id": "review-loop-delegated-review-only",
+  "target_type": "mission",
+  "target_id": "review-loop-delegated-review-only",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:3de1e1e3042357e940a4dbb53251c54a8a7fc31288505ad9d8b4ae9b4c39b785",
+  "blueprint_revision": 12,
+  "blueprint_fingerprint": "sha256:fe57eb8be8cefb0eaf22429d52cfdc8338003297f6a1bb558c070a50dd2b1244",
+  "dependency_snapshot_fingerprint": "sha256:847623463b0ad797963c1d18474a58a94c1242f5af5cfb3398aa426ebd43e48e",
+  "wave_fingerprint": null,
+  "included_specs": [
+    {
+      "spec_id": "delegated_review_authority_contract",
+      "spec_revision": 2,
+      "spec_fingerprint": "sha256:9aa5e51a2505a5776155c0524772e999601afb758494022c836b82e3659afda2"
+    },
+    {
+      "spec_id": "reviewer_lane_canonical_write_isolation",
+      "spec_revision": 1,
+      "spec_fingerprint": "sha256:ae66e1f59a6e3c69f4adb790026feecaa982b35c7046db41346f02510a29040f"
+    },
+    {
+      "spec_id": "delegated_review_qualification_guard",
+      "spec_revision": 5,
+      "spec_fingerprint": "sha256:753a4c14a09a19f69c119cc440c2c5fafbad38a180d10a2edd2b1df39f2b1357"
+    }
+  ],
+  "dependency_satisfaction_state": [
+    {
+      "name": "lock_current",
+      "satisfied": true,
+      "detail": "Outcome Lock revision 1 is current and locked."
+    },
+    {
+      "name": "blueprint_current",
+      "satisfied": true,
+      "detail": "Program Blueprint revision 12 is current and all execution graph obligations are satisfied."
+    }
+  ],
+  "read_scope": [
+    "PLANS/review-loop-delegated-review-only",
+    ".ralph/missions/review-loop-delegated-review-only",
+    ".codex/skills/review-loop/SKILL.md",
+    ".codex/skills/internal-orchestration/SKILL.md",
+    "docs/runtime-backend.md",
+    "docs/MULTI-AGENT-V2-GUIDE.md",
+    "docs/qualification",
+    "crates/codex1-core/src",
+    "crates/codex1/src",
+    "crates/codex1/tests"
+  ],
+  "write_scope": [
+    "PLANS/review-loop-delegated-review-only"
+  ],
+  "proof_obligations": [
+    "cargo test -p codex1 --test runtime_internal delegated_review_authority --quiet",
+    "cargo test -p codex1 --test runtime_internal reviewer_lane_canonical_write_isolation --quiet",
+    "cargo test -p codex1-core compile_execution_package_accepts_spec_dependency_governing_refs --quiet",
+    "cargo test -p codex1 --test qualification_cli delegated_review --quiet",
+    "cargo run -p codex1 -- qualify-codex --json --live=false --self-hosting=false",
+    "cargo fmt --all --check"
+  ],
+  "review_obligations": [
+    "mission_close",
+    "spec_conformance",
+    "correctness",
+    "interface_compatibility",
+    "safety_security_policy",
+    "operability_rollback_observability",
+    "evidence_adequacy"
+  ],
+  "replan_boundary": {
+    "local_repair_allowed": false,
+    "trigger_matrix": [
+      {
+        "trigger_code": "write_scope_expansion",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "interface_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "dependency_truth_change",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "proof_obligation_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "review_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "protected_surface_change",
+        "reopen_layer": "mission_lock"
+      },
+      {
+        "trigger_code": "migration_rollout_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "outcome_lock_change",
+        "reopen_layer": "mission_lock"
+      }
+    ]
+  },
+  "wave_context": null,
+  "wave_specs": [],
+  "gate_checks": [
+    {
+      "gate_id": "target_resolution",
+      "passed": false,
+      "detail": "resolved mission:review-loop-delegated-review-only"
+    },
+    {
+      "gate_id": "dependency_truth_current",
+      "passed": true,
+      "detail": "dependency satisfaction is explicit, revision-bearing, and fully satisfied"
+    },
+    {
+      "gate_id": "scope_declared",
+      "passed": true,
+      "detail": "read and write scope are explicit"
+    },
+    {
+      "gate_id": "scope_bounded_to_frontier",
+      "passed": false,
+      "detail": "package scope stays inside the declared execution frontier"
+    },
+    {
+      "gate_id": "proof_contract_declared",
+      "passed": true,
+      "detail": "proof obligations are explicit"
+    },
+    {
+      "gate_id": "review_contract_declared",
+      "passed": true,
+      "detail": "review obligations are explicit"
+    },
+    {
+      "gate_id": "included_specs_runnable",
+      "passed": true,
+      "detail": "included specs are active executable frontier specs"
+    },
+    {
+      "gate_id": "planning_truth_current",
+      "passed": true,
+      "detail": "lock, blueprint, and included spec bindings are current"
+    },
+    {
+      "gate_id": "wave_validation",
+      "passed": true,
+      "detail": "wave same-workspace safety rules are satisfied"
+    }
+  ],
+  "validation_failures": [
+    "planning_selected_target_mismatch:spec:delegated_review_qualification_guard!=package:mission:review-loop-delegated-review-only",
+    "package_write_scope_outside_frontier:plans/review-loop-delegated-review-only",
+    "package_read_scope_missing_for_included_spec:delegated_review_authority_contract:.codex/skills",
+    "package_read_scope_missing_for_included_spec:delegated_review_authority_contract:docs",
+    "package_read_scope_missing_for_included_spec:delegated_review_authority_contract:plans/review-lane-role-contract",
+    "package_read_scope_missing_for_included_spec:delegated_review_authority_contract:plans/reviewer-lane-capability-boundary",
+    "package_write_scope_missing_for_included_spec:delegated_review_authority_contract:.codex/skills/internal-orchestration/skill.md",
+    "package_write_scope_missing_for_included_spec:delegated_review_authority_contract:.codex/skills/review-loop/skill.md",
+    "package_write_scope_missing_for_included_spec:delegated_review_authority_contract:crates/codex1-core/src/runtime.rs",
+    "package_write_scope_missing_for_included_spec:delegated_review_authority_contract:crates/codex1/src/internal/mod.rs",
+    "package_write_scope_missing_for_included_spec:delegated_review_authority_contract:crates/codex1/tests/runtime_internal.rs",
+    "package_write_scope_missing_for_included_spec:delegated_review_authority_contract:docs/multi-agent-v2-guide.md",
+    "package_write_scope_missing_for_included_spec:delegated_review_authority_contract:docs/runtime-backend.md",
+    "package_read_scope_missing_for_included_spec:reviewer_lane_canonical_write_isolation:.codex/skills",
+    "package_read_scope_missing_for_included_spec:reviewer_lane_canonical_write_isolation:docs",
+    "package_write_scope_missing_for_included_spec:reviewer_lane_canonical_write_isolation:.codex/skills/internal-orchestration/skill.md",
+    "package_write_scope_missing_for_included_spec:reviewer_lane_canonical_write_isolation:.codex/skills/review-loop/skill.md",
+    "package_write_scope_missing_for_included_spec:reviewer_lane_canonical_write_isolation:crates/codex1-core/src/lib.rs",
+    "package_write_scope_missing_for_included_spec:reviewer_lane_canonical_write_isolation:crates/codex1-core/src/runtime.rs",
+    "package_write_scope_missing_for_included_spec:reviewer_lane_canonical_write_isolation:crates/codex1/src/internal/mod.rs",
+    "package_write_scope_missing_for_included_spec:reviewer_lane_canonical_write_isolation:crates/codex1/tests/runtime_internal.rs",
+    "package_write_scope_missing_for_included_spec:reviewer_lane_canonical_write_isolation:docs/multi-agent-v2-guide.md",
+    "package_write_scope_missing_for_included_spec:reviewer_lane_canonical_write_isolation:docs/runtime-backend.md",
+    "package_write_scope_missing_for_included_spec:delegated_review_qualification_guard:crates/codex1-core/src/runtime.rs",
+    "package_write_scope_missing_for_included_spec:delegated_review_qualification_guard:crates/codex1/src/commands/qualify.rs",
+    "package_write_scope_missing_for_included_spec:delegated_review_qualification_guard:crates/codex1/tests/qualification_cli.rs",
+    "package_write_scope_missing_for_included_spec:delegated_review_qualification_guard:docs/qualification/gates.md",
+    "package_write_scope_missing_for_included_spec:delegated_review_qualification_guard:docs/qualification/readme.md",
+    "gate_check_failed:target_resolution",
+    "gate_check_failed:scope_bounded_to_frontier"
+  ],
+  "validated_at": "2026-04-16T19:39:57.920102Z",
+  "status": "failed"
+}

@@ -1,0 +1,24 @@
+reviewer_profile_contracts proof receipt
+date: 2026-04-16
+mission: review-lane-role-contract
+spec: reviewer_profile_contracts
+executed_package: 59152fd0-7c6e-4910-a1a7-11edd28fedd1
+
+implemented changes
+- added explicit review profile matrix to `.codex/skills/review-loop/SKILL.md`
+- documented model routing for `local_spec_intent`, `integration_intent`, `mission_close`, and `code_bug_correctness`
+- documented child reviewer output schema as `NONE` or structured findings with severity/evidence/rationale/action
+- documented cleanliness semantics: P0/P1/P2 block clean review; P3 is non-blocking by default
+- documented loop-state semantics and six-consecutive-non-clean-loop replan routing
+- updated `internal-orchestration`, `docs/MULTI-AGENT-V2-GUIDE.md`, and `docs/runtime-backend.md` with the same profile and findings-only reviewer contract
+
+verification
+- cargo test -p codex1 --test runtime_internal public_execute_and_autopilot_skills_require_mission_close_review --quiet
+- cargo test -p codex1 support_surface --quiet
+- cargo fmt --all --check
+- rg checks for `gpt-5.4-mini` default blocking-review wording and profile names
+- codex1 internal validate-mission-artifacts --mission-id review-lane-role-contract
+
+notes
+- this slice intentionally does not implement runtime/Ralph child-lane isolation or actual review-loop orchestration
+- exact runtime enforcement and subagent lifecycle behavior remain in later specs

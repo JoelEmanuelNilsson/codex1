@@ -1,0 +1,25 @@
+{
+  "mission_id": "global-codex1-installer",
+  "bundle_id": "ecf8524c-af62-4dd2-9d50-3eb20828d0e1",
+  "reviewer_id": "review_code_bug_correctness_writeback_authority_2",
+  "reviewer_output_id": "d46fc1bf-5e35-411f-b79e-4a4a6e800aee",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P1",
+      "title": "Reviewer lane can mint and spend parent writeback authority by taking first truth snapshot",
+      "evidence_refs": [
+        "crates/codex1-core/src/runtime.rs:3692",
+        "crates/codex1-core/src/runtime.rs:4352",
+        "crates/codex1-core/src/runtime.rs:4599",
+        "crates/codex1-core/src/runtime.rs:4570",
+        "crates/codex1/tests/runtime_internal.rs:1019"
+      ],
+      "rationale": "`capture_review_truth_snapshot` mints and returns the plaintext `writeback_authority_token` to any caller without checking caller role/lane ownership. `record-review-outcome` only requires that a snapshot is present and internally consistent, and reviewer identity checks can be bypassed by choosing a non-child reviewer string; the self-writeback heuristic only flags reviewer-output refs that encode lane-like prefixes, while canonical refs from `record-reviewer-output` are `reviewer-output:<bundle-id>:<output-id>`. This allows a reviewer lane that captures the first snapshot for a bundle to fabricate parent-owned writeback authority and clear the gate. Existing tests cover remint rejection after first capture but do not cover unauthorized first-capture/use.",
+      "suggested_next_action": "Bind `capture-review-truth-snapshot` and `record-review-outcome` to parent review-loop authority (for example an active parent lease/owner nonce) and reject snapshots not minted by that parent context; also add a regression test proving a reviewer lane cannot capture the initial truth snapshot nor successfully call `record-review-outcome` with self-produced reviewer-output evidence."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/global-codex1-installer/review-evidence-snapshots/ecf8524c-af62-4dd2-9d50-3eb20828d0e1.json",
+  "source_evidence_snapshot_fingerprint": "sha256:11fa751ce18d497a68ce2edd90243a17086b20b43c2edc31fdb33650c6775966",
+  "recorded_at": "2026-04-17T22:36:40.633978Z"
+}

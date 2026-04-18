@@ -1,0 +1,26 @@
+review_loop_orchestration proof receipt
+date: 2026-04-16
+mission: review-lane-role-contract
+spec: review_loop_orchestration
+executed_package: b96043de-d54a-4fce-8491-616e86756edf
+
+implemented changes
+- added deterministic review-loop decision model in `crates/codex1/src/commands/qualify.rs`
+- exposed the decision model through the product-visible `review_loop_decision_contract` qualification gate
+- proved clean loop path continues and resets consecutive non-clean count
+- proved non-clean loop path routes to repair before the six-loop cap
+- proved sixth consecutive non-clean loop routes to replan
+- preserved `$review-loop` as the public orchestration contract instead of adding a hidden workflow engine
+
+verification
+- cargo test -p codex1 review_loop_ --quiet
+- cargo test -p codex1 --test qualification_cli --quiet
+- cargo test -p codex1 --test runtime_internal findings_only_reviewer_stop_hook_bypasses_parent_review_gate_block --quiet
+- cargo test -p codex1-core --quiet
+- cargo build -p codex1
+- cargo fmt --all --check
+- codex1 internal validate-mission-artifacts --mission-id review-lane-role-contract
+
+notes
+- the decision helper is intentionally small and qualification-visible; it proves branch semantics without becoming a hidden review workflow engine
+- actual reviewer spawning remains governed by `$review-loop` plus internal-orchestration

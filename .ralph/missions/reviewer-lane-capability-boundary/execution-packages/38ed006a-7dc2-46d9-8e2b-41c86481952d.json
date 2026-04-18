@@ -1,0 +1,141 @@
+{
+  "package_id": "38ed006a-7dc2-46d9-8e2b-41c86481952d",
+  "mission_id": "reviewer-lane-capability-boundary",
+  "target_type": "spec",
+  "target_id": "reviewer_capability_qualification",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:d9664160591908a6f7cc392f337353c1a4dd29393df3375d6d1fecb832730b38",
+  "blueprint_revision": 5,
+  "blueprint_fingerprint": "sha256:fca0b3985a2f59f6a9217d7937e5f3ac326c82936265fa26199aae69b40c73c4",
+  "dependency_snapshot_fingerprint": "sha256:6bd9f5f3093b2401012f8111f34d9925d8bd441321fe733d68ca39620354cbad",
+  "wave_fingerprint": null,
+  "included_specs": [
+    {
+      "spec_id": "reviewer_capability_qualification",
+      "spec_revision": 1,
+      "spec_fingerprint": "sha256:e81ed4720c8cf9eee46e73bc273141ac778e57e30fcde2cb6da563bb9e4238cd"
+    }
+  ],
+  "dependency_satisfaction_state": [
+    {
+      "name": "lock_current",
+      "satisfied": true,
+      "detail": "current"
+    },
+    {
+      "name": "blueprint_current",
+      "satisfied": true,
+      "detail": "current"
+    }
+  ],
+  "read_scope": [
+    "crates/codex1/src/commands",
+    "crates/codex1/tests",
+    "docs/qualification"
+  ],
+  "write_scope": [
+    "crates/codex1/src/commands",
+    "crates/codex1/tests",
+    "docs/qualification",
+    "PLANS/reviewer-lane-capability-boundary/specs/reviewer_capability_qualification"
+  ],
+  "proof_obligations": [
+    "cargo test"
+  ],
+  "review_obligations": [
+    "correctness"
+  ],
+  "replan_boundary": {
+    "local_repair_allowed": false,
+    "trigger_matrix": [
+      {
+        "trigger_code": "write_scope_expansion",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "interface_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "dependency_truth_change",
+        "reopen_layer": "execution_package"
+      },
+      {
+        "trigger_code": "proof_obligation_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "review_contract_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "protected_surface_change",
+        "reopen_layer": "mission_lock"
+      },
+      {
+        "trigger_code": "migration_rollout_change",
+        "reopen_layer": "blueprint"
+      },
+      {
+        "trigger_code": "outcome_lock_change",
+        "reopen_layer": "mission_lock"
+      }
+    ]
+  },
+  "wave_context": null,
+  "wave_specs": [],
+  "gate_checks": [
+    {
+      "gate_id": "target_resolution",
+      "passed": true,
+      "detail": "resolved spec:reviewer_capability_qualification"
+    },
+    {
+      "gate_id": "dependency_truth_current",
+      "passed": true,
+      "detail": "dependency satisfaction is explicit, revision-bearing, and fully satisfied"
+    },
+    {
+      "gate_id": "scope_declared",
+      "passed": true,
+      "detail": "read and write scope are explicit"
+    },
+    {
+      "gate_id": "scope_bounded_to_frontier",
+      "passed": true,
+      "detail": "package scope stays inside the declared execution frontier"
+    },
+    {
+      "gate_id": "proof_contract_declared",
+      "passed": true,
+      "detail": "proof obligations are explicit"
+    },
+    {
+      "gate_id": "review_contract_declared",
+      "passed": true,
+      "detail": "review obligations are explicit"
+    },
+    {
+      "gate_id": "included_specs_runnable",
+      "passed": true,
+      "detail": "included specs are active executable frontier specs"
+    },
+    {
+      "gate_id": "planning_truth_current",
+      "passed": true,
+      "detail": "lock, blueprint, and included spec bindings are current"
+    },
+    {
+      "gate_id": "wave_validation",
+      "passed": true,
+      "detail": "wave same-workspace safety rules are satisfied"
+    }
+  ],
+  "validation_failures": [
+    "execution_graph_node_spec_fingerprint_mismatch:reviewer_capability_qualification",
+    "execution_graph_node_spec_fingerprint_mismatch:reviewer_evidence_snapshot_contract",
+    "execution_graph_node_spec_fingerprint_mismatch:reviewer_lane_mutation_guard"
+  ],
+  "validated_at": "2026-04-16T16:57:35.796266Z",
+  "status": "failed"
+}

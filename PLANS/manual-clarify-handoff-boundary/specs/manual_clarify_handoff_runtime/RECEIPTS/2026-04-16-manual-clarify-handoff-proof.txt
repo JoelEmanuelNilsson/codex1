@@ -1,0 +1,22 @@
+manual_clarify_handoff_runtime proof receipt
+date: 2026-04-16
+mission: manual-clarify-handoff-boundary
+spec: manual_clarify_handoff_runtime
+executed_package: 299d50b8-8210-4bf0-915e-112ab904081c
+
+implemented changes
+- changed locked manual clarify bootstrap from actionable planning continuation to durable user handoff
+- manual ratified clarify now uses `needs_user`, `waiting_non_terminal`, and `yield_to_user`
+- manual handoff uses `waiting_for = manual_plan_invocation`
+- manual handoff canonical request asks the user to invoke `$plan`, or `$autopilot` for automatic continuation
+- clarified `$clarify`, `$autopilot`, and runtime-backend docs around the manual/autopilot boundary
+- added runtime integration test proving Stop-hook does not block with auto-plan after manual clarify ratification
+
+verification
+- cargo test -p codex1 --test runtime_internal manual_ratified_clarify_yields_for_explicit_plan_instead_of_blocking --quiet
+- cargo test -p codex1 --test runtime_internal public_execute_and_autopilot_skills_require_mission_close_review --quiet
+- cargo test -p codex1-core --quiet
+- cargo fmt --all --check
+
+notes
+- full autopilot backend execution is not redesigned in this slice; this slice preserves the public autopilot contract and fixes manual clarify handoff semantics

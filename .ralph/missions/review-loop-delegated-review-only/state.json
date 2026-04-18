@@ -1,0 +1,33 @@
+{
+  "mission_id": "review-loop-delegated-review-only",
+  "phase": "review",
+  "current_target": "spec:reviewer_output_inbox_contract",
+  "verdict": "repair_required",
+  "terminality": "actionable_non_terminal",
+  "resume_mode": "continue",
+  "next_phase": "execution",
+  "next_action": "Review did not pass cleanly; address 2 blocking review finding(s) or reconcile verdict blocked.",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:3de1e1e3042357e940a4dbb53251c54a8a7fc31288505ad9d8b4ae9b4c39b785",
+  "blueprint_revision": 16,
+  "blueprint_fingerprint": "sha256:cded0d54c8006846633e31bb172ffa0ba686ccbc69a147d8b1cdca40528173ca",
+  "governing_revision": "spec:reviewer_output_inbox_contract:1",
+  "reason_code": "review_blocked",
+  "summary": "Recorded review bundle 90ca57cc-ee7e-4857-9772-2e41c6b12f5e with 2 blocking finding(s)",
+  "continuation_prompt": "Do not close the mission; repair or replan is required.",
+  "last_valid_closeout_seq": 69,
+  "last_valid_closeout_ref": "05ee38a0-5d1f-4484-ba16-f45732ddfa7b",
+  "last_applied_closeout_seq": 69,
+  "active_cycle_id": null,
+  "waiting_request_id": null,
+  "waiting_for": null,
+  "canonical_waiting_request": null,
+  "resume_condition": null,
+  "request_emitted_at": null,
+  "active_child_task_paths": [],
+  "artifact_fingerprints": {
+    "outcome_lock": "sha256:3de1e1e3042357e940a4dbb53251c54a8a7fc31288505ad9d8b4ae9b4c39b785",
+    "program_blueprint": "sha256:cded0d54c8006846633e31bb172ffa0ba686ccbc69a147d8b1cdca40528173ca",
+    "spec:reviewer_output_inbox_contract": "sha256:14c6821955de0298e1bb262b526ff81cea964853b8f131b0c50d4f9eb6c103d1"
+  }
+}

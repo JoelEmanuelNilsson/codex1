@@ -1,0 +1,23 @@
+{
+  "mission_id": "global-codex1-installer",
+  "bundle_id": "62f20f7b-f2af-464d-b728-5186760c6aa0",
+  "reviewer_id": "review_code_bug_correctness_final_repair_62f",
+  "reviewer_output_id": "dddd65b6-2b44-457c-843a-fddef7825a41",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P1",
+      "title": "Legacy loop lease bypasses parent begin authority and mints parent token",
+      "evidence_refs": [
+        "crates/codex1-core/src/runtime.rs:5409",
+        "crates/codex1-core/src/runtime.rs:5421",
+        "crates/codex1-core/src/runtime.rs:5445"
+      ],
+      "rationale": "begin_ralph_loop_lease enforces CODEX1_PARENT_LOOP_BEGIN only when no lease exists. If a legacy lease exists without parent_authority_verifier, the function takes the Some(_) path and mints a fresh parent_authority_token without requiring parent begin capability. This allows unauthorized escalation into parent-only review writeback authority.",
+      "suggested_next_action": "Require parent begin capability (or a valid existing parent authority token) when replacing a lease that lacks parent_authority_verifier, and add a regression test that seeds a legacy lease then asserts begin-loop-lease fails without CODEX1_PARENT_LOOP_BEGIN."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/global-codex1-installer/review-evidence-snapshots/62f20f7b-f2af-464d-b728-5186760c6aa0.json",
+  "source_evidence_snapshot_fingerprint": "sha256:abf7c5b1bc04f4c9ea3da3065860d798812ac8b40c274f4537c2fc62db57a1a0",
+  "recorded_at": "2026-04-17T23:49:22.476844Z"
+}

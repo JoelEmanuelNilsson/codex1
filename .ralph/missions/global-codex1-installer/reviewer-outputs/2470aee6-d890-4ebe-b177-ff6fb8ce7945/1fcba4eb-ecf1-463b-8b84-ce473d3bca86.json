@@ -1,0 +1,24 @@
+{
+  "mission_id": "global-codex1-installer",
+  "bundle_id": "2470aee6-d890-4ebe-b177-ff6fb8ce7945",
+  "reviewer_id": "review_code_bug_correctness_authority_final2",
+  "reviewer_output_id": "1fcba4eb-ecf1-463b-8b84-ce473d3bca86",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P1",
+      "title": "Paused verifier-backed loop lease can be replaced without parent authority token",
+      "evidence_refs": [
+        "crates/codex1-core/src/runtime.rs:5395",
+        "crates/codex1-core/src/runtime.rs:5396",
+        "crates/codex1-core/src/runtime.rs:5451",
+        "manual-repro:begin-loop-lease->pause-loop-lease(with token)->begin-loop-lease(without token)"
+      ],
+      "rationale": "begin_ralph_loop_lease only enforces authority-token replacement checks when the existing lease is Active. Once a verifier-backed lease is paused, a child lane can call begin-loop-lease without CODEX1_PARENT_LOOP_AUTHORITY_TOKEN and mint a fresh parent authority token, bypassing the intended parent-owned replacement guard.",
+      "suggested_next_action": "Require matching parent loop authority for any existing verifier-backed lease (including paused), and add a regression test that begin-loop-lease fails without CODEX1_PARENT_LOOP_AUTHORITY_TOKEN after pause-loop-lease."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/global-codex1-installer/review-evidence-snapshots/2470aee6-d890-4ebe-b177-ff6fb8ce7945.json",
+  "source_evidence_snapshot_fingerprint": "sha256:544d6fa460c2135483dd0ab3a2c7d6c1c4f96b422d3ed5b10d31c3bd5f9b8cb2",
+  "recorded_at": "2026-04-17T23:00:24.404735Z"
+}

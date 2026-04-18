@@ -1,0 +1,69 @@
+{
+  "bundle_id": "e224f978-2ea0-47ec-bd4b-7ee39068c7b1",
+  "mission_id": "global-codex1-installer",
+  "bundle_kind": "mission_close",
+  "source_package_id": "fedd60de-6aa7-412e-ae5b-09a50d2f3d0a",
+  "lock_revision": 1,
+  "lock_fingerprint": "sha256:7314d24eea35d8d5439ddb2d0e3d87ac3c9af728e1eb2d2c1336c2eb5ac9cf39",
+  "blueprint_revision": 9,
+  "blueprint_fingerprint": "sha256:93b7d201928fb9931ce297e2a7ee5f8de2be02f13c7cce252efc697eb01561be",
+  "governing_revision": "mission:global-codex1-installer:close",
+  "mandatory_review_lenses": [
+    "spec_conformance",
+    "correctness",
+    "interface_compatibility",
+    "safety_security_policy",
+    "operability_rollback_observability",
+    "evidence_adequacy",
+    "protected-surface safety",
+    "backup/restore integrity",
+    "command UX clarity",
+    "test adequacy."
+  ],
+  "target_spec_id": null,
+  "spec_revision": null,
+  "spec_fingerprint": null,
+  "proof_rows_under_review": [],
+  "receipts": [],
+  "changed_files_or_diff": [],
+  "touched_interface_contracts": [],
+  "mission_level_proof_rows": [
+    "cargo test -p codex1: 71 unit tests, 38 qualification_cli integration tests, 53 runtime_internal integration tests passed; 0 failed",
+    "cargo test -p codex1 --test runtime_internal: 53 passed, 0 failed",
+    "cargo test -p codex1 --test qualification_cli: 38 passed, 0 failed",
+    "cargo test -p codex1 --test qualification_cli restore_preserves_global_codex_home_root_after_deleting_created_files -- --nocapture: passed",
+    "cargo test -p codex1 --test qualification_cli uninstall_accepts_relative_codex_home_global_setup_backup -- --nocapture: passed",
+    "cargo fmt --all --check: passed",
+    "cargo check -p codex1: passed",
+    "codex1 internal validate-mission-artifacts --mission-id global-codex1-installer: passed",
+    "codex1 internal validate-gates --mission-id global-codex1-installer: passed"
+  ],
+  "cross_spec_claim_refs": [
+    "P1: codex1 setup is global/user-level and does not mutate project repos by default",
+    "P2: codex1 init preserves explicit project setup",
+    "P3: doctor distinguishes global setup health from project init health",
+    "P4: existing test suite still passes after command split, backup, restore/uninstall, lane guard, and authority changes",
+    "P5: global setup installs managed public skills including close and coexists with init",
+    "P6: clean review writeback requires required reviewer-output lane coverage",
+    "P7: parent review writeback authority is unavailable to findings-only reviewer lanes, including no-lease, non-verifier, and lease replacement bypasses"
+  ],
+  "included_spec_refs": [
+    "cli_command_split",
+    "doctor_restore_verification",
+    "global_setup_backup",
+    "review_lane_completion_guard",
+    "reviewer_writeback_authority_enforcement"
+  ],
+  "visible_artifact_refs": [
+    "/Users/joel/codex1/PLANS/global-codex1-installer/OUTCOME-LOCK.md",
+    "/Users/joel/codex1/PLANS/global-codex1-installer/PROGRAM-BLUEPRINT.md",
+    "/Users/joel/codex1/PLANS/global-codex1-installer/REVIEW-LEDGER.md",
+    "/Users/joel/codex1/PLANS/global-codex1-installer/REPLAN-LOG.md",
+    "/Users/joel/codex1/PLANS/global-codex1-installer/specs/reviewer_writeback_authority_enforcement/RECEIPTS/2026-04-17-reviewer-writeback-authority-proof.md"
+  ],
+  "deferred_descoped_follow_on_refs": [
+    "Release packaging/publishing remains deferred by blueprint scope"
+  ],
+  "open_finding_summary": [],
+  "generated_at": "2026-04-18T00:14:08.595817Z"
+}

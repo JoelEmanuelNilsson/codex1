@@ -1,0 +1,26 @@
+{
+  "mission_id": "global-codex1-installer",
+  "bundle_id": "26194473-3804-46cd-b8af-af07f48d85ba",
+  "reviewer_id": "code_bug_correctness",
+  "reviewer_output_id": "3bf47195-4225-452e-83b9-f4f02ae03f5d",
+  "output_kind": "findings",
+  "findings": [
+    {
+      "severity": "P1",
+      "title": "Relative CODEX_HOME breaks global backup restore/uninstall target resolution",
+      "evidence_refs": [
+        "crates/codex1/src/commands/setup.rs:123-129",
+        "crates/codex1/src/commands/setup.rs:251-253",
+        "crates/codex1/src/commands/restore.rs:245-248",
+        "crates/codex1/src/commands/uninstall.rs:339-342",
+        "crates/codex1/tests/qualification_cli.rs:153-167",
+        "manual_repro_2026-04-17: HOME=<tmp>/home CODEX_HOME=codex-home codex1 setup --json then restore/uninstall --backup-id <id> resolves paths under <repo>/codex-home/codex-home/* and reports already_absent while real <repo>/codex-home/* remains mutated"
+      ],
+      "rationale": "Global setup accepts relative CODEX_HOME and, when that directory does not already exist, writes manifest repo_root/path entries as relative (for example `codex-home/config.toml`). Restore and uninstall then resolve user-scope entries by joining `user_root` with `entry.path`, producing duplicated paths (`.../codex-home/codex-home/...`). This causes restore/uninstall to operate on non-existent targets and return success/no-op actions (`already_absent`) while leaving actual managed files in place, violating backup/restore integrity and uninstall correctness.",
+      "suggested_next_action": "Normalize CODEX_HOME to an absolute canonical-or-normalized path before planning/writing manifests in global setup, and/or store user-scope manifest paths relative to user_root (not including the user_root prefix). Add targeted tests that run global setup+restore and setup+uninstall with a relative CODEX_HOME and assert real managed files are restored/removed and no duplicated codex-home path is produced."
+    }
+  ],
+  "source_evidence_snapshot": "/Users/joel/codex1/.ralph/missions/global-codex1-installer/review-evidence-snapshots/26194473-3804-46cd-b8af-af07f48d85ba.json",
+  "source_evidence_snapshot_fingerprint": "sha256:45e0a2096dcc087b2d4583c94bfc2a9ade73622bdb3cd5ab736cc3a7a49e87f9",
+  "recorded_at": "2026-04-17T20:53:26.006733Z"
+}
