@@ -1,128 +1,102 @@
 ---
 name: autopilot
-description: End-to-end Codex1 mission workflow. Use when the user invokes $autopilot and wants the harness to keep advancing the same mission through clarify, planning, execution, review-loop, and closure until it reaches an honest terminal or waiting verdict.
+description: Codex1 V2 full-mission orchestration. Use when the user invokes $autopilot, or wants a mission driven end-to-end without manually invoking each sub-skill.
 ---
 
-# Autopilot
+# $autopilot (Codex1 V2)
 
-Use this public skill as the thin composition surface over the same `clarify`,
-`plan`, `execute`, and `review-loop` contracts.
+Compose `$clarify` → `$plan` → `$execute` → `$review-loop` and drive
+`codex1 mission-close check` + `codex1 mission-close complete` at the end.
+`$autopilot` owns the parent loop (`mode: autopilot`); pause via `$close`.
 
-## Core Rule
+## When to use
 
-`$autopilot` does not own separate semantics.
+- The user invokes `$autopilot`.
+- The mission is well-scoped enough that the user wants hands-off
+  progression to terminal complete.
 
-It must produce the same mission truth, gate outcomes, and verdict family that
-a manual run would produce against the same repo and mission state.
+## Composition
 
-Backend note:
-
-- begin a parent autopilot loop with `codex1 internal begin-loop-lease` using
-  `mode = "autopilot_loop"` before relying on Ralph continuation
-- before consuming a planning handoff as autopilot self-seal, evaluate the
-  machine contract with `codex1 internal evaluate-autopilot-plan-seal`; do not
-  continue to package execution when that decision returns blockers
-- autopilot should compose the same internal command surface documented in
-  `docs/runtime-backend.md`
-- do not invent a separate hidden state path for autopilot-only behavior
-
-## Ralph Lease
-
-`$autopilot` is the broadest parent/orchestrator loop. Acquire or refresh a
-parent lease before autonomous continuation:
-
-```json
-{
-  "mission_id": "<mission-id>",
-  "mode": "autopilot_loop",
-  "owner": "parent-autopilot",
-  "reason": "User invoked $autopilot."
-}
+```
+  $clarify ─┐
+            │  (OUTCOME-LOCK: ratified)
+  $plan ────┤
+            │  (PROGRAM-BLUEPRINT: tasks, graph_revision bumped if replan)
+  $execute ─┤ ◀─ $review-loop  (alternates until all tasks review_clean)
+            │
+  codex1 review open-mission-close --profiles mission_close
+  codex1 review submit (reviewer output)
+  codex1 review close (clean)
+  codex1 mission-close check     ◀─ verdict continue_required until clean
+  codex1 mission-close complete  ◀─ verdict flips to complete, terminality terminal
 ```
 
-The lease covers the parent branch router only. Subagents spawned by autopilot
-remain Ralph-exempt and may stop normally; the parent integrates their outputs.
+## Steps
 
-## Autopilot Posture
+1. Activate the autopilot loop:
+   ```bash
+   codex1 parent-loop activate --mission <id> --mode autopilot --json
+   ```
 
-- Autopilot is the branch router over the same public workflow contracts.
-- It may keep acting autonomously when the next branch is machine-clear and the
-  mission contract allows it.
-- It must stay subordinate to package truth, review gates, contradictions, and
-  durable waiting truth.
+2. Run `$clarify` if the lock is still `draft`; run `$plan` if the DAG is
+   empty or needs replanning.
 
-## Workflow
+3. Iterate: while `codex1 task next` emits `start_task` or `review_open`,
+   run `$execute` or `$review-loop` accordingly. Monitor for mandatory
+   replan triggers:
+   ```bash
+   codex1 replan check --mission <id> --json
+   ```
+   If `mandatory_triggers` is non-empty, invoke `$plan` to replan before
+   continuing.
 
-1. Resolve the active mission from durable artifacts and the latest valid
-   closeout.
-2. Determine the next required branch from mission truth, not from tone or
-   conversational vibes.
-3. Invoke the same public workflow contracts as needed:
-   - `clarify` until the mission is safely locked
-   - `plan` until planning is complete enough for execution
-   - `execute` on the packaged next target
-   - `review-loop` whenever a blocking review gate is reached
-4. Use `internal-orchestration` for bounded subagents and `internal-replan`
-   when contradictions require reopening.
-5. Keep looping while the verdict is actionable non-terminal and the next branch
-   is still machine-clear.
-6. Yield only when the honest result is:
-   - `needs_user`
-   - `hard_blocked`
-   - `complete`
+4. When `codex1 status` emits `next_action.kind: mission_close_check`:
+   ```bash
+   codex1 review open-mission-close --mission <id> --profiles mission_close --json
+   ```
+   Dispatch a reviewer subagent against the bundle; submit the output;
+   close the bundle. (Reviewer outputs must bind to the mission-close
+   bundle's `evidence_snapshot_hash`.)
 
-## Branch Discipline
+5. Call `codex1 mission-close check`; if `can_close: true`, call
+   `codex1 mission-close complete`. Status should now show `verdict:
+   complete`, `terminality: terminal`.
 
-- If clarify truth is not lock-ready, the next branch is `clarify`.
-- If clarify truth is lock-ready but durably waiting for manual `$plan`
-  invocation, autopilot may consume that handoff and continue to `plan`.
-- Autopilot may self-seal planning only when the Outcome Lock grants autonomy,
-  no human-only decision remains open, the effective planning rigor has been
-  satisfied, any level-5 advisor checkpoint is satisfied or explicitly
-  dispositioned, and blueprint/package freshness is current.
-- If plan sealing is blocked by missing autonomy or a human-only decision, yield
-  `needs_user`; if it is blocked by advisor, proof, blueprint, or package
-  freshness, route back to `plan` or execution-package refresh instead of
-  executing stale truth.
-- If planning truth or package truth is not complete enough for execution, the
-  next branch is `plan`.
-- If a passed package exists for the selected target, the next branch is
-  `execute`.
-- If a blocking review gate is open, failed, or stale, the next branch is
-  `review-loop`.
-- If the frontier is clean and the remaining owed gate is mission-close review,
-  the next branch is `review-loop` for the mission-close bundle, not direct
-  completion.
-- If contradiction or replan truth says the current layer is no longer enough,
-  the next branch is `internal-replan`, not continued execution.
-- If the repo is durably waiting on the user, yield `needs_user` without
-  terminalizing the mission.
+6. Deactivate the loop:
+   ```bash
+   codex1 parent-loop deactivate --mission <id> --json
+   ```
 
-## Continuation Rules
+## Advisor checkpoints (non-formal)
 
-- Keep going when the next branch is known and Codex can continue autonomously.
-- Treat `needs_user` as a durable waiting state, not as terminal completion.
-- Do not rely on wording heuristics, tmux tricks, or hidden runtime glue as the
-  real continuation authority.
-- Preserve manual-path parity: the same mission truth should converge to the
-  same artifact state, gate state, and verdict family whether the user drove
-  the path manually or through autopilot.
-- Preserve manual approval semantics: `$plan` may stop for the user to approve
-  or redirect, while `$autopilot` may consume that same planning handoff only
-  when the autonomy and seal preconditions above are machine-satisfied.
-- Prefer to create the PR when the mission bar is met and the repo context
-  allows it.
+At strategic transitions — before `$plan` after `$clarify`, before
+opening a mission-close bundle, before `complete` — the parent MAY
+invoke an advisor/CritiqueScout and record its summary via
+`advisor::append_note`. Advisor output is **not** review evidence and
+does not count toward any bundle's cleanliness.
 
-## Must Not
+## Stop boundaries
 
-- become a second hidden workflow engine
-- stop early because the mission feels "probably done"
-- bypass review or mission-close gates
-- lose parity with the manual path
-- treat `wait_agent`, subagent completion, or silence as proof that the mission
-  is done
+- `$autopilot` must never self-review. The mission-close bundle's
+  reviewer outputs must come from a reviewer role; parent role
+  submissions are refused.
+- On any `verdict: needs_user` or `blocked`, `$autopilot` surfaces the
+  envelope and pauses (not deactivate — pause preserves the loop for
+  resume after the user decides).
+- `$autopilot` calls `mission-close complete` **only** after `check`
+  returns `can_close: true`.
+- Ralph blocks stop while the autopilot loop is active and not paused.
+- `$close` pauses autopilot; `$autopilot` resumes continue the mission.
 
-## Return Shape
+## Example one-shot
 
-Autopilot should leave one honest durable verdict and the visible artifacts that
-explain why that verdict is true.
+```bash
+codex1 parent-loop activate --mission demo --mode autopilot --json
+# ...run $clarify, $plan, $execute/$review-loop loops...
+codex1 review open-mission-close --mission demo --profiles mission_close --json
+# ...submit reviewer output, close bundle...
+codex1 mission-close check    --mission demo --json   # can_close: true
+codex1 mission-close complete --mission demo --json   # phase: complete
+codex1 parent-loop deactivate --mission demo --json
+codex1 status --mission demo --json                   # verdict: complete
+```

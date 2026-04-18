@@ -1,8 +1,7 @@
 [workspace]
-# V1 crates (crates/codex1, crates/codex1-core) retired at T44 cutover.
-# They remain on disk under git history; if you need them back, restore
-# from `git log --all -- crates/codex1 crates/codex1-core` and re-add
-# them here.
+# V1 crates (crates/codex1, crates/codex1-core) retired at T44 cutover
+# and removed from disk. Restore via `git log --all -- crates/codex1
+# crates/codex1-core` if needed.
 members = ["crates/codex1-v2"]
 resolver = "2"
 
