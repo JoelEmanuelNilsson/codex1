@@ -15,6 +15,8 @@ pub(crate) mod state;
 pub(crate) mod mission;
 pub(crate) mod blueprint;
 pub(crate) mod graph;
+pub(crate) mod proof;
+pub(crate) mod binding;
 pub(crate) mod status;
 
 pub mod cli;

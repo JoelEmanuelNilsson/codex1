@@ -70,6 +70,18 @@ pub struct TaskState {
     pub finished_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reviewed_at: Option<String>,
+    /// Worker run identifier minted by `task start`. Workers bind their
+    /// outputs to this value; if it no longer matches the current run, the
+    /// output is quarantined as `STALE_OUTPUT`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_run_id: Option<String>,
+    /// Relative path (from mission dir) of the proof file captured by
+    /// `task finish`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proof_ref: Option<String>,
+    /// `sha256:<hex>` hash of the proof file contents.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proof_hash: Option<String>,
 }
 
 impl TaskState {
@@ -81,6 +93,9 @@ impl TaskState {
             started_at: None,
             finished_at: None,
             reviewed_at: None,
+            task_run_id: None,
+            proof_ref: None,
+            proof_hash: None,
         }
     }
 }

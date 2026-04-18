@@ -78,6 +78,26 @@ pub enum CliError {
         source: std::io::Error,
     },
 
+    #[error("proof is invalid: {reason}")]
+    ProofInvalid { path: String, reason: String },
+
+    #[error("task cannot {attempted} from status {current:?}")]
+    TaskStateTransitionInvalid {
+        task_id: String,
+        current: String,
+        attempted: String,
+    },
+
+    #[error("worker/reviewer output is stale: {reason}")]
+    StaleOutput {
+        task_id: Option<String>,
+        bundle_id: Option<String>,
+        reason: String,
+    },
+
+    #[error("revision conflict: expected {expected}, actual {actual}")]
+    RevisionConflict { expected: u64, actual: u64 },
+
     #[error("internal error: {message}")]
     Internal { message: String },
 }
@@ -101,6 +121,10 @@ impl CliError {
             Self::StateCorrupt { .. } => "STATE_CORRUPT",
             Self::RepoRootInvalid { .. } => "REPO_ROOT_INVALID",
             Self::Io { .. } => "IO_ERROR",
+            Self::ProofInvalid { .. } => "PROOF_INVALID",
+            Self::TaskStateTransitionInvalid { .. } => "TASK_STATE_INVALID",
+            Self::StaleOutput { .. } => "STALE_OUTPUT",
+            Self::RevisionConflict { .. } => "REVISION_CONFLICT",
             Self::Internal { .. } => "INTERNAL_ERROR",
         }
     }
@@ -110,6 +134,7 @@ impl CliError {
     pub fn exit_code(&self) -> i32 {
         match self {
             Self::MissionExists { .. } => 3,
+            Self::RevisionConflict { .. } => 4,
             Self::Io { .. } => 5,
             Self::Internal { .. } => 70,
             _ => 2,
@@ -119,7 +144,7 @@ impl CliError {
     /// Whether a caller can safely retry the same command.
     #[must_use]
     pub fn retryable(&self) -> bool {
-        matches!(self, Self::Io { .. })
+        matches!(self, Self::Io { .. } | Self::RevisionConflict { .. })
     }
 
     /// Optional human-actionable hint.
@@ -152,6 +177,18 @@ impl CliError {
             Self::RepoRootInvalid { .. } => {
                 Some("Pass --repo-root <existing-directory> or run from the repo root.".into())
             }
+            Self::ProofInvalid { .. } => {
+                Some("Ensure specs/T<N>/PROOF.md exists and is reachable from --proof.".into())
+            }
+            Self::TaskStateTransitionInvalid { .. } => {
+                Some("Inspect STATE.json; only Ready → InProgress and InProgress → ProofSubmitted are allowed in Wave 2.".into())
+            }
+            Self::StaleOutput { .. } => Some(
+                "Re-run task start to mint a fresh task_run_id or re-open the review bundle.".into(),
+            ),
+            Self::RevisionConflict { .. } => Some(
+                "State changed under you; re-read STATE.json and retry.".into(),
+            ),
             _ => None,
         }
     }
@@ -178,6 +215,16 @@ impl CliError {
             Self::DagBadSchema { reason } => json!({ "reason": reason }),
             Self::RepoRootInvalid { reason, path } => json!({ "reason": reason, "path": path }),
             Self::Io { path, source } => json!({ "path": path, "source": source.to_string() }),
+            Self::ProofInvalid { path, reason } => json!({ "path": path, "reason": reason }),
+            Self::TaskStateTransitionInvalid { task_id, current, attempted } => {
+                json!({ "task_id": task_id, "current": current, "attempted": attempted })
+            }
+            Self::StaleOutput { task_id, bundle_id, reason } => {
+                json!({ "task_id": task_id, "bundle_id": bundle_id, "reason": reason })
+            }
+            Self::RevisionConflict { expected, actual } => {
+                json!({ "expected": expected, "actual": actual })
+            }
             Self::Internal { message } => json!({ "message": message }),
         }
     }
@@ -217,7 +264,7 @@ mod tests {
     fn io_is_retryable_others_are_not() {
         let io_err = CliError::Io {
             path: "/tmp/x".into(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, "denied"),
+            source: std::io::Error::other("denied"),
         };
         assert!(io_err.retryable());
         assert!(!CliError::MissionExists { path: "x".into() }.retryable());

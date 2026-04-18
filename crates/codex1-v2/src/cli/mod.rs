@@ -41,6 +41,12 @@ pub struct Cli {
     #[arg(long, global = true, value_name = "PATH")]
     pub repo_root: Option<PathBuf>,
 
+    /// Expected `state_revision` before a mutating command. Mismatch →
+    /// `REVISION_CONFLICT` (exit 4, retryable). Ignored by non-mutating
+    /// commands.
+    #[arg(long, global = true, value_name = "N")]
+    pub expect_revision: Option<u64>,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -96,6 +102,31 @@ pub enum TaskCommand {
         #[arg(long, value_name = "ID")]
         mission: String,
     },
+    /// Transition a `Ready`/`NeedsRepair` task → `InProgress`; mint a `task_run_id`.
+    Start {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+        #[arg(value_name = "TASK")]
+        task_id: String,
+    },
+    /// Transition `InProgress` → `ProofSubmitted`; record proof hash.
+    Finish {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+        #[arg(value_name = "TASK")]
+        task_id: String,
+        /// Path (relative to mission dir) of the proof file. Defaults to
+        /// `specs/T<N>/PROOF.md`.
+        #[arg(long, value_name = "PATH")]
+        proof: Option<PathBuf>,
+    },
+    /// Read a single task's state.
+    Status {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+        #[arg(value_name = "TASK")]
+        task_id: String,
+    },
 }
 
 /// Run the parsed CLI and return the process exit code.
@@ -108,6 +139,15 @@ pub fn run(cli: &Cli) -> i32 {
         Commands::Plan(PlanCommand::Check { mission }) => plan::cmd_plan_check(cli, mission),
         Commands::Plan(PlanCommand::Waves { mission }) => plan::cmd_plan_waves(cli, mission),
         Commands::Task(TaskCommand::Next { mission }) => task::cmd_task_next(cli, mission),
+        Commands::Task(TaskCommand::Start { mission, task_id }) => {
+            task::cmd_task_start(cli, mission, task_id)
+        }
+        Commands::Task(TaskCommand::Finish { mission, task_id, proof }) => {
+            task::cmd_task_finish(cli, mission, task_id, proof.as_deref())
+        }
+        Commands::Task(TaskCommand::Status { mission, task_id }) => {
+            task::cmd_task_status(cli, mission, task_id)
+        }
     }
 }
 

@@ -27,7 +27,7 @@ fn write_blueprint(dir: &Path, yaml_body: &str) {
     fs::write(&path, content).unwrap();
 }
 
-/// Overwrite STATE.json with a new task map + phase. Bump state_revision so
+/// Overwrite STATE.json with a new task map + phase. Bump `state_revision` so
 /// validate wouldn't fault; events.jsonl lag is acceptable per V2 rules.
 fn set_state(dir: &Path, tasks: &[(&str, &str)], phase: &str) {
     let path = dir.join("PLANS/m1/STATE.json");

@@ -91,6 +91,9 @@ pub struct NextAction {
 #[serde(rename_all = "snake_case")]
 pub enum NextActionKind {
     StartTask,
+    /// Wave 2+: a task has `ProofSubmitted` or `ReviewOwed` status and needs
+    /// a review bundle opened against it.
+    ReviewOpen,
     UserDecision,
     Complete,
     InvalidState,
@@ -174,6 +177,7 @@ pub fn project_status(state: &State, dag: &Dag) -> StatusEnvelope {
         .iter()
         .map(|b| b.task_id.clone())
         .collect();
+    let review_required = collect_review_required(state);
 
     if let Some(first_task) = ready_tasks.first().cloned() {
         return StatusEnvelope {
@@ -199,7 +203,43 @@ pub fn project_status(state: &State, dag: &Dag) -> StatusEnvelope {
             },
             ready_tasks,
             running_tasks: running_task_ids(state),
-            review_required: vec![],
+            review_required: review_required.clone(),
+            blocked: blocked_ids,
+            stale: vec![],
+            required_user_decision: None,
+        };
+    }
+
+    // No eligible task — but review may still be owed. Emit review_open when
+    // at least one task is proof_submitted or review_owed.
+    if let Some(first_review) = review_required.first().cloned() {
+        return StatusEnvelope {
+            mission_id: state.mission_id.clone(),
+            state_revision: state.state_revision,
+            phase: state.phase,
+            terminality: Terminality::NonTerminal,
+            verdict: Verdict::ContinueRequired,
+            parent_loop,
+            stop_policy: StopPolicy {
+                allow_stop: true,
+                reason: "no_active_loop".into(),
+            },
+            next_action: NextAction {
+                kind: NextActionKind::ReviewOpen,
+                task_id: Some(first_review.clone()),
+                args: vec![
+                    "--mission".into(),
+                    state.mission_id.clone(),
+                    "--task".into(),
+                    first_review.clone(),
+                ],
+                display_message: format!(
+                    "Open a review for task {first_review}."
+                ),
+            },
+            ready_tasks: vec![],
+            running_tasks: running_task_ids(state),
+            review_required,
             blocked: blocked_ids,
             stale: vec![],
             required_user_decision: None,
@@ -230,7 +270,7 @@ pub fn project_status(state: &State, dag: &Dag) -> StatusEnvelope {
         },
         ready_tasks: vec![],
         running_tasks: running_task_ids(state),
-        review_required: vec![],
+        review_required,
         blocked: blocked_ids,
         stale: vec![],
         required_user_decision: required,
@@ -288,6 +328,22 @@ fn mission_is_complete(state: &State, dag: &Dag) -> bool {
         .filter(|s| *s != TaskStatus::Superseded)
         .collect();
     !non_sup.is_empty() && non_sup.iter().all(|s| s.is_terminal())
+}
+
+fn collect_review_required(state: &State) -> Vec<String> {
+    let mut v: Vec<String> = state
+        .tasks
+        .iter()
+        .filter(|(_, t)| {
+            matches!(
+                t.status,
+                TaskStatus::ProofSubmitted | TaskStatus::ReviewOwed
+            )
+        })
+        .map(|(id, _)| id.clone())
+        .collect();
+    v.sort();
+    v
 }
 
 fn running_task_ids(state: &State) -> Vec<String> {
@@ -402,6 +458,9 @@ mod tests {
                     started_at: None,
                     finished_at: None,
                     reviewed_at: None,
+                    task_run_id: None,
+                    proof_ref: None,
+                    proof_hash: None,
                 },
             );
         }
@@ -432,8 +491,8 @@ mod tests {
         assert_eq!(s.next_action.kind, NextActionKind::UserDecision);
         assert_eq!(s.required_user_decision.as_deref(), Some("plan_dag_empty"));
         assert_eq!(s.terminality, Terminality::NonTerminal);
-        assert!(s.parent_loop.paused == false);
-        assert!(s.parent_loop.active == false);
+        assert!(!s.parent_loop.paused);
+        assert!(!s.parent_loop.active);
         assert!(s.stop_policy.allow_stop);
         assert_eq!(s.stop_policy.reason, "no_active_loop");
     }
@@ -545,8 +604,8 @@ mod tests {
         let dag = dag_of(vec![]);
         let state = state_with(&[], Phase::Clarify);
         let s = project_status(&state, &dag);
-        assert_eq!(s.parent_loop.active, false);
-        assert_eq!(s.parent_loop.paused, false);
+        assert!(!s.parent_loop.active);
+        assert!(!s.parent_loop.paused);
         // mode matches state.parent_loop.mode (none by default)
         assert!(matches!(
             s.parent_loop.mode,

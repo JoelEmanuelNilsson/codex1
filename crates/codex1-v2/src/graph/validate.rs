@@ -321,6 +321,9 @@ mod tests {
                     started_at: None,
                     finished_at: None,
                     reviewed_at: None,
+                    task_run_id: None,
+                    proof_ref: None,
+                    proof_hash: None,
                 },
             );
         }

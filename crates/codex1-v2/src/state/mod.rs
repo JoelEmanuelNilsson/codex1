@@ -180,13 +180,9 @@ impl StateStore {
         if let Some(exp) = expected
             && state.state_revision != exp
         {
-            return Err(CliError::StateCorrupt {
-                path: self.state_path().display().to_string(),
-                reason: format!(
-                    "revision conflict: expected {}, actual {}",
-                    exp, state.state_revision
-                ),
-                source: None,
+            return Err(CliError::RevisionConflict {
+                expected: exp,
+                actual: state.state_revision,
             });
         }
         let draft = f(&mut state)?;
@@ -312,8 +308,9 @@ mod tests {
                 Ok(EventDraft::new("never"))
             })
             .unwrap_err();
-        assert_eq!(err.code(), "STATE_CORRUPT");
-        assert!(err.to_string().contains("revision conflict"));
+        assert_eq!(err.code(), "REVISION_CONFLICT");
+        assert_eq!(err.exit_code(), 4);
+        assert!(err.retryable());
     }
 
     #[test]
@@ -340,7 +337,7 @@ mod tests {
         for i in 0..3 {
             store
                 .mutate(|_state| {
-                    Ok(EventDraft::new("tick").with("n", i as i64))
+                    Ok(EventDraft::new("tick").with("n", i64::from(i)))
                 })
                 .unwrap();
         }
