@@ -12,7 +12,7 @@ use std::path::Path;
 use tempfile::TempDir;
 
 fn bin(dir: &TempDir) -> Command {
-    let mut cmd = Command::cargo_bin("codex1-v2").expect("binary built");
+    let mut cmd = Command::cargo_bin("codex1").expect("binary built");
     cmd.arg("--repo-root").arg(dir.path());
     cmd
 }

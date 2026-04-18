@@ -14,8 +14,9 @@ loop is responsible for passing that id through.
 
 ## Install
 
-1. Ensure `codex1` (post-cutover) or `codex1-v2` (pre-cutover) is on
-   `PATH`, or point `CODEX1_BIN` at the absolute path.
+1. Ensure `codex1` is on `PATH`, or point `CODEX1_BIN` at the absolute
+   path. (Pre-cutover the binary was named `codex1-v2`; the hook's
+   auto-detection still handles both names.)
 2. Register the hook at whichever stop-event surface your Codex runner
    exposes. For the Claude Code harness this is `settings.json`'s
    `hooks.Stop` entry; for the `codex` CLI it is the `hooks.stop`

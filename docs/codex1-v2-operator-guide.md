@@ -5,9 +5,9 @@ How to install, drive, and debug Codex1 V2 as a user.
 ## What V2 is (and is not)
 
 V2 is a skills-first harness backed by a deterministic CLI contract
-kernel. The CLI (`codex1` post-cutover, `codex1-v2` pre-cutover) owns
-mission file shape, validation, wave derivation, review cleanliness,
-and mission-close readiness. Skills in `.claude/skills/` (Claude Code)
+kernel. The CLI (`codex1`) owns mission file shape, validation, wave
+derivation, review cleanliness, and mission-close readiness. Skills in
+`.claude/skills/` (Claude Code)
 and `.codex/skills/` (Codex; mirrored at T44) compose those CLI
 commands into the user-facing workflow. Ralph is a thin stop-guard
 that reads exactly one command: `codex1 status --mission <id> --json`.
@@ -24,16 +24,17 @@ V2 explicitly does **not**:
 
 ### Binary
 
-During Wave 4 development the binary is `codex1-v2`. Build it from source:
+The binary is `codex1`. Build it from source:
 
 ```bash
 cd /path/to/codex1
-cargo build -p codex1-v2 --release
-cp target/release/codex1-v2 ~/.local/bin/
+cargo build -p codex1 --release
+cp target/release/codex1 ~/.local/bin/
 ```
 
-After T44 cutover the binary is `codex1`. Existing scripts should read
-`CODEX1_BIN` and fall back to either name.
+Scripts that shipped pre-cutover may still reference `codex1-v2` and
+fall back via `CODEX1_BIN`; that path still works if you want to keep
+both binaries on PATH during transition.
 
 ### Ralph hook
 

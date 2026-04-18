@@ -1,6 +1,6 @@
 //! Wave 1 acceptance: `codex1-v2 init` then `codex1-v2 validate`.
 //!
-//! Exercises the binary via `assert_cmd::Command::cargo_bin("codex1-v2")`
+//! Exercises the binary via `assert_cmd::Command::cargo_bin("codex1")`
 //! inside a `tempfile::TempDir` so nothing leaks into the repo.
 
 use assert_cmd::Command;
@@ -9,7 +9,7 @@ use std::fs;
 use tempfile::TempDir;
 
 fn bin(dir: &TempDir) -> Command {
-    let mut cmd = Command::cargo_bin("codex1-v2").expect("binary built");
+    let mut cmd = Command::cargo_bin("codex1").expect("binary built");
     cmd.arg("--repo-root").arg(dir.path());
     cmd
 }

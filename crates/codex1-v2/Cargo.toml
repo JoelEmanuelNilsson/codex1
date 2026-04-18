@@ -1,15 +1,16 @@
 [package]
-name = "codex1-v2"
+name = "codex1"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [lib]
+name = "codex1_v2"
 path = "src/lib.rs"
 
 [[bin]]
-name = "codex1-v2"
-path = "src/bin/codex1-v2.rs"
+name = "codex1"
+path = "src/bin/codex1.rs"
 
 [dependencies]
 anyhow = { workspace = true }

@@ -32,9 +32,9 @@ use crate::mission::resolve_repo_root;
 /// Top-level CLI.
 #[derive(Debug, Parser)]
 #[command(
-    name = "codex1-v2",
+    name = "codex1",
     version,
-    about = "Codex1 V2 — skills-first harness + CLI contract kernel"
+    about = "Codex1 — skills-first harness + CLI contract kernel"
 )]
 pub struct Cli {
     /// Emit JSON on stdout. Diagnostics still go to stderr.
