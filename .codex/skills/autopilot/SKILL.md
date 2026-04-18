@@ -19,6 +19,9 @@ Backend note:
 
 - begin a parent autopilot loop with `codex1 internal begin-loop-lease` using
   `mode = "autopilot_loop"` before relying on Ralph continuation
+- before consuming a planning handoff as autopilot self-seal, evaluate the
+  machine contract with `codex1 internal evaluate-autopilot-plan-seal`; do not
+  continue to package execution when that decision returns blockers
 - autopilot should compose the same internal command surface documented in
   `docs/runtime-backend.md`
 - do not invent a separate hidden state path for autopilot-only behavior
@@ -73,6 +76,14 @@ remain Ralph-exempt and may stop normally; the parent integrates their outputs.
 - If clarify truth is not lock-ready, the next branch is `clarify`.
 - If clarify truth is lock-ready but durably waiting for manual `$plan`
   invocation, autopilot may consume that handoff and continue to `plan`.
+- Autopilot may self-seal planning only when the Outcome Lock grants autonomy,
+  no human-only decision remains open, the effective planning rigor has been
+  satisfied, any level-5 advisor checkpoint is satisfied or explicitly
+  dispositioned, and blueprint/package freshness is current.
+- If plan sealing is blocked by missing autonomy or a human-only decision, yield
+  `needs_user`; if it is blocked by advisor, proof, blueprint, or package
+  freshness, route back to `plan` or execution-package refresh instead of
+  executing stale truth.
 - If planning truth or package truth is not complete enough for execution, the
   next branch is `plan`.
 - If a passed package exists for the selected target, the next branch is
@@ -96,6 +107,9 @@ remain Ralph-exempt and may stop normally; the parent integrates their outputs.
 - Preserve manual-path parity: the same mission truth should converge to the
   same artifact state, gate state, and verdict family whether the user drove
   the path manually or through autopilot.
+- Preserve manual approval semantics: `$plan` may stop for the user to approve
+  or redirect, while `$autopilot` may consume that same planning handoff only
+  when the autonomy and seal preconditions above are machine-satisfied.
 - Prefer to create the PR when the mission bar is met and the repo context
   allows it.
 

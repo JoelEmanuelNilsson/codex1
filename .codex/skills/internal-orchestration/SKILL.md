@@ -131,6 +131,103 @@ For blocking review lanes, prefer read-only/explorer-style child agents with
 `fork_turns` set to `none`. Do not use mutation-capable worker/default lanes as
 reviewers unless a later package proves a stronger isolation mechanism.
 
+## Advisor / CritiqueScout Lanes
+
+Advisor/CritiqueScout lanes are advice-only support lanes for the parent
+orchestrator. They are not user-facing slash commands, not formal review
+lanes, and not mission-truth writers.
+
+Use an advisor lane when a public workflow needs strategic critique, for
+example before a level-5 plan seal, before mission close, after repeated
+blocking finding patterns, when the parent is changing approach, or when the
+proof/review strategy feels proxy-based.
+
+The parent keeps mission truth, final synthesis, and all durable writeback
+decisions.
+
+An advisor brief must include:
+
+- `checkpoint`: stable checkpoint id such as `high_risk_plan_seal`,
+  `mission_close_preflight`, `repeated_finding_pattern`, `approach_change`,
+  `post_orientation_pre_write`, `proof_strategy_check`, or
+  `review_design_check`
+- `mission_id` and `target_ref`: explicit boundary such as mission, spec,
+  package, bundle, or close boundary
+- `question`: the exact strategic question for the advisor
+- `bounded_context`: mission artifacts, current route/spec refs, and concise
+  parent summary; do not dump unrelated transcript
+- `allowed_reads`: the explicit read-only surfaces the advisor may inspect
+- `must_not`: no skills, no file mutation, no Ralph lease, no mission-truth
+  writes, no review outcome writeback, no gate or closeout writeback, no
+  completion judgment, and no user-facing `/advisor` behavior
+- `required_checkpoint_handling`: if a required checkpoint is not invoked, the
+  parent records one bounded skip reason (`not_applicable`,
+  `covered_by_recent_advisor`, `blocked_by_missing_context`, or
+  `risk_downgraded_with_evidence`)
+- `output_shape`: bounded `advisor-output` JSON or visible advisory note
+
+Advisor output shape:
+
+```json
+{
+  "artifact": "advisor-output",
+  "mission_id": "codex1-product-flow-brainstorm",
+  "advisor_lane_id": "advisor_proof_strategy_check_1",
+  "checkpoint": "proof_strategy_check",
+  "target_ref": "spec:advisor_critiquescout_v1",
+  "advice_kind": "critique",
+  "context_refs": [
+    "PLANS/<mission>/OUTCOME-LOCK.md",
+    "PLANS/<mission>/PROGRAM-BLUEPRINT.md"
+  ],
+  "question": "Does the proof strategy rely on proxy evidence?",
+  "summary": "Short advice summary.",
+  "risks": [
+    {
+      "risk": "Proof rows may pass while route truth is stale.",
+      "severity": "medium",
+      "evidence_refs": ["path/or/artifact"]
+    }
+  ],
+  "recommended_actions": [
+    {
+      "action": "Repair proof row wording.",
+      "rationale": "Why this action helps."
+    }
+  ],
+  "requires_review": false,
+  "requires_replan": false,
+  "confidence": "high",
+  "recorded_at": "RFC3339 timestamp"
+}
+```
+
+Allowed `advice_kind` values are `critique`, `option_pressure`,
+`proof_strategy`, `risk_check`, and `mission_close_preflight`. Allowed
+`confidence` values are `low`, `medium`, and `high`.
+
+If the advice materially changes the route, proof strategy, review design, or
+close decision, the parent records one disposition in the relevant visible
+artifact or receipt:
+
+- `followed`
+- `partially_followed`
+- `rejected_with_evidence`
+- `converted_to_review`
+- `converted_to_replan`
+- `needs_user`
+
+For non-material advice, the parent may record `no_material_change` in notes or
+receipts instead of creating a full disposition artifact.
+
+Advisor output may recommend review, repair, replan, `needs_user`, or a safer
+route, but it cannot enact any of those branches. Advisor output is critique,
+not formal review evidence. If advisor advice finds a correctness or intent
+concern that should block a target, the parent routes that concern into
+`$review-loop` or `internal-replan`; the advisor does not clear, fail, or pass
+gates directly. If review is owed, the parent must still run `$review-loop`
+with bounded findings-only reviewer lanes and durable reviewer-output artifacts.
+
 ## Return Shape
 
 Child outputs should be compact, evidence-backed, and easy for the parent to

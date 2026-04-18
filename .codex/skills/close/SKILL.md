@@ -14,6 +14,9 @@ leave a Ralph-governed parent loop without moving `.codex/hooks.json`.
 - Explaining the next resumable branch without mutating mission truth
 - Preserving the user's ability to resume later with `$plan`, `$execute`,
   `$review-loop`, or `$autopilot`
+- Freezing parent integration while allowing already-running bounded child,
+  reviewer, or advisor lanes to finish and persist their bounded outputs
+- Keeping `paused` distinct from `needs_user`, `hard_blocked`, and `complete`
 
 ## Workflow
 
@@ -29,9 +32,15 @@ leave a Ralph-governed parent loop without moving `.codex/hooks.json`.
 
 3. If the user explicitly asks to discard loop state, use
    `codex1 internal clear-loop-lease` instead.
-4. Do not resolve gates, repair specs, record review outcomes, compile
+4. Already-running bounded lanes may finish and persist their bounded outputs,
+   but `$close` must not integrate those outputs or act on them. The parent must
+   revalidate freshness after the user resumes with `$plan`, `$execute`,
+   `$review-loop`, or `$autopilot`.
+5. Do not resolve gates, repair specs, record review outcomes, compile
    packages, or continue execution as part of `$close`.
-5. Report the current pending mission branch as passive status only.
+6. Report the current pending mission branch as passive status only. A paused
+   loop is not a durable `needs_user` wait, not `hard_blocked`, and not
+   `complete`.
 
 ## Resume
 
@@ -48,3 +57,6 @@ The user resumes by invoking one of the loop-owning public workflows:
 - mark missions complete
 - clear gates
 - treat pausing Ralph as proof that work is done
+- integrate child/reviewer/advisor outputs while the parent loop is paused
+- mint new child lane authority while the parent loop is paused
+- describe a paused loop as terminal, blocked, or waiting on a user decision

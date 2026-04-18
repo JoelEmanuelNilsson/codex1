@@ -630,6 +630,8 @@ pub struct MissionGateIndex {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ContradictionRecord {
     pub contradiction_id: String,
+    #[serde(default)]
+    pub resolves_contradiction_id: Option<String>,
     pub discovered_in_phase: String,
     pub discovered_by: String,
     pub target_type: TargetType,
@@ -774,6 +776,43 @@ pub struct PlanningWriteReport {
     pub blueprint_revision: u64,
     pub blueprint_fingerprint: Fingerprint,
     pub written_specs: Vec<IncludedSpecRef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AutopilotPlanSealCaller {
+    ManualPlan,
+    Autopilot,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AdvisorCheckpointState {
+    NotRequired,
+    Satisfied,
+    SkippedWithDisposition,
+    Missing,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutopilotPlanSealInput {
+    pub caller: AutopilotPlanSealCaller,
+    pub autonomy_granted: bool,
+    pub effective_plan_level: u8,
+    pub planning_rigor_satisfied: bool,
+    pub human_only_decisions_open: bool,
+    pub advisor_checkpoint: AdvisorCheckpointState,
+    pub blueprint_fresh: bool,
+    pub package_fresh: bool,
+    #[serde(default)]
+    pub post_seal_artifact_changes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutopilotPlanSealDecision {
+    pub self_seal_allowed: bool,
+    pub next_required_branch: NextRequiredBranch,
+    pub blockers: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -1012,6 +1051,8 @@ pub struct ReviewerOutputInput {
     pub bundle_id: String,
     pub reviewer_id: String,
     #[serde(default)]
+    pub reviewer_profile: Option<String>,
+    #[serde(default)]
     pub output_kind: Option<ReviewerOutputKind>,
     #[serde(default)]
     pub findings: Vec<ReviewerOutputFinding>,
@@ -1023,6 +1064,8 @@ pub struct ReviewerOutputArtifact {
     pub bundle_id: String,
     pub reviewer_id: String,
     pub reviewer_output_id: String,
+    #[serde(default = "default_reviewer_profile")]
+    pub reviewer_profile: String,
     pub output_kind: ReviewerOutputKind,
     #[serde(default)]
     pub findings: Vec<ReviewerOutputFinding>,
@@ -1105,6 +1148,8 @@ const REQUIRED_MISSION_CLOSE_REVIEW_LENSES: &[&str] = &[
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ContradictionInput {
     pub mission_id: String,
+    #[serde(default)]
+    pub resolves_contradiction_id: Option<String>,
     pub discovered_in_phase: String,
     pub discovered_by: String,
     pub target_type: TargetType,
@@ -1278,20 +1323,54 @@ fn unresolved_contradiction_records(path: &Path) -> Result<Vec<ContradictionReco
     let raw =
         fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
     let mut records = Vec::new();
+    let mut resolved_ids = BTreeSet::new();
     for line in raw.lines() {
         if line.trim().is_empty() {
             continue;
         }
         let record: ContradictionRecord = serde_json::from_str(line)
             .with_context(|| format!("failed to parse {}", path.display()))?;
-        if !matches!(
+        if matches!(
             record.status,
             ContradictionStatus::Resolved | ContradictionStatus::Dismissed
         ) {
-            records.push(record);
+            if let Some(resolved_id) = record.resolves_contradiction_id.as_deref() {
+                resolved_ids.insert(resolved_id.to_string());
+            }
+        }
+        records.push(record);
+    }
+    records.retain(|record| {
+        !matches!(
+            record.status,
+            ContradictionStatus::Resolved | ContradictionStatus::Dismissed
+        ) && !resolved_ids.contains(&record.contradiction_id)
+    });
+    Ok(records)
+}
+
+fn contradiction_record_exists(path: &Path, contradiction_id: &str) -> Result<bool> {
+    if !path.is_file() {
+        return Ok(false);
+    }
+    let raw =
+        fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
+    for line in raw.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let record: ContradictionRecord = serde_json::from_str(line)
+            .with_context(|| format!("failed to parse {}", path.display()))?;
+        if record.contradiction_id == contradiction_id
+            && !matches!(
+                record.status,
+                ContradictionStatus::Resolved | ContradictionStatus::Dismissed
+            )
+        {
+            return Ok(true);
         }
     }
-    Ok(records)
+    Ok(false)
 }
 
 pub fn initialize_mission(
@@ -1611,6 +1690,65 @@ pub fn write_planning_artifacts(
         blueprint_fingerprint: context.blueprint_fingerprint,
         written_specs: spec_sync.written_specs,
     })
+}
+
+pub fn evaluate_autopilot_plan_seal(input: &AutopilotPlanSealInput) -> AutopilotPlanSealDecision {
+    let mut blockers = Vec::new();
+
+    if input.effective_plan_level == 0 || input.effective_plan_level > 5 {
+        blockers.push("plan_level_out_of_range".to_string());
+    }
+    if !input.planning_rigor_satisfied {
+        blockers.push("planning_rigor_evidence_missing".to_string());
+    }
+    if input.caller == AutopilotPlanSealCaller::ManualPlan {
+        blockers.push("manual_plan_requires_user_seal".to_string());
+    }
+    if input.caller == AutopilotPlanSealCaller::Autopilot && !input.autonomy_granted {
+        blockers.push("autonomy_grant_missing".to_string());
+    }
+    if input.human_only_decisions_open {
+        blockers.push("human_only_decision_open".to_string());
+    }
+    if input.effective_plan_level >= 5
+        && !matches!(
+            input.advisor_checkpoint,
+            AdvisorCheckpointState::Satisfied | AdvisorCheckpointState::SkippedWithDisposition
+        )
+    {
+        blockers.push("advisor_checkpoint_missing_for_level_5".to_string());
+    }
+    if !input.blueprint_fresh {
+        blockers.push("blueprint_truth_stale".to_string());
+    }
+    if !input.package_fresh {
+        blockers.push("package_truth_stale".to_string());
+    }
+    if !input.post_seal_artifact_changes.is_empty() {
+        blockers.push("post_seal_artifact_change_detected".to_string());
+    }
+
+    let self_seal_allowed = blockers.is_empty();
+    let next_required_branch = if self_seal_allowed {
+        NextRequiredBranch::Execution
+    } else if blockers.iter().any(|blocker| {
+        matches!(
+            blocker.as_str(),
+            "manual_plan_requires_user_seal"
+                | "autonomy_grant_missing"
+                | "human_only_decision_open"
+        )
+    }) {
+        NextRequiredBranch::NeedsUser
+    } else {
+        NextRequiredBranch::Replan
+    };
+
+    AutopilotPlanSealDecision {
+        self_seal_allowed,
+        next_required_branch,
+        blockers: unique_strings(&blockers),
+    }
 }
 
 fn prepare_planning_write_context(
@@ -2897,15 +3035,27 @@ pub fn compile_review_bundle(
             }
         }
     };
-    let bundle_path = paths.review_bundle(&bundle.bundle_id);
-    write_json(&bundle_path, &bundle)?;
-
     let mut gates = load_gate_index(paths)?;
     let gate_kind = match bundle.bundle_kind {
         BundleKind::SpecReview => GateKind::BlockingReview,
         BundleKind::MissionClose => GateKind::MissionCloseReview,
     };
     let review_target_ref = review_target_ref(&bundle);
+    if let Some(open_gate) = gates.gates.iter().find(|gate| {
+        gate.gate_kind == gate_kind
+            && gate.target_ref == review_target_ref
+            && gate.status == MissionGateStatus::Open
+    }) {
+        bail!(
+            "active review wave already open for {}; resolve or supersede gate {} before compiling another review bundle",
+            review_target_ref,
+            open_gate.gate_id
+        );
+    }
+
+    let bundle_path = paths.review_bundle(&bundle.bundle_id);
+    write_json(&bundle_path, &bundle)?;
+
     let review_gate_id = review_gate_id(&bundle, gate_kind.clone());
     supersede_matching_gates(
         &mut gates,
@@ -3431,6 +3581,7 @@ pub fn record_reviewer_output(
     }
 
     let output_kind = reviewer_output_kind(input)?;
+    let reviewer_profile = reviewer_output_profile(input)?;
     let reviewer_output_id = Uuid::new_v4().to_string();
     let source_evidence_snapshot = paths.review_evidence_snapshot(&input.bundle_id);
     let source_evidence_snapshot_fingerprint = Fingerprint::from_file(&source_evidence_snapshot)
@@ -3445,6 +3596,7 @@ pub fn record_reviewer_output(
         bundle_id: input.bundle_id.clone(),
         reviewer_id: input.reviewer_id.clone(),
         reviewer_output_id: reviewer_output_id.clone(),
+        reviewer_profile,
         output_kind,
         findings: input.findings.clone(),
         source_evidence_snapshot: source_evidence_snapshot.display().to_string(),
@@ -3467,6 +3619,7 @@ fn validate_reviewer_output_input(input: &ReviewerOutputInput) -> Result<()> {
     if input.reviewer_id.trim().is_empty() {
         anyhow::bail!("reviewer output requires reviewer_id");
     }
+    reviewer_output_profile(input)?;
     let output_kind = reviewer_output_kind(input)?;
     match output_kind {
         ReviewerOutputKind::None if !input.findings.is_empty() => {
@@ -3498,6 +3651,62 @@ fn reviewer_output_kind(input: &ReviewerOutputInput) -> Result<ReviewerOutputKin
         );
     }
     Ok(inferred)
+}
+
+fn reviewer_output_profile(input: &ReviewerOutputInput) -> Result<String> {
+    let profile = input
+        .reviewer_profile
+        .as_deref()
+        .map(normalize_reviewer_profile)
+        .unwrap_or_else(|| derive_reviewer_profile_from_id(&input.reviewer_id));
+    if profile.trim().is_empty() {
+        anyhow::bail!("reviewer output profile must not be empty");
+    }
+    if !matches!(
+        profile.as_str(),
+        "code_bug_correctness"
+            | "spec_intent_or_proof"
+            | "local_spec_intent"
+            | "integration_intent"
+            | "mission_close"
+            | "generic"
+    ) {
+        anyhow::bail!("reviewer output profile {profile} is not a known review lane profile");
+    }
+    Ok(profile)
+}
+
+fn normalize_reviewer_profile(profile: &str) -> String {
+    profile.trim().to_ascii_lowercase().replace([' ', '-'], "_")
+}
+
+fn derive_reviewer_profile_from_id(reviewer_id: &str) -> String {
+    let reviewer_id = reviewer_id.trim().to_ascii_lowercase();
+    if reviewer_id.contains("mission_close") {
+        return "mission_close".to_string();
+    }
+    if reviewer_id.contains("integration") {
+        return "integration_intent".to_string();
+    }
+    if reviewer_id.contains("code")
+        || reviewer_id.contains("bug")
+        || reviewer_id.contains("correctness")
+        || reviewer_id.contains("hard_coding")
+    {
+        return "code_bug_correctness".to_string();
+    }
+    if reviewer_id.contains("spec")
+        || reviewer_id.contains("intent")
+        || reviewer_id.contains("proof")
+        || reviewer_id.contains("evidence")
+    {
+        return "spec_intent_or_proof".to_string();
+    }
+    "generic".to_string()
+}
+
+fn default_reviewer_profile() -> String {
+    "generic".to_string()
 }
 
 fn validate_reviewer_output_finding(finding: &ReviewerOutputFinding) -> Result<()> {
@@ -3548,6 +3757,21 @@ fn validate_reviewer_output_artifact(
         })?;
     if actual_snapshot_fingerprint != artifact.source_evidence_snapshot_fingerprint {
         anyhow::bail!("reviewer output source evidence snapshot fingerprint mismatch");
+    }
+    let reviewer_profile = normalize_reviewer_profile(&artifact.reviewer_profile);
+    if reviewer_profile != artifact.reviewer_profile {
+        anyhow::bail!("reviewer output artifact profile must be normalized");
+    }
+    if !matches!(
+        reviewer_profile.as_str(),
+        "code_bug_correctness"
+            | "spec_intent_or_proof"
+            | "local_spec_intent"
+            | "integration_intent"
+            | "mission_close"
+            | "generic"
+    ) {
+        anyhow::bail!("reviewer output artifact profile is not a known review lane profile");
     }
     match artifact.output_kind {
         ReviewerOutputKind::None if !artifact.findings.is_empty() => {
@@ -4557,15 +4781,23 @@ fn review_path_looks_code_producing(path: &str) -> bool {
 
 fn reviewer_output_satisfies_required_lane(output: &ReviewerOutputArtifact, lane: &str) -> bool {
     let reviewer_id = output.reviewer_id.trim().to_ascii_lowercase();
+    let reviewer_profile = output.reviewer_profile.trim().to_ascii_lowercase();
     match lane {
         "code_bug_correctness" => {
-            reviewer_id.contains("code")
+            reviewer_profile == "code_bug_correctness"
+                || reviewer_id.contains("code")
                 || reviewer_id.contains("bug")
                 || reviewer_id.contains("correctness")
                 || reviewer_id.contains("hard_coding")
         }
         "spec_intent_or_proof" => {
-            reviewer_id.contains("spec")
+            matches!(
+                reviewer_profile.as_str(),
+                "spec_intent_or_proof"
+                    | "local_spec_intent"
+                    | "integration_intent"
+                    | "mission_close"
+            ) || reviewer_id.contains("spec")
                 || reviewer_id.contains("intent")
                 || reviewer_id.contains("proof")
                 || reviewer_id.contains("evidence")
@@ -4933,6 +5165,14 @@ pub fn append_contradiction(
             if input.resolution_ref.as_deref().is_none_or(str::is_empty) {
                 bail!("resolved or dismissed contradictions require resolution_ref");
             }
+            let Some(resolved_id) = input.resolves_contradiction_id.as_deref() else {
+                bail!("resolved or dismissed contradictions require resolves_contradiction_id");
+            };
+            if !contradiction_record_exists(&paths.contradictions_ndjson(), resolved_id)? {
+                bail!(
+                    "resolved or dismissed contradiction target {resolved_id} does not exist or is already resolved"
+                );
+            }
         }
         ContradictionStatus::Triaged => {
             if input.triage_decision.is_none() {
@@ -4940,6 +5180,13 @@ pub fn append_contradiction(
             }
         }
         ContradictionStatus::Open => {}
+    }
+    if !matches!(
+        status,
+        ContradictionStatus::Resolved | ContradictionStatus::Dismissed
+    ) && input.resolves_contradiction_id.is_some()
+    {
+        bail!("resolves_contradiction_id is only valid for resolved or dismissed contradictions");
     }
     if !matches!(status, ContradictionStatus::Open)
         && (input.triage_decision.is_none()
@@ -4965,6 +5212,7 @@ pub fn append_contradiction(
     }
     let record = ContradictionRecord {
         contradiction_id: Uuid::new_v4().to_string(),
+        resolves_contradiction_id: input.resolves_contradiction_id.clone(),
         discovered_in_phase: input.discovered_in_phase.clone(),
         discovered_by: input.discovered_by.clone(),
         target_type: input.target_type.clone(),
@@ -7529,15 +7777,12 @@ fn stale_review_gate_matches_completed_spec_contract(
         return Ok(false);
     }
 
-    if spec_doc.frontmatter.spec_revision != spec_revision {
-        return Ok(false);
-    }
-
     if spec_doc.fingerprint()? == spec_fingerprint {
         return Ok(true);
     }
 
     let mut route_normalized_doc = spec_doc;
+    route_normalized_doc.frontmatter.spec_revision = spec_revision;
     route_normalized_doc.frontmatter.blueprint_revision = bundle.blueprint_revision;
     route_normalized_doc.frontmatter.blueprint_fingerprint = Some(bundle.blueprint_fingerprint);
     if route_normalized_doc.fingerprint()? == spec_fingerprint {
@@ -7545,7 +7790,16 @@ fn stale_review_gate_matches_completed_spec_contract(
     }
 
     route_normalized_doc.frontmatter.execution_status = SpecExecutionStatus::Packaged;
-    Ok(route_normalized_doc.fingerprint()? == spec_fingerprint)
+    if route_normalized_doc.fingerprint()? == spec_fingerprint {
+        return Ok(true);
+    }
+
+    Ok(gate.failure_refs.is_empty()
+        && gate.evaluated_at.is_some()
+        && gate
+            .evidence_refs
+            .iter()
+            .any(|evidence_ref| reviewer_agent_output_evidence_ref(evidence_ref)))
 }
 
 fn unresolved_blocking_gate_refs_for_source_package(
@@ -9460,12 +9714,12 @@ fn derive_writer_packet_scope(
 }
 
 fn normalize_scoped_path(path: &str) -> String {
-    let trimmed = path.trim();
+    let trimmed = path.trim().trim_matches('`');
     if trimmed.is_empty() || trimmed.contains('\\') || trimmed.starts_with('/') {
         return String::new();
     }
 
-    let without_edges = trimmed.trim_matches('/');
+    let without_edges = trimmed.trim_matches('/').trim_matches('`');
     if without_edges.is_empty() {
         return String::new();
     }
@@ -10664,8 +10918,9 @@ mod tests {
         load_closeouts, load_execution_graph, load_gate_index, load_markdown, open_selection_wait,
         rebuild_state_from_closeouts, record_review_result, resolve_resume, resolve_selection_wait,
         unresolved_blocking_gate_refs, unresolved_blocking_gate_refs_for_source_package,
-        unresolved_review_gate_blocks_resume, validate_execution_package, validate_review_bundle,
-        write_closeout, write_json, write_planning_artifacts,
+        unresolved_contradiction_records, unresolved_review_gate_blocks_resume,
+        validate_execution_package, validate_review_bundle, write_closeout, write_json,
+        write_planning_artifacts,
     };
     use crate::{
         ActiveCycleState, ChildLaneExpectation, ChildLaneIntegrationStatus, CloseoutRecord,
@@ -11546,6 +11801,136 @@ Keep the implementation bounded and explicit.
         assert!(
             unresolved_review_gate_blocks_resume(&paths, &stale_gate),
             "stale review history for a changed completed spec must still block re-review"
+        );
+    }
+
+    #[test]
+    fn stale_review_gate_without_failures_and_with_reviewer_evidence_does_not_block_resume() {
+        let temp = TempDir::new().expect("temp dir");
+        let paths = MissionPaths::new(temp.path(), "mission_alpha");
+        initialize_mission(
+            &paths,
+            &MissionInitInput {
+                title: "Mission Alpha".to_string(),
+                objective: "Ship the alpha flow safely.".to_string(),
+                mission_id: None,
+                slug: None,
+                root_mission_id: None,
+                parent_mission_id: None,
+                clarify_status: Some(ClarifyStatus::Ratified),
+                lock_status: Some(LockStatus::Locked),
+                lock_posture: None,
+                mission_state_body: None,
+                outcome_lock_body: None,
+                readme_body: None,
+                waiting_request: None,
+                next_action: None,
+                summary: None,
+                reason_code: None,
+            },
+        )
+        .expect("mission bootstrap should work");
+        write_planning_artifacts(
+            &paths,
+            &PlanningWriteInput {
+                mission_id: "mission_alpha".to_string(),
+                body_markdown: canonical_blueprint_body(),
+                plan_level: 5,
+                problem_size: Some(ProblemSize::M),
+                status: Some(BlueprintStatus::Approved),
+                blueprint_revision: Some(1),
+                proof_matrix: default_proof_matrix(),
+                decision_obligations: Vec::new(),
+                specs: vec![WorkstreamSpecInput {
+                    spec_id: "spec_api".to_string(),
+                    purpose: "Implement the API slice".to_string(),
+                    body_markdown: Some(canonical_spec_body("Implement the API slice")),
+                    artifact_status: Some(SpecArtifactStatus::Active),
+                    packetization_status: Some(PacketizationStatus::Runnable),
+                    execution_status: Some(SpecExecutionStatus::Complete),
+                    owner_mode: None,
+                    replan_boundary: None,
+                }],
+                selected_target_ref: Some("spec:spec_api".to_string()),
+                execution_graph: None,
+                next_action: None,
+            },
+        )
+        .expect("planning writeback should work");
+        let package = compile_execution_package(
+            &paths,
+            &ExecutionPackageInput {
+                mission_id: "mission_alpha".to_string(),
+                target_type: TargetType::Spec,
+                target_id: "spec_api".to_string(),
+                included_spec_ids: vec!["spec_api".to_string()],
+                dependency_satisfaction_state: vec![DependencyCheck {
+                    name: "lock_current".to_string(),
+                    satisfied: true,
+                    detail: "current lock is ratified".to_string(),
+                }],
+                read_scope: vec!["src/api".to_string()],
+                write_scope: vec!["src/api".to_string()],
+                proof_obligations: vec!["cargo test".to_string()],
+                review_obligations: vec!["correctness".to_string()],
+                replan_boundary: None,
+                wave_context: None,
+                wave_fingerprint: None,
+                wave_specs: Vec::new(),
+                gate_checks: Vec::new(),
+            },
+        )
+        .expect("package compilation should work");
+        let bundle = compile_review_bundle(
+            &paths,
+            &ReviewBundleInput {
+                mission_id: "mission_alpha".to_string(),
+                source_package_id: package.package_id.clone(),
+                bundle_kind: BundleKind::SpecReview,
+                mandatory_review_lenses: vec!["correctness".to_string()],
+                target_spec_id: Some("spec_api".to_string()),
+                proof_rows_under_review: vec!["cargo test".to_string()],
+                receipts: vec!["RECEIPTS/test.txt".to_string()],
+                changed_files_or_diff: vec!["src/api/mod.rs".to_string()],
+                touched_interface_contracts: vec!["ApiService".to_string()],
+                mission_level_proof_rows: Vec::new(),
+                cross_spec_claim_refs: Vec::new(),
+                visible_artifact_refs: Vec::new(),
+                deferred_descoped_follow_on_refs: Vec::new(),
+                open_finding_summary: Vec::new(),
+            },
+        )
+        .expect("review bundle compilation should work");
+
+        let mut raw = std::fs::read_to_string(paths.spec_file("spec_api")).expect("read spec");
+        raw = raw.replace("execution_status: packaged", "execution_status: complete");
+        raw.push_str("\n## Route Metadata Drift\n\n- Route-only planning metadata changed.\n");
+        std::fs::write(paths.spec_file("spec_api"), raw).expect("write route drift");
+
+        let stale_gate = MissionGateRecord {
+            gate_id: format!(
+                "mission_alpha:blocking_review:spec:spec_api:{}",
+                bundle.bundle_id
+            ),
+            gate_kind: GateKind::BlockingReview,
+            target_ref: "spec:spec_api".to_string(),
+            governing_refs: vec![format!("bundle:{}", bundle.bundle_id)],
+            status: MissionGateStatus::Stale,
+            blocking: true,
+            opened_at: OffsetDateTime::now_utc(),
+            evaluated_at: Some(OffsetDateTime::now_utc()),
+            evaluated_against_ref: Some(bundle.bundle_id.clone()),
+            evidence_refs: vec![
+                paths.review_bundle(&bundle.bundle_id).display().to_string(),
+                format!("reviewer-output:{}:clean-output", bundle.bundle_id),
+            ],
+            failure_refs: Vec::new(),
+            superseded_by: None,
+        };
+
+        assert!(
+            !unresolved_review_gate_blocks_resume(&paths, &stale_gate),
+            "a clean stale review gate with delegated reviewer evidence and no failure refs should not block route advancement"
         );
     }
 
@@ -13364,6 +13749,7 @@ Keep the implementation bounded and explicit.
             &paths,
             &ContradictionInput {
                 mission_id: "mission_alpha".to_string(),
+                resolves_contradiction_id: None,
                 discovered_in_phase: "review".to_string(),
                 discovered_by: "codex".to_string(),
                 target_type: TargetType::Spec,
@@ -17271,6 +17657,7 @@ Keep the implementation bounded and explicit.
     fn contradiction_resume_override_preserves_discovered_phase_for_needs_user() {
         let record = ContradictionRecord {
             contradiction_id: "contradiction_1".to_string(),
+            resolves_contradiction_id: None,
             discovered_in_phase: "execution".to_string(),
             discovered_by: "codex".to_string(),
             target_type: TargetType::Spec,
@@ -17294,6 +17681,97 @@ Keep the implementation bounded and explicit.
             contradiction_resume_override(&record).expect("needs-user contradiction override");
         assert_eq!(override_state.resume_status, ResumeStatus::WaitingNeedsUser);
         assert_eq!(override_state.next_phase.as_deref(), Some("execution"));
+    }
+
+    #[test]
+    fn resolved_contradiction_record_clears_original_from_resume_blockers() {
+        let temp = TempDir::new().expect("temp dir");
+        let paths = MissionPaths::new(temp.path(), "mission_alpha");
+        initialize_mission(
+            &paths,
+            &MissionInitInput {
+                title: "Mission Alpha".to_string(),
+                objective: "Resolve contradiction lifecycle truth.".to_string(),
+                mission_id: None,
+                slug: None,
+                root_mission_id: None,
+                parent_mission_id: None,
+                clarify_status: Some(ClarifyStatus::Ratified),
+                lock_status: Some(LockStatus::Locked),
+                lock_posture: None,
+                mission_state_body: None,
+                outcome_lock_body: None,
+                readme_body: None,
+                waiting_request: None,
+                next_action: None,
+                summary: None,
+                reason_code: None,
+            },
+        )
+        .expect("mission bootstrap should work");
+
+        let original = append_contradiction(
+            &paths,
+            &ContradictionInput {
+                mission_id: "mission_alpha".to_string(),
+                resolves_contradiction_id: None,
+                discovered_in_phase: "review".to_string(),
+                discovered_by: "codex".to_string(),
+                target_type: TargetType::Spec,
+                target_id: "spec_api".to_string(),
+                evidence_refs: vec!["RECEIPTS/test.txt".to_string()],
+                violated_assumption_or_contract: "Review truth drifted under the reviewer."
+                    .to_string(),
+                suggested_reopen_layer: ReopenLayer::ExecutionPackage,
+                reason_code: "review_truth_drift".to_string(),
+                governing_revision: "bundle:test".to_string(),
+                status: Some(ContradictionStatus::AcceptedForReplan),
+                triage_decision: Some(TriageDecision::ReopenExecutionPackage),
+                triaged_by: Some("codex".to_string()),
+                machine_action: Some(MachineAction::ForceReplan),
+                next_required_branch: Some(NextRequiredBranch::Replan),
+                resolution_ref: None,
+            },
+        )
+        .expect("contradiction should record");
+
+        assert_eq!(
+            unresolved_contradiction_records(&paths.contradictions_ndjson())
+                .expect("load unresolved contradictions")
+                .len(),
+            1
+        );
+
+        append_contradiction(
+            &paths,
+            &ContradictionInput {
+                mission_id: "mission_alpha".to_string(),
+                resolves_contradiction_id: Some(original.contradiction_id),
+                discovered_in_phase: "replan".to_string(),
+                discovered_by: "parent-replan".to_string(),
+                target_type: TargetType::Spec,
+                target_id: "spec_api".to_string(),
+                evidence_refs: vec!["REPLAN-LOG.md".to_string()],
+                violated_assumption_or_contract: "Review truth drifted under the reviewer."
+                    .to_string(),
+                suggested_reopen_layer: ReopenLayer::ExecutionPackage,
+                reason_code: "review_truth_drift_resolved".to_string(),
+                governing_revision: "replan-log:test".to_string(),
+                status: Some(ContradictionStatus::Resolved),
+                triage_decision: Some(TriageDecision::ReopenExecutionPackage),
+                triaged_by: Some("parent-replan".to_string()),
+                machine_action: None,
+                next_required_branch: None,
+                resolution_ref: Some("REPLAN-LOG.md#review_truth_drift".to_string()),
+            },
+        )
+        .expect("contradiction resolution should record");
+
+        assert!(
+            unresolved_contradiction_records(&paths.contradictions_ndjson())
+                .expect("load unresolved contradictions")
+                .is_empty()
+        );
     }
 
     #[test]
@@ -17679,6 +18157,7 @@ Keep the implementation bounded and explicit.
             &paths,
             &ContradictionInput {
                 mission_id: "mission_alpha".to_string(),
+                resolves_contradiction_id: None,
                 discovered_in_phase: "execution".to_string(),
                 discovered_by: "codex".to_string(),
                 target_type: TargetType::Spec,

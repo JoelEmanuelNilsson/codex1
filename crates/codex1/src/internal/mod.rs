@@ -5,16 +5,20 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
+use codex1_core::runtime::{
+    AdvisorCheckpointState, AutopilotPlanSealCaller, AutopilotPlanSealInput,
+    evaluate_autopilot_plan_seal,
+};
 use codex1_core::{
-    ActiveCycleState, ArtifactDocument, CloseoutRecord, ContradictionInput, EffectiveConfigReport,
-    ExecutionGraphValidationReport, ExecutionPackageInput, MissionBootstrapReport,
-    MissionGateIndex, MissionInitInput, MissionPaths, MissionStateFrontmatter,
-    OutcomeLockFrontmatter, PackageValidationReport, PlanningWriteInput,
-    ProgramBlueprintFrontmatter, RalphLoopLeaseInput, RalphLoopLeasePauseInput, ReplanLogInput,
-    ResolveResumeInput, ResolveResumeReport, ReviewBundleInput, ReviewBundleValidationReport,
-    ReviewEvidenceSnapshotValidationReport, ReviewResultInput, ReviewerOutputInput,
-    SelectionAcknowledgementInput, SelectionConsumptionInput, SelectionResolutionInput,
-    SelectionState, SelectionStateInput, VisibleArtifactTextKind,
+    ActiveCycleState, ArtifactDocument, BlueprintStatus, CloseoutRecord, ContradictionInput,
+    DecisionBlockingness, DecisionStatus, EffectiveConfigReport, ExecutionGraphValidationReport,
+    ExecutionPackageInput, LockStatus, MissionBootstrapReport, MissionGateIndex, MissionInitInput,
+    MissionPaths, MissionStateFrontmatter, OutcomeLockFrontmatter, PackageValidationReport,
+    PlanningWriteInput, ProgramBlueprintFrontmatter, RalphLoopLeaseInput, RalphLoopLeasePauseInput,
+    ReplanLogInput, ResolveResumeInput, ResolveResumeReport, ReviewBundleInput,
+    ReviewBundleValidationReport, ReviewEvidenceSnapshotValidationReport, ReviewResultInput,
+    ReviewerOutputInput, SelectionAcknowledgementInput, SelectionConsumptionInput,
+    SelectionResolutionInput, SelectionState, SelectionStateInput, VisibleArtifactTextKind,
     WaitingRequestAcknowledgementInput, WorkstreamSpecFrontmatter, WriterPacketInput,
     WriterPacketValidationReport, acknowledge_selection_request, acknowledge_waiting_request,
     append_contradiction, append_replan_log, begin_ralph_loop_lease,
@@ -35,6 +39,14 @@ use uuid::Uuid;
 pub struct InternalArgs {
     #[command(subcommand)]
     command: InternalCommand,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AutopilotPlanSealCommandInput {
+    mission_id: String,
+    package_id: String,
+    caller: AutopilotPlanSealCaller,
 }
 
 #[derive(Debug, Subcommand)]
@@ -126,6 +138,14 @@ enum InternalCommand {
         json: bool,
     },
     CompileExecutionPackage {
+        #[arg(long, value_name = "PATH")]
+        repo_root: Option<PathBuf>,
+        #[arg(long, default_value = "-")]
+        input_json: String,
+        #[arg(long, default_value_t = true)]
+        json: bool,
+    },
+    EvaluateAutopilotPlanSeal {
         #[arg(long, value_name = "PATH")]
         repo_root: Option<PathBuf>,
         #[arg(long, default_value = "-")]
@@ -394,6 +414,11 @@ pub fn run(args: InternalArgs) -> Result<()> {
             input_json,
             json,
         } => run_compile_execution_package(repo_root, &input_json, json),
+        InternalCommand::EvaluateAutopilotPlanSeal {
+            repo_root,
+            input_json,
+            json,
+        } => run_evaluate_autopilot_plan_seal(repo_root, &input_json, json),
         InternalCommand::ValidateExecutionPackage {
             repo_root,
             mission_id,
@@ -823,6 +848,193 @@ fn run_compile_execution_package(
         json_output,
         &serde_json::to_value(package).context("failed to serialize execution package")?,
     )
+}
+
+fn run_evaluate_autopilot_plan_seal(
+    repo_root: Option<PathBuf>,
+    input_json: &str,
+    json_output: bool,
+) -> Result<()> {
+    let command_input: AutopilotPlanSealCommandInput = load_input_json(input_json)?;
+    let repo_root = resolve_repo_root(repo_root)?;
+    let paths = MissionPaths::try_new(&repo_root, command_input.mission_id.clone())?;
+    let package_validation = validate_execution_package(&paths, &command_input.package_id)?;
+    let lock_doc = load_artifact_document::<OutcomeLockFrontmatter>(&paths.outcome_lock())?;
+    let blueprint_doc =
+        load_artifact_document::<ProgramBlueprintFrontmatter>(&paths.program_blueprint())?;
+    let package_fresh = package_validation.valid;
+    let blueprint_fresh = !package_validation
+        .findings
+        .iter()
+        .any(|finding| finding.contains("blueprint"));
+    let effective_plan_level = blueprint_doc.frontmatter.plan_level;
+    let autonomy_granted = autopilot_autonomy_granted(&lock_doc);
+    let human_only_decisions_open = blueprint_doc
+        .frontmatter
+        .decision_obligations
+        .iter()
+        .any(decision_obligation_blocks_autopilot_self_seal);
+    let planning_rigor_satisfied =
+        planning_rigor_satisfied_for_autopilot(&blueprint_doc, human_only_decisions_open);
+    let advisor_checkpoint = if effective_plan_level < 5 {
+        AdvisorCheckpointState::NotRequired
+    } else if advisor_checkpoint_satisfied(&blueprint_doc) {
+        AdvisorCheckpointState::Satisfied
+    } else if advisor_checkpoint_dispositioned(&blueprint_doc) {
+        AdvisorCheckpointState::SkippedWithDisposition
+    } else {
+        AdvisorCheckpointState::Missing
+    };
+    let input = AutopilotPlanSealInput {
+        caller: command_input.caller,
+        autonomy_granted,
+        effective_plan_level,
+        planning_rigor_satisfied,
+        human_only_decisions_open,
+        advisor_checkpoint,
+        blueprint_fresh,
+        package_fresh,
+        post_seal_artifact_changes: if package_validation.valid {
+            Vec::new()
+        } else {
+            package_validation.findings.clone()
+        },
+    };
+    let decision = evaluate_autopilot_plan_seal(&input);
+    emit(
+        json_output,
+        &serde_json::to_value(decision)
+            .context("failed to serialize autopilot plan seal decision")?,
+    )
+}
+
+fn load_artifact_document<F>(path: &Path) -> Result<ArtifactDocument<F>>
+where
+    F: codex1_core::TypedArtifactFrontmatter,
+{
+    let raw =
+        fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
+    ArtifactDocument::parse(&raw).with_context(|| format!("failed to parse {}", path.display()))
+}
+
+fn autopilot_autonomy_granted(lock_doc: &ArtifactDocument<OutcomeLockFrontmatter>) -> bool {
+    let body = lock_doc.body.to_ascii_lowercase();
+    lock_doc.frontmatter.status == LockStatus::Locked
+        && body.contains("## autonomy boundary")
+        && (body.contains("codex may") || body.contains("$autopilot may"))
+        && !body.contains("autonomy boundaries are not fully explicit")
+}
+
+fn decision_obligation_blocks_autopilot_self_seal(
+    obligation: &codex1_core::DecisionObligation,
+) -> bool {
+    matches!(
+        obligation.status,
+        DecisionStatus::Open | DecisionStatus::Researched
+    ) && matches!(
+        obligation.blockingness,
+        DecisionBlockingness::Critical | DecisionBlockingness::Major
+    )
+}
+
+fn planning_rigor_satisfied_for_autopilot(
+    blueprint_doc: &ArtifactDocument<ProgramBlueprintFrontmatter>,
+    human_only_decisions_open: bool,
+) -> bool {
+    let body = blueprint_doc.body.to_ascii_lowercase();
+    let level = blueprint_doc.frontmatter.plan_level;
+    let methods_run = yaml_list_items_for_key(&body, "methods_run");
+    let level_five_methods_run = [
+        "truth_register",
+        "system_map",
+        "boundary_coupling_map",
+        "invariant_register",
+        "proof_matrix",
+        "decision_obligations",
+        "adversarial_critique",
+        "advisor_checkpoint_design",
+        "review_design",
+        "execution_graph",
+        "package_next_target",
+    ]
+    .iter()
+    .all(|method| methods_run.contains(*method));
+    blueprint_doc.frontmatter.status == BlueprintStatus::Approved
+        && level >= blueprint_doc.frontmatter.risk_floor
+        && !blueprint_doc.frontmatter.proof_matrix.is_empty()
+        && !human_only_decisions_open
+        && (level < 5
+            || (body.contains("planning_rigor:")
+                && body.contains("methods_run:")
+                && level_five_methods_run))
+}
+
+fn advisor_checkpoint_satisfied(
+    blueprint_doc: &ArtifactDocument<ProgramBlueprintFrontmatter>,
+) -> bool {
+    let body = blueprint_doc.body.to_ascii_lowercase();
+    high_risk_plan_seal_advisor_entry(&body).is_some_and(|entry| {
+        entry.contains("disposition:")
+            && !entry.contains("skipped_with_disposition")
+            && !entry.contains("skip")
+    })
+}
+
+fn advisor_checkpoint_dispositioned(
+    blueprint_doc: &ArtifactDocument<ProgramBlueprintFrontmatter>,
+) -> bool {
+    let body = blueprint_doc.body.to_ascii_lowercase();
+    high_risk_plan_seal_advisor_entry(&body).is_some_and(|entry| {
+        entry.contains("disposition:")
+            && (entry.contains("skipped_with_disposition") || entry.contains("skip"))
+    }) || high_risk_plan_seal_skip_entry(&body).is_some_and(|entry| {
+        entry.contains("high_risk_plan_seal") && entry.contains("disposition:")
+    })
+}
+
+fn high_risk_plan_seal_advisor_entry(body: &str) -> Option<&str> {
+    let advisor_section = body.split("advisors_used:").nth(1)?;
+    let fenced_section = advisor_section
+        .split("```")
+        .next()
+        .unwrap_or(advisor_section);
+    let entry = fenced_section
+        .split("checkpoint: high_risk_plan_seal")
+        .nth(1)?;
+    Some(entry.split("\n    - ").next().unwrap_or(entry))
+}
+
+fn high_risk_plan_seal_skip_entry(body: &str) -> Option<&str> {
+    let skip_section = body
+        .split("advisor_checkpoint_skip:")
+        .nth(1)
+        .or_else(|| body.split("advisor skip:").nth(1))?;
+    Some(skip_section.split("```").next().unwrap_or(skip_section))
+}
+
+fn yaml_list_items_for_key(body: &str, key: &str) -> std::collections::BTreeSet<String> {
+    let mut items = std::collections::BTreeSet::new();
+    let mut in_list = false;
+    let key_marker = format!("{key}:");
+
+    for line in body.lines() {
+        let trimmed = line.trim();
+        if !in_list {
+            if trimmed == key_marker {
+                in_list = true;
+            }
+            continue;
+        }
+        if let Some(item) = trimmed.strip_prefix("- ") {
+            items.insert(item.trim().to_string());
+            continue;
+        }
+        if !trimmed.is_empty() && trimmed.ends_with(':') {
+            break;
+        }
+    }
+
+    items
 }
 
 fn run_validate_execution_package(

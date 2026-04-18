@@ -1,6 +1,10 @@
 use std::path::Path;
 
 use assert_cmd::Command;
+use codex1_core::runtime::{
+    AdvisorCheckpointState, AutopilotPlanSealCaller, AutopilotPlanSealInput, NextRequiredBranch,
+    evaluate_autopilot_plan_seal,
+};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -388,6 +392,414 @@ fn public_execute_and_autopilot_skills_require_mission_close_review() {
             "Together they form the autonomy-governance proof surface for execute and autopilot."
         ),
         "qualification gates doc should frame parity as one component of the broader execute/autopilot proof surface"
+    );
+}
+
+#[test]
+fn autopilot_plan_seal_requires_autonomy_and_advisor_checkpoint() {
+    let manual = evaluate_autopilot_plan_seal(&AutopilotPlanSealInput {
+        caller: AutopilotPlanSealCaller::ManualPlan,
+        autonomy_granted: true,
+        effective_plan_level: 5,
+        planning_rigor_satisfied: true,
+        human_only_decisions_open: false,
+        advisor_checkpoint: AdvisorCheckpointState::Satisfied,
+        blueprint_fresh: true,
+        package_fresh: true,
+        post_seal_artifact_changes: Vec::new(),
+    });
+    assert!(!manual.self_seal_allowed);
+    assert_eq!(manual.next_required_branch, NextRequiredBranch::NeedsUser);
+    assert!(
+        manual
+            .blockers
+            .contains(&"manual_plan_requires_user_seal".to_string())
+    );
+
+    let missing_autonomy = evaluate_autopilot_plan_seal(&AutopilotPlanSealInput {
+        caller: AutopilotPlanSealCaller::Autopilot,
+        autonomy_granted: false,
+        effective_plan_level: 5,
+        planning_rigor_satisfied: true,
+        human_only_decisions_open: false,
+        advisor_checkpoint: AdvisorCheckpointState::Satisfied,
+        blueprint_fresh: true,
+        package_fresh: true,
+        post_seal_artifact_changes: Vec::new(),
+    });
+    assert!(!missing_autonomy.self_seal_allowed);
+    assert_eq!(
+        missing_autonomy.next_required_branch,
+        NextRequiredBranch::NeedsUser
+    );
+    assert!(
+        missing_autonomy
+            .blockers
+            .contains(&"autonomy_grant_missing".to_string())
+    );
+
+    let missing_advisor = evaluate_autopilot_plan_seal(&AutopilotPlanSealInput {
+        caller: AutopilotPlanSealCaller::Autopilot,
+        autonomy_granted: true,
+        effective_plan_level: 5,
+        planning_rigor_satisfied: true,
+        human_only_decisions_open: false,
+        advisor_checkpoint: AdvisorCheckpointState::Missing,
+        blueprint_fresh: true,
+        package_fresh: true,
+        post_seal_artifact_changes: Vec::new(),
+    });
+    assert!(!missing_advisor.self_seal_allowed);
+    assert_eq!(
+        missing_advisor.next_required_branch,
+        NextRequiredBranch::Replan
+    );
+    assert!(
+        missing_advisor
+            .blockers
+            .contains(&"advisor_checkpoint_missing_for_level_5".to_string())
+    );
+}
+
+#[test]
+fn autopilot_plan_seal_blocks_stale_package_truth_and_allows_fresh_autopilot_path() {
+    let stale = evaluate_autopilot_plan_seal(&AutopilotPlanSealInput {
+        caller: AutopilotPlanSealCaller::Autopilot,
+        autonomy_granted: true,
+        effective_plan_level: 5,
+        planning_rigor_satisfied: true,
+        human_only_decisions_open: false,
+        advisor_checkpoint: AdvisorCheckpointState::SkippedWithDisposition,
+        blueprint_fresh: true,
+        package_fresh: false,
+        post_seal_artifact_changes: vec!["PLANS/demo/PROGRAM-BLUEPRINT.md".to_string()],
+    });
+    assert!(!stale.self_seal_allowed);
+    assert_eq!(stale.next_required_branch, NextRequiredBranch::Replan);
+    assert!(stale.blockers.contains(&"package_truth_stale".to_string()));
+    assert!(
+        stale
+            .blockers
+            .contains(&"post_seal_artifact_change_detected".to_string())
+    );
+
+    let fresh = evaluate_autopilot_plan_seal(&AutopilotPlanSealInput {
+        caller: AutopilotPlanSealCaller::Autopilot,
+        autonomy_granted: true,
+        effective_plan_level: 5,
+        planning_rigor_satisfied: true,
+        human_only_decisions_open: false,
+        advisor_checkpoint: AdvisorCheckpointState::Satisfied,
+        blueprint_fresh: true,
+        package_fresh: true,
+        post_seal_artifact_changes: Vec::new(),
+    });
+    assert!(fresh.self_seal_allowed);
+    assert_eq!(fresh.next_required_branch, NextRequiredBranch::Execution);
+    assert!(fresh.blockers.is_empty());
+}
+
+#[test]
+fn autopilot_plan_seal_cli_pairs_with_package_freshness_validation() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "autopilot-seal-freshness";
+
+    run_json(
+        repo.path(),
+        &["internal", "init-mission"],
+        json!({
+            "mission_id": mission_id,
+            "title": "Autopilot Seal Freshness",
+            "objective": "Ensure autopilot seal decisions respect package freshness.",
+            "clarify_status": "ratified",
+            "lock_status": "locked",
+            "outcome_lock_body": "# Outcome Lock\n\n## Objective\n\nEnsure autopilot seal decisions respect package freshness.\n\n## Done-When Criteria\n\n- Autopilot seal checks are bound to durable mission truth.\n\n## Protected Surfaces\n\n- crates/codex1/src/internal/mod.rs\n\n## Unacceptable Tradeoffs\n\n- Do not trust caller-supplied freshness.\n\n## Autonomy Boundary\n\nCodex may update repo docs, runtime code, tests, and mission artifacts when authorized by an execution package.\n\nCodex must ask before destructive or irreversible actions.\n"
+        }),
+    );
+    run_json(
+        repo.path(),
+        &["internal", "materialize-plan"],
+        json!({
+            "mission_id": mission_id,
+            "body_markdown": autopilot_seal_blueprint_body("Use internal commands."),
+            "plan_level": 5,
+            "problem_size": "S",
+            "status": "approved",
+            "proof_matrix": [{"claim_ref": "claim:default-proof", "statement": "The selected route has explicit proof coverage.", "required_evidence": ["RECEIPTS/test-output.txt"], "review_lenses": ["correctness"], "governing_contract_refs": ["blueprint"]}],
+            "decision_obligations": [],
+            "selected_target_ref": "spec:seal_flow",
+            "specs": [{
+                "spec_id": "seal_flow",
+                "purpose": "Exercise autopilot seal freshness.",
+                "body_markdown": canonical_spec_body_with_scope_and_note(
+                    "Exercise autopilot seal freshness.",
+                    &["src"],
+                    &["src"],
+                    "Keep the workstream bounded and reviewable."
+                ),
+                "artifact_status": "active",
+                "packetization_status": "runnable",
+                "execution_status": "packaged"
+            }]
+        }),
+    );
+
+    let package = run_json(
+        repo.path(),
+        &["internal", "compile-execution-package"],
+        json!({
+            "mission_id": mission_id,
+            "target_type": "spec",
+            "target_id": "seal_flow",
+            "included_spec_ids": ["seal_flow"],
+            "dependency_satisfaction_state": [{"name": "lock_current", "satisfied": true}],
+            "read_scope": ["src"],
+            "write_scope": ["src"],
+            "proof_obligations": ["cargo test"],
+            "review_obligations": ["spec review"]
+        }),
+    );
+    let package_id = package["package_id"].as_str().expect("package id");
+
+    let fresh_package = run_json(
+        repo.path(),
+        &[
+            "internal",
+            "validate-execution-package",
+            "--mission-id",
+            mission_id,
+            "--package-id",
+            package_id,
+        ],
+        json!({}),
+    );
+    assert_eq!(fresh_package["valid"], true);
+
+    let fresh_decision = run_json(
+        repo.path(),
+        &["internal", "evaluate-autopilot-plan-seal"],
+        json!({
+            "mission_id": mission_id,
+            "package_id": package_id,
+            "caller": "autopilot"
+        }),
+    );
+    assert_eq!(fresh_decision["self_seal_allowed"], true);
+    assert_eq!(fresh_decision["next_required_branch"], "execution");
+
+    let manual_decision = run_json(
+        repo.path(),
+        &["internal", "evaluate-autopilot-plan-seal"],
+        json!({
+            "mission_id": mission_id,
+            "package_id": package_id,
+            "caller": "manual_plan"
+        }),
+    );
+    assert_eq!(manual_decision["self_seal_allowed"], false);
+    assert_eq!(manual_decision["next_required_branch"], "needs_user");
+    assert!(
+        manual_decision["blockers"]
+            .as_array()
+            .expect("blockers")
+            .iter()
+            .any(|blocker| blocker == "manual_plan_requires_user_seal")
+    );
+
+    let forged_caller_truth_error = run_json_failure(
+        repo.path(),
+        &["internal", "evaluate-autopilot-plan-seal"],
+        json!({
+            "mission_id": mission_id,
+            "package_id": package_id,
+            "caller": "autopilot",
+            "autonomy_granted": true
+        }),
+    );
+    assert!(
+        forged_caller_truth_error.contains("unknown field `autonomy_granted`"),
+        "expected strict autopilot seal input contract; stderr: {forged_caller_truth_error}"
+    );
+
+    let missing_bindings_error = run_json_failure(
+        repo.path(),
+        &["internal", "evaluate-autopilot-plan-seal"],
+        json!({
+            "caller": "autopilot"
+        }),
+    );
+    assert!(
+        missing_bindings_error.contains("missing field `mission_id`"),
+        "expected mission/package bindings to be required; stderr: {missing_bindings_error}"
+    );
+
+    let spec_path = repo
+        .path()
+        .join("PLANS")
+        .join(mission_id)
+        .join("specs/seal_flow/SPEC.md");
+    let mut changed_spec = std::fs::read_to_string(&spec_path).expect("read spec");
+    changed_spec.push_str("\n## Post-Seal Edit\n\n- This edit should stale the package.\n");
+    std::fs::write(&spec_path, changed_spec).expect("mutate spec after package");
+
+    let stale_package = run_json(
+        repo.path(),
+        &[
+            "internal",
+            "validate-execution-package",
+            "--mission-id",
+            mission_id,
+            "--package-id",
+            package_id,
+        ],
+        json!({}),
+    );
+    assert_eq!(stale_package["valid"], false);
+
+    let stale_decision = run_json(
+        repo.path(),
+        &["internal", "evaluate-autopilot-plan-seal"],
+        json!({
+            "mission_id": mission_id,
+            "package_id": package_id,
+            "caller": "autopilot"
+        }),
+    );
+    assert_eq!(stale_decision["self_seal_allowed"], false);
+    assert_eq!(stale_decision["next_required_branch"], "replan");
+    assert!(
+        stale_decision["blockers"]
+            .as_array()
+            .expect("blockers")
+            .iter()
+            .any(|blocker| blocker == "package_truth_stale")
+    );
+    assert!(
+        stale_decision["blockers"]
+            .as_array()
+            .expect("blockers")
+            .iter()
+            .any(|blocker| blocker == "post_seal_artifact_change_detected")
+    );
+}
+
+#[test]
+fn autopilot_plan_seal_cli_rejects_marker_only_level_five_rigor() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "autopilot-marker-rigor";
+    let package_id = setup_autopilot_plan_seal_cli_repo(
+        repo.path(),
+        mission_id,
+        autopilot_marker_only_blueprint_body("Use marker-only planning evidence."),
+    );
+
+    let decision = run_json(
+        repo.path(),
+        &["internal", "evaluate-autopilot-plan-seal"],
+        json!({
+            "mission_id": mission_id,
+            "package_id": package_id,
+            "caller": "autopilot"
+        }),
+    );
+    assert_eq!(decision["self_seal_allowed"], false);
+    assert_eq!(decision["next_required_branch"], "replan");
+    assert!(
+        decision["blockers"]
+            .as_array()
+            .expect("blockers")
+            .iter()
+            .any(|blocker| blocker == "planning_rigor_evidence_missing")
+    );
+}
+
+#[test]
+fn autopilot_plan_seal_cli_rejects_required_methods_without_methods_run() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "autopilot-required-only-rigor";
+    let package_id = setup_autopilot_plan_seal_cli_repo(
+        repo.path(),
+        mission_id,
+        autopilot_required_only_blueprint_body("Use required-method markers only."),
+    );
+
+    let decision = run_json(
+        repo.path(),
+        &["internal", "evaluate-autopilot-plan-seal"],
+        json!({
+            "mission_id": mission_id,
+            "package_id": package_id,
+            "caller": "autopilot"
+        }),
+    );
+    assert_eq!(decision["self_seal_allowed"], false);
+    assert_eq!(decision["next_required_branch"], "replan");
+    assert!(
+        decision["blockers"]
+            .as_array()
+            .expect("blockers")
+            .iter()
+            .any(|blocker| blocker == "planning_rigor_evidence_missing")
+    );
+}
+
+#[test]
+fn autopilot_plan_seal_cli_rejects_advisor_without_plan_seal_checkpoint() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "autopilot-advisor-marker";
+    let package_id = setup_autopilot_plan_seal_cli_repo(
+        repo.path(),
+        mission_id,
+        autopilot_seal_blueprint_body_without_checkpoint("Use advisor marker without checkpoint."),
+    );
+
+    let decision = run_json(
+        repo.path(),
+        &["internal", "evaluate-autopilot-plan-seal"],
+        json!({
+            "mission_id": mission_id,
+            "package_id": package_id,
+            "caller": "autopilot"
+        }),
+    );
+    assert_eq!(decision["self_seal_allowed"], false);
+    assert_eq!(decision["next_required_branch"], "replan");
+    assert!(
+        decision["blockers"]
+            .as_array()
+            .expect("blockers")
+            .iter()
+            .any(|blocker| blocker == "advisor_checkpoint_missing_for_level_5")
+    );
+}
+
+#[test]
+fn autopilot_plan_seal_cli_rejects_generic_advisor_skip_without_checkpoint() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "autopilot-generic-advisor-skip";
+    let package_id = setup_autopilot_plan_seal_cli_repo(
+        repo.path(),
+        mission_id,
+        autopilot_generic_advisor_skip_blueprint_body("Use generic advisor skip marker."),
+    );
+
+    let decision = run_json(
+        repo.path(),
+        &["internal", "evaluate-autopilot-plan-seal"],
+        json!({
+            "mission_id": mission_id,
+            "package_id": package_id,
+            "caller": "autopilot"
+        }),
+    );
+    assert_eq!(decision["self_seal_allowed"], false);
+    assert_eq!(decision["next_required_branch"], "replan");
+    assert!(
+        decision["blockers"]
+            .as_array()
+            .expect("blockers")
+            .iter()
+            .any(|blocker| blocker == "advisor_checkpoint_missing_for_level_5")
     );
 }
 
@@ -1346,6 +1758,189 @@ fn review_writeback_rejects_truth_snapshot_captured_after_reviewer_output() {
 }
 
 #[test]
+fn paused_parent_loop_blocks_review_outcome_writeback_until_resume() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "paused-review-writeback-blocked";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let snapshot = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+    capture_review_evidence_snapshot(repo.path(), mission_id, &bundle_id);
+    let code_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        &bundle_id,
+        "review_code_bug_paused",
+    );
+    let spec_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        &bundle_id,
+        "review_spec_intent_paused",
+    );
+
+    run_json(
+        repo.path(),
+        &["internal", "pause-loop-lease"],
+        json!({
+            "mission_id": mission_id,
+            "paused_by": "user",
+            "reason": "User invoked $close while reviewer outputs may still finish."
+        }),
+    );
+
+    let error = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                code_output["evidence_ref"].as_str().expect("code evidence ref"),
+                spec_output["evidence_ref"].as_str().expect("spec evidence ref"),
+                "RECEIPTS/test-output.txt"
+            ],
+            "findings": [],
+            "disposition_notes": ["Paused parent loop must not integrate reviewer outputs."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot
+        }),
+    );
+    assert!(
+        error.contains("requires an active parent loop lease"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn reviewer_outputs_can_land_while_close_paused_but_integrate_only_after_resume() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "close-paused-reviewer-output-drain";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let snapshot = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+    capture_review_evidence_snapshot(repo.path(), mission_id, &bundle_id);
+    let parent_token = test_parent_authority_token(repo.path()).expect("parent token");
+
+    run_json(
+        repo.path(),
+        &["internal", "pause-loop-lease"],
+        json!({
+            "mission_id": mission_id,
+            "paused_by": "user",
+            "reason": "User invoked $close while bounded reviewer lanes may still drain."
+        }),
+    );
+
+    let gates_before_outputs = std::fs::read(
+        repo.path()
+            .join(format!(".ralph/missions/{mission_id}/gates.json")),
+    )
+    .expect("read gates before paused outputs");
+    let closeouts_before_outputs = std::fs::read(
+        repo.path()
+            .join(format!(".ralph/missions/{mission_id}/closeouts.ndjson")),
+    )
+    .expect("read closeouts before paused outputs");
+
+    let code_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        &bundle_id,
+        "review_code_bug_close_paused",
+    );
+    let spec_output = record_none_reviewer_output(
+        repo.path(),
+        mission_id,
+        &bundle_id,
+        "review_spec_intent_close_paused",
+    );
+
+    assert_eq!(
+        std::fs::read(
+            repo.path()
+                .join(format!(".ralph/missions/{mission_id}/gates.json"))
+        )
+        .expect("read gates after paused outputs"),
+        gates_before_outputs,
+        "bounded reviewer-output drain while paused must not mutate gate truth"
+    );
+    assert_eq!(
+        std::fs::read(
+            repo.path()
+                .join(format!(".ralph/missions/{mission_id}/closeouts.ndjson"))
+        )
+        .expect("read closeouts after paused outputs"),
+        closeouts_before_outputs,
+        "bounded reviewer-output drain while paused must not append closeouts"
+    );
+
+    let paused_writeback = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                code_output["evidence_ref"].as_str().expect("code evidence ref"),
+                spec_output["evidence_ref"].as_str().expect("spec evidence ref")
+            ],
+            "findings": [],
+            "disposition_notes": ["Paused parent must not integrate drained reviewer outputs."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot.clone()
+        }),
+    );
+    assert!(
+        paused_writeback.contains("requires an active parent loop lease"),
+        "unexpected error: {paused_writeback}"
+    );
+
+    let resumed = run_json_with_parent_authority(
+        repo.path(),
+        &["internal", "begin-loop-lease"],
+        json!({
+            "mission_id": mission_id,
+            "mode": "review_loop",
+            "owner": "parent-review-loop",
+            "reason": "User resumed after $close; integrate only after freshness validation."
+        }),
+        &parent_token,
+    );
+    let resumed_token = resumed["parent_authority_token"]
+        .as_str()
+        .expect("resumed parent token");
+
+    let review = run_json_with_parent_authority(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                code_output["evidence_ref"].as_str().expect("code evidence ref"),
+                spec_output["evidence_ref"].as_str().expect("spec evidence ref")
+            ],
+            "findings": [],
+            "disposition_notes": ["After resume, freshness-validated reviewer outputs may be integrated."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot
+        }),
+        resumed_token,
+    );
+    assert_eq!(review["blocking_findings"], 0);
+}
+
+#[test]
 fn parent_loop_authority_blocks_child_mission_truth_mutations() {
     let repo = TempDir::new().expect("temp repo");
     let mission_id = "review-parent-loop-authority";
@@ -1407,6 +2002,65 @@ fn parent_loop_authority_blocks_child_mission_truth_mutations() {
         begin_without_authority.contains("already owns parent authority"),
         "unexpected error: {begin_without_authority}"
     );
+
+    run_json_with_parent_authority(
+        repo.path(),
+        &["internal", "pause-loop-lease"],
+        json!({
+            "mission_id": mission_id,
+            "paused_by": "parent-review-loop",
+            "reason": "User invoked $close; bounded child outputs may finish but parent integration is paused."
+        }),
+        authority_token,
+    );
+    let begin_while_paused_without_authority = run_json_failure(
+        repo.path(),
+        &["internal", "begin-loop-lease"],
+        json!({
+            "mission_id": mission_id,
+            "mode": "review_loop",
+            "owner": "reviewer-child",
+            "reason": "Child should not be able to replace a paused parent lease."
+        }),
+    );
+    assert!(
+        begin_while_paused_without_authority.contains("already owns parent authority"),
+        "unexpected error: {begin_while_paused_without_authority}"
+    );
+    let compile_while_paused = run_json_failure(
+        repo.path(),
+        &["internal", "compile-review-bundle"],
+        json!({
+            "mission_id": mission_id,
+            "source_package_id": package_id,
+            "bundle_kind": "spec_review",
+            "mandatory_review_lenses": ["correctness"],
+            "target_spec_id": "runtime_core",
+            "proof_rows_under_review": ["cargo test"],
+            "receipts": ["RECEIPTS/test-output.txt"],
+            "changed_files_or_diff": ["src/lib.rs"],
+            "touched_interface_contracts": ["runtime contract"]
+        }),
+    );
+    assert!(
+        compile_while_paused.contains("requires an active parent loop lease"),
+        "unexpected error: {compile_while_paused}"
+    );
+
+    let resumed_lease = run_json_with_parent_authority(
+        repo.path(),
+        &["internal", "begin-loop-lease"],
+        json!({
+            "mission_id": mission_id,
+            "mode": "review_loop",
+            "owner": "parent-review-loop",
+            "reason": "Resume parent review loop after close/pause."
+        }),
+        authority_token,
+    );
+    let authority_token = resumed_lease["parent_authority_token"]
+        .as_str()
+        .expect("resumed parent authority token");
 
     let capture_without_authority = run_json_failure(
         repo.path(),
@@ -1606,6 +2260,155 @@ fn multiple_generic_reviewer_outputs_cannot_satisfy_distinct_required_lanes() {
     );
     assert!(
         error.contains("missing required reviewer-output lane coverage"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn compile_review_bundle_rejects_duplicate_open_wave_for_same_boundary() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "review-wave-duplicate-open";
+    let (package_id, first_bundle_id) = setup_review_wave(&repo, mission_id);
+
+    let error = run_json_failure(
+        repo.path(),
+        &["internal", "compile-review-bundle"],
+        json!({
+            "mission_id": mission_id,
+            "source_package_id": package_id,
+            "bundle_kind": "spec_review",
+            "mandatory_review_lenses": ["correctness", "evidence_adequacy"],
+            "target_spec_id": "runtime_core",
+            "proof_rows_under_review": ["cargo test"],
+            "receipts": ["RECEIPTS/test-output.txt"],
+            "changed_files_or_diff": ["src/lib.rs"],
+            "touched_interface_contracts": ["runtime contract"]
+        }),
+    );
+
+    assert!(
+        error.contains("active review wave already open"),
+        "unexpected error: {error}"
+    );
+    assert!(
+        error.contains(&first_bundle_id),
+        "duplicate-wave error should point at the active bundle/gate: {error}"
+    );
+}
+
+#[test]
+fn reviewer_output_profile_metadata_satisfies_required_lane_coverage() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "reviewer-output-profile-metadata";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let snapshot = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+    capture_review_evidence_snapshot(repo.path(), mission_id, &bundle_id);
+
+    let code_output = run_json(
+        repo.path(),
+        &["internal", "record-reviewer-output"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer_id": "lane_a",
+            "reviewer_profile": "code_bug_correctness",
+            "output_kind": "none",
+            "findings": []
+        }),
+    );
+    let spec_output = run_json(
+        repo.path(),
+        &["internal", "record-reviewer-output"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer_id": "lane_b",
+            "reviewer_profile": "local_spec_intent",
+            "output_kind": "none",
+            "findings": []
+        }),
+    );
+
+    for (output, expected_profile) in [
+        (&code_output, "code_bug_correctness"),
+        (&spec_output, "local_spec_intent"),
+    ] {
+        let artifact: Value = serde_json::from_slice(
+            &std::fs::read(output["path"].as_str().expect("output path"))
+                .expect("read reviewer output artifact"),
+        )
+        .expect("parse reviewer output artifact");
+        assert_eq!(artifact["reviewer_profile"], expected_profile);
+    }
+
+    let review = run_json(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                code_output["evidence_ref"].as_str().expect("code evidence ref"),
+                spec_output["evidence_ref"].as_str().expect("spec evidence ref")
+            ],
+            "findings": [],
+            "disposition_notes": ["Explicit reviewer profile metadata satisfies required lane coverage."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot
+        }),
+    );
+    assert_eq!(review["blocking_findings"], 0);
+}
+
+#[test]
+fn malformed_reviewer_output_profile_cannot_clear_clean_review() {
+    let repo = TempDir::new().expect("temp repo");
+    let mission_id = "reviewer-output-profile-malformed";
+    let (_package_id, bundle_id) = setup_review_wave(&repo, mission_id);
+    let snapshot = capture_review_truth_snapshot(repo.path(), mission_id, &bundle_id);
+    capture_review_evidence_snapshot(repo.path(), mission_id, &bundle_id);
+    let code_output =
+        record_none_reviewer_output(repo.path(), mission_id, &bundle_id, "review_code_bug_1");
+    let spec_output =
+        record_none_reviewer_output(repo.path(), mission_id, &bundle_id, "review_spec_intent_1");
+
+    let code_path = code_output["path"].as_str().expect("code output path");
+    let mut artifact: Value =
+        serde_json::from_slice(&std::fs::read(code_path).expect("read code output"))
+            .expect("parse code output");
+    artifact["reviewer_profile"] = json!("not_a_real_profile");
+    std::fs::write(
+        code_path,
+        serde_json::to_vec_pretty(&artifact).expect("encode tampered output"),
+    )
+    .expect("write tampered output");
+
+    let error = run_json_failure(
+        repo.path(),
+        &["internal", "record-review-outcome"],
+        json!({
+            "mission_id": mission_id,
+            "bundle_id": bundle_id,
+            "reviewer": "parent-review-loop",
+            "verdict": "clean",
+            "target_spec_id": "runtime_core",
+            "governing_refs": ["bundle"],
+            "evidence_refs": [
+                code_output["evidence_ref"].as_str().expect("code evidence ref"),
+                spec_output["evidence_ref"].as_str().expect("spec evidence ref")
+            ],
+            "findings": [],
+            "disposition_notes": ["Malformed reviewer-output metadata must not clear review."],
+            "next_required_branch": "execution",
+            "review_truth_snapshot": snapshot
+        }),
+    );
+    assert!(
+        error.contains("reviewer output artifact profile is not a known review lane profile"),
         "unexpected error: {error}"
     );
 }
@@ -2405,6 +3208,104 @@ fn canonical_blueprint_body(route: &str) -> String {
     format!(
         "# Program Blueprint\n\n## Locked Mission Reference\n\n- Integration test mission truth is locked.\n\n## Truth Register Summary\n\n- Internal runtime commands persist the mission state.\n\n## System Model\n\n- Touched surfaces: visible planning artifacts and hidden runtime state.\n\n## Invariants And Protected Behaviors\n\n- Keep proof and review contracts explicit.\n\n## Proof Matrix\n\n- claim:default-proof\n\n## Decision Obligations\n\n- none\n\n## In-Scope Work Inventory\n\n- runtime_core\n\n## Selected Architecture\n\n{route}\n\n## Execution Graph and Safe-Wave Rules\n\n- Single-node routes may execute directly; multi-node routes must follow the declared graph frontier.\n\n## Decision Log\n\n- Chose the runtime-backed route because it keeps the mission contract explicit.\n\n## Review Bundle Design\n\n- Mandatory review lenses: correctness, evidence_adequacy\n\n## Workstream Overview\n\n- runtime_core\n\n## Risks And Unknowns\n\n- Integration coverage should stay honest.\n\n## Replan Policy\n\n- Reopen planning if route truth or proof changes.\n"
     )
+}
+
+fn autopilot_seal_blueprint_body(route: &str) -> String {
+    format!(
+        "{}\n## Planning Rigor Record\n\n```yaml\nplanning_rigor:\n  user_requested_rigor: max\n  mission_risk_floor: max\n  effective_rigor: max\n  required_methods:\n    - truth_register\n    - system_map\n    - boundary_coupling_map\n    - invariant_register\n    - proof_matrix\n    - decision_obligations\n    - adversarial_critique\n    - advisor_checkpoint_design\n    - review_design\n    - execution_graph\n    - package_next_target\n  methods_run:\n    - truth_register\n    - system_map\n    - boundary_coupling_map\n    - invariant_register\n    - proof_matrix\n    - decision_obligations\n    - adversarial_critique\n    - advisor_checkpoint_design\n    - review_design\n    - execution_graph\n    - package_next_target\n  advisors_used:\n    - checkpoint: high_risk_plan_seal\n      role: advisor_v1_critic\n      disposition: followed\n```\n",
+        canonical_blueprint_body(route)
+    )
+}
+
+fn autopilot_seal_blueprint_body_without_checkpoint(route: &str) -> String {
+    autopilot_seal_blueprint_body(route).replace("checkpoint: high_risk_plan_seal\n      ", "")
+}
+
+fn autopilot_marker_only_blueprint_body(route: &str) -> String {
+    format!(
+        "{}\n## Planning Rigor Record\n\n```yaml\nplanning_rigor:\n  user_requested_rigor: max\n  mission_risk_floor: max\n  effective_rigor: max\n  methods_run:\n    - proof_matrix\n    - review_design\n  advisors_used:\n    - checkpoint: high_risk_plan_seal\n      role: advisor_v1_critic\n      disposition: followed\n```\n",
+        canonical_blueprint_body(route)
+    )
+}
+
+fn autopilot_required_only_blueprint_body(route: &str) -> String {
+    format!(
+        "{}\n## Planning Rigor Record\n\n```yaml\nplanning_rigor:\n  user_requested_rigor: max\n  mission_risk_floor: max\n  effective_rigor: max\n  required_methods:\n    - truth_register\n    - system_map\n    - boundary_coupling_map\n    - invariant_register\n    - proof_matrix\n    - decision_obligations\n    - adversarial_critique\n    - advisor_checkpoint_design\n    - review_design\n    - execution_graph\n    - package_next_target\n  methods_run:\n    - proof_matrix\n    - review_design\n  advisors_used:\n    - checkpoint: high_risk_plan_seal\n      role: advisor_v1_critic\n      disposition: followed\n```\n",
+        canonical_blueprint_body(route)
+    )
+}
+
+fn autopilot_generic_advisor_skip_blueprint_body(route: &str) -> String {
+    format!(
+        "{}\n## Planning Rigor Record\n\n```yaml\nplanning_rigor:\n  user_requested_rigor: max\n  mission_risk_floor: max\n  effective_rigor: max\n  required_methods:\n    - truth_register\n    - system_map\n    - boundary_coupling_map\n    - invariant_register\n    - proof_matrix\n    - decision_obligations\n    - adversarial_critique\n    - advisor_checkpoint_design\n    - review_design\n    - execution_graph\n    - package_next_target\n  methods_run:\n    - truth_register\n    - system_map\n    - boundary_coupling_map\n    - invariant_register\n    - proof_matrix\n    - decision_obligations\n    - adversarial_critique\n    - advisor_checkpoint_design\n    - review_design\n    - execution_graph\n    - package_next_target\n  advisor_checkpoint_skip:\n    checkpoint: unrelated_checkpoint\n    disposition: skipped_with_disposition\n```\n",
+        canonical_blueprint_body(route)
+    )
+}
+
+fn setup_autopilot_plan_seal_cli_repo(
+    repo_root: &Path,
+    mission_id: &str,
+    blueprint_body: String,
+) -> String {
+    run_json(
+        repo_root,
+        &["internal", "init-mission"],
+        json!({
+            "mission_id": mission_id,
+            "title": "Autopilot Seal Freshness",
+            "objective": "Ensure autopilot seal decisions respect package freshness.",
+            "clarify_status": "ratified",
+            "lock_status": "locked",
+            "outcome_lock_body": "# Outcome Lock\n\n## Objective\n\nEnsure autopilot seal decisions respect package freshness.\n\n## Done-When Criteria\n\n- Autopilot seal checks are bound to durable mission truth.\n\n## Protected Surfaces\n\n- crates/codex1/src/internal/mod.rs\n\n## Unacceptable Tradeoffs\n\n- Do not trust caller-supplied freshness.\n\n## Autonomy Boundary\n\nCodex may update repo docs, runtime code, tests, and mission artifacts when authorized by an execution package.\n\nCodex must ask before destructive or irreversible actions.\n"
+        }),
+    );
+    run_json(
+        repo_root,
+        &["internal", "materialize-plan"],
+        json!({
+            "mission_id": mission_id,
+            "body_markdown": blueprint_body,
+            "plan_level": 5,
+            "problem_size": "S",
+            "status": "approved",
+            "proof_matrix": [{"claim_ref": "claim:default-proof", "statement": "The selected route has explicit proof coverage.", "required_evidence": ["RECEIPTS/test-output.txt"], "review_lenses": ["correctness"], "governing_contract_refs": ["blueprint"]}],
+            "decision_obligations": [],
+            "selected_target_ref": "spec:seal_flow",
+            "specs": [{
+                "spec_id": "seal_flow",
+                "purpose": "Exercise autopilot seal freshness.",
+                "body_markdown": canonical_spec_body_with_scope_and_note(
+                    "Exercise autopilot seal freshness.",
+                    &["src"],
+                    &["src"],
+                    "Keep the workstream bounded and reviewable."
+                ),
+                "artifact_status": "active",
+                "packetization_status": "runnable",
+                "execution_status": "packaged"
+            }]
+        }),
+    );
+
+    let package = run_json(
+        repo_root,
+        &["internal", "compile-execution-package"],
+        json!({
+            "mission_id": mission_id,
+            "target_type": "spec",
+            "target_id": "seal_flow",
+            "included_spec_ids": ["seal_flow"],
+            "dependency_satisfaction_state": [{"name": "lock_current", "satisfied": true}],
+            "read_scope": ["src"],
+            "write_scope": ["src"],
+            "proof_obligations": ["cargo test"],
+            "review_obligations": ["spec review"]
+        }),
+    );
+    package["package_id"]
+        .as_str()
+        .expect("package id")
+        .to_string()
 }
 
 fn canonical_spec_body(purpose: &str) -> String {

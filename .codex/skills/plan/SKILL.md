@@ -99,6 +99,13 @@ a durable `needs_user`, `hard_blocked`, or terminal reviewed state.
 - Do not invent quota-shaped options when only one viable route survives.
 - Do not let execution inherit unresolved architecture questions.
 - No work item is runnable unless it has a proof story and review story.
+- Manual `$plan` remains user-controlled: it may ask the user to approve,
+  redirect, deepen, or pause after producing planning truth. Do not silently
+  convert a manual plan handoff into autopilot self-seal.
+- `$autopilot` may consume a planning handoff only through its own plan-seal
+  preconditions: autonomy grant, no open human-only decision, satisfied
+  level-appropriate rigor, level-5 advisor checkpoint or disposition, and fresh
+  blueprint/package truth.
 - Compact plans are allowed for bounded low-risk work, but compact does not mean
   shallow.
 - The blueprint must make clear:
