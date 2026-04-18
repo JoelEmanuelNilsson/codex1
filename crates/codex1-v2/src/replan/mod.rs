@@ -38,10 +38,7 @@ pub fn append_to_log(log_path: &Path, event: &ReplanEvent) -> Result<(), CliErro
     let yaml = serde_yaml::to_string(event).map_err(|e| CliError::Internal {
         message: format!("serialize replan event: {e}"),
     })?;
-    let block = format!(
-        "## Replan {}\n\n```yaml\n{yaml}```\n\n",
-        event.recorded_at
-    );
+    let block = format!("## Replan {}\n\n```yaml\n{yaml}```\n\n", event.recorded_at);
     let mut existing = if log_path.exists() {
         fs::read_to_string(log_path).map_err(|e| CliError::Io {
             path: log_path.display().to_string(),
@@ -89,7 +86,7 @@ pub fn read_log(log_path: &Path) -> Result<Vec<ReplanEvent>, CliError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{append_to_log, read_log, ReplanEvent};
+    use super::{ReplanEvent, append_to_log, read_log};
     use tempfile::tempdir;
 
     fn sample() -> ReplanEvent {

@@ -11,12 +11,12 @@ use crate::error::CliError;
 use crate::graph;
 use crate::mission::resolve_mission;
 use crate::replan::triggers::detect;
-use crate::replan::{append_to_log, ReplanEvent, REPLAN_LOG_FILENAME};
-use crate::review::bundle::ReviewBundle;
+use crate::replan::{REPLAN_LOG_FILENAME, ReplanEvent, append_to_log};
 use crate::review::BUNDLES_DIRNAME;
+use crate::review::bundle::ReviewBundle;
 use crate::state::{EventDraft, StateStore, TaskStatus};
 
-use super::{emit_error, emit_success, now_rfc3339, resolve_repo, Cli};
+use super::{Cli, emit_error, emit_success, now_rfc3339, resolve_repo};
 
 const RECORD_SCHEMA: &str = "codex1.replan.record.v1";
 const CHECK_SCHEMA: &str = "codex1.replan.check.v1";
@@ -87,7 +87,10 @@ fn run_record(
         state.phase = crate::state::Phase::Replanning;
         Ok(EventDraft::new("replan_recorded")
             .with("reason", reason_owned.clone())
-            .with("superseded", serde_json::to_value(&supersedes_for_closure).unwrap_or_default())
+            .with(
+                "superseded",
+                serde_json::to_value(&supersedes_for_closure).unwrap_or_default(),
+            )
             .with("graph_revision", graph_rev))
     })?;
 

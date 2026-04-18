@@ -138,7 +138,7 @@ fn stale(binding: &OutputBinding, reason: String) -> CliError {
 
 #[cfg(test)]
 mod tests {
-    use super::{check_staleness, CurrentSnapshot, OutputBinding};
+    use super::{CurrentSnapshot, OutputBinding, check_staleness};
 
     fn binding() -> OutputBinding {
         OutputBinding {

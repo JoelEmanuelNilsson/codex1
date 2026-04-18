@@ -22,7 +22,7 @@
 
 use serde::Serialize;
 
-use crate::graph::{waves::derive_waves, Dag};
+use crate::graph::{Dag, waves::derive_waves};
 use crate::review::bundle::{ReviewBundle, ReviewStatus, ReviewTarget};
 use crate::state::{ParentLoopMode, Phase, State, TaskStatus};
 
@@ -118,7 +118,7 @@ pub fn project_status(state: &State, dag: &Dag) -> StatusEnvelope {
 /// `mission_close_complete` as the next action.
 #[must_use]
 #[allow(clippy::too_many_lines)] // Envelope construction is linear and reads better
-                                 // as one function than split into helpers.
+// as one function than split into helpers.
 pub fn project_status_with_bundles(
     state: &State,
     dag: &Dag,
@@ -141,14 +141,16 @@ pub fn project_status_with_bundles(
             terminality: Terminality::NonTerminal,
             verdict: Verdict::InvalidState,
             parent_loop,
-            stop_policy: derive_stop_policy(active, state.parent_loop.paused, Verdict::InvalidState),
+            stop_policy: derive_stop_policy(
+                active,
+                state.parent_loop.paused,
+                Verdict::InvalidState,
+            ),
             next_action: NextAction {
                 kind: NextActionKind::InvalidState,
                 task_id: None,
                 args: vec![],
-                display_message:
-                    "Mission state is inconsistent; run codex1 validate."
-                        .into(),
+                display_message: "Mission state is inconsistent; run codex1 validate.".into(),
             },
             ready_tasks: vec![],
             running_tasks: running_task_ids(state),
@@ -172,7 +174,11 @@ pub fn project_status_with_bundles(
                 terminality: Terminality::Terminal,
                 verdict: Verdict::Complete,
                 parent_loop,
-                stop_policy: derive_stop_policy(active, state.parent_loop.paused, Verdict::Complete),
+                stop_policy: derive_stop_policy(
+                    active,
+                    state.parent_loop.paused,
+                    Verdict::Complete,
+                ),
                 next_action: NextAction {
                     kind: NextActionKind::Complete,
                     task_id: None,
@@ -188,9 +194,9 @@ pub fn project_status_with_bundles(
             };
         }
         // Not yet Complete: route through mission-close.
-        let mc_clean = bundles
-            .iter()
-            .any(|b| matches!(b.target, ReviewTarget::MissionClose) && b.status == ReviewStatus::Clean);
+        let mc_clean = bundles.iter().any(|b| {
+            matches!(b.target, ReviewTarget::MissionClose) && b.status == ReviewStatus::Clean
+        });
         let (kind, message) = if mc_clean {
             (
                 NextActionKind::MissionCloseComplete,
@@ -209,7 +215,11 @@ pub fn project_status_with_bundles(
             terminality: Terminality::NonTerminal,
             verdict: Verdict::ContinueRequired,
             parent_loop,
-            stop_policy: derive_stop_policy(active, state.parent_loop.paused, Verdict::ContinueRequired),
+            stop_policy: derive_stop_policy(
+                active,
+                state.parent_loop.paused,
+                Verdict::ContinueRequired,
+            ),
             next_action: NextAction {
                 kind,
                 task_id: None,
@@ -231,11 +241,7 @@ pub fn project_status_with_bundles(
         .iter()
         .flat_map(|w| w.tasks.iter().cloned())
         .collect();
-    let blocked_ids: Vec<String> = waves
-        .blocked
-        .iter()
-        .map(|b| b.task_id.clone())
-        .collect();
+    let blocked_ids: Vec<String> = waves.blocked.iter().map(|b| b.task_id.clone()).collect();
     let review_required = collect_review_required(state);
 
     if let Some(first_task) = ready_tasks.first().cloned() {
@@ -246,7 +252,11 @@ pub fn project_status_with_bundles(
             terminality: Terminality::NonTerminal,
             verdict: Verdict::ContinueRequired,
             parent_loop,
-            stop_policy: derive_stop_policy(active, state.parent_loop.paused, Verdict::ContinueRequired),
+            stop_policy: derive_stop_policy(
+                active,
+                state.parent_loop.paused,
+                Verdict::ContinueRequired,
+            ),
             next_action: NextAction {
                 kind: NextActionKind::StartTask,
                 task_id: Some(first_task.clone()),
@@ -276,7 +286,11 @@ pub fn project_status_with_bundles(
             terminality: Terminality::NonTerminal,
             verdict: Verdict::ContinueRequired,
             parent_loop,
-            stop_policy: derive_stop_policy(active, state.parent_loop.paused, Verdict::ContinueRequired),
+            stop_policy: derive_stop_policy(
+                active,
+                state.parent_loop.paused,
+                Verdict::ContinueRequired,
+            ),
             next_action: NextAction {
                 kind: NextActionKind::ReviewOpen,
                 task_id: Some(first_review.clone()),
@@ -286,9 +300,7 @@ pub fn project_status_with_bundles(
                     "--task".into(),
                     first_review.clone(),
                 ],
-                display_message: format!(
-                    "Open a review for task {first_review}."
-                ),
+                display_message: format!("Open a review for task {first_review}."),
             },
             ready_tasks: vec![],
             running_tasks: running_task_ids(state),
@@ -328,30 +340,20 @@ pub fn project_status_with_bundles(
 }
 
 fn detect_invalid_state(state: &State, dag: &Dag) -> Option<String> {
-    let statuses: Vec<TaskStatus> = dag
-        .ids()
-        .iter()
-        .map(|id| task_status(state, id))
-        .collect();
+    let statuses: Vec<TaskStatus> = dag.ids().iter().map(|id| task_status(state, id)).collect();
     let non_sup: Vec<TaskStatus> = statuses
         .iter()
         .copied()
         .filter(|s| *s != TaskStatus::Superseded)
         .collect();
 
-    if state.phase == Phase::Complete
-        && non_sup.iter().any(|s| !s.is_terminal())
-    {
-        return Some(
-            "stored_phase_complete_but_non_terminal_task".into(),
-        );
+    if state.phase == Phase::Complete && non_sup.iter().any(|s| !s.is_terminal()) {
+        return Some("stored_phase_complete_but_non_terminal_task".into());
     }
 
     let has_in_progress = non_sup.contains(&TaskStatus::InProgress);
     if has_in_progress && state.phase != Phase::Executing {
-        return Some(
-            "in_progress_task_requires_executing_phase".into(),
-        );
+        return Some("in_progress_task_requires_executing_phase".into());
     }
 
     // Note: the "all tasks terminal but phase != complete" case is NOT
@@ -484,9 +486,7 @@ fn decision_message(required: Option<&str>, blocked: &[String]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        project_status, NextActionKind, Terminality, Verdict,
-    };
+    use super::{NextActionKind, Terminality, Verdict, project_status};
     use crate::blueprint::{Blueprint, Level, Planning, TaskSpec};
     use crate::graph::validate::build_dag;
     use crate::state::{ParentLoop, Phase, State, TaskState, TaskStatus};
@@ -582,14 +582,8 @@ mod tests {
         assert_eq!(s.verdict, Verdict::ContinueRequired);
         assert_eq!(s.next_action.kind, NextActionKind::StartTask);
         assert_eq!(s.next_action.task_id.as_deref(), Some("T1"));
-        assert_eq!(
-            s.next_action.args,
-            vec!["--mission", "example", "T1"]
-        );
-        assert!(s
-            .next_action
-            .display_message
-            .contains("Start task T1"));
+        assert_eq!(s.next_action.args, vec!["--mission", "example", "T1"]);
+        assert!(s.next_action.display_message.contains("Start task T1"));
         assert_eq!(s.ready_tasks, vec!["T1".to_string()]);
     }
 
@@ -610,10 +604,7 @@ mod tests {
         t2.depends_on = vec!["T1".into()];
         let dag = dag_of(vec![task("T1"), t2]);
         let state = state_with(
-            &[
-                ("T1", TaskStatus::InProgress),
-                ("T2", TaskStatus::Ready),
-            ],
+            &[("T1", TaskStatus::InProgress), ("T2", TaskStatus::Ready)],
             Phase::Executing,
         );
         let s = project_status(&state, &dag);
@@ -696,10 +687,7 @@ mod tests {
         t2.supersedes = vec!["T1".into()];
         let dag = dag_of(vec![task("T1"), t2]);
         let state = state_with(
-            &[
-                ("T1", TaskStatus::Superseded),
-                ("T2", TaskStatus::Complete),
-            ],
+            &[("T1", TaskStatus::Superseded), ("T2", TaskStatus::Complete)],
             Phase::Complete,
         );
         let s = project_status(&state, &dag);

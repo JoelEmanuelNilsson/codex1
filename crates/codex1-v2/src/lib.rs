@@ -8,21 +8,21 @@
 pub(crate) mod envelope;
 pub(crate) mod error;
 
-pub(crate) mod fs_atomic;
 pub(crate) mod events;
+pub(crate) mod fs_atomic;
 pub(crate) mod state;
 
-pub(crate) mod mission;
+pub(crate) mod advisor;
+pub(crate) mod binding;
 pub(crate) mod blueprint;
 pub(crate) mod graph;
+pub(crate) mod mission;
+pub(crate) mod mission_close;
 pub(crate) mod proof;
-pub(crate) mod binding;
 pub(crate) mod replan;
 pub(crate) mod review;
-pub(crate) mod mission_close;
-pub(crate) mod advisor;
 pub(crate) mod status;
 
 pub mod cli;
 
-pub use cli::{run, Cli};
+pub use cli::{Cli, run};

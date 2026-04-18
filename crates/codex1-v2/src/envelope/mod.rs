@@ -9,7 +9,7 @@
 #![allow(dead_code)]
 
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::CliError;
 
@@ -58,7 +58,7 @@ pub fn to_string(value: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{error, success, to_string, ERROR_SCHEMA};
+    use super::{ERROR_SCHEMA, error, success, to_string};
     use crate::error::CliError;
     use serde::Serialize;
     use serde_json::json;

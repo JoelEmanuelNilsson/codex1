@@ -15,7 +15,7 @@ pub(crate) mod output;
 #[allow(unused_imports)]
 pub use bundle::{ReviewBundle, ReviewRequirement, ReviewStatus, ReviewTarget};
 #[allow(unused_imports)]
-pub use clean::{compute_cleanliness, CleanlinessVerdict, CurrentTruth};
+pub use clean::{CleanlinessVerdict, CurrentTruth, compute_cleanliness};
 #[allow(unused_imports)]
 pub use output::{Finding, FindingSeverity, ReviewerOutput, ReviewerResultKind};
 

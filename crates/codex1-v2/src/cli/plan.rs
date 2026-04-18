@@ -9,7 +9,7 @@ use crate::graph::{self, waves::derive_waves};
 use crate::mission::resolve_mission;
 use crate::state::StateStore;
 
-use super::{emit_error, emit_success, resolve_repo, Cli};
+use super::{Cli, emit_error, emit_success, resolve_repo};
 
 const CHECK_SCHEMA: &str = "codex1.plan.check.v1";
 const GRAPH_SCHEMA: &str = "codex1.plan.graph.v1";

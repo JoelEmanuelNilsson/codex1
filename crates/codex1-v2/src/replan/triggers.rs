@@ -64,7 +64,7 @@ pub fn detect(bundles: &[ReviewBundle]) -> TriggerReport {
 
 #[cfg(test)]
 mod tests {
-    use super::{detect, REPLAN_AFTER_N_FAILURES};
+    use super::{REPLAN_AFTER_N_FAILURES, detect};
     use crate::review::bundle::{ReviewBundle, ReviewStatus, ReviewTarget};
 
     fn bundle(task_id: &str, status: ReviewStatus) -> ReviewBundle {

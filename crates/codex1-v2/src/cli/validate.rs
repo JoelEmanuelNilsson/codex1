@@ -16,7 +16,7 @@ use crate::graph;
 use crate::mission::{lock::parse_and_validate, resolve_mission};
 use crate::state::StateStore;
 
-use super::{emit_error, emit_success, resolve_repo, Cli};
+use super::{Cli, emit_error, emit_success, resolve_repo};
 
 const SCHEMA: &str = "codex1.validate.v1";
 

@@ -13,15 +13,13 @@ use crate::events::append_event;
 use crate::fs_atomic::atomic_write;
 use crate::graph;
 use crate::mission::resolve_mission;
-use crate::review::bundle::{
-    ReviewBundle, ReviewRequirement, ReviewStatus, ReviewTarget,
-};
-use crate::review::clean::{compute_cleanliness, CurrentTruth};
+use crate::review::bundle::{ReviewBundle, ReviewRequirement, ReviewStatus, ReviewTarget};
+use crate::review::clean::{CurrentTruth, compute_cleanliness};
 use crate::review::output::ReviewerOutput;
 use crate::review::{BUNDLES_DIRNAME, OUTPUTS_DIRNAME};
 use crate::state::{EventDraft, Phase, StateStore, TaskStatus};
 
-use super::{emit_error, emit_success, now_rfc3339, resolve_repo, Cli};
+use super::{Cli, emit_error, emit_success, now_rfc3339, resolve_repo};
 
 const OPEN_SCHEMA: &str = "codex1.review.open.v1";
 const SUBMIT_SCHEMA: &str = "codex1.review.submit.v1";
@@ -78,13 +76,15 @@ fn run_open(
     // Check task is in a reviewable state.
     let store = StateStore::new(paths.mission_dir.clone());
     let pre = store.load()?;
-    let task_state = pre.tasks.get(task).cloned().ok_or_else(|| {
-        CliError::TaskStateTransitionInvalid {
-            task_id: task.into(),
-            current: "missing_in_state".into(),
-            attempted: "review_open".into(),
-        }
-    })?;
+    let task_state =
+        pre.tasks
+            .get(task)
+            .cloned()
+            .ok_or_else(|| CliError::TaskStateTransitionInvalid {
+                task_id: task.into(),
+                current: "missing_in_state".into(),
+                attempted: "review_open".into(),
+            })?;
     if !matches!(
         task_state.status,
         TaskStatus::ProofSubmitted | TaskStatus::ReviewOwed
@@ -95,18 +95,20 @@ fn run_open(
             attempted: "review_open".into(),
         });
     }
-    let proof_hash = task_state.proof_hash.clone().ok_or_else(|| {
-        CliError::Internal {
+    let proof_hash = task_state
+        .proof_hash
+        .clone()
+        .ok_or_else(|| CliError::Internal {
             message: format!(
                 "task {task} has no recorded proof_hash; run codex1 task finish first"
             ),
-        }
-    })?;
-    let task_run_id = task_state.task_run_id.clone().ok_or_else(|| {
-        CliError::Internal {
+        })?;
+    let task_run_id = task_state
+        .task_run_id
+        .clone()
+        .ok_or_else(|| CliError::Internal {
             message: format!("task {task} has no recorded task_run_id"),
-        }
-    })?;
+        })?;
 
     // Mint bundle id.
     let bundles_dir = paths.mission_dir.join(BUNDLES_DIRNAME);
@@ -136,10 +138,12 @@ fn run_open(
             task_run_id,
         },
         requirements,
-        evidence_refs: vec![task_state
-            .proof_ref
-            .clone()
-            .unwrap_or_else(|| format!("specs/{task}/PROOF.md"))],
+        evidence_refs: vec![
+            task_state
+                .proof_ref
+                .clone()
+                .unwrap_or_else(|| format!("specs/{task}/PROOF.md")),
+        ],
         evidence_snapshot_hash: proof_hash.clone(),
         status: ReviewStatus::Open,
         opened_at: now_rfc3339(),
@@ -191,11 +195,7 @@ fn run_open(
     ))
 }
 
-pub fn cmd_review_open_mission_close(
-    cli: &Cli,
-    mission: &str,
-    profiles_csv: &str,
-) -> i32 {
+pub fn cmd_review_open_mission_close(cli: &Cli, mission: &str, profiles_csv: &str) -> i32 {
     match run_open_mission_close(cli, mission, profiles_csv) {
         Ok(env) => emit_success(cli, &env),
         Err(err) => emit_error(cli, &err),
@@ -265,10 +265,7 @@ fn run_open_mission_close(
         state_revision: state.state_revision,
         target: ReviewTarget::MissionClose,
         requirements,
-        evidence_refs: vec![
-            "PROGRAM-BLUEPRINT.md".into(),
-            "STATE.json".into(),
-        ],
+        evidence_refs: vec!["PROGRAM-BLUEPRINT.md".into(), "STATE.json".into()],
         evidence_snapshot_hash: evidence_hash.clone(),
         status: ReviewStatus::Open,
         opened_at: now_rfc3339(),
@@ -290,10 +287,7 @@ fn run_open_mission_close(
         seq: state.state_revision,
         kind: "mission_close_review_opened".into(),
         at: now_rfc3339(),
-        extra: serde_json::Map::from_iter([(
-            "bundle_id".into(),
-            json!(bundle_id.clone()),
-        )]),
+        extra: serde_json::Map::from_iter([("bundle_id".into(), json!(bundle_id.clone()))]),
     };
     crate::events::append_event(&paths.mission_dir.join("events.jsonl"), &event).map_err(|e| {
         CliError::Io {
@@ -314,12 +308,7 @@ fn run_open_mission_close(
     ))
 }
 
-pub fn cmd_review_submit(
-    cli: &Cli,
-    mission: &str,
-    bundle: &str,
-    input: &Path,
-) -> i32 {
+pub fn cmd_review_submit(cli: &Cli, mission: &str, bundle: &str, input: &Path) -> i32 {
     match run_submit(cli, mission, bundle, input) {
         Ok(env) => emit_success(cli, &env),
         Err(err) => emit_error(cli, &err),
@@ -383,9 +372,10 @@ fn run_submit(
     // (a single accepted output tells us the binding was valid).
     let state = StateStore::new(paths.mission_dir.clone()).load()?;
     let (task_id, task_run_id) = match &bundle.target {
-        ReviewTarget::Task { task_id, task_run_id } => {
-            (Some(task_id.as_str()), Some(task_run_id.as_str()))
-        }
+        ReviewTarget::Task {
+            task_id,
+            task_run_id,
+        } => (Some(task_id.as_str()), Some(task_run_id.as_str())),
         _ => (None, None),
     };
     let current = CurrentTruth {
@@ -437,7 +427,10 @@ fn run_submit(
             ("bundle_id".into(), json!(bundle.bundle_id.clone())),
             ("reviewer_id".into(), json!(output.reviewer_id.clone())),
             ("output_id".into(), json!(output_id.clone())),
-            ("result".into(), serde_json::to_value(output.result).unwrap()),
+            (
+                "result".into(),
+                serde_json::to_value(output.result).unwrap(),
+            ),
         ]),
     };
     let events_path = paths.mission_dir.join("events.jsonl");
@@ -472,9 +465,10 @@ fn run_status(cli: &Cli, mission: &str, bundle_id: &str) -> Result<serde_json::V
     let outputs = load_outputs_for_bundle(&paths.mission_dir, bundle_id)?;
     let state = StateStore::new(paths.mission_dir.clone()).load()?;
     let (task_id, task_run_id) = match &bundle.target {
-        ReviewTarget::Task { task_id, task_run_id } => {
-            (Some(task_id.as_str()), Some(task_run_id.as_str()))
-        }
+        ReviewTarget::Task {
+            task_id,
+            task_run_id,
+        } => (Some(task_id.as_str()), Some(task_run_id.as_str())),
         _ => (None, None),
     };
     let verdict = compute_cleanliness(
@@ -511,6 +505,7 @@ pub fn cmd_review_close(cli: &Cli, mission: &str, bundle_id: &str) -> i32 {
     }
 }
 
+#[allow(clippy::too_many_lines)] // Linear close pipeline; splitting obscures the flow.
 fn run_close(cli: &Cli, mission: &str, bundle_id: &str) -> Result<serde_json::Value, CliError> {
     let repo_root = resolve_repo(cli)?;
     let paths = resolve_mission(&repo_root, mission)?;
@@ -528,9 +523,10 @@ fn run_close(cli: &Cli, mission: &str, bundle_id: &str) -> Result<serde_json::Va
     let store = StateStore::new(paths.mission_dir.clone());
     let state = store.load()?;
     let (task_id, task_run_id) = match &bundle.target {
-        ReviewTarget::Task { task_id, task_run_id } => {
-            (Some(task_id.as_str()), Some(task_run_id.as_str()))
-        }
+        ReviewTarget::Task {
+            task_id,
+            task_run_id,
+        } => (Some(task_id.as_str()), Some(task_run_id.as_str())),
         _ => (None, None),
     };
     let verdict = compute_cleanliness(
@@ -548,44 +544,49 @@ fn run_close(cli: &Cli, mission: &str, bundle_id: &str) -> Result<serde_json::Va
     let clean = verdict.clean;
     let task_owned = task_id.map(str::to_string);
     let bundle_id_owned = bundle.bundle_id.clone();
-    let final_status = if clean { ReviewStatus::Clean } else { ReviewStatus::Failed };
+    let final_status = if clean {
+        ReviewStatus::Clean
+    } else {
+        ReviewStatus::Failed
+    };
 
-    let state_after = store.mutate_checked(cli.expect_revision, move |state| {
-        if let Some(tid) = task_owned.as_ref() {
-            let entry = state.tasks.get_mut(tid).ok_or_else(|| {
-                CliError::TaskStateTransitionInvalid {
-                    task_id: tid.clone(),
-                    current: "missing_in_state".into(),
-                    attempted: "review_close".into(),
+    let state_after =
+        store.mutate_checked(cli.expect_revision, move |state| {
+            if let Some(tid) = task_owned.as_ref() {
+                let entry = state.tasks.get_mut(tid).ok_or_else(|| {
+                    CliError::TaskStateTransitionInvalid {
+                        task_id: tid.clone(),
+                        current: "missing_in_state".into(),
+                        attempted: "review_close".into(),
+                    }
+                })?;
+                if entry.status != TaskStatus::ReviewOwed {
+                    return Err(CliError::TaskStateTransitionInvalid {
+                        task_id: tid.clone(),
+                        current: format!("{:?}", entry.status),
+                        attempted: "review_close".into(),
+                    });
                 }
-            })?;
-            if entry.status != TaskStatus::ReviewOwed {
-                return Err(CliError::TaskStateTransitionInvalid {
-                    task_id: tid.clone(),
-                    current: format!("{:?}", entry.status),
-                    attempted: "review_close".into(),
-                });
+                // Route failed reviews straight to NeedsRepair so the task is
+                // immediately eligible for a retry via `task start`. The audit
+                // log preserves which bundle failed.
+                entry.status = if clean {
+                    TaskStatus::ReviewClean
+                } else {
+                    TaskStatus::NeedsRepair
+                };
+                entry.reviewed_at = Some(now_rfc3339());
+                if clean {
+                    state.phase = Phase::Executing;
+                } else {
+                    state.phase = Phase::Repairing;
+                }
             }
-            // Route failed reviews straight to NeedsRepair so the task is
-            // immediately eligible for a retry via `task start`. The audit
-            // log preserves which bundle failed.
-            entry.status = if clean {
-                TaskStatus::ReviewClean
-            } else {
-                TaskStatus::NeedsRepair
-            };
-            entry.reviewed_at = Some(now_rfc3339());
-            if clean {
-                state.phase = Phase::Executing;
-            } else {
-                state.phase = Phase::Repairing;
-            }
-        }
-        Ok(EventDraft::new("review_closed")
-            .with("bundle_id", bundle_id_owned.clone())
-            .with("clean", clean)
-            .with("blocking_findings", verdict.blocking_findings))
-    })?;
+            Ok(EventDraft::new("review_closed")
+                .with("bundle_id", bundle_id_owned.clone())
+                .with("clean", clean)
+                .with("blocking_findings", verdict.blocking_findings))
+        })?;
 
     // Persist the bundle's new status.
     let mut bundle_updated = bundle.clone();
@@ -657,9 +658,9 @@ fn scan_max_index(dir: &Path, prefix: char) -> Result<u64, CliError> {
     for entry in WalkDir::new(dir).min_depth(1).max_depth(1) {
         let entry = entry.map_err(|e| CliError::Io {
             path: dir.display().to_string(),
-            source: e.into_io_error().unwrap_or_else(|| {
-                std::io::Error::other("walkdir iteration error")
-            }),
+            source: e
+                .into_io_error()
+                .unwrap_or_else(|| std::io::Error::other("walkdir iteration error")),
         })?;
         let name = entry.file_name().to_string_lossy().into_owned();
         if let Some(stem) = name.strip_suffix(".json")
@@ -714,10 +715,7 @@ fn load_outputs_for_bundle(
             })?;
             let parsed: ReviewerOutput =
                 serde_json::from_slice(&bytes).map_err(|e| CliError::Internal {
-                    message: format!(
-                        "parse reviewer output {}: {e}",
-                        entry.path().display()
-                    ),
+                    message: format!("parse reviewer output {}: {e}", entry.path().display()),
                 })?;
             if parsed.bundle_id == bundle_id {
                 out.push(parsed);

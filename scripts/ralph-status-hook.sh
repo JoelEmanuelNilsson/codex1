@@ -19,6 +19,11 @@
 
 set -eu
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=lib/resolve-codex1.sh
+source "${SCRIPT_DIR}/lib/resolve-codex1.sh"
+
 if [[ $# -lt 1 ]]; then
   echo "usage: ralph-status-hook.sh <mission-id> [--repo-root <path>]" >&2
   exit 2
@@ -41,19 +46,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Pick the binary. Prefer the V2-development name during the build;
-# fall back to the renamed `codex1` post-cutover.
-BIN="${CODEX1_BIN:-}"
-if [[ -z "${BIN}" ]]; then
-  if command -v codex1 >/dev/null 2>&1; then
-    BIN=codex1
-  elif command -v codex1-v2 >/dev/null 2>&1; then
-    BIN=codex1-v2
-  else
-    echo "ralph-status-hook: no codex1 binary on PATH (set CODEX1_BIN)" >&2
-    exit 2
-  fi
-fi
+# Resolve a V2 codex1 binary. Ignores V1 binaries that happen to be named
+# `codex1` on PATH — see scripts/lib/resolve-codex1.sh.
+BIN="$(resolve_codex1 "${REPO_ROOT}")" || exit $?
 
 # Call the CLI. Capture both stdout (JSON envelope) and exit code.
 if ! OUT=$("${BIN}" --json "${REPO_ROOT_ARGS[@]}" status --mission "${MISSION}" 2>/dev/null); then

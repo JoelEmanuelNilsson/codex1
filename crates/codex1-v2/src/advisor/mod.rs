@@ -63,7 +63,7 @@ pub fn append_note(mission_dir: &Path, note: &AdvisorNote) -> Result<(), CliErro
 
 #[cfg(test)]
 mod tests {
-    use super::{append_note, AdvisorNote, ADVISOR_NOTES_FILENAME};
+    use super::{ADVISOR_NOTES_FILENAME, AdvisorNote, append_note};
     use std::fs;
     use tempfile::tempdir;
 

@@ -91,7 +91,7 @@ pub fn read_and_hash(
 
 #[cfg(test)]
 mod tests {
-    use super::{default_proof_ref, read_and_hash, ProofReceipt};
+    use super::{ProofReceipt, default_proof_ref, read_and_hash};
     use std::fs;
     use tempfile::tempdir;
 

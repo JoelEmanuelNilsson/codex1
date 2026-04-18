@@ -2,7 +2,7 @@
 //! bundle, submit clean output, close, complete.
 
 use assert_cmd::Command;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
@@ -52,10 +52,16 @@ fn submit_clean_mc_output(dir: &TempDir, bundle_id: &str) {
         .unwrap(),
     )
     .unwrap();
-    let req_id = bundle["requirements"][0]["id"].as_str().unwrap().to_string();
+    let req_id = bundle["requirements"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let graph_rev = bundle["graph_revision"].as_u64().unwrap();
     let state_rev = bundle["state_revision"].as_u64().unwrap();
-    let evidence = bundle["evidence_snapshot_hash"].as_str().unwrap().to_string();
+    let evidence = bundle["evidence_snapshot_hash"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     let path = dir.path().join(format!("mc-output-{bundle_id}.json"));
     fs::write(
@@ -105,9 +111,7 @@ fn check_refuses_when_no_mission_close_bundle() {
     let dir = TempDir::new().unwrap();
     boot_with_clean_task(&dir);
     let out = bin(&dir)
-        .args([
-            "--json", "mission-close", "check", "--mission", "m1",
-        ])
+        .args(["--json", "mission-close", "check", "--mission", "m1"])
         .assert()
         .success()
         .get_output()
@@ -115,11 +119,13 @@ fn check_refuses_when_no_mission_close_bundle() {
         .clone();
     let env = last_json(&out);
     assert_eq!(env["can_close"], false);
-    assert!(env["blocking_reasons"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|r| r["code"] == "MISSION_CLOSE_BUNDLE_MISSING"));
+    assert!(
+        env["blocking_reasons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["code"] == "MISSION_CLOSE_BUNDLE_MISSING")
+    );
 }
 
 #[test]
@@ -150,9 +156,7 @@ fn check_refuses_when_task_not_clean() {
     fs::write(&sp, serde_json::to_vec_pretty(&new).unwrap()).unwrap();
 
     let out = bin(&dir)
-        .args([
-            "--json", "mission-close", "check", "--mission", "m1",
-        ])
+        .args(["--json", "mission-close", "check", "--mission", "m1"])
         .assert()
         .success()
         .get_output()
@@ -160,11 +164,13 @@ fn check_refuses_when_task_not_clean() {
         .clone();
     let env = last_json(&out);
     assert_eq!(env["can_close"], false);
-    assert!(env["blocking_reasons"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|r| r["code"] == "TASK_NOT_CLEAN"));
+    assert!(
+        env["blocking_reasons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["code"] == "TASK_NOT_CLEAN")
+    );
 }
 
 #[test]
@@ -172,9 +178,7 @@ fn complete_refuses_when_check_fails() {
     let dir = TempDir::new().unwrap();
     boot_with_clean_task(&dir); // no mission-close bundle
     let out = bin(&dir)
-        .args([
-            "--json", "mission-close", "complete", "--mission", "m1",
-        ])
+        .args(["--json", "mission-close", "complete", "--mission", "m1"])
         .assert()
         .failure()
         .get_output()
@@ -182,10 +186,12 @@ fn complete_refuses_when_check_fails() {
         .clone();
     let env = last_json(&out);
     assert_eq!(env["ok"], false);
-    assert!(env["message"]
-        .as_str()
-        .unwrap()
-        .contains("refuse to complete"));
+    assert!(
+        env["message"]
+            .as_str()
+            .unwrap()
+            .contains("refuse to complete")
+    );
 }
 
 #[test]
@@ -230,9 +236,7 @@ fn full_mission_close_lifecycle_reaches_terminal() {
 
     // Check should now pass.
     let out = bin(&dir)
-        .args([
-            "--json", "mission-close", "check", "--mission", "m1",
-        ])
+        .args(["--json", "mission-close", "check", "--mission", "m1"])
         .assert()
         .success()
         .get_output()
@@ -245,9 +249,7 @@ fn full_mission_close_lifecycle_reaches_terminal() {
 
     // Complete should transition to terminal.
     let out = bin(&dir)
-        .args([
-            "--json", "mission-close", "complete", "--mission", "m1",
-        ])
+        .args(["--json", "mission-close", "complete", "--mission", "m1"])
         .assert()
         .success()
         .get_output()
@@ -271,19 +273,19 @@ fn full_mission_close_lifecycle_reaches_terminal() {
 
     // Second complete should refuse (already complete).
     let out = bin(&dir)
-        .args([
-            "--json", "mission-close", "complete", "--mission", "m1",
-        ])
+        .args(["--json", "mission-close", "complete", "--mission", "m1"])
         .assert()
         .failure()
         .get_output()
         .stdout
         .clone();
     let env = last_json(&out);
-    assert!(env["message"]
-        .as_str()
-        .unwrap()
-        .contains("already complete"));
+    assert!(
+        env["message"]
+            .as_str()
+            .unwrap()
+            .contains("already complete")
+    );
 }
 
 #[test]

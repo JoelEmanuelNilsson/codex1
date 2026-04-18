@@ -25,7 +25,12 @@ fn init_creates_all_four_files_with_initial_revisions() {
     let dir = TempDir::new().unwrap();
     let out = bin(&dir)
         .args([
-            "--json", "init", "--mission", "smoke", "--title", "Smoke test",
+            "--json",
+            "init",
+            "--mission",
+            "smoke",
+            "--title",
+            "Smoke test",
         ])
         .assert()
         .success()
@@ -39,21 +44,23 @@ fn init_creates_all_four_files_with_initial_revisions() {
     assert_eq!(env["state_revision"], 1);
 
     let mission_dir = dir.path().join("PLANS").join("smoke");
-    for f in &["OUTCOME-LOCK.md", "PROGRAM-BLUEPRINT.md", "STATE.json", "events.jsonl"] {
+    for f in &[
+        "OUTCOME-LOCK.md",
+        "PROGRAM-BLUEPRINT.md",
+        "STATE.json",
+        "events.jsonl",
+    ] {
         assert!(mission_dir.join(f).is_file(), "missing {f}");
     }
 
-    let state: Value = serde_json::from_slice(
-        &fs::read(mission_dir.join("STATE.json")).unwrap(),
-    )
-    .unwrap();
+    let state: Value =
+        serde_json::from_slice(&fs::read(mission_dir.join("STATE.json")).unwrap()).unwrap();
     assert_eq!(state["state_revision"], 1);
     assert_eq!(state["phase"], "clarify");
     assert_eq!(state["mission_id"], "smoke");
 
     let events_raw = fs::read_to_string(mission_dir.join("events.jsonl")).unwrap();
-    let first_event: Value =
-        serde_json::from_str(events_raw.lines().next().unwrap()).unwrap();
+    let first_event: Value = serde_json::from_str(events_raw.lines().next().unwrap()).unwrap();
     assert_eq!(first_event["seq"], 1);
     assert_eq!(first_event["kind"], "mission_initialized");
 }
@@ -62,15 +69,11 @@ fn init_creates_all_four_files_with_initial_revisions() {
 fn init_refuses_when_mission_dir_exists() {
     let dir = TempDir::new().unwrap();
     bin(&dir)
-        .args([
-            "--json", "init", "--mission", "smoke", "--title", "Smoke",
-        ])
+        .args(["--json", "init", "--mission", "smoke", "--title", "Smoke"])
         .assert()
         .success();
     let out = bin(&dir)
-        .args([
-            "--json", "init", "--mission", "smoke", "--title", "Smoke",
-        ])
+        .args(["--json", "init", "--mission", "smoke", "--title", "Smoke"])
         .assert()
         .code(3)
         .get_output()
@@ -102,9 +105,7 @@ fn init_rejects_unsafe_mission_ids() {
 fn init_then_validate_succeeds() {
     let dir = TempDir::new().unwrap();
     bin(&dir)
-        .args([
-            "--json", "init", "--mission", "smoke", "--title", "Smoke",
-        ])
+        .args(["--json", "init", "--mission", "smoke", "--title", "Smoke"])
         .assert()
         .success();
     let out = bin(&dir)
@@ -125,9 +126,7 @@ fn init_then_validate_succeeds() {
 fn validate_rejects_missing_destination_section() {
     let dir = TempDir::new().unwrap();
     bin(&dir)
-        .args([
-            "--json", "init", "--mission", "smoke", "--title", "Smoke",
-        ])
+        .args(["--json", "init", "--mission", "smoke", "--title", "Smoke"])
         .assert()
         .success();
     // Corrupt OUTCOME-LOCK by removing Destination section.
@@ -155,9 +154,7 @@ fn validate_rejects_missing_destination_section() {
 fn validate_rejects_mangled_frontmatter() {
     let dir = TempDir::new().unwrap();
     bin(&dir)
-        .args([
-            "--json", "init", "--mission", "smoke", "--title", "Smoke",
-        ])
+        .args(["--json", "init", "--mission", "smoke", "--title", "Smoke"])
         .assert()
         .success();
     let lock_path = dir.path().join("PLANS/smoke/OUTCOME-LOCK.md");
@@ -178,9 +175,7 @@ fn validate_rejects_mangled_frontmatter() {
 fn validate_errors_when_events_seq_greater_than_state_revision() {
     let dir = TempDir::new().unwrap();
     bin(&dir)
-        .args([
-            "--json", "init", "--mission", "smoke", "--title", "Smoke",
-        ])
+        .args(["--json", "init", "--mission", "smoke", "--title", "Smoke"])
         .assert()
         .success();
     // Append a synthetic event with seq=99 > state_revision=1.
@@ -206,9 +201,7 @@ fn validate_errors_when_events_seq_greater_than_state_revision() {
 fn validate_warns_but_succeeds_when_events_lag_state() {
     let dir = TempDir::new().unwrap();
     bin(&dir)
-        .args([
-            "--json", "init", "--mission", "smoke", "--title", "Smoke",
-        ])
+        .args(["--json", "init", "--mission", "smoke", "--title", "Smoke"])
         .assert()
         .success();
     // Truncate events.jsonl so last_seq < state_revision (state_revision=1 but
@@ -226,8 +219,11 @@ fn validate_warns_but_succeeds_when_events_lag_state() {
         .clone();
     let env = parse_json(&out);
     assert_eq!(env["ok"], true);
-    assert!(env["warnings"].as_array().unwrap().iter().any(|w| w
-        .as_str()
-        .unwrap()
-        .contains("events.jsonl")));
+    assert!(
+        env["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| w.as_str().unwrap().contains("events.jsonl"))
+    );
 }

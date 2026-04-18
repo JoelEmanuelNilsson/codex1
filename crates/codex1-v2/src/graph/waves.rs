@@ -23,8 +23,8 @@ use serde::Serialize;
 use crate::blueprint::TaskSpec;
 use crate::state::{State, TaskStatus};
 
-use super::validate::is_eligible;
 use super::Dag;
+use super::validate::is_eligible;
 
 /// Output of [`derive_waves`]. Lists deterministic, task ids ascending.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -227,7 +227,11 @@ fn collect_read_write_conflicts(tasks: &[&TaskSpec]) -> Vec<ReadWriteConflict> {
 
 fn pairwise_exclusive_resources_disjoint(tasks: &[&TaskSpec]) -> bool {
     for (i, first) in tasks.iter().enumerate() {
-        let a: BTreeSet<&str> = first.exclusive_resources.iter().map(String::as_str).collect();
+        let a: BTreeSet<&str> = first
+            .exclusive_resources
+            .iter()
+            .map(String::as_str)
+            .collect();
         for second in tasks.iter().skip(i + 1) {
             for r in &second.exclusive_resources {
                 if a.contains(r.as_str()) {
@@ -283,7 +287,7 @@ fn has_dir_prefix(parent: &str, child: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{derive_waves, paths_overlap, WaveMode};
+    use super::{WaveMode, derive_waves, paths_overlap};
     use crate::blueprint::{Blueprint, Level, Planning, TaskSpec};
     use crate::graph::validate::build_dag;
     use crate::state::{ParentLoop, Phase, State, TaskState, TaskStatus};
@@ -389,10 +393,7 @@ mod tests {
             review_boundaries: vec![],
         };
         let dag = build_dag(&bp).unwrap();
-        let state = state_with(&[
-            ("T1", TaskStatus::Ready),
-            ("T2", TaskStatus::Ready),
-        ]);
+        let state = state_with(&[("T1", TaskStatus::Ready), ("T2", TaskStatus::Ready)]);
         let w = derive_waves(&dag, &state);
         assert_eq!(w.waves[0].mode, WaveMode::Parallel);
         assert!(w.waves[0].safety.write_paths_disjoint);
@@ -413,10 +414,7 @@ mod tests {
             review_boundaries: vec![],
         };
         let dag = build_dag(&bp).unwrap();
-        let state = state_with(&[
-            ("T1", TaskStatus::Ready),
-            ("T2", TaskStatus::Ready),
-        ]);
+        let state = state_with(&[("T1", TaskStatus::Ready), ("T2", TaskStatus::Ready)]);
         let w = derive_waves(&dag, &state);
         assert_eq!(w.waves[0].mode, WaveMode::Serial);
         assert!(!w.waves[0].safety.write_paths_disjoint);
@@ -434,10 +432,7 @@ mod tests {
             review_boundaries: vec![],
         };
         let dag = build_dag(&bp).unwrap();
-        let state = state_with(&[
-            ("T1", TaskStatus::Ready),
-            ("T2", TaskStatus::Ready),
-        ]);
+        let state = state_with(&[("T1", TaskStatus::Ready), ("T2", TaskStatus::Ready)]);
         let w = derive_waves(&dag, &state);
         assert_eq!(w.waves[0].mode, WaveMode::Serial);
         assert!(!w.waves[0].safety.read_write_conflicts.is_empty());
@@ -459,10 +454,7 @@ mod tests {
             review_boundaries: vec![],
         };
         let dag = build_dag(&bp).unwrap();
-        let state = state_with(&[
-            ("T1", TaskStatus::Ready),
-            ("T2", TaskStatus::Ready),
-        ]);
+        let state = state_with(&[("T1", TaskStatus::Ready), ("T2", TaskStatus::Ready)]);
         let w = derive_waves(&dag, &state);
         assert_eq!(w.waves[0].mode, WaveMode::Serial);
         assert!(w.waves[0].safety.unknown_side_effects);
@@ -482,10 +474,7 @@ mod tests {
             review_boundaries: vec![],
         };
         let dag = build_dag(&bp).unwrap();
-        let state = state_with(&[
-            ("T1", TaskStatus::Ready),
-            ("T2", TaskStatus::Ready),
-        ]);
+        let state = state_with(&[("T1", TaskStatus::Ready), ("T2", TaskStatus::Ready)]);
         let w = derive_waves(&dag, &state);
         assert_eq!(w.waves[0].mode, WaveMode::Serial);
         assert!(!w.waves[0].safety.exclusive_resources_disjoint);
@@ -501,10 +490,7 @@ mod tests {
             review_boundaries: vec![],
         };
         let dag = build_dag(&bp).unwrap();
-        let state = state_with(&[
-            ("T1", TaskStatus::InProgress),
-            ("T2", TaskStatus::Ready),
-        ]);
+        let state = state_with(&[("T1", TaskStatus::InProgress), ("T2", TaskStatus::Ready)]);
         let w = derive_waves(&dag, &state);
         assert!(w.waves.is_empty());
         assert_eq!(w.blocked.len(), 1);
@@ -538,16 +524,10 @@ mod tests {
             review_boundaries: vec![],
         };
         let dag = build_dag(&bp).unwrap();
-        let state = state_with(&[
-            ("T10", TaskStatus::Ready),
-            ("T2", TaskStatus::Ready),
-        ]);
+        let state = state_with(&[("T10", TaskStatus::Ready), ("T2", TaskStatus::Ready)]);
         let w = derive_waves(&dag, &state);
         // Lexicographic sort: "T10" < "T2" because '1' < '2'.
-        assert_eq!(
-            w.waves[0].tasks,
-            vec!["T10".to_string(), "T2".to_string()]
-        );
+        assert_eq!(w.waves[0].tasks, vec!["T10".to_string(), "T2".to_string()]);
     }
 
     #[test]

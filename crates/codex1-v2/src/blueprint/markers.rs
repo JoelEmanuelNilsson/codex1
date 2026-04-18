@@ -34,7 +34,7 @@ pub fn extract_block<'a>(path: &Path, content: &'a str) -> Result<&'a str, CliEr
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_block, END_MARKER, START_MARKER};
+    use super::{END_MARKER, START_MARKER, extract_block};
     use std::path::Path;
 
     fn doc(body: &str) -> String {

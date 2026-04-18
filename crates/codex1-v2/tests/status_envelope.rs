@@ -33,10 +33,7 @@ fn set_state(dir: &Path, tasks: &[(&str, &str)], phase: &str) {
     let current: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     let mut tasks_obj = serde_json::Map::new();
     for (id, status) in tasks {
-        tasks_obj.insert(
-            (*id).to_string(),
-            serde_json::json!({ "status": status }),
-        );
+        tasks_obj.insert((*id).to_string(), serde_json::json!({ "status": status }));
     }
     let new = serde_json::json!({
         "mission_id": current["mission_id"],

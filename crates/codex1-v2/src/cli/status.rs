@@ -11,12 +11,12 @@ use crate::envelope;
 use crate::error::CliError;
 use crate::graph;
 use crate::mission::resolve_mission;
-use crate::review::bundle::ReviewBundle;
 use crate::review::BUNDLES_DIRNAME;
+use crate::review::bundle::ReviewBundle;
 use crate::state::StateStore;
 use crate::status::{self, project_status_with_bundles};
 
-use super::{emit_error, emit_success, resolve_repo, Cli};
+use super::{Cli, emit_error, emit_success, resolve_repo};
 
 pub fn cmd_status(cli: &Cli, mission: &str) -> i32 {
     match run(cli, mission) {
@@ -53,7 +53,9 @@ fn load_all_bundles(bundles_dir: &std::path::Path) -> Result<Vec<ReviewBundle>, 
     for entry in WalkDir::new(bundles_dir).min_depth(1).max_depth(1) {
         let entry = entry.map_err(|e| CliError::Io {
             path: bundles_dir.display().to_string(),
-            source: e.into_io_error().unwrap_or_else(|| std::io::Error::other("walkdir")),
+            source: e
+                .into_io_error()
+                .unwrap_or_else(|| std::io::Error::other("walkdir")),
         })?;
         if entry.file_type().is_file() {
             let bytes = std::fs::read(entry.path()).map_err(|e| CliError::Io {

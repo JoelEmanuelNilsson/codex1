@@ -34,10 +34,7 @@ fn set_state(dir: &Path, tasks: &[(&str, &str)], phase: &str) {
     let current: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     let mut tasks_obj = serde_json::Map::new();
     for (id, status) in tasks {
-        tasks_obj.insert(
-            (*id).to_string(),
-            serde_json::json!({ "status": status }),
-        );
+        tasks_obj.insert((*id).to_string(), serde_json::json!({ "status": status }));
     }
     let new = serde_json::json!({
         "mission_id": current["mission_id"],
@@ -100,11 +97,7 @@ fn two_independent_disjoint_writes_run_parallel() {
          tasks:\n  - id: T1\n    title: A\n    kind: code\n    write_paths: [src/a/**]\n\
          \x20 - id: T2\n    title: B\n    kind: code\n    write_paths: [src/b/**]\n",
     );
-    set_state(
-        dir.path(),
-        &[("T1", "ready"), ("T2", "ready")],
-        "executing",
-    );
+    set_state(dir.path(), &[("T1", "ready"), ("T2", "ready")], "executing");
     let env = waves(&dir);
     let w = &env["waves"][0];
     assert_eq!(w["mode"], "parallel");
@@ -121,11 +114,7 @@ fn overlapping_writes_force_serial() {
          tasks:\n  - id: T1\n    title: A\n    kind: code\n    write_paths: [src/**]\n\
          \x20 - id: T2\n    title: B\n    kind: code\n    write_paths: [src/foo/**]\n",
     );
-    set_state(
-        dir.path(),
-        &[("T1", "ready"), ("T2", "ready")],
-        "executing",
-    );
+    set_state(dir.path(), &[("T1", "ready"), ("T2", "ready")], "executing");
     let env = waves(&dir);
     let w = &env["waves"][0];
     assert_eq!(w["mode"], "serial");
@@ -142,11 +131,7 @@ fn unknown_side_effects_forces_serial() {
          tasks:\n  - id: T1\n    title: A\n    kind: code\n    write_paths: [src/a/**]\n    unknown_side_effects: true\n\
          \x20 - id: T2\n    title: B\n    kind: code\n    write_paths: [src/b/**]\n",
     );
-    set_state(
-        dir.path(),
-        &[("T1", "ready"), ("T2", "ready")],
-        "executing",
-    );
+    set_state(dir.path(), &[("T1", "ready"), ("T2", "ready")], "executing");
     let env = waves(&dir);
     let w = &env["waves"][0];
     assert_eq!(w["mode"], "serial");
@@ -163,11 +148,7 @@ fn shared_exclusive_resources_force_serial() {
          tasks:\n  - id: T1\n    title: A\n    kind: code\n    write_paths: [a/**]\n    exclusive_resources: [r]\n\
          \x20 - id: T2\n    title: B\n    kind: code\n    write_paths: [b/**]\n    exclusive_resources: [r]\n",
     );
-    set_state(
-        dir.path(),
-        &[("T1", "ready"), ("T2", "ready")],
-        "executing",
-    );
+    set_state(dir.path(), &[("T1", "ready"), ("T2", "ready")], "executing");
     let env = waves(&dir);
     let w = &env["waves"][0];
     assert_eq!(w["mode"], "serial");
@@ -205,11 +186,7 @@ fn read_write_conflict_records_pair_and_forces_serial() {
          tasks:\n  - id: T1\n    title: A\n    kind: code\n    read_paths: [src/foo/**]\n\
          \x20 - id: T2\n    title: B\n    kind: code\n    write_paths: [src/foo/bar.rs]\n",
     );
-    set_state(
-        dir.path(),
-        &[("T1", "ready"), ("T2", "ready")],
-        "executing",
-    );
+    set_state(dir.path(), &[("T1", "ready"), ("T2", "ready")], "executing");
     let env = waves(&dir);
     let w = &env["waves"][0];
     assert_eq!(w["mode"], "serial");

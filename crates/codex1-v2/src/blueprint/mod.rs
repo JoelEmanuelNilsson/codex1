@@ -163,7 +163,7 @@ pub fn parse_content(path: &Path, content: &str) -> Result<Blueprint, CliError> 
 #[cfg(test)]
 mod tests {
     use super::markers::{END_MARKER, START_MARKER};
-    use super::{parse_content, Level};
+    use super::{Level, parse_content};
     use std::path::Path;
 
     fn wrap(yaml: &str) -> String {

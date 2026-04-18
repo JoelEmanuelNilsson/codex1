@@ -56,8 +56,7 @@ pub enum LockStatus {
     Ratified,
 }
 
-const REQUIRED_HEADINGS: [&str; 3] =
-    ["## Destination", "## Constraints", "## Success Criteria"];
+const REQUIRED_HEADINGS: [&str; 3] = ["## Destination", "## Constraints", "## Success Criteria"];
 
 /// Read and validate OUTCOME-LOCK.md at `path`.
 pub fn parse_and_validate(path: &Path) -> Result<OutcomeLock, CliError> {
@@ -128,7 +127,7 @@ fn find_closing_fence(s: &str) -> Option<ClosingFence> {
     for (pat, len) in patterns {
         if let Some(idx) = s.find(pat) {
             return Some(ClosingFence {
-                start: idx + 1, // start of `---`
+                start: idx + 1,     // start of `---`
                 fence_len: len - 1, // skip `---\n` (we already consumed the leading \n)
             });
         }
@@ -161,14 +160,20 @@ fn validate_frontmatter(path: &Path, fm: &Frontmatter) -> Result<(), CliError> {
     if !is_rfc3339_ish(&fm.created_at) {
         return Err(CliError::LockInvalid {
             path: path.display().to_string(),
-            reason: format!("frontmatter.created_at is not RFC-3339: {:?}", fm.created_at),
+            reason: format!(
+                "frontmatter.created_at is not RFC-3339: {:?}",
+                fm.created_at
+            ),
             source: None,
         });
     }
     if !is_rfc3339_ish(&fm.updated_at) {
         return Err(CliError::LockInvalid {
             path: path.display().to_string(),
-            reason: format!("frontmatter.updated_at is not RFC-3339: {:?}", fm.updated_at),
+            reason: format!(
+                "frontmatter.updated_at is not RFC-3339: {:?}",
+                fm.updated_at
+            ),
             source: None,
         });
     }
@@ -200,7 +205,7 @@ fn is_rfc3339_ish(s: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_and_validate, validate_content, LockStatus};
+    use super::{LockStatus, parse_and_validate, validate_content};
     use std::path::Path;
     use tempfile::tempdir;
 
@@ -283,10 +288,7 @@ updated_at: 2026-04-18T10:00:00Z\n\
 
     #[test]
     fn non_rfc3339_timestamps_rejected() {
-        let src = VALID.replace(
-            "created_at: 2026-04-18T10:00:00Z",
-            "created_at: not-a-date",
-        );
+        let src = VALID.replace("created_at: 2026-04-18T10:00:00Z", "created_at: not-a-date");
         let err = validate_content(Path::new("/x/L.md"), &src).unwrap_err();
         assert!(err.to_string().contains("created_at"));
     }

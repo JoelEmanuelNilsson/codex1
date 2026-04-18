@@ -9,15 +9,13 @@
 // the crate's own unit tests.
 #![allow(dead_code)]
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Canonical CLI errors. Variants map 1:1 to the `code` field in the
 /// `codex1.error.v1` envelope.
 #[derive(Debug, thiserror::Error)]
 pub enum CliError {
-    #[error(
-        "mission id must match ^[a-z0-9](?:[a-z0-9-]{{0,62}}[a-z0-9])?$: got {got:?}"
-    )]
+    #[error("mission id must match ^[a-z0-9](?:[a-z0-9-]{{0,62}}[a-z0-9])?$: got {got:?}")]
     MissionIdInvalid { got: String },
 
     #[error("mission directory already exists at {path}")]
@@ -216,10 +214,18 @@ impl CliError {
             Self::RepoRootInvalid { reason, path } => json!({ "reason": reason, "path": path }),
             Self::Io { path, source } => json!({ "path": path, "source": source.to_string() }),
             Self::ProofInvalid { path, reason } => json!({ "path": path, "reason": reason }),
-            Self::TaskStateTransitionInvalid { task_id, current, attempted } => {
+            Self::TaskStateTransitionInvalid {
+                task_id,
+                current,
+                attempted,
+            } => {
                 json!({ "task_id": task_id, "current": current, "attempted": attempted })
             }
-            Self::StaleOutput { task_id, bundle_id, reason } => {
+            Self::StaleOutput {
+                task_id,
+                bundle_id,
+                reason,
+            } => {
                 json!({ "task_id": task_id, "bundle_id": bundle_id, "reason": reason })
             }
             Self::RevisionConflict { expected, actual } => {
@@ -245,7 +251,11 @@ mod tests {
             "MISSION_EXISTS"
         );
         assert_eq!(
-            CliError::DagCycle { path: "p".into(), cycle: vec!["T1".into(), "T2".into()] }.code(),
+            CliError::DagCycle {
+                path: "p".into(),
+                cycle: vec!["T1".into(), "T2".into()]
+            }
+            .code(),
             "DAG_CYCLE"
         );
     }
@@ -253,9 +263,15 @@ mod tests {
     #[test]
     fn exit_codes_match_contract() {
         assert_eq!(CliError::MissionExists { path: "x".into() }.exit_code(), 3);
-        assert_eq!(CliError::MissionIdInvalid { got: "X".into() }.exit_code(), 2);
         assert_eq!(
-            CliError::Internal { message: "bug".into() }.exit_code(),
+            CliError::MissionIdInvalid { got: "X".into() }.exit_code(),
+            2
+        );
+        assert_eq!(
+            CliError::Internal {
+                message: "bug".into()
+            }
+            .exit_code(),
             70
         );
     }

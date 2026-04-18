@@ -88,19 +88,27 @@ pub fn resolve_repo_root(provided: Option<&Path>) -> Result<PathBuf, CliError> {
 pub fn validate_mission_id(id: &str) -> Result<(), CliError> {
     let len = id.len();
     if !(1..=MISSION_ID_MAX_LEN).contains(&len) {
-        return Err(CliError::MissionIdInvalid { got: id.to_string() });
+        return Err(CliError::MissionIdInvalid {
+            got: id.to_string(),
+        });
     }
     let bytes = id.as_bytes();
     if !is_lower_alnum(bytes[0]) {
-        return Err(CliError::MissionIdInvalid { got: id.to_string() });
+        return Err(CliError::MissionIdInvalid {
+            got: id.to_string(),
+        });
     }
     if len > 1 && !is_lower_alnum(bytes[len - 1]) {
-        return Err(CliError::MissionIdInvalid { got: id.to_string() });
+        return Err(CliError::MissionIdInvalid {
+            got: id.to_string(),
+        });
     }
     if len >= 3 {
         for &b in &bytes[1..len - 1] {
             if !(is_lower_alnum(b) || b == b'-') {
-                return Err(CliError::MissionIdInvalid { got: id.to_string() });
+                return Err(CliError::MissionIdInvalid {
+                    got: id.to_string(),
+                });
             }
         }
     }
@@ -126,9 +134,7 @@ fn is_lower_alnum(b: u8) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        resolve_mission, resolve_repo_root, validate_mission_id, MissionPaths,
-    };
+    use super::{MissionPaths, resolve_mission, resolve_repo_root, validate_mission_id};
     use std::path::PathBuf;
     use tempfile::tempdir;
 
@@ -144,10 +150,7 @@ mod tests {
             "kernel-and-dag",
             &"a".repeat(64),
         ] {
-            assert!(
-                validate_mission_id(id).is_ok(),
-                "{id:?} should be accepted"
-            );
+            assert!(validate_mission_id(id).is_ok(), "{id:?} should be accepted");
         }
     }
 

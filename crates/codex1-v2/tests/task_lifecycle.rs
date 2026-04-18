@@ -37,10 +37,7 @@ fn set_state(dir: &Path, tasks: &[(&str, &str)], phase: &str) {
     let current: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     let mut tasks_obj = serde_json::Map::new();
     for (id, status) in tasks {
-        tasks_obj.insert(
-            (*id).to_string(),
-            serde_json::json!({ "status": status }),
-        );
+        tasks_obj.insert((*id).to_string(), serde_json::json!({ "status": status }));
     }
     let new = serde_json::json!({
         "mission_id": current["mission_id"],
@@ -83,17 +80,12 @@ fn start_transitions_ready_to_in_progress_and_mints_run_id() {
     assert_eq!(env["ok"], true);
     assert_eq!(env["schema"], "codex1.task.start.v1");
     assert_eq!(env["status"], "in_progress");
-    assert!(env["task_run_id"]
-        .as_str()
-        .unwrap()
-        .starts_with("run-"));
+    assert!(env["task_run_id"].as_str().unwrap().starts_with("run-"));
     assert!(env["started_at"].is_string());
 
     // Verify STATE.json reflects the transition.
-    let state: Value = serde_json::from_slice(
-        &fs::read(dir.path().join("PLANS/m1/STATE.json")).unwrap(),
-    )
-    .unwrap();
+    let state: Value =
+        serde_json::from_slice(&fs::read(dir.path().join("PLANS/m1/STATE.json")).unwrap()).unwrap();
     assert_eq!(state["tasks"]["T1"]["status"], "in_progress");
     assert_eq!(state["phase"], "executing");
 }
@@ -138,10 +130,12 @@ fn start_refuses_when_deps_not_clean() {
         .clone();
     let env = last_json(&out);
     assert_eq!(env["code"], "TASK_STATE_INVALID");
-    assert!(env["details"]["current"]
-        .as_str()
-        .unwrap()
-        .contains("dep_T1"));
+    assert!(
+        env["details"]["current"]
+            .as_str()
+            .unwrap()
+            .contains("dep_T1")
+    );
 }
 
 #[test]
@@ -166,10 +160,7 @@ fn finish_reads_default_proof_and_hashes_it() {
     assert_eq!(env["schema"], "codex1.task.finish.v1");
     assert_eq!(env["status"], "proof_submitted");
     assert_eq!(env["proof_ref"], "specs/T1/PROOF.md");
-    assert!(env["proof_hash"]
-        .as_str()
-        .unwrap()
-        .starts_with("sha256:"));
+    assert!(env["proof_hash"].as_str().unwrap().starts_with("sha256:"));
 }
 
 #[test]

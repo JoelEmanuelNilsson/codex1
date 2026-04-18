@@ -16,11 +16,11 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
-use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::error::CliError;
-use crate::events::{append_event, Event};
-use crate::fs_atomic::{atomic_write, LockedDir};
+use crate::events::{Event, append_event};
+use crate::fs_atomic::{LockedDir, atomic_write};
 
 // Re-exports consumed by other modules (mission, status, graph) as Wave 1
 // fills in. `ParentLoopMode`, `TaskState`, and `TaskStatus` are re-exported
@@ -167,11 +167,7 @@ impl StateStore {
     /// As [`mutate`] but rejects when the current `state_revision` does not
     /// match `expected`. Wave 1 does not call this, but the plumbing is in
     /// place so Wave 2's `task start`/`task finish` inherits it.
-    pub fn mutate_checked<F>(
-        &self,
-        expected: Option<u64>,
-        f: F,
-    ) -> Result<State, CliError>
+    pub fn mutate_checked<F>(&self, expected: Option<u64>, f: F) -> Result<State, CliError>
     where
         F: FnOnce(&mut State) -> Result<EventDraft, CliError>,
     {
@@ -186,12 +182,13 @@ impl StateStore {
             });
         }
         let draft = f(&mut state)?;
-        state.state_revision = state
-            .state_revision
-            .checked_add(1)
-            .ok_or_else(|| CliError::Internal {
-                message: "state_revision overflow".into(),
-            })?;
+        state.state_revision =
+            state
+                .state_revision
+                .checked_add(1)
+                .ok_or_else(|| CliError::Internal {
+                    message: "state_revision overflow".into(),
+                })?;
         self.write_state(&state)?;
         let event = draft.into_event(state.state_revision, &now_iso());
         append_event(&self.events_path(), &event).map_err(|e| CliError::Io {
@@ -282,9 +279,7 @@ mod tests {
         store.init("example").unwrap();
         let after = store
             .mutate(|state| {
-                state
-                    .tasks
-                    .insert("T1".into(), TaskState::planned());
+                state.tasks.insert("T1".into(), TaskState::planned());
                 Ok(EventDraft::new("task_added").with("task_id", "T1"))
             })
             .unwrap();
@@ -304,9 +299,7 @@ mod tests {
         let (_dir, store) = store_with_dir();
         store.init("example").unwrap();
         let err = store
-            .mutate_checked(Some(999), |_| {
-                Ok(EventDraft::new("never"))
-            })
+            .mutate_checked(Some(999), |_| Ok(EventDraft::new("never")))
             .unwrap_err();
         assert_eq!(err.code(), "REVISION_CONFLICT");
         assert_eq!(err.exit_code(), 4);
@@ -336,9 +329,7 @@ mod tests {
         store.init("example").unwrap();
         for i in 0..3 {
             store
-                .mutate(|_state| {
-                    Ok(EventDraft::new("tick").with("n", i64::from(i)))
-                })
+                .mutate(|_state| Ok(EventDraft::new("tick").with("n", i64::from(i))))
                 .unwrap();
         }
         let state = store.load().unwrap();

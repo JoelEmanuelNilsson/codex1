@@ -277,30 +277,38 @@ pub fn run(cli: &Cli) -> i32 {
         Commands::Task(TaskCommand::Start { mission, task_id }) => {
             task::cmd_task_start(cli, mission, task_id)
         }
-        Commands::Task(TaskCommand::Finish { mission, task_id, proof }) => {
-            task::cmd_task_finish(cli, mission, task_id, proof.as_deref())
-        }
+        Commands::Task(TaskCommand::Finish {
+            mission,
+            task_id,
+            proof,
+        }) => task::cmd_task_finish(cli, mission, task_id, proof.as_deref()),
         Commands::Task(TaskCommand::Status { mission, task_id }) => {
             task::cmd_task_status(cli, mission, task_id)
         }
-        Commands::Review(ReviewCommand::Open { mission, task, profiles }) => {
-            review::cmd_review_open(cli, mission, task, profiles)
-        }
+        Commands::Review(ReviewCommand::Open {
+            mission,
+            task,
+            profiles,
+        }) => review::cmd_review_open(cli, mission, task, profiles),
         Commands::Review(ReviewCommand::OpenMissionClose { mission, profiles }) => {
             review::cmd_review_open_mission_close(cli, mission, profiles)
         }
-        Commands::Review(ReviewCommand::Submit { mission, bundle, input }) => {
-            review::cmd_review_submit(cli, mission, bundle, input)
-        }
+        Commands::Review(ReviewCommand::Submit {
+            mission,
+            bundle,
+            input,
+        }) => review::cmd_review_submit(cli, mission, bundle, input),
         Commands::Review(ReviewCommand::Status { mission, bundle }) => {
             review::cmd_review_status(cli, mission, bundle)
         }
         Commands::Review(ReviewCommand::Close { mission, bundle }) => {
             review::cmd_review_close(cli, mission, bundle)
         }
-        Commands::Replan(ReplanCommand::Record { mission, reason, supersedes }) => {
-            replan::cmd_replan_record(cli, mission, reason, supersedes.as_deref())
-        }
+        Commands::Replan(ReplanCommand::Record {
+            mission,
+            reason,
+            supersedes,
+        }) => replan::cmd_replan_record(cli, mission, reason, supersedes.as_deref()),
         Commands::Replan(ReplanCommand::Check { mission }) => {
             replan::cmd_replan_check(cli, mission)
         }
@@ -429,22 +437,14 @@ mod tests {
         assert!(r.is_err());
         let r = Cli::try_parse_from(["codex1-v2", "init", "--mission", "abc"]);
         assert!(r.is_err());
-        let r = Cli::try_parse_from([
-            "codex1-v2", "init", "--mission", "abc", "--title", "Foo",
-        ]);
+        let r = Cli::try_parse_from(["codex1-v2", "init", "--mission", "abc", "--title", "Foo"]);
         assert!(r.is_ok());
     }
 
     #[test]
     fn global_flags_work_on_any_subcommand() {
-        let cli = Cli::try_parse_from([
-            "codex1-v2",
-            "--json",
-            "status",
-            "--mission",
-            "m1",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["codex1-v2", "--json", "status", "--mission", "m1"]).unwrap();
         assert!(cli.json);
         match cli.command {
             Commands::Status { mission } => assert_eq!(mission, "m1"),
@@ -471,10 +471,7 @@ mod tests {
 
     #[test]
     fn plan_check_parses() {
-        let cli = Cli::try_parse_from([
-            "codex1-v2", "plan", "check", "--mission", "m1",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["codex1-v2", "plan", "check", "--mission", "m1"]).unwrap();
         match cli.command {
             Commands::Plan(PlanCommand::Check { mission }) => {
                 assert_eq!(mission, "m1");
@@ -485,10 +482,7 @@ mod tests {
 
     #[test]
     fn plan_waves_parses() {
-        let cli = Cli::try_parse_from([
-            "codex1-v2", "plan", "waves", "--mission", "m1",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["codex1-v2", "plan", "waves", "--mission", "m1"]).unwrap();
         match cli.command {
             Commands::Plan(PlanCommand::Waves { mission }) => {
                 assert_eq!(mission, "m1");
@@ -499,10 +493,7 @@ mod tests {
 
     #[test]
     fn task_next_parses() {
-        let cli = Cli::try_parse_from([
-            "codex1-v2", "task", "next", "--mission", "m1",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["codex1-v2", "task", "next", "--mission", "m1"]).unwrap();
         match cli.command {
             Commands::Task(TaskCommand::Next { mission }) => {
                 assert_eq!(mission, "m1");
@@ -520,9 +511,6 @@ mod tests {
     #[test]
     fn validate_requires_mission() {
         assert!(Cli::try_parse_from(["codex1-v2", "validate"]).is_err());
-        assert!(Cli::try_parse_from([
-            "codex1-v2", "validate", "--mission", "m1",
-        ])
-        .is_ok());
+        assert!(Cli::try_parse_from(["codex1-v2", "validate", "--mission", "m1",]).is_ok());
     }
 }

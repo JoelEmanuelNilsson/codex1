@@ -1,7 +1,7 @@
 //! Wave 3 acceptance: failed review → `needs_repair` → retry → clean.
 
 use assert_cmd::Command;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
@@ -64,12 +64,7 @@ fn start_finish(dir: &TempDir, task_id: &str, proof_body: &[u8]) -> Value {
     last_json(&out)
 }
 
-fn open_and_close_with_finding(
-    dir: &TempDir,
-    task_id: &str,
-    task_run_id: &str,
-    proof_hash: &str,
-) {
+fn open_and_close_with_finding(dir: &TempDir, task_id: &str, task_run_id: &str, proof_hash: &str) {
     let out = bin(dir)
         .args([
             "--json",
@@ -96,7 +91,10 @@ fn open_and_close_with_finding(
         .unwrap(),
     )
     .unwrap();
-    let req_id = bundle["requirements"][0]["id"].as_str().unwrap().to_string();
+    let req_id = bundle["requirements"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let state_rev = bundle["state_revision"].as_u64().unwrap();
     let graph_rev = bundle["graph_revision"].as_u64().unwrap();
 
@@ -143,18 +141,19 @@ fn open_and_close_with_finding(
         .success();
     bin(dir)
         .args([
-            "--json", "review", "close", "--mission", "m1", "--bundle", &bundle_id,
+            "--json",
+            "review",
+            "close",
+            "--mission",
+            "m1",
+            "--bundle",
+            &bundle_id,
         ])
         .assert()
         .success();
 }
 
-fn open_and_close_clean(
-    dir: &TempDir,
-    task_id: &str,
-    task_run_id: &str,
-    proof_hash: &str,
-) {
+fn open_and_close_clean(dir: &TempDir, task_id: &str, task_run_id: &str, proof_hash: &str) {
     let out = bin(dir)
         .args([
             "--json",
@@ -181,7 +180,10 @@ fn open_and_close_clean(
         .unwrap(),
     )
     .unwrap();
-    let req_id = bundle["requirements"][0]["id"].as_str().unwrap().to_string();
+    let req_id = bundle["requirements"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let state_rev = bundle["state_revision"].as_u64().unwrap();
     let graph_rev = bundle["graph_revision"].as_u64().unwrap();
 
@@ -224,7 +226,13 @@ fn open_and_close_clean(
         .success();
     bin(dir)
         .args([
-            "--json", "review", "close", "--mission", "m1", "--bundle", &bundle_id,
+            "--json",
+            "review",
+            "close",
+            "--mission",
+            "m1",
+            "--bundle",
+            &bundle_id,
         ])
         .assert()
         .success();
@@ -242,10 +250,8 @@ fn fail_repair_pass_cycle_reaches_review_clean() {
     open_and_close_with_finding(&dir, "T1", &run_id, &hash);
 
     // Task should now be needs_repair
-    let state: Value = serde_json::from_slice(
-        &fs::read(dir.path().join("PLANS/m1/STATE.json")).unwrap(),
-    )
-    .unwrap();
+    let state: Value =
+        serde_json::from_slice(&fs::read(dir.path().join("PLANS/m1/STATE.json")).unwrap()).unwrap();
     assert_eq!(state["tasks"]["T1"]["status"], "needs_repair");
 
     // Second run: pass
@@ -255,10 +261,8 @@ fn fail_repair_pass_cycle_reaches_review_clean() {
     let hash2 = finish2["proof_hash"].as_str().unwrap().to_string();
     open_and_close_clean(&dir, "T1", &run_id2, &hash2);
 
-    let state: Value = serde_json::from_slice(
-        &fs::read(dir.path().join("PLANS/m1/STATE.json")).unwrap(),
-    )
-    .unwrap();
+    let state: Value =
+        serde_json::from_slice(&fs::read(dir.path().join("PLANS/m1/STATE.json")).unwrap()).unwrap();
     assert_eq!(state["tasks"]["T1"]["status"], "review_clean");
 }
 

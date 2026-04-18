@@ -8,12 +8,12 @@ use crate::envelope;
 use crate::error::CliError;
 use crate::graph;
 use crate::mission::resolve_mission;
-use crate::mission_close::{check_readiness, ReadinessReport};
-use crate::review::bundle::ReviewBundle;
+use crate::mission_close::{ReadinessReport, check_readiness};
 use crate::review::BUNDLES_DIRNAME;
+use crate::review::bundle::ReviewBundle;
 use crate::state::{EventDraft, Phase, StateStore};
 
-use super::{emit_error, emit_success, resolve_repo, Cli};
+use super::{Cli, emit_error, emit_success, resolve_repo};
 
 const CHECK_SCHEMA: &str = "codex1.mission_close.check.v1";
 const COMPLETE_SCHEMA: &str = "codex1.mission_close.complete.v1";
@@ -82,8 +82,7 @@ fn run_complete(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError>
                 task.status = crate::state::TaskStatus::Complete;
             }
         }
-        Ok(EventDraft::new("mission_closed")
-            .with("closed_at", super::now_rfc3339()))
+        Ok(EventDraft::new("mission_closed").with("closed_at", super::now_rfc3339()))
     })?;
     Ok(envelope::success(
         COMPLETE_SCHEMA,

@@ -128,18 +128,13 @@ impl TaskStatus {
     /// True when the task is terminal (cannot be acted on further).
     #[must_use]
     pub fn is_terminal(self) -> bool {
-        matches!(
-            self,
-            Self::Complete | Self::Superseded | Self::ReviewClean
-        )
+        matches!(self, Self::Complete | Self::Superseded | Self::ReviewClean)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        ParentLoop, ParentLoopMode, Phase, State, TaskState, TaskStatus,
-    };
+    use super::{ParentLoop, ParentLoopMode, Phase, State, TaskState, TaskStatus};
     use serde_json::json;
     use std::collections::BTreeMap;
 

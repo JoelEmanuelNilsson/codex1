@@ -92,15 +92,12 @@ fn proof_hash_changes_when_proof_file_changes() {
     // detection falls out naturally from the hash inequality. Wave 3
     // review submission will surface `STALE_OUTPUT`. Wave 2 test just
     // documents the divergence.
-    let current_hash_would_be = format!(
-        "sha256:{:x}",
-        {
-            use sha2::{Digest, Sha256};
-            let mut h = Sha256::new();
-            h.update(b"version-2-different");
-            h.finalize()
-        }
-    );
+    let current_hash_would_be = format!("sha256:{:x}", {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(b"version-2-different");
+        h.finalize()
+    });
     assert_ne!(stored_hash, current_hash_would_be);
 }
 
@@ -193,10 +190,7 @@ fn stale_binding_is_quarantined_via_library_api() {
         "evidence_snapshot_hash",
         "packet_id",
     ] {
-        assert!(
-            parsed.get(field).is_some(),
-            "binding must include {field}"
-        );
+        assert!(parsed.get(field).is_some(), "binding must include {field}");
     }
     // The stale run_id would fail check_staleness in the runtime; Wave 3
     // review submit exercises this path end-to-end via the CLI.

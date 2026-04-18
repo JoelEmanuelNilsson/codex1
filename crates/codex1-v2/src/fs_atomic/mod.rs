@@ -80,7 +80,7 @@ pub fn atomic_write(path: &Path, content: &[u8]) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{atomic_write, LockedDir, LOCK_FILENAME};
+    use super::{LOCK_FILENAME, LockedDir, atomic_write};
     use std::fs;
     use tempfile::tempdir;
 

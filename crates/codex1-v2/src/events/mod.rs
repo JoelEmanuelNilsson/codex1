@@ -55,8 +55,8 @@ impl Event {
 /// Caller holds the mission's `.state.lock` so concurrent appends are
 /// serialized at the process boundary.
 pub fn append_event(events_path: &Path, event: &Event) -> io::Result<()> {
-    let line = serde_json::to_string(event)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let line =
+        serde_json::to_string(event).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     let mut file = OpenOptions::new()
         .append(true)
         .create(true)
@@ -99,7 +99,7 @@ pub fn last_seq(events_path: &Path) -> io::Result<Option<u64>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{append_event, last_seq, read_events, Event};
+    use super::{Event, append_event, last_seq, read_events};
     use serde_json::json;
     use std::fs;
     use tempfile::tempdir;
@@ -131,11 +131,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("events.jsonl");
         for seq in 1..=3 {
-            append_event(
-                &path,
-                &Event::new(seq, "tick", "2026-04-18T10:00:00Z"),
-            )
-            .unwrap();
+            append_event(&path, &Event::new(seq, "tick", "2026-04-18T10:00:00Z")).unwrap();
         }
         let raw = fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = raw.lines().collect();

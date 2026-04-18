@@ -50,10 +50,14 @@ pub fn build_dag(blueprint: &Blueprint) -> Result<Dag, CliError> {
 pub fn validate_id_format(id: &str) -> Result<(), CliError> {
     let bytes = id.as_bytes();
     if bytes.len() < 2 || bytes[0] != b'T' {
-        return Err(CliError::DagBadId { got: id.to_string() });
+        return Err(CliError::DagBadId {
+            got: id.to_string(),
+        });
     }
     if !bytes[1..].iter().all(u8::is_ascii_digit) {
-        return Err(CliError::DagBadId { got: id.to_string() });
+        return Err(CliError::DagBadId {
+            got: id.to_string(),
+        });
     }
     Ok(())
 }
@@ -170,8 +174,8 @@ pub fn is_eligible(task_id: &str, state: &State, dag: &Dag) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{build_dag, is_eligible, validate_id_format};
-    use crate::blueprint::{Blueprint, Planning, TaskSpec};
     use crate::blueprint::Level;
+    use crate::blueprint::{Blueprint, Planning, TaskSpec};
     use crate::state::{ParentLoop, Phase, State, TaskState, TaskStatus};
     use std::collections::BTreeMap;
 
@@ -272,11 +276,7 @@ mod tests {
     fn three_node_cycle_detected() {
         let bp = Blueprint {
             planning: planning(),
-            tasks: vec![
-                t("T1", &["T2"]),
-                t("T2", &["T3"]),
-                t("T3", &["T1"]),
-            ],
+            tasks: vec![t("T1", &["T2"]), t("T2", &["T3"]), t("T3", &["T1"])],
             review_boundaries: vec![],
         };
         let err = build_dag(&bp).unwrap_err();
@@ -395,10 +395,7 @@ mod tests {
             review_boundaries: vec![],
         };
         let dag = build_dag(&bp).unwrap();
-        let state = state_with_tasks(&[
-            ("T1", TaskStatus::InProgress),
-            ("T2", TaskStatus::Ready),
-        ]);
+        let state = state_with_tasks(&[("T1", TaskStatus::InProgress), ("T2", TaskStatus::Ready)]);
         assert!(!is_eligible("T2", &state, &dag));
     }
 

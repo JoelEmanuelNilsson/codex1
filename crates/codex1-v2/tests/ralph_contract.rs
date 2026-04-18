@@ -40,21 +40,12 @@ fn write_blueprint(dir: &Path, yaml_body: &str) {
     .unwrap();
 }
 
-fn write_state(
-    dir: &Path,
-    phase: &str,
-    mode: &str,
-    paused: bool,
-    tasks: &[(&str, &str)],
-) {
+fn write_state(dir: &Path, phase: &str, mode: &str, paused: bool, tasks: &[(&str, &str)]) {
     let sp = dir.join("PLANS/m1/STATE.json");
     let current: Value = serde_json::from_slice(&fs::read(&sp).unwrap()).unwrap();
     let mut tasks_obj = serde_json::Map::new();
     for (id, status) in tasks {
-        tasks_obj.insert(
-            (*id).to_string(),
-            serde_json::json!({ "status": status }),
-        );
+        tasks_obj.insert((*id).to_string(), serde_json::json!({ "status": status }));
     }
     let new = serde_json::json!({
         "mission_id": current["mission_id"],
@@ -117,13 +108,7 @@ fn stop_policy_for_complete_when_inactive() {
         "planning:\n  requested_level: light\n  graph_revision: 1\n\
          tasks:\n  - id: T1\n    title: A\n    kind: code\n",
     );
-    write_state(
-        dir.path(),
-        "complete",
-        "none",
-        false,
-        &[("T1", "complete")],
-    );
+    write_state(dir.path(), "complete", "none", false, &[("T1", "complete")]);
     let s = status(&dir);
     assert_eq!(s["verdict"], "complete");
     assert_eq!(s["stop_policy"]["allow_stop"], true);
@@ -178,13 +163,7 @@ fn paused_loop_allows_even_when_task_eligible() {
         "planning:\n  requested_level: light\n  graph_revision: 1\n\
          tasks:\n  - id: T1\n    title: A\n    kind: code\n",
     );
-    write_state(
-        dir.path(),
-        "executing",
-        "execute",
-        true,
-        &[("T1", "ready")],
-    );
+    write_state(dir.path(), "executing", "execute", true, &[("T1", "ready")]);
     let s = status(&dir);
     assert_eq!(s["stop_policy"]["allow_stop"], true);
     assert_eq!(s["stop_policy"]["reason"], "discussion_pause");

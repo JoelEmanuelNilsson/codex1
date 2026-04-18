@@ -23,7 +23,7 @@ use crate::fs_atomic;
 use crate::mission::{self, resolve_mission};
 use crate::state::StateStore;
 
-use super::{emit_error, emit_success, resolve_repo, Cli};
+use super::{Cli, emit_error, emit_success, resolve_repo};
 
 const SCHEMA: &str = "codex1.init.v1";
 

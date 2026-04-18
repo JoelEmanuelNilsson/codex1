@@ -11,7 +11,7 @@ use crate::error::CliError;
 use crate::mission::resolve_mission;
 use crate::state::{EventDraft, ParentLoopMode, StateStore};
 
-use super::{emit_error, emit_success, resolve_repo, Cli};
+use super::{Cli, emit_error, emit_success, resolve_repo};
 
 const ACTIVATE_SCHEMA: &str = "codex1.parent_loop.activate.v1";
 const DEACTIVATE_SCHEMA: &str = "codex1.parent_loop.deactivate.v1";

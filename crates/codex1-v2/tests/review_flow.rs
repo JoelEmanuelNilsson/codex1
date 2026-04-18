@@ -2,7 +2,7 @@
 //! parent-self-review refusal and stale binding quarantine.
 
 use assert_cmd::Command;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
@@ -142,9 +142,11 @@ fn clean_review_transitions_task_to_review_clean() {
     let bundle_path = dir
         .path()
         .join(format!("PLANS/m1/reviews/{bundle_id}.json"));
-    let bundle: Value =
-        serde_json::from_slice(&fs::read(&bundle_path).unwrap()).unwrap();
-    let req_id = bundle["requirements"][0]["id"].as_str().unwrap().to_string();
+    let bundle: Value = serde_json::from_slice(&fs::read(&bundle_path).unwrap()).unwrap();
+    let req_id = bundle["requirements"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let state_rev = bundle["state_revision"].as_u64().unwrap();
     let graph_rev = bundle["graph_revision"].as_u64().unwrap();
 
@@ -180,7 +182,13 @@ fn clean_review_transitions_task_to_review_clean() {
 
     let out = bin(&dir)
         .args([
-            "--json", "review", "close", "--mission", "m1", "--bundle", &bundle_id,
+            "--json",
+            "review",
+            "close",
+            "--mission",
+            "m1",
+            "--bundle",
+            &bundle_id,
         ])
         .assert()
         .success()
@@ -191,10 +199,8 @@ fn clean_review_transitions_task_to_review_clean() {
     assert_eq!(env["clean"], true);
 
     // Verify task state.
-    let state: Value = serde_json::from_slice(
-        &fs::read(dir.path().join("PLANS/m1/STATE.json")).unwrap(),
-    )
-    .unwrap();
+    let state: Value =
+        serde_json::from_slice(&fs::read(dir.path().join("PLANS/m1/STATE.json")).unwrap()).unwrap();
     assert_eq!(state["tasks"]["T1"]["status"], "review_clean");
 }
 
@@ -216,7 +222,10 @@ fn p1_finding_routes_task_to_needs_repair() {
         .unwrap(),
     )
     .unwrap();
-    let req_id = bundle["requirements"][0]["id"].as_str().unwrap().to_string();
+    let req_id = bundle["requirements"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let state_rev = bundle["state_revision"].as_u64().unwrap();
     let graph_rev = bundle["graph_revision"].as_u64().unwrap();
 
@@ -259,7 +268,13 @@ fn p1_finding_routes_task_to_needs_repair() {
 
     let out = bin(&dir)
         .args([
-            "--json", "review", "close", "--mission", "m1", "--bundle", &bundle_id,
+            "--json",
+            "review",
+            "close",
+            "--mission",
+            "m1",
+            "--bundle",
+            &bundle_id,
         ])
         .assert()
         .success()
@@ -270,10 +285,8 @@ fn p1_finding_routes_task_to_needs_repair() {
     assert_eq!(env["clean"], false);
     assert_eq!(env["blocking_findings"], 1);
 
-    let state: Value = serde_json::from_slice(
-        &fs::read(dir.path().join("PLANS/m1/STATE.json")).unwrap(),
-    )
-    .unwrap();
+    let state: Value =
+        serde_json::from_slice(&fs::read(dir.path().join("PLANS/m1/STATE.json")).unwrap()).unwrap();
     assert_eq!(state["tasks"]["T1"]["status"], "needs_repair");
 }
 
@@ -294,7 +307,10 @@ fn self_review_is_refused() {
         .unwrap(),
     )
     .unwrap();
-    let req_id = bundle["requirements"][0]["id"].as_str().unwrap().to_string();
+    let req_id = bundle["requirements"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let state_rev = bundle["state_revision"].as_u64().unwrap();
     let graph_rev = bundle["graph_revision"].as_u64().unwrap();
 
@@ -333,10 +349,12 @@ fn self_review_is_refused() {
         .clone();
     let env = last_json(&out);
     assert_eq!(env["code"], "STALE_OUTPUT");
-    assert!(env["details"]["reason"]
-        .as_str()
-        .unwrap()
-        .contains("parent"));
+    assert!(
+        env["details"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("parent")
+    );
 }
 
 #[test]
@@ -356,7 +374,10 @@ fn stale_task_run_id_rejected_at_submit() {
         .unwrap(),
     )
     .unwrap();
-    let req_id = bundle["requirements"][0]["id"].as_str().unwrap().to_string();
+    let req_id = bundle["requirements"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let state_rev = bundle["state_revision"].as_u64().unwrap();
     let graph_rev = bundle["graph_revision"].as_u64().unwrap();
 
@@ -366,7 +387,7 @@ fn stale_task_run_id_rejected_at_submit() {
         &req_id,
         "code_bug_correctness",
         "T1",
-        "run-STALE-id",       // wrong run id
+        "run-STALE-id", // wrong run id
         &proof_hash,
         state_rev,
         graph_rev,
@@ -402,10 +423,8 @@ fn review_open_transitions_task_to_review_owed() {
     boot(&dir);
     do_start_and_finish(&dir, "T1");
     open_review(&dir, "T1", "code_bug_correctness");
-    let state: Value = serde_json::from_slice(
-        &fs::read(dir.path().join("PLANS/m1/STATE.json")).unwrap(),
-    )
-    .unwrap();
+    let state: Value =
+        serde_json::from_slice(&fs::read(dir.path().join("PLANS/m1/STATE.json")).unwrap()).unwrap();
     assert_eq!(state["tasks"]["T1"]["status"], "review_owed");
 }
 

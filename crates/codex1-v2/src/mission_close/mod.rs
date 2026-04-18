@@ -70,11 +70,7 @@ impl BlockingReason {
 
 /// Compute mission-close readiness from state + DAG + bundle inventory.
 #[must_use]
-pub fn check_readiness(
-    state: &State,
-    dag: &Dag,
-    bundles: &[ReviewBundle],
-) -> ReadinessReport {
+pub fn check_readiness(state: &State, dag: &Dag, bundles: &[ReviewBundle]) -> ReadinessReport {
     let mut reasons: Vec<BlockingReason> = Vec::new();
 
     // DAG must not be empty; empty DAG cannot be "complete".
@@ -110,7 +106,10 @@ pub fn check_readiness(
                 reasons.push(BlockingReason::bundle(
                     "REVIEW_BUNDLE_OPEN",
                     &bundle.bundle_id,
-                    format!("review bundle {} for task {task_id} is still open", bundle.bundle_id),
+                    format!(
+                        "review bundle {} for task {task_id} is still open",
+                        bundle.bundle_id
+                    ),
                 ));
             }
             (ReviewTarget::Task { task_id, .. }, ReviewStatus::Failed) => {
@@ -171,9 +170,7 @@ mod tests {
     use super::check_readiness;
     use crate::blueprint::{Blueprint, Level, Planning, TaskSpec};
     use crate::graph::validate::build_dag;
-    use crate::review::bundle::{
-        ReviewBundle, ReviewStatus, ReviewTarget,
-    };
+    use crate::review::bundle::{ReviewBundle, ReviewStatus, ReviewTarget};
     use crate::state::{ParentLoop, Phase, State, TaskState, TaskStatus};
     use std::collections::BTreeMap;
 
@@ -263,10 +260,7 @@ mod tests {
         let s = state_with(&[], Phase::Clarify);
         let r = check_readiness(&s, &dag, &[]);
         assert!(!r.can_close);
-        assert!(r
-            .blocking_reasons
-            .iter()
-            .any(|b| b.code == "DAG_EMPTY"));
+        assert!(r.blocking_reasons.iter().any(|b| b.code == "DAG_EMPTY"));
     }
 
     #[test]
@@ -280,7 +274,11 @@ mod tests {
         let s = state_with(&[("T1", TaskStatus::Ready)], Phase::Executing);
         let r = check_readiness(&s, &dag, &[mission_close_bundle(ReviewStatus::Clean)]);
         assert!(!r.can_close);
-        assert!(r.blocking_reasons.iter().any(|b| b.code == "TASK_NOT_CLEAN"));
+        assert!(
+            r.blocking_reasons
+                .iter()
+                .any(|b| b.code == "TASK_NOT_CLEAN")
+        );
     }
 
     #[test]
@@ -294,10 +292,11 @@ mod tests {
         let s = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
         let r = check_readiness(&s, &dag, &[]);
         assert!(!r.can_close);
-        assert!(r
-            .blocking_reasons
-            .iter()
-            .any(|b| b.code == "MISSION_CLOSE_BUNDLE_MISSING"));
+        assert!(
+            r.blocking_reasons
+                .iter()
+                .any(|b| b.code == "MISSION_CLOSE_BUNDLE_MISSING")
+        );
     }
 
     #[test]
@@ -311,7 +310,11 @@ mod tests {
         let s = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
         let r = check_readiness(&s, &dag, &[mission_close_bundle(ReviewStatus::Open)]);
         assert!(!r.can_close);
-        assert!(r.blocking_reasons.iter().any(|b| b.code == "MISSION_CLOSE_OPEN"));
+        assert!(
+            r.blocking_reasons
+                .iter()
+                .any(|b| b.code == "MISSION_CLOSE_OPEN")
+        );
     }
 
     #[test]
@@ -325,10 +328,11 @@ mod tests {
         let s = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
         let r = check_readiness(&s, &dag, &[mission_close_bundle(ReviewStatus::Failed)]);
         assert!(!r.can_close);
-        assert!(r
-            .blocking_reasons
-            .iter()
-            .any(|b| b.code == "MISSION_CLOSE_FAILED"));
+        assert!(
+            r.blocking_reasons
+                .iter()
+                .any(|b| b.code == "MISSION_CLOSE_FAILED")
+        );
     }
 
     #[test]
@@ -370,10 +374,7 @@ mod tests {
         })
         .unwrap();
         let s = state_with(
-            &[
-                ("T1", TaskStatus::Superseded),
-                ("T2", TaskStatus::Complete),
-            ],
+            &[("T1", TaskStatus::Superseded), ("T2", TaskStatus::Complete)],
             Phase::Executing,
         );
         let r = check_readiness(&s, &dag, &[mission_close_bundle(ReviewStatus::Clean)]);
@@ -418,9 +419,10 @@ mod tests {
             &[task_bundle, mission_close_bundle(ReviewStatus::Clean)],
         );
         assert!(!r.can_close);
-        assert!(r
-            .blocking_reasons
-            .iter()
-            .any(|b| b.code == "REVIEW_BUNDLE_OPEN"));
+        assert!(
+            r.blocking_reasons
+                .iter()
+                .any(|b| b.code == "REVIEW_BUNDLE_OPEN")
+        );
     }
 }

@@ -1,19 +1,62 @@
 # Codex1 V2 End-to-End Qualification Receipt (Template)
 
-Copy this file to `codex1-v2-e2e-receipt.md` and fill in every `<TODO>`.
-The qualification script (`scripts/qualify-codex1-v2.sh verify`) checks
-for the three required marker lines below.
+**Do not verify this file directly.** Copy it to
+`docs/qualification/codex1-v2-e2e-receipt.md`, remove the `(Template)` from
+the H1 above, replace every `TODO-FILL-IN` value in the JSON block below with
+real session data, then run:
 
-## Required markers
-
-```text
-skill_invocation: autopilot
-ralph_hook: passed
-verdict: complete
+```bash
+scripts/qualify-codex1-v2.sh verify docs/qualification/codex1-v2-e2e-receipt.md
 ```
 
-These MUST appear verbatim somewhere in the receipt — the verify step
-greps for them.
+The verifier refuses any file whose name ends in `-template.md` or whose
+first H1 contains the word "Template", so this file can never be mistaken
+for a completed receipt.
+
+## Required evidence (machine-parsed)
+
+The verifier extracts this fenced JSON block and rejects the receipt if:
+
+- any required field equals `TODO-FILL-IN` or starts with `<TODO`;
+- `skill_invocation != "autopilot"`;
+- `ralph_hook != "passed"`;
+- `verdict != "complete"`;
+- `terminality != "terminal"`;
+- `session_transcript_excerpt` is shorter than 40 characters after trimming.
+
+```json
+{
+  "schema": "codex1.qualification.receipt.v1",
+  "skill_invocation": "TODO-FILL-IN",
+  "ralph_hook": "TODO-FILL-IN",
+  "verdict": "TODO-FILL-IN",
+  "terminality": "TODO-FILL-IN",
+  "mission_id": "TODO-FILL-IN",
+  "repo_root": "TODO-FILL-IN",
+  "operator": "TODO-FILL-IN",
+  "runner": "TODO-FILL-IN",
+  "runner_version": "TODO-FILL-IN",
+  "codex1_bin": "TODO-FILL-IN",
+  "codex1_version": "TODO-FILL-IN",
+  "started_at": "TODO-FILL-IN",
+  "completed_at": "TODO-FILL-IN",
+  "duration_seconds": 0,
+  "task_count": 0,
+  "review_bundle_count": 0,
+  "repairs": 0,
+  "replans": 0,
+  "final_state_revision": 0,
+  "final_event_seq": 0,
+  "session_transcript_excerpt": "TODO-FILL-IN"
+}
+```
+
+Expected values on a valid run (must match exactly):
+
+- `skill_invocation: "autopilot"`
+- `ralph_hook: "passed"`
+- `verdict: "complete"`
+- `terminality: "terminal"`
 
 ## Mission context
 
@@ -26,7 +69,8 @@ greps for them.
 
 ## Session summary
 
-Describe the live `$autopilot` session:
+Describe the live `$autopilot` session in prose. The JSON block above is
+what the verifier checks; this section is for humans reading later.
 
 - Started: `<TODO RFC-3339 timestamp>`
 - Completed: `<TODO RFC-3339 timestamp>`
@@ -42,13 +86,13 @@ Describe the live `$autopilot` session:
 
 Paste enough of the runner's transcript to show that `$autopilot`
 actually invoked `$clarify` / `$plan` / `$execute` / `$review-loop`
-rather than a CLI-only simulation.
+rather than a CLI-only simulation. The `session_transcript_excerpt`
+field in the JSON block should mirror (or summarize) what you paste
+here.
 
 ```text
 <TODO paste transcript lines>
 ```
-
-skill_invocation: autopilot
 
 ## Ralph hook evidence
 
@@ -58,8 +102,6 @@ stop boundary and either allowed or blocked stop correctly.
 ```text
 <TODO paste hook log lines>
 ```
-
-ralph_hook: passed
 
 ## Final status envelope
 
@@ -77,8 +119,6 @@ taken immediately after `mission-close complete`.
 
 Expected: `"verdict": "complete"`, `"terminality": "terminal"`,
 `"parent_loop.active": false`.
-
-verdict: complete
 
 ## Operator
 

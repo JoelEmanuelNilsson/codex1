@@ -146,9 +146,7 @@ fn deactivate_resets_loop_and_allows_stop() {
         .assert()
         .success();
     bin(&dir)
-        .args([
-            "--json", "parent-loop", "deactivate", "--mission", "m1",
-        ])
+        .args(["--json", "parent-loop", "deactivate", "--mission", "m1"])
         .assert()
         .success();
     let s = status(&dir);
@@ -194,10 +192,12 @@ fn activate_with_invalid_mode_errors() {
         .clone();
     let env = last_json(&out);
     assert_eq!(env["code"], "INTERNAL_ERROR");
-    assert!(env["message"]
-        .as_str()
-        .unwrap()
-        .contains("unknown parent-loop mode"));
+    assert!(
+        env["message"]
+            .as_str()
+            .unwrap()
+            .contains("unknown parent-loop mode")
+    );
 }
 
 #[test]
@@ -217,9 +217,7 @@ fn full_round_trip_ends_clean() {
     let s = status(&dir);
     assert_eq!(s["parent_loop"]["mode"], "none");
     // And state_revision should have advanced by 4 (one per transition).
-    let state: Value = serde_json::from_slice(
-        &fs::read(dir.path().join("PLANS/m1/STATE.json")).unwrap(),
-    )
-    .unwrap();
+    let state: Value =
+        serde_json::from_slice(&fs::read(dir.path().join("PLANS/m1/STATE.json")).unwrap()).unwrap();
     assert!(state["state_revision"].as_u64().unwrap() >= 5);
 }

@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
-use crate::binding::{check_staleness, CurrentSnapshot, OutputBinding};
+use crate::binding::{CurrentSnapshot, OutputBinding, check_staleness};
 
 use super::bundle::ReviewBundle;
 use super::output::{FindingSeverity, ReviewerOutput, ReviewerResultKind};
@@ -129,8 +129,7 @@ pub fn compute_cleanliness(
 
     let clean = missing.is_empty() && blocking == 0;
 
-    let mut accepted_ids: Vec<String> =
-        accepted.iter().map(|o| o.packet_id.clone()).collect();
+    let mut accepted_ids: Vec<String> = accepted.iter().map(|o| o.packet_id.clone()).collect();
     accepted_ids.sort();
     stale_outputs.sort();
     self_review_refused.sort();
@@ -169,7 +168,7 @@ pub fn any_blocking(severities: &[FindingSeverity]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{compute_cleanliness, CurrentTruth};
+    use super::{CurrentTruth, compute_cleanliness};
     use crate::review::bundle::{ReviewBundle, ReviewRequirement, ReviewStatus, ReviewTarget};
     use crate::review::output::{Finding, FindingSeverity, ReviewerOutput, ReviewerResultKind};
 
@@ -242,10 +241,11 @@ mod tests {
     fn missing_required_output_is_not_clean() {
         let v = compute_cleanliness(&bundle(), &[], &truth());
         assert!(!v.clean);
-        assert!(v
-            .missing_profiles
-            .iter()
-            .any(|p| p == "code_bug_correctness"));
+        assert!(
+            v.missing_profiles
+                .iter()
+                .any(|p| p == "code_bug_correctness")
+        );
     }
 
     #[test]

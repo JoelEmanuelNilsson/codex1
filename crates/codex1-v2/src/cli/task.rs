@@ -24,7 +24,7 @@ use crate::proof::{default_proof_ref, read_and_hash};
 use crate::state::{EventDraft, Phase, StateStore, TaskState, TaskStatus};
 use crate::status::project_status;
 
-use super::{emit_error, emit_success, now_rfc3339, resolve_repo, Cli};
+use super::{Cli, emit_error, emit_success, now_rfc3339, resolve_repo};
 
 const NEXT_SCHEMA: &str = "codex1.task.next.v1";
 const START_SCHEMA: &str = "codex1.task.start.v1";
@@ -105,11 +105,7 @@ fn run_start(cli: &Cli, mission: &str, task_id: &str) -> Result<serde_json::Valu
             if !dep_status.satisfies_dep() {
                 return Err(CliError::TaskStateTransitionInvalid {
                     task_id: task_id_owned,
-                    current: format!(
-                        "dep_{}_is_{}",
-                        dep,
-                        task_status_str(dep_status)
-                    ),
+                    current: format!("dep_{}_is_{}", dep, task_status_str(dep_status)),
                     attempted: "start".into(),
                 });
             }
@@ -148,12 +144,7 @@ fn run_start(cli: &Cli, mission: &str, task_id: &str) -> Result<serde_json::Valu
     ))
 }
 
-pub fn cmd_task_finish(
-    cli: &Cli,
-    mission: &str,
-    task_id: &str,
-    proof: Option<&Path>,
-) -> i32 {
+pub fn cmd_task_finish(cli: &Cli, mission: &str, task_id: &str, proof: Option<&Path>) -> i32 {
     match run_finish(cli, mission, task_id, proof) {
         Ok(env) => emit_success(cli, &env),
         Err(err) => emit_error(cli, &err),
@@ -175,8 +166,7 @@ fn run_finish(
             attempted: "finish".into(),
         });
     }
-    let proof_rel = proof_override
-        .map_or_else(|| default_proof_ref(task_id), Path::to_path_buf);
+    let proof_rel = proof_override.map_or_else(|| default_proof_ref(task_id), Path::to_path_buf);
     let now = now_rfc3339();
     let receipt = read_and_hash(&paths.mission_dir, &proof_rel, &now)?;
     let store = StateStore::new(paths.mission_dir.clone());
@@ -207,10 +197,7 @@ fn run_finish(
         entry.proof_hash = Some(receipt_for_closure.proof_hash.clone());
         Ok(EventDraft::new("task_finished")
             .with("task_id", task_id_owned.as_str())
-            .with(
-                "task_run_id",
-                entry.task_run_id.clone().unwrap_or_default(),
-            )
+            .with("task_run_id", entry.task_run_id.clone().unwrap_or_default())
             .with("proof_ref", receipt_for_closure.proof_ref.clone())
             .with("proof_hash", receipt_for_closure.proof_hash.clone())
             .with("graph_revision", graph_revision))
@@ -244,11 +231,13 @@ pub fn cmd_task_status(cli: &Cli, mission: &str, task_id: &str) -> i32 {
 fn run_status(cli: &Cli, mission: &str, task_id: &str) -> Result<serde_json::Value, CliError> {
     validate_id_format(task_id)?;
     let (_paths, dag, state) = load_mission(cli, mission)?;
-    let spec = dag.get(task_id).ok_or_else(|| CliError::TaskStateTransitionInvalid {
-        task_id: task_id.into(),
-        current: "not_in_blueprint".into(),
-        attempted: "status".into(),
-    })?;
+    let spec = dag
+        .get(task_id)
+        .ok_or_else(|| CliError::TaskStateTransitionInvalid {
+            task_id: task_id.into(),
+            current: "not_in_blueprint".into(),
+            attempted: "status".into(),
+        })?;
     let task_state = state
         .tasks
         .get(task_id)
@@ -274,7 +263,14 @@ fn run_status(cli: &Cli, mission: &str, task_id: &str) -> Result<serde_json::Val
 fn load_mission(
     cli: &Cli,
     mission: &str,
-) -> Result<(crate::mission::MissionPaths, graph::Dag, crate::state::State), CliError> {
+) -> Result<
+    (
+        crate::mission::MissionPaths,
+        graph::Dag,
+        crate::state::State,
+    ),
+    CliError,
+> {
     let repo_root = resolve_repo(cli)?;
     let paths = resolve_mission(&repo_root, mission)?;
     if !paths.mission_dir.exists() {

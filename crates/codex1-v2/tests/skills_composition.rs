@@ -51,7 +51,11 @@ fn every_skill_documents_cli_commands_it_drives() {
         let required_commands: &[&str] = match *name {
             "clarify" => &["codex1 init", "codex1 validate"],
             "plan" => &["codex1 plan", "codex1 plan graph"],
-            "execute" => &["codex1 task start", "codex1 task finish", "codex1 parent-loop"],
+            "execute" => &[
+                "codex1 task start",
+                "codex1 task finish",
+                "codex1 parent-loop",
+            ],
             "review-loop" => &[
                 "codex1 review open",
                 "codex1 review submit",
