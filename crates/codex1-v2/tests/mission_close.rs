@@ -350,3 +350,126 @@ fn status_envelope_emits_mission_close_complete_when_bundle_clean() {
     assert_eq!(env["next_action"]["kind"], "mission_close_complete");
     let _ = write_proof; // silence unused warning in this test
 }
+
+#[test]
+fn status_stays_on_check_when_a_second_mission_close_bundle_is_open() {
+    // Round 7 P1: opening a second mission-close bundle after the first
+    // closed clean must force status back to mission_close_check so it
+    // cannot silently route to mission_close_complete while a reviewer
+    // is still finishing a re-review.
+    let dir = TempDir::new().unwrap();
+    boot_with_clean_task(&dir);
+
+    // First mission-close bundle: opened + clean-submitted + closed.
+    let out = bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "open-mission-close",
+            "--mission",
+            "m1",
+            "--profiles",
+            "mission_close",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let first_id = last_json(&out)["bundle_id"].as_str().unwrap().to_string();
+    submit_clean_mc_output(&dir, &first_id);
+    bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "close",
+            "--mission",
+            "m1",
+            "--bundle",
+            &first_id,
+        ])
+        .assert()
+        .success();
+
+    // Second mission-close bundle: opened, still Open.
+    let out = bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "open-mission-close",
+            "--mission",
+            "m1",
+            "--profiles",
+            "mission_close",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let second_id = last_json(&out)["bundle_id"].as_str().unwrap().to_string();
+    assert_ne!(first_id, second_id);
+
+    let out = bin(&dir)
+        .args(["--json", "status", "--mission", "m1"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["next_action"]["kind"], "mission_close_check");
+
+    // `mission-close check` surfaces the Open bundle as the blocker.
+    let out = bin(&dir)
+        .args(["--json", "mission-close", "check", "--mission", "m1"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["can_close"], false);
+    assert_eq!(env["mission_close_bundle"], second_id);
+    let blocking_codes: Vec<&str> = env["blocking_reasons"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| b["code"].as_str().unwrap())
+        .collect();
+    assert!(blocking_codes.contains(&"MISSION_CLOSE_OPEN"));
+}
+
+#[test]
+fn status_fails_closed_on_corrupt_bundle_file() {
+    // Round 7 P1: a corrupt reviews/B*.json must be a loud error, not a
+    // silently-dropped bundle. status used to swallow the file and let
+    // the remaining bundles decide the verdict, hiding ground truth.
+    let dir = TempDir::new().unwrap();
+    boot_with_clean_task(&dir);
+    let reviews_dir = dir.path().join("PLANS/m1/reviews");
+    fs::create_dir_all(&reviews_dir).unwrap();
+    fs::write(reviews_dir.join("B999.json"), b"{ not real json").unwrap();
+
+    let out = bin(&dir)
+        .args(["--json", "status", "--mission", "m1"])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["ok"], false);
+    assert_eq!(env["code"], "REVIEW_BUNDLE_CORRUPT");
+
+    // mission-close check also refuses.
+    let out = bin(&dir)
+        .args(["--json", "mission-close", "check", "--mission", "m1"])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["code"], "REVIEW_BUNDLE_CORRUPT");
+}

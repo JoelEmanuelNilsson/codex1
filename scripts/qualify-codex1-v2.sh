@@ -340,6 +340,27 @@ event_errs = []
 if not events:
     event_errs.append("events.jsonl is empty; a real $autopilot run must emit events")
 else:
+    # Round 7 P2: every event's seq must be a strictly-monotonic positive
+    # integer. The earlier last-seq-only check let a forger inject an
+    # out-of-order or duplicate seq mid-log and still pass, even though
+    # V2's state machine writes seqs monotonically by construction.
+    prev_seq = 0
+    for lineno, ev in events:
+        seq = ev.get("seq")
+        if not isinstance(seq, int) or isinstance(seq, bool):
+            event_errs.append(
+                f"events.jsonl line {lineno}: seq must be an integer (got {seq!r})"
+            )
+            # Don't update prev_seq when this line is already unusable —
+            # the next line should still be checked against the last good seq.
+            continue
+        if seq <= prev_seq:
+            event_errs.append(
+                f"events.jsonl line {lineno}: seq {seq} is not strictly greater than "
+                f"previous seq {prev_seq} (V2 requires strictly monotonic audit log)"
+            )
+        prev_seq = seq
+
     last_seq = events[-1][1].get("seq")
     sr = state.get("state_revision")
     # last seq must equal state_revision (normal) or state_revision - 1

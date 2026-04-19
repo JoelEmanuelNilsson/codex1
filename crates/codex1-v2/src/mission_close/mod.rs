@@ -126,32 +126,14 @@ pub fn check_readiness(state: &State, dag: &Dag, bundles: &[ReviewBundle]) -> Re
         }
     }
 
-    // A mission-close bundle must exist and be Clean.
-    let mission_close_bundle = bundles
-        .iter()
-        .find(|b| matches!(b.target, ReviewTarget::MissionClose));
-    let mc_id = mission_close_bundle.map(|b| b.bundle_id.clone());
-    let mc_clean = mission_close_bundle.is_some_and(|b| b.status == ReviewStatus::Clean);
-
-    match mission_close_bundle {
-        None => reasons.push(BlockingReason::global(
-            "MISSION_CLOSE_BUNDLE_MISSING",
-            "no mission-close review bundle has been opened".into(),
-        )),
-        Some(bundle) => match bundle.status {
-            ReviewStatus::Open => reasons.push(BlockingReason::bundle(
-                "MISSION_CLOSE_OPEN",
-                &bundle.bundle_id,
-                "mission-close bundle still open".into(),
-            )),
-            ReviewStatus::Failed => reasons.push(BlockingReason::bundle(
-                "MISSION_CLOSE_FAILED",
-                &bundle.bundle_id,
-                "mission-close bundle closed with blocking findings".into(),
-            )),
-            ReviewStatus::Clean => {}
-        },
-    }
+    // Every mission-close bundle must be Clean. If any Open or Failed
+    // mission-close bundle exists, it blocks — the mission is ambiguously
+    // "closed" in some copies and not in others, and V2's whole point is
+    // to reject that failure class. The bundle_id surfaced in the report
+    // points at the first blocker (so the caller sees what to fix), or
+    // falls back to a clean id when the mission is ready to complete.
+    let (mc_summary, mc_reasons) = summarise_mission_close(bundles);
+    reasons.extend(mc_reasons);
 
     let can_close = reasons.is_empty();
     let can_complete = can_close && state.phase != Phase::Complete;
@@ -160,9 +142,71 @@ pub fn check_readiness(state: &State, dag: &Dag, bundles: &[ReviewBundle]) -> Re
         can_close,
         can_complete,
         blocking_reasons: reasons,
-        mission_close_bundle: mc_id,
-        mission_close_clean: mc_clean,
+        mission_close_bundle: mc_summary.report_id,
+        mission_close_clean: mc_summary.all_clean,
     }
+}
+
+struct MissionCloseSummary {
+    /// True iff at least one Clean bundle exists and there are zero
+    /// Open or Failed mission-close bundles.
+    all_clean: bool,
+    /// Id to surface in the readiness report; prefers a blocker so the
+    /// caller sees what needs fixing, falls back to a Clean bundle.
+    report_id: Option<String>,
+}
+
+fn summarise_mission_close(bundles: &[ReviewBundle]) -> (MissionCloseSummary, Vec<BlockingReason>) {
+    let mut mc_open: Vec<&ReviewBundle> = Vec::new();
+    let mut mc_failed: Vec<&ReviewBundle> = Vec::new();
+    let mut mc_clean: Vec<&ReviewBundle> = Vec::new();
+    for b in bundles {
+        if !matches!(b.target, ReviewTarget::MissionClose) {
+            continue;
+        }
+        match b.status {
+            ReviewStatus::Open => mc_open.push(b),
+            ReviewStatus::Failed => mc_failed.push(b),
+            ReviewStatus::Clean => mc_clean.push(b),
+        }
+    }
+
+    let mut reasons: Vec<BlockingReason> = Vec::new();
+    if mc_open.is_empty() && mc_failed.is_empty() && mc_clean.is_empty() {
+        reasons.push(BlockingReason::global(
+            "MISSION_CLOSE_BUNDLE_MISSING",
+            "no mission-close review bundle has been opened".into(),
+        ));
+    }
+    for b in &mc_open {
+        reasons.push(BlockingReason::bundle(
+            "MISSION_CLOSE_OPEN",
+            &b.bundle_id,
+            "mission-close bundle still open".into(),
+        ));
+    }
+    for b in &mc_failed {
+        reasons.push(BlockingReason::bundle(
+            "MISSION_CLOSE_FAILED",
+            &b.bundle_id,
+            "mission-close bundle closed with blocking findings".into(),
+        ));
+    }
+
+    let all_clean = !mc_clean.is_empty() && mc_open.is_empty() && mc_failed.is_empty();
+    let report_id = mc_open
+        .first()
+        .or(mc_failed.first())
+        .or(mc_clean.first())
+        .map(|b| b.bundle_id.clone());
+
+    (
+        MissionCloseSummary {
+            all_clean,
+            report_id,
+        },
+        reasons,
+    )
 }
 
 #[cfg(test)]
@@ -233,8 +277,12 @@ mod tests {
     }
 
     fn mission_close_bundle(status: ReviewStatus) -> ReviewBundle {
+        mission_close_bundle_id("B9", status)
+    }
+
+    fn mission_close_bundle_id(id: &str, status: ReviewStatus) -> ReviewBundle {
         ReviewBundle {
-            bundle_id: "B9".into(),
+            bundle_id: id.into(),
             mission_id: "m".into(),
             graph_revision: 1,
             state_revision: 1,
@@ -379,6 +427,81 @@ mod tests {
         );
         let r = check_readiness(&s, &dag, &[mission_close_bundle(ReviewStatus::Clean)]);
         assert!(r.can_close);
+    }
+
+    #[test]
+    fn clean_plus_open_mission_close_blocks_on_the_open_one() {
+        let dag = build_dag(&Blueprint {
+            planning: planning(),
+            tasks: vec![task("T1")],
+            review_boundaries: vec![],
+        })
+        .unwrap();
+        let s = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
+        let r = check_readiness(
+            &s,
+            &dag,
+            &[
+                mission_close_bundle_id("B1", ReviewStatus::Clean),
+                mission_close_bundle_id("B2", ReviewStatus::Open),
+            ],
+        );
+        assert!(!r.can_close);
+        assert!(!r.mission_close_clean);
+        let reason = r
+            .blocking_reasons
+            .iter()
+            .find(|b| b.code == "MISSION_CLOSE_OPEN")
+            .expect("open mission-close bundle must be a blocking reason");
+        assert_eq!(reason.bundle_id.as_deref(), Some("B2"));
+        assert_eq!(r.mission_close_bundle.as_deref(), Some("B2"));
+    }
+
+    #[test]
+    fn clean_plus_failed_mission_close_blocks_on_the_failed_one() {
+        let dag = build_dag(&Blueprint {
+            planning: planning(),
+            tasks: vec![task("T1")],
+            review_boundaries: vec![],
+        })
+        .unwrap();
+        let s = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
+        let r = check_readiness(
+            &s,
+            &dag,
+            &[
+                mission_close_bundle_id("B1", ReviewStatus::Clean),
+                mission_close_bundle_id("B2", ReviewStatus::Failed),
+            ],
+        );
+        assert!(!r.can_close);
+        assert!(
+            r.blocking_reasons
+                .iter()
+                .any(|b| b.code == "MISSION_CLOSE_FAILED")
+        );
+        assert_eq!(r.mission_close_bundle.as_deref(), Some("B2"));
+    }
+
+    #[test]
+    fn multiple_clean_mission_close_bundles_still_close() {
+        let dag = build_dag(&Blueprint {
+            planning: planning(),
+            tasks: vec![task("T1")],
+            review_boundaries: vec![],
+        })
+        .unwrap();
+        let s = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
+        let r = check_readiness(
+            &s,
+            &dag,
+            &[
+                mission_close_bundle_id("B1", ReviewStatus::Clean),
+                mission_close_bundle_id("B2", ReviewStatus::Clean),
+            ],
+        );
+        assert!(r.can_close);
+        assert!(r.mission_close_clean);
     }
 
     #[test]

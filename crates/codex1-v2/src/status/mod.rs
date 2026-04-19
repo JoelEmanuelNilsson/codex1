@@ -23,7 +23,8 @@
 use serde::Serialize;
 
 use crate::graph::{Dag, waves::WaveMode, waves::derive_waves};
-use crate::review::bundle::{ReviewBundle, ReviewStatus, ReviewTarget};
+use crate::mission_close::check_readiness;
+use crate::review::bundle::ReviewBundle;
 use crate::state::{ParentLoopMode, Phase, State, TaskStatus};
 
 /// Schema string for the status envelope.
@@ -203,11 +204,13 @@ pub fn project_status_with_bundles(
                 required_user_decision: None,
             };
         }
-        // Not yet Complete: route through mission-close.
-        let mc_clean = bundles.iter().any(|b| {
-            matches!(b.target, ReviewTarget::MissionClose) && b.status == ReviewStatus::Clean
-        });
-        let (kind, message) = if mc_clean {
+        // Not yet Complete: route through mission-close. Reuse
+        // `check_readiness` so status and `mission-close check` share one
+        // rule — every mission-close bundle must be Clean, no Open or
+        // Failed ones allowed. Round 7: an earlier `bundles.iter().any`
+        // let an Open second bundle hide behind the first Clean one.
+        let readiness = check_readiness(state, dag, bundles);
+        let (kind, message) = if readiness.can_complete {
             (
                 NextActionKind::MissionCloseComplete,
                 "Run codex1 mission-close complete.",
@@ -504,9 +507,12 @@ fn decision_message(required: Option<&str>, blocked: &[String]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{NextActionKind, Terminality, Verdict, project_status};
+    use super::{
+        NextActionKind, Terminality, Verdict, project_status, project_status_with_bundles,
+    };
     use crate::blueprint::{Blueprint, Level, Planning, TaskSpec};
     use crate::graph::validate::build_dag;
+    use crate::review::bundle::{ReviewBundle, ReviewStatus, ReviewTarget};
     use crate::state::{ParentLoop, Phase, State, TaskState, TaskStatus};
     use std::collections::BTreeMap;
 
@@ -750,6 +756,57 @@ mod tests {
         );
         let s = project_status(&state, &dag);
         assert!(!s.ready_wave_parallel_safe);
+    }
+
+    fn mission_close(id: &str, status: ReviewStatus) -> ReviewBundle {
+        ReviewBundle {
+            bundle_id: id.into(),
+            mission_id: "example".into(),
+            graph_revision: 1,
+            state_revision: 1,
+            target: ReviewTarget::MissionClose,
+            requirements: vec![],
+            evidence_refs: vec![],
+            evidence_snapshot_hash: "sha256:x".into(),
+            status,
+            opened_at: "t".into(),
+            closed_at: None,
+            opener_role: "parent".into(),
+        }
+    }
+
+    #[test]
+    fn open_second_mission_close_bundle_keeps_status_on_check() {
+        // Round 7 P1: terminal tasks + one Clean mission-close bundle
+        // previously routed to MissionCloseComplete even while a second
+        // mission-close bundle was still Open. The all-clean rule must
+        // keep status on MissionCloseCheck until the Open one resolves.
+        let dag = dag_of(vec![task("T1")]);
+        let state = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
+        let bundles = vec![
+            mission_close("B1", ReviewStatus::Clean),
+            mission_close("B2", ReviewStatus::Open),
+        ];
+        let s = project_status_with_bundles(&state, &dag, &bundles);
+        assert_eq!(s.verdict, Verdict::ContinueRequired);
+        assert_eq!(
+            s.next_action.kind,
+            NextActionKind::MissionCloseCheck,
+            "status must not recommend mission-close complete while a \
+             second mission-close bundle is still open"
+        );
+    }
+
+    #[test]
+    fn all_clean_mission_close_bundles_route_to_complete() {
+        let dag = dag_of(vec![task("T1")]);
+        let state = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
+        let bundles = vec![
+            mission_close("B1", ReviewStatus::Clean),
+            mission_close("B2", ReviewStatus::Clean),
+        ];
+        let s = project_status_with_bundles(&state, &dag, &bundles);
+        assert_eq!(s.next_action.kind, NextActionKind::MissionCloseComplete);
     }
 
     #[test]

@@ -169,17 +169,78 @@ fn paused_loop_allows_even_when_task_eligible() {
     assert_eq!(s["stop_policy"]["reason"], "discussion_pause");
 }
 
-#[test]
-fn ralph_hook_script_syntax_is_valid() {
-    // Ensure the shipped Ralph hook is syntactically valid bash. The
-    // script lives at repo root so we walk up from CARGO_MANIFEST_DIR.
+fn ralph_hook_path() -> std::path::PathBuf {
     let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR set");
-    let script = Path::new(&manifest)
+    Path::new(&manifest)
         .parent()
         .expect("crates/")
         .parent()
         .expect("repo root")
-        .join("scripts/ralph-status-hook.sh");
+        .join("scripts/ralph-status-hook.sh")
+}
+
+#[test]
+fn ralph_scan_blocks_mission_shaped_dir_missing_state_json() {
+    // Round 7 P2: a PLANS/<mid>/ directory that looks mission-shaped
+    // (has OUTCOME-LOCK.md or PROGRAM-BLUEPRINT.md) but is missing
+    // STATE.json is corrupt — the hook must surface it rather than
+    // silently allow stop.
+    let dir = TempDir::new().unwrap();
+    let corrupt = dir.path().join("PLANS/broken");
+    fs::create_dir_all(&corrupt).unwrap();
+    fs::write(
+        corrupt.join("OUTCOME-LOCK.md"),
+        b"---\nlock_status: draft\n---\n",
+    )
+    .unwrap();
+    // No STATE.json — simulates a mission where init crashed mid-write
+    // or the operator deleted the state by accident.
+
+    let out = std::process::Command::new("bash")
+        .arg(ralph_hook_path())
+        .arg("--repo-root")
+        .arg(dir.path())
+        .output()
+        .expect("bash available");
+    assert!(
+        !out.status.success(),
+        "corrupt mission dir must block stop; stdout={} stderr={}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("STATE.json missing"),
+        "expected corruption reason in stderr, got: {stderr}"
+    );
+}
+
+#[test]
+fn ralph_scan_ignores_truly_empty_subdirs_in_plans() {
+    // A PLANS/<name>/ with no mission files is non-mission scratch and
+    // must not block stop. Otherwise anything a developer drops into
+    // PLANS/ breaks the hook.
+    let dir = TempDir::new().unwrap();
+    fs::create_dir_all(dir.path().join("PLANS/scratch")).unwrap();
+    fs::write(dir.path().join("PLANS/scratch/notes.md"), b"just notes\n").unwrap();
+
+    let out = std::process::Command::new("bash")
+        .arg(ralph_hook_path())
+        .arg("--repo-root")
+        .arg(dir.path())
+        .output()
+        .expect("bash available");
+    assert!(
+        out.status.success(),
+        "non-mission scratch dir must not block; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn ralph_hook_script_syntax_is_valid() {
+    // Ensure the shipped Ralph hook is syntactically valid bash.
+    let script = ralph_hook_path();
     assert!(script.exists(), "expected {}", script.display());
     let status = std::process::Command::new("bash")
         .arg("-n")

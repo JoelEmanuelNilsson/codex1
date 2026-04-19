@@ -156,9 +156,21 @@ scan_all_missions() {
   # Use nullglob-style iteration — fall through silently when no matches.
   for mission_dir in "$plans_dir"/*/; do
     [[ -d "$mission_dir" ]] || continue
-    [[ -f "${mission_dir}STATE.json" ]] || continue
     local mid
     mid="$(basename "$mission_dir")"
+
+    # Round 7 P2: a mission-shaped directory without STATE.json is
+    # corrupt/partial (init crashed, someone deleted STATE.json by
+    # accident, disk lost bytes). Surface it as a block rather than
+    # silently skipping — fail-safe trumps permissive. Non-mission
+    # scratch folders (no lock or blueprint) are still skipped.
+    if [[ ! -f "${mission_dir}STATE.json" ]]; then
+      if [[ -f "${mission_dir}OUTCOME-LOCK.md" \
+            || -f "${mission_dir}PROGRAM-BLUEPRINT.md" ]]; then
+        blocked+=("${mid}: STATE.json missing but mission files present (corrupt)")
+      fi
+      continue
+    fi
 
     local out allow reason msg
     # If a single mission's status blows up, skip rather than fail-open.
@@ -178,7 +190,8 @@ scan_all_missions() {
     exit 0
   fi
 
-  printf 'Ralph blocked stop: active parent loop in %d mission(s)\n' "${#blocked[@]}" >&2
+  # Neutral summary: the blocker may be corruption, not an active loop.
+  printf 'Ralph blocked stop: %d mission issue(s)\n' "${#blocked[@]}" >&2
   local line
   for line in "${blocked[@]}"; do
     printf '  - %s\n' "$line" >&2

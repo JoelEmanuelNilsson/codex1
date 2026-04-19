@@ -95,6 +95,9 @@ pub enum CliError {
         source: Option<anyhow::Error>,
     },
 
+    #[error("review bundle at {path} is corrupt: {reason}")]
+    ReviewBundleCorrupt { path: String, reason: String },
+
     #[error("repo root is invalid: {reason}")]
     RepoRootInvalid { reason: String, path: String },
 
@@ -150,6 +153,7 @@ impl CliError {
             Self::DagBoundariesNotSupported { .. } => "DAG_BOUNDARIES_NOT_SUPPORTED",
             Self::ReviewProfileMissing { .. } => "REVIEW_PROFILE_MISSING",
             Self::StateCorrupt { .. } => "STATE_CORRUPT",
+            Self::ReviewBundleCorrupt { .. } => "REVIEW_BUNDLE_CORRUPT",
             Self::RepoRootInvalid { .. } => "REPO_ROOT_INVALID",
             Self::Io { .. } => "IO_ERROR",
             Self::ProofInvalid { .. } => "PROOF_INVALID",
@@ -227,6 +231,11 @@ impl CliError {
             Self::StateCorrupt { .. } => {
                 Some("Inspect STATE.json and events.jsonl; V2 does not auto-repair.".into())
             }
+            Self::ReviewBundleCorrupt { .. } => Some(
+                "A malformed bundle file is treated as mission-close truth loss; \
+                 inspect reviews/B*.json manually rather than letting V2 silently skip it."
+                    .into(),
+            ),
             Self::RepoRootInvalid { .. } => {
                 Some("Pass --repo-root <existing-directory> or run from the repo root.".into())
             }
@@ -258,7 +267,8 @@ impl CliError {
             }
             Self::LockInvalid { path, reason, .. }
             | Self::BlueprintInvalid { path, reason, .. }
-            | Self::StateCorrupt { path, reason, .. } => {
+            | Self::StateCorrupt { path, reason, .. }
+            | Self::ReviewBundleCorrupt { path, reason } => {
                 json!({ "path": path, "reason": reason })
             }
             Self::DagDuplicateId { id } => json!({ "id": id }),

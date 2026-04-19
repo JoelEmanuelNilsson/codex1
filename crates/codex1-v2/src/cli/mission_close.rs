@@ -1,7 +1,6 @@
 //! `codex1 mission-close check | complete`.
 
 use serde_json::json;
-use walkdir::WalkDir;
 
 use crate::blueprint;
 use crate::envelope;
@@ -9,8 +8,7 @@ use crate::error::CliError;
 use crate::graph;
 use crate::mission::resolve_mission;
 use crate::mission_close::{ReadinessReport, check_readiness};
-use crate::review::BUNDLES_DIRNAME;
-use crate::review::bundle::ReviewBundle;
+use crate::review::{BUNDLES_DIRNAME, load_all_bundles};
 use crate::state::{EventDraft, Phase, StateStore};
 
 use super::{Cli, emit_error, emit_success, resolve_repo};
@@ -112,29 +110,4 @@ fn readiness(
     let bundles = load_all_bundles(&paths.mission_dir.join(BUNDLES_DIRNAME))?;
     let report = check_readiness(&state, &dag, &bundles);
     Ok((paths, report))
-}
-
-fn load_all_bundles(bundles_dir: &std::path::Path) -> Result<Vec<ReviewBundle>, CliError> {
-    if !bundles_dir.exists() {
-        return Ok(vec![]);
-    }
-    let mut out = Vec::new();
-    for entry in WalkDir::new(bundles_dir).min_depth(1).max_depth(1) {
-        let entry = entry.map_err(|e| CliError::Io {
-            path: bundles_dir.display().to_string(),
-            source: e
-                .into_io_error()
-                .unwrap_or_else(|| std::io::Error::other("walkdir")),
-        })?;
-        if entry.file_type().is_file() {
-            let bytes = std::fs::read(entry.path()).map_err(|e| CliError::Io {
-                path: entry.path().display().to_string(),
-                source: e,
-            })?;
-            if let Ok(b) = serde_json::from_slice::<ReviewBundle>(&bytes) {
-                out.push(b);
-            }
-        }
-    }
-    Ok(out)
 }

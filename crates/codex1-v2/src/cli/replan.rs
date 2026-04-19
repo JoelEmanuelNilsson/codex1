@@ -1,9 +1,6 @@
 //! `codex1 replan record | check`.
 
-use std::path::PathBuf;
-
 use serde_json::json;
-use walkdir::WalkDir;
 
 use crate::blueprint;
 use crate::envelope;
@@ -12,8 +9,7 @@ use crate::graph;
 use crate::mission::resolve_mission;
 use crate::replan::triggers::detect;
 use crate::replan::{REPLAN_LOG_FILENAME, ReplanEvent, append_to_log};
-use crate::review::BUNDLES_DIRNAME;
-use crate::review::bundle::ReviewBundle;
+use crate::review::{BUNDLES_DIRNAME, load_all_bundles};
 use crate::state::{EventDraft, StateStore, TaskStatus};
 
 use super::{Cli, emit_error, emit_success, now_rfc3339, resolve_repo};
@@ -153,31 +149,4 @@ fn run_check(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError> {
             },
         }),
     ))
-}
-
-fn load_all_bundles(bundles_dir: &std::path::Path) -> Result<Vec<ReviewBundle>, CliError> {
-    if !bundles_dir.exists() {
-        return Ok(vec![]);
-    }
-    let mut out = Vec::new();
-    for entry in WalkDir::new(bundles_dir).min_depth(1).max_depth(1) {
-        let entry = entry.map_err(|e| CliError::Io {
-            path: bundles_dir.display().to_string(),
-            source: e
-                .into_io_error()
-                .unwrap_or_else(|| std::io::Error::other("walkdir error")),
-        })?;
-        if entry.file_type().is_file() {
-            let _ = PathBuf::from(entry.path()); // used below
-            let bytes = std::fs::read(entry.path()).map_err(|e| CliError::Io {
-                path: entry.path().display().to_string(),
-                source: e,
-            })?;
-            if let Ok(b) = serde_json::from_slice::<ReviewBundle>(&bytes) {
-                out.push(b);
-            }
-            // Tolerate non-bundle JSON files in the directory.
-        }
-    }
-    Ok(out)
 }
