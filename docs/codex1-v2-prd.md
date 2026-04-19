@@ -428,13 +428,28 @@ failed task truth.
 
 Ralph must:
 
-1. Run `codex1 status --mission <id> --json`.
-2. Block only if `stop_policy.allow_stop == false`.
-3. Use `next_action.display_message` as the stop feedback.
-4. Allow stop for discussion, paused loops, subagents, reviewers, terminal
-   completion, and invalid states that need user intervention.
+1. Invoke `codex1 status --mission <id> --json` for each mission it is
+   asked about. The Stop hook's scan mode walks `PLANS/*/STATE.json`
+   to enumerate missions, then calls status per mission — enumeration
+   is allowed, but every authoritative signal (parent_loop, stop_policy,
+   next_action) still comes from the status envelope, never from
+   hand-parsing STATE.json.
+2. Block only if `stop_policy.allow_stop == false` for any scanned mission.
+3. Use `next_action.display_message` (per mission) as the stop feedback.
+4. Allow stop for discussion, paused loops, terminal completion, and
+   invalid states that need user intervention.
 
-Ralph must not inspect mission files directly.
+**Open design question (tracked, not resolved in-product today):**
+parent-lane vs subagent-lane authority. The shipped hook fires on every
+Stop in the session (and subagent Stops in the same repo), because the
+CLI surface has no caller-identity signal — so a reviewer/worker
+subagent running while the parent loop is active is also blocked. The
+PRD commits to: "subagents are never inside Ralph." The mechanism that
+makes that contract mechanically true (env-var lane, filesystem lease,
+session token, or equivalent capability) is still an unresolved
+architecture choice. Until it lands, the hook's scan mode plus parent
+discipline (deactivating the loop at the right moments) is what enforces
+the contract, and documentation calls that out as a known gap.
 
 ## Build Waves
 

@@ -142,6 +142,34 @@ fn run_open(
         path: bundles_dir.display().to_string(),
         source: e,
     })?;
+
+    // Round 10 P1: refuse if an open review bundle already exists for
+    // this (task_id, task_run_id). Without the check, two opens produce
+    // two bundles; closing the first flips the task to review_clean and
+    // the second bundle can no longer be closed (TASK_STATE_INVALID),
+    // leaving `mission-close check` permanently blocked by the dangling
+    // open bundle.
+    let existing = crate::review::load_all_bundles(&bundles_dir)?;
+    if let Some(dup) = existing.iter().find(|b| {
+        if b.status != ReviewStatus::Open {
+            return false;
+        }
+        let ReviewTarget::Task {
+            task_id: b_task_id,
+            task_run_id: b_run_id,
+        } = &b.target
+        else {
+            return false;
+        };
+        b_task_id == task && b_run_id == &task_run_id
+    }) {
+        return Err(CliError::ReviewBundleAlreadyOpen {
+            task_id: task.into(),
+            task_run_id: task_run_id.clone(),
+            bundle_id: dup.bundle_id.clone(),
+        });
+    }
+
     let bundle_id = next_bundle_id(&bundles_dir)?;
 
     let requirements: Vec<ReviewRequirement> = profiles

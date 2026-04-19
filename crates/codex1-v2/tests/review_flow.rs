@@ -429,6 +429,44 @@ fn review_open_transitions_task_to_review_owed() {
 }
 
 #[test]
+fn second_review_open_for_same_run_is_refused() {
+    // Round 10 P1: two `review open` calls for the same task/run
+    // used to mint two open bundles. Closing one flipped the task to
+    // review_clean, after which the other could never be closed
+    // (TASK_STATE_INVALID) and mission-close stayed permanently
+    // blocked by the dangling open bundle. `review open` must refuse
+    // with REVIEW_BUNDLE_ALREADY_OPEN so the operator closes the
+    // existing bundle first.
+    let dir = TempDir::new().unwrap();
+    boot(&dir);
+    do_start_and_finish(&dir, "T1");
+    let first_env = open_review(&dir, "T1", "code_bug_correctness");
+    let first_bundle_id = first_env["bundle_id"].as_str().unwrap();
+
+    let out = bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "open",
+            "--mission",
+            "m1",
+            "--task",
+            "T1",
+            "--profiles",
+            "code_bug_correctness",
+        ])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["code"], "REVIEW_BUNDLE_ALREADY_OPEN");
+    assert_eq!(env["details"]["bundle_id"], first_bundle_id);
+    assert_eq!(env["details"]["task_id"], "T1");
+}
+
+#[test]
 fn review_open_requires_proof_submitted_status() {
     let dir = TempDir::new().unwrap();
     boot(&dir);

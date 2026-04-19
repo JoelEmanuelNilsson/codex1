@@ -145,6 +145,16 @@ pub enum CliError {
         non_terminal_count: usize,
     },
 
+    #[error(
+        "an open review bundle {bundle_id} already exists for task {task_id} (run {task_run_id}); \
+         close it before opening another"
+    )]
+    ReviewBundleAlreadyOpen {
+        task_id: String,
+        task_run_id: String,
+        bundle_id: String,
+    },
+
     #[error("revision conflict: expected {expected}, actual {actual}")]
     RevisionConflict { expected: u64, actual: u64 },
 
@@ -181,6 +191,7 @@ impl CliError {
             Self::TaskStateTransitionInvalid { .. } => "TASK_STATE_INVALID",
             Self::StaleOutput { .. } => "STALE_OUTPUT",
             Self::MissionCloseNotReady { .. } => "MISSION_CLOSE_NOT_READY",
+            Self::ReviewBundleAlreadyOpen { .. } => "REVIEW_BUNDLE_ALREADY_OPEN",
             Self::RevisionConflict { .. } => "REVISION_CONFLICT",
             Self::Internal { .. } => "INTERNAL_ERROR",
         }
@@ -281,6 +292,11 @@ impl CliError {
                  state that exists at open time."
                     .into(),
             ),
+            Self::ReviewBundleAlreadyOpen { bundle_id, .. } => Some(format!(
+                "Close {bundle_id} first with `codex1 review close --mission <id> \
+                 --bundle {bundle_id}`, or submit the missing reviewer outputs \
+                 and close that bundle clean."
+            )),
             Self::RevisionConflict { .. } => Some(
                 "State changed under you; re-read STATE.json and retry.".into(),
             ),
@@ -366,6 +382,17 @@ impl CliError {
                 json!({
                     "task_ids": task_ids,
                     "non_terminal_count": non_terminal_count,
+                })
+            }
+            Self::ReviewBundleAlreadyOpen {
+                task_id,
+                task_run_id,
+                bundle_id,
+            } => {
+                json!({
+                    "task_id": task_id,
+                    "task_run_id": task_run_id,
+                    "bundle_id": bundle_id,
                 })
             }
             Self::RevisionConflict { expected, actual } => {
