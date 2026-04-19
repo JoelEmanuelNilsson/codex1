@@ -61,6 +61,32 @@ pub enum CliError {
     #[error("DAG schema error: {reason}")]
     DagBadSchema { reason: String },
 
+    #[error(
+        "task {task_id} in blueprint is under-specified; missing required fields: {missing}",
+        missing = missing.join(", ")
+    )]
+    DagTaskUnderspecified {
+        task_id: String,
+        missing: Vec<String>,
+    },
+
+    #[error(
+        "plan declares review_boundaries but V2 does not yet enforce them; \
+         remove the `review_boundaries:` block from PROGRAM-BLUEPRINT.md"
+    )]
+    DagBoundariesNotSupported { count: usize },
+
+    #[error(
+        "review open for task {task_id} omits required profile(s): {missing}",
+        missing = missing.join(", ")
+    )]
+    ReviewProfileMissing {
+        task_id: String,
+        missing: Vec<String>,
+        blueprint: Vec<String>,
+        provided: Vec<String>,
+    },
+
     #[error("STATE.json is corrupt: {reason}")]
     StateCorrupt {
         path: String,
@@ -120,6 +146,9 @@ impl CliError {
             Self::DagNoBlock { .. } => "DAG_NO_BLOCK",
             Self::DagEmpty { .. } => "DAG_EMPTY",
             Self::DagBadSchema { .. } => "DAG_BAD_SCHEMA",
+            Self::DagTaskUnderspecified { .. } => "DAG_TASK_UNDERSPECIFIED",
+            Self::DagBoundariesNotSupported { .. } => "DAG_BOUNDARIES_NOT_SUPPORTED",
+            Self::ReviewProfileMissing { .. } => "REVIEW_PROFILE_MISSING",
             Self::StateCorrupt { .. } => "STATE_CORRUPT",
             Self::RepoRootInvalid { .. } => "REPO_ROOT_INVALID",
             Self::Io { .. } => "IO_ERROR",
@@ -178,6 +207,23 @@ impl CliError {
                  re-run codex1 plan check. An empty plan is not executable."
                     .into(),
             ),
+            Self::DagTaskUnderspecified { .. } => Some(
+                "Every task must declare spec_ref, write_paths (non-empty), \
+                 proof (non-empty), and review_profiles (non-empty) so the \
+                 executability, proof, and review contracts are all defined."
+                    .into(),
+            ),
+            Self::DagBoundariesNotSupported { .. } => Some(
+                "Remove the `review_boundaries:` block until V2 implements the \
+                 integration-review flow. Task-level review_profiles still work."
+                    .into(),
+            ),
+            Self::ReviewProfileMissing { .. } => Some(
+                "Pass every profile listed in the task's blueprint review_profiles \
+                 via --profiles; additional profiles may be added, but none of \
+                 the blueprint-required ones may be dropped."
+                    .into(),
+            ),
             Self::StateCorrupt { .. } => {
                 Some("Inspect STATE.json and events.jsonl; V2 does not auto-repair.".into())
             }
@@ -221,6 +267,25 @@ impl CliError {
             Self::DagNoBlock { path } => json!({ "path": path }),
             Self::DagEmpty { mission } => json!({ "mission": mission }),
             Self::DagBadSchema { reason } => json!({ "reason": reason }),
+            Self::DagTaskUnderspecified { task_id, missing } => {
+                json!({ "task_id": task_id, "missing": missing })
+            }
+            Self::DagBoundariesNotSupported { count } => {
+                json!({ "count": count })
+            }
+            Self::ReviewProfileMissing {
+                task_id,
+                missing,
+                blueprint,
+                provided,
+            } => {
+                json!({
+                    "task_id": task_id,
+                    "missing": missing,
+                    "blueprint": blueprint,
+                    "provided": provided,
+                })
+            }
             Self::RepoRootInvalid { reason, path } => json!({ "reason": reason, "path": path }),
             Self::Io { path, source } => json!({ "path": path, "source": source.to_string() }),
             Self::ProofInvalid { path, reason } => json!({ "path": path, "reason": reason }),

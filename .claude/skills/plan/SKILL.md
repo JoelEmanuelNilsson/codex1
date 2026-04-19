@@ -48,8 +48,15 @@ Use `"$CODEX1"` for every `codex1` invocation below.
 3. For each task, write `specs/T<N>/SPEC.md` so the proof + review layers
    have something to bind against.
 
-4. Transition each task to `ready` in `STATE.json` once its spec exists
-   and deps are satisfied.
+4. Transition each new task `Planned` → `Ready` via the CLI. Do **not**
+   hand-edit `STATE.json`; that bypasses the lock, the atomic write,
+   and the events trail. Run one `task ready` call per task:
+   ```bash
+   "$CODEX1" task ready --mission <id> T1 --json
+   "$CODEX1" task ready --mission <id> T2 --json
+   ```
+   Each call bumps `state_revision` and appends one
+   `task_marked_ready` event.
 
 5. Verify:
    ```bash

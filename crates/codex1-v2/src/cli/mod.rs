@@ -51,6 +51,14 @@ pub struct Cli {
     #[arg(long, global = true, value_name = "N")]
     pub expect_revision: Option<u64>,
 
+    /// Validate preconditions and compute what would change, but do not
+    /// write `STATE.json`, do not append to `events.jsonl`, and do not
+    /// create review-bundle files. The envelope carries `dry_run: true`
+    /// so callers can distinguish a preview from a committed mutation.
+    /// Ignored by non-mutating commands.
+    #[arg(long, global = true)]
+    pub dry_run: bool,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -236,6 +244,15 @@ pub enum TaskCommand {
         #[arg(long, value_name = "ID")]
         mission: String,
     },
+    /// Transition a `Planned` task → `Ready`. Driven by `$plan` after writing
+    /// the spec file. Goes through `StateStore::mutate` so `state_revision`
+    /// bumps and a `task_marked_ready` event lands in `events.jsonl`.
+    Ready {
+        #[arg(long, value_name = "ID")]
+        mission: String,
+        #[arg(value_name = "TASK")]
+        task_id: String,
+    },
     /// Transition a `Ready`/`NeedsRepair` task → `InProgress`; mint a `task_run_id`.
     Start {
         #[arg(long, value_name = "ID")]
@@ -274,6 +291,9 @@ pub fn run(cli: &Cli) -> i32 {
         Commands::Plan(PlanCommand::Graph { mission }) => plan::cmd_plan_graph(cli, mission),
         Commands::Plan(PlanCommand::Waves { mission }) => plan::cmd_plan_waves(cli, mission),
         Commands::Task(TaskCommand::Next { mission }) => task::cmd_task_next(cli, mission),
+        Commands::Task(TaskCommand::Ready { mission, task_id }) => {
+            task::cmd_task_ready(cli, mission, task_id)
+        }
         Commands::Task(TaskCommand::Start { mission, task_id }) => {
             task::cmd_task_start(cli, mission, task_id)
         }
@@ -343,14 +363,30 @@ pub fn resolve_repo(cli: &Cli) -> Result<PathBuf, CliError> {
 /// If `cli.json` is set, writes the envelope JSON to stdout on one line.
 /// Otherwise writes a short human summary taken from the `message` key (if
 /// present) or the full JSON as a fallback.
+///
+/// When `cli.dry_run` is true the function injects `"dry_run": true` into
+/// the envelope so callers can mechanically distinguish a preview from a
+/// committed mutation — added in Round 6 Fix #5 rather than threading the
+/// flag through every command's `json!(...)` block.
 #[must_use]
 pub fn emit_success(cli: &Cli, envelope: &Value) -> i32 {
-    if cli.json {
-        writeln_stdout(&envelope::to_string(envelope));
-    } else if let Some(msg) = envelope.get("message").and_then(Value::as_str) {
-        writeln_stdout(msg);
+    let envelope_with_flag = if cli.dry_run {
+        let mut v = envelope.clone();
+        if let Some(obj) = v.as_object_mut() {
+            obj.insert("dry_run".into(), Value::Bool(true));
+        }
+        v
     } else {
-        writeln_stdout(&envelope::to_string(envelope));
+        envelope.clone()
+    };
+    let emit = &envelope_with_flag;
+    if cli.json {
+        writeln_stdout(&envelope::to_string(emit));
+    } else if let Some(msg) = emit.get("message").and_then(Value::as_str) {
+        let prefix = if cli.dry_run { "[dry-run] " } else { "" };
+        writeln_stdout(&format!("{prefix}{msg}"));
+    } else {
+        writeln_stdout(&envelope::to_string(emit));
     }
     0
 }

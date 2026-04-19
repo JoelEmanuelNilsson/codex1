@@ -73,6 +73,32 @@ fn run_open(
         });
     }
 
+    // Round 6 Fix #3: the provided profiles must be a superset of the
+    // task's blueprint review_profiles. Otherwise the parent could open a
+    // bundle that drops a mandatory review (e.g., asking only for
+    // local_spec_intent on a code task that requires code_bug_correctness)
+    // and clear it without the CLI ever noticing the omission.
+    let task_spec = dag.tasks.get(task).expect("contains_key checked above");
+    let blueprint_profiles: std::collections::BTreeSet<&str> = task_spec
+        .review_profiles
+        .iter()
+        .map(String::as_str)
+        .collect();
+    let provided_set: std::collections::BTreeSet<&str> =
+        profiles.iter().map(String::as_str).collect();
+    let missing: Vec<String> = blueprint_profiles
+        .difference(&provided_set)
+        .map(|s| (*s).to_string())
+        .collect();
+    if !missing.is_empty() {
+        return Err(CliError::ReviewProfileMissing {
+            task_id: task.into(),
+            missing,
+            blueprint: task_spec.review_profiles.clone(),
+            provided: profiles.clone(),
+        });
+    }
+
     // Check task is in a reviewable state.
     let store = StateStore::new(paths.mission_dir.clone());
     let pre = store.load()?;
@@ -155,7 +181,7 @@ fn run_open(
     let task_owned = task.to_string();
     let bundle_id_for_closure = bundle_id.clone();
     let graph_rev = dag.graph_revision;
-    let state_after = store.mutate_checked(cli.expect_revision, move |state| {
+    let state_after = store.mutate_checked(cli.expect_revision, cli.dry_run, move |state| {
         let entry = state.tasks.get_mut(&task_owned).ok_or_else(|| {
             CliError::TaskStateTransitionInvalid {
                 task_id: task_owned.clone(),
@@ -171,15 +197,20 @@ fn run_open(
             .with("graph_revision", graph_rev))
     })?;
 
-    // Persist bundle after state mutation committed.
-    let bundle_path = bundle_path(&paths.mission_dir, &bundle_id);
-    let bundle_bytes = serde_json::to_vec_pretty(&bundle).map_err(|e| CliError::Internal {
-        message: format!("serialize bundle: {e}"),
-    })?;
-    atomic_write(&bundle_path, &bundle_bytes).map_err(|e| CliError::Io {
-        path: bundle_path.display().to_string(),
-        source: e,
-    })?;
+    // Persist bundle after state mutation committed. In dry-run, the
+    // STATE mutation was a preview and the bundle file write must be
+    // skipped too; the envelope below still reports the bundle_id that
+    // WOULD have been minted.
+    if !cli.dry_run {
+        let bundle_path = bundle_path(&paths.mission_dir, &bundle_id);
+        let bundle_bytes = serde_json::to_vec_pretty(&bundle).map_err(|e| CliError::Internal {
+            message: format!("serialize bundle: {e}"),
+        })?;
+        atomic_write(&bundle_path, &bundle_bytes).map_err(|e| CliError::Io {
+            path: bundle_path.display().to_string(),
+            source: e,
+        })?;
+    }
 
     Ok(envelope::success(
         OPEN_SCHEMA,
@@ -273,28 +304,32 @@ fn run_open_mission_close(
         opener_role: PARENT_ROLE.into(),
     };
 
-    let bundle_path = bundle_path(&paths.mission_dir, &bundle_id);
-    let bytes = serde_json::to_vec_pretty(&bundle).map_err(|e| CliError::Internal {
-        message: format!("serialize bundle: {e}"),
-    })?;
-    crate::fs_atomic::atomic_write(&bundle_path, &bytes).map_err(|e| CliError::Io {
-        path: bundle_path.display().to_string(),
-        source: e,
-    })?;
-
-    // Emit audit event.
-    let event = crate::events::Event {
-        seq: state.state_revision,
-        kind: "mission_close_review_opened".into(),
-        at: now_rfc3339(),
-        extra: serde_json::Map::from_iter([("bundle_id".into(), json!(bundle_id.clone()))]),
-    };
-    crate::events::append_event(&paths.mission_dir.join("events.jsonl"), &event).map_err(|e| {
-        CliError::Io {
-            path: paths.mission_dir.display().to_string(),
+    // Dry-run: skip bundle file write + event append; envelope below
+    // still reports the bundle_id that WOULD have been minted.
+    if !cli.dry_run {
+        let bundle_path = bundle_path(&paths.mission_dir, &bundle_id);
+        let bytes = serde_json::to_vec_pretty(&bundle).map_err(|e| CliError::Internal {
+            message: format!("serialize bundle: {e}"),
+        })?;
+        crate::fs_atomic::atomic_write(&bundle_path, &bytes).map_err(|e| CliError::Io {
+            path: bundle_path.display().to_string(),
             source: e,
-        }
-    })?;
+        })?;
+
+        // Emit audit event.
+        let event = crate::events::Event {
+            seq: state.state_revision,
+            kind: "mission_close_review_opened".into(),
+            at: now_rfc3339(),
+            extra: serde_json::Map::from_iter([("bundle_id".into(), json!(bundle_id.clone()))]),
+        };
+        crate::events::append_event(&paths.mission_dir.join("events.jsonl"), &event).map_err(
+            |e| CliError::Io {
+                path: paths.mission_dir.display().to_string(),
+                source: e,
+            },
+        )?;
+    }
 
     Ok(envelope::success(
         "codex1.review.open_mission_close.v1",
@@ -401,43 +436,49 @@ fn run_submit(
         });
     }
 
-    // Persist the reviewer output to reviews/outputs/R<N>.json.
+    // Persist the reviewer output to reviews/outputs/R<N>.json. In
+    // dry-run, compute the would-be id + path but don't create the file
+    // or append an event.
     let outputs_dir = paths.mission_dir.join(OUTPUTS_DIRNAME);
-    fs::create_dir_all(&outputs_dir).map_err(|e| CliError::Io {
-        path: outputs_dir.display().to_string(),
-        source: e,
-    })?;
-    let output_id = next_output_id(&outputs_dir)?;
+    if !cli.dry_run {
+        fs::create_dir_all(&outputs_dir).map_err(|e| CliError::Io {
+            path: outputs_dir.display().to_string(),
+            source: e,
+        })?;
+    }
+    let output_id = next_output_id(&outputs_dir).unwrap_or_else(|_| "R1".into());
     let output_path = outputs_dir.join(format!("{output_id}.json"));
-    let output_bytes = serde_json::to_vec_pretty(&output).map_err(|e| CliError::Internal {
-        message: format!("serialize reviewer output: {e}"),
-    })?;
-    atomic_write(&output_path, &output_bytes).map_err(|e| CliError::Io {
-        path: output_path.display().to_string(),
-        source: e,
-    })?;
+    if !cli.dry_run {
+        let output_bytes = serde_json::to_vec_pretty(&output).map_err(|e| CliError::Internal {
+            message: format!("serialize reviewer output: {e}"),
+        })?;
+        atomic_write(&output_path, &output_bytes).map_err(|e| CliError::Io {
+            path: output_path.display().to_string(),
+            source: e,
+        })?;
 
-    // Append audit event (outside the state mutation: reviewer submissions do
-    // not mutate STATE.json; only `review close` does).
-    let event = crate::events::Event {
-        seq: state.state_revision,
-        kind: "review_output_submitted".into(),
-        at: now_rfc3339(),
-        extra: serde_json::Map::from_iter([
-            ("bundle_id".into(), json!(bundle.bundle_id.clone())),
-            ("reviewer_id".into(), json!(output.reviewer_id.clone())),
-            ("output_id".into(), json!(output_id.clone())),
-            (
-                "result".into(),
-                serde_json::to_value(output.result).unwrap(),
-            ),
-        ]),
-    };
-    let events_path = paths.mission_dir.join("events.jsonl");
-    append_event(&events_path, &event).map_err(|e| CliError::Io {
-        path: events_path.display().to_string(),
-        source: e,
-    })?;
+        // Append audit event (outside the state mutation: reviewer submissions do
+        // not mutate STATE.json; only `review close` does).
+        let event = crate::events::Event {
+            seq: state.state_revision,
+            kind: "review_output_submitted".into(),
+            at: now_rfc3339(),
+            extra: serde_json::Map::from_iter([
+                ("bundle_id".into(), json!(bundle.bundle_id.clone())),
+                ("reviewer_id".into(), json!(output.reviewer_id.clone())),
+                ("output_id".into(), json!(output_id.clone())),
+                (
+                    "result".into(),
+                    serde_json::to_value(output.result).unwrap(),
+                ),
+            ]),
+        };
+        let events_path = paths.mission_dir.join("events.jsonl");
+        append_event(&events_path, &event).map_err(|e| CliError::Io {
+            path: events_path.display().to_string(),
+            source: e,
+        })?;
+    }
 
     Ok(envelope::success(
         SUBMIT_SCHEMA,
@@ -551,7 +592,7 @@ fn run_close(cli: &Cli, mission: &str, bundle_id: &str) -> Result<serde_json::Va
     };
 
     let state_after =
-        store.mutate_checked(cli.expect_revision, move |state| {
+        store.mutate_checked(cli.expect_revision, cli.dry_run, move |state| {
             if let Some(tid) = task_owned.as_ref() {
                 let entry = state.tasks.get_mut(tid).ok_or_else(|| {
                     CliError::TaskStateTransitionInvalid {
@@ -588,19 +629,21 @@ fn run_close(cli: &Cli, mission: &str, bundle_id: &str) -> Result<serde_json::Va
                 .with("blocking_findings", verdict.blocking_findings))
         })?;
 
-    // Persist the bundle's new status.
-    let mut bundle_updated = bundle.clone();
-    bundle_updated.status = final_status;
-    bundle_updated.closed_at = Some(now_rfc3339());
-    let bundle_path = bundle_path(&paths.mission_dir, &bundle.bundle_id);
-    let bundle_bytes =
-        serde_json::to_vec_pretty(&bundle_updated).map_err(|e| CliError::Internal {
-            message: format!("serialize bundle: {e}"),
+    // Persist the bundle's new status. Skip the file write in dry-run.
+    if !cli.dry_run {
+        let mut bundle_updated = bundle.clone();
+        bundle_updated.status = final_status;
+        bundle_updated.closed_at = Some(now_rfc3339());
+        let bundle_path = bundle_path(&paths.mission_dir, &bundle.bundle_id);
+        let bundle_bytes =
+            serde_json::to_vec_pretty(&bundle_updated).map_err(|e| CliError::Internal {
+                message: format!("serialize bundle: {e}"),
+            })?;
+        atomic_write(&bundle_path, &bundle_bytes).map_err(|e| CliError::Io {
+            path: bundle_path.display().to_string(),
+            source: e,
         })?;
-    atomic_write(&bundle_path, &bundle_bytes).map_err(|e| CliError::Io {
-        path: bundle_path.display().to_string(),
-        source: e,
-    })?;
+    }
 
     Ok(envelope::success(
         CLOSE_SCHEMA,

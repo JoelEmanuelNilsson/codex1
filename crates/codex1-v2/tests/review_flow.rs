@@ -457,3 +457,75 @@ fn review_open_requires_proof_submitted_status() {
     let env = last_json(&out);
     assert_eq!(env["code"], "TASK_STATE_INVALID");
 }
+
+/// Round 6 Fix #3: `review open` must reject --profiles that drops any
+/// profile declared in the blueprint. Otherwise the parent could open a
+/// bundle that skips a mandatory review.
+#[test]
+fn review_open_rejects_profile_omission_from_blueprint() {
+    let dir = TempDir::new().unwrap();
+    // Custom boot with a blueprint that declares review_profiles explicitly.
+    bin(&dir)
+        .args(["--json", "init", "--mission", "m1", "--title", "t"])
+        .assert()
+        .success();
+    let bp = dir.path().join("PLANS/m1/PROGRAM-BLUEPRINT.md");
+    fs::write(
+        &bp,
+        "# BP\n\n<!-- codex1:plan-dag:start -->\n\
+         planning:\n  requested_level: light\n  graph_revision: 1\n\
+         tasks:\n  - id: T1\n    title: Impl\n    kind: code\n\
+         \x20   review_profiles: [code_bug_correctness, local_spec_intent]\n\
+         <!-- codex1:plan-dag:end -->\n",
+    )
+    .unwrap();
+    let sp = dir.path().join("PLANS/m1/STATE.json");
+    let current: Value = serde_json::from_slice(&fs::read(&sp).unwrap()).unwrap();
+    let new = serde_json::json!({
+        "mission_id": current["mission_id"],
+        "state_revision": current["state_revision"],
+        "phase": "executing",
+        "parent_loop": { "mode": "none", "paused": false },
+        "tasks": { "T1": { "status": "ready" } }
+    });
+    fs::write(&sp, serde_json::to_vec_pretty(&new).unwrap()).unwrap();
+    do_start_and_finish(&dir, "T1");
+
+    // Try to open with only one of the two required profiles.
+    let out = bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "open",
+            "--mission",
+            "m1",
+            "--task",
+            "T1",
+            "--profiles",
+            "local_spec_intent",
+        ])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["code"], "REVIEW_PROFILE_MISSING");
+    assert_eq!(env["details"]["missing"], json!(["code_bug_correctness"]));
+
+    // Opening with the full superset succeeds (regression check).
+    bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "open",
+            "--mission",
+            "m1",
+            "--task",
+            "T1",
+            "--profiles",
+            "code_bug_correctness,local_spec_intent,integration_intent",
+        ])
+        .assert()
+        .success();
+}

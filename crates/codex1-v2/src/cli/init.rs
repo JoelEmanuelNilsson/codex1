@@ -49,6 +49,31 @@ fn run(cli: &Cli, mission: &str, title: &str) -> Result<serde_json::Value, CliEr
         });
     }
 
+    let would_create = serde_json::json!({
+        "outcome_lock": paths.outcome_lock().display().to_string(),
+        "program_blueprint": paths.program_blueprint().display().to_string(),
+        "state": paths.mission_dir.join("STATE.json").display().to_string(),
+        "events": paths.mission_dir.join("events.jsonl").display().to_string(),
+    });
+
+    // Round 6 Fix #5: dry-run preview — preconditions already validated
+    // above; no side effects land. Return the envelope as if the mission
+    // would exist, but nothing is written.
+    if cli.dry_run {
+        return Ok(envelope::success(
+            SCHEMA,
+            &json!({
+                "mission_id": mission,
+                "title": title,
+                "mission_dir": paths.mission_dir.display().to_string(),
+                "state_revision": 1,
+                "phase": "clarify",
+                "created": would_create,
+                "message": format!("Would initialise mission {} at {}", mission, paths.mission_dir.display()),
+            }),
+        ));
+    }
+
     std::fs::create_dir_all(&paths.mission_dir).map_err(|e| CliError::Io {
         path: paths.mission_dir.display().to_string(),
         source: e,
@@ -78,13 +103,6 @@ fn run(cli: &Cli, mission: &str, title: &str) -> Result<serde_json::Value, CliEr
     let store = StateStore::new(paths.mission_dir.clone());
     let state = store.init(mission)?;
 
-    let created_paths = serde_json::json!({
-        "outcome_lock": paths.outcome_lock().display().to_string(),
-        "program_blueprint": paths.program_blueprint().display().to_string(),
-        "state": store.state_path().display().to_string(),
-        "events": store.events_path().display().to_string(),
-    });
-
     Ok(envelope::success(
         SCHEMA,
         &json!({
@@ -93,7 +111,7 @@ fn run(cli: &Cli, mission: &str, title: &str) -> Result<serde_json::Value, CliEr
             "mission_dir": paths.mission_dir.display().to_string(),
             "state_revision": state.state_revision,
             "phase": state.phase,
-            "created": created_paths,
+            "created": would_create,
             "message": format!("Initialised mission {} at {}", state.mission_id, paths.mission_dir.display()),
         }),
     ))

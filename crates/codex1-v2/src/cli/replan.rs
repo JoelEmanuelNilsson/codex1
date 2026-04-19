@@ -78,7 +78,7 @@ fn run_record(
     let now = now_rfc3339();
 
     let store = StateStore::new(paths.mission_dir.clone());
-    let state = store.mutate_checked(cli.expect_revision, move |state| {
+    let state = store.mutate_checked(cli.expect_revision, cli.dry_run, move |state| {
         for id in &supersedes_for_closure {
             if let Some(entry) = state.tasks.get_mut(id) {
                 entry.status = TaskStatus::Superseded;

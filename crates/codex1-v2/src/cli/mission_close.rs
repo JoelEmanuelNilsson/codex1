@@ -66,7 +66,7 @@ fn run_complete(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError>
         });
     }
     let store = StateStore::new(paths.mission_dir.clone());
-    let state = store.mutate_checked(cli.expect_revision, |state| {
+    let state = store.mutate_checked(cli.expect_revision, cli.dry_run, |state| {
         if state.phase == Phase::Complete {
             return Err(CliError::Internal {
                 message: "mission already complete".into(),

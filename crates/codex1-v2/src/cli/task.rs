@@ -27,6 +27,7 @@ use crate::status::project_status;
 use super::{Cli, emit_error, emit_success, now_rfc3339, resolve_repo};
 
 const NEXT_SCHEMA: &str = "codex1.task.next.v1";
+const READY_SCHEMA: &str = "codex1.task.ready.v1";
 const START_SCHEMA: &str = "codex1.task.start.v1";
 const FINISH_SCHEMA: &str = "codex1.task.finish.v1";
 const STATUS_SCHEMA: &str = "codex1.task.status.v1";
@@ -62,6 +63,60 @@ fn run_next(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError> {
     ))
 }
 
+pub fn cmd_task_ready(cli: &Cli, mission: &str, task_id: &str) -> i32 {
+    match run_ready(cli, mission, task_id) {
+        Ok(env) => emit_success(cli, &env),
+        Err(err) => emit_error(cli, &err),
+    }
+}
+
+/// Transition `Planned` → `Ready` via `StateStore::mutate`. Round 6 Fix
+/// #1: `$plan` previously hand-edited STATE.json to set task statuses;
+/// that bypassed the lock + revision + events path. This command is the
+/// authoritative way to mark a task ready once its spec file exists.
+fn run_ready(cli: &Cli, mission: &str, task_id: &str) -> Result<serde_json::Value, CliError> {
+    validate_id_format(task_id)?;
+    let (paths, dag, _state) = load_mission(cli, mission)?;
+    if !dag.tasks.contains_key(task_id) {
+        return Err(CliError::TaskStateTransitionInvalid {
+            task_id: task_id.into(),
+            current: "not_in_blueprint".into(),
+            attempted: "ready".into(),
+        });
+    }
+    let store = StateStore::new(paths.mission_dir.clone());
+    let task_id_owned = task_id.to_string();
+    let state = store.mutate_checked(cli.expect_revision, cli.dry_run, move |state| {
+        let current_status = state
+            .tasks
+            .get(&task_id_owned)
+            .map_or(TaskStatus::Planned, |t| t.status);
+        if !matches!(current_status, TaskStatus::Planned) {
+            return Err(CliError::TaskStateTransitionInvalid {
+                task_id: task_id_owned,
+                current: task_status_str(current_status),
+                attempted: "ready".into(),
+            });
+        }
+        let entry = state
+            .tasks
+            .entry(task_id_owned.clone())
+            .or_insert_with(TaskState::planned);
+        entry.status = TaskStatus::Ready;
+        Ok(EventDraft::new("task_marked_ready").with("task_id", task_id_owned.as_str()))
+    })?;
+    Ok(envelope::success(
+        READY_SCHEMA,
+        &json!({
+            "mission_id": mission,
+            "task_id": task_id,
+            "status": "ready",
+            "state_revision": state.state_revision,
+            "message": format!("Task {task_id} marked ready."),
+        }),
+    ))
+}
+
 pub fn cmd_task_start(cli: &Cli, mission: &str, task_id: &str) -> i32 {
     match run_start(cli, mission, task_id) {
         Ok(env) => emit_success(cli, &env),
@@ -88,7 +143,7 @@ fn run_start(cli: &Cli, mission: &str, task_id: &str) -> Result<serde_json::Valu
     let run_id_for_closure = new_run_id.clone();
     let now_for_closure = now.clone();
     let task_id_owned = task_id.to_string();
-    let state = store.mutate_checked(cli.expect_revision, move |state| {
+    let state = store.mutate_checked(cli.expect_revision, cli.dry_run, move |state| {
         let current_status = state
             .tasks
             .get(&task_id_owned)
@@ -179,7 +234,7 @@ fn run_finish(
     let receipt_for_closure = receipt.clone();
     let now_for_closure = now.clone();
 
-    let state = store.mutate_checked(cli.expect_revision, move |state| {
+    let state = store.mutate_checked(cli.expect_revision, cli.dry_run, move |state| {
         let current_status = state
             .tasks
             .get(&task_id_owned)

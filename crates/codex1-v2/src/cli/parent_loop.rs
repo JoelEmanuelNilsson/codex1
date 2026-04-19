@@ -34,7 +34,7 @@ fn run_activate(cli: &Cli, mission: &str, mode_str: &str) -> Result<serde_json::
     }
     let store = mutating_store(cli, mission)?;
     let mode_str_owned = mode_str.to_string();
-    let state = store.mutate_checked(cli.expect_revision, move |state| {
+    let state = store.mutate_checked(cli.expect_revision, cli.dry_run, move |state| {
         state.parent_loop.mode = mode;
         state.parent_loop.paused = false;
         Ok(EventDraft::new("parent_loop_activated").with("mode", mode_str_owned))
@@ -59,7 +59,7 @@ pub fn cmd_deactivate(cli: &Cli, mission: &str) -> i32 {
 
 fn run_deactivate(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError> {
     let store = mutating_store(cli, mission)?;
-    let state = store.mutate_checked(cli.expect_revision, move |state| {
+    let state = store.mutate_checked(cli.expect_revision, cli.dry_run, move |state| {
         state.parent_loop.mode = ParentLoopMode::None;
         state.parent_loop.paused = false;
         Ok(EventDraft::new("parent_loop_deactivated"))
@@ -83,7 +83,7 @@ pub fn cmd_pause(cli: &Cli, mission: &str) -> i32 {
 
 fn run_pause(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError> {
     let store = mutating_store(cli, mission)?;
-    let state = store.mutate_checked(cli.expect_revision, |state| {
+    let state = store.mutate_checked(cli.expect_revision, cli.dry_run, |state| {
         if state.parent_loop.mode == ParentLoopMode::None {
             return Err(CliError::Internal {
                 message: "cannot pause: no active parent loop".into(),
@@ -111,7 +111,7 @@ pub fn cmd_resume(cli: &Cli, mission: &str) -> i32 {
 
 fn run_resume(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError> {
     let store = mutating_store(cli, mission)?;
-    let state = store.mutate_checked(cli.expect_revision, |state| {
+    let state = store.mutate_checked(cli.expect_revision, cli.dry_run, |state| {
         if state.parent_loop.mode == ParentLoopMode::None {
             return Err(CliError::Internal {
                 message: "cannot resume: no active parent loop".into(),

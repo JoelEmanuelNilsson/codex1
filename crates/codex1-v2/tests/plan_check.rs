@@ -56,10 +56,17 @@ fn empty_tasks_rejected_by_plan_check() {
 fn single_task_dag_passes() {
     let dir = TempDir::new().unwrap();
     init(&dir);
+    // Round 6 Fix #2: every task must declare spec_ref, write_paths,
+    // proof, and review_profiles — the four fields V2 treats as the
+    // executability/proof/review contract.
     write_blueprint(
         dir.path(),
         "planning:\n  requested_level: light\n  graph_revision: 1\n\
-         tasks:\n  - id: T1\n    title: Scaffold\n    kind: code\n    depends_on: []\n",
+         tasks:\n  - id: T1\n    title: Scaffold\n    kind: code\n    depends_on: []\n\
+         \x20   spec_ref: specs/T1/SPEC.md\n\
+         \x20   write_paths: [src/**]\n\
+         \x20   proof: [\"cargo build\"]\n\
+         \x20   review_profiles: [code_bug_correctness]\n",
     );
     let out = bin(&dir)
         .args(["--json", "plan", "check", "--mission", "m1"])
@@ -71,6 +78,59 @@ fn single_task_dag_passes() {
     let env = last_json(&out);
     assert_eq!(env["task_count"], 1);
     assert_eq!(env["task_ids"], serde_json::json!(["T1"]));
+}
+
+#[test]
+fn underspecified_task_rejected() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    write_blueprint(
+        dir.path(),
+        "planning:\n  requested_level: light\n  graph_revision: 1\n\
+         tasks:\n  - id: T1\n    title: Thin\n    kind: code\n",
+    );
+    let out = bin(&dir)
+        .args(["--json", "plan", "check", "--mission", "m1"])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["code"], "DAG_TASK_UNDERSPECIFIED");
+    assert_eq!(env["details"]["task_id"], "T1");
+    let missing = env["details"]["missing"].as_array().unwrap();
+    for field in ["spec_ref", "write_paths", "proof", "review_profiles"] {
+        assert!(
+            missing.iter().any(|v| v == field),
+            "missing should include {field}: {missing:?}"
+        );
+    }
+}
+
+#[test]
+fn review_boundaries_rejected_until_implemented() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    write_blueprint(
+        dir.path(),
+        "planning:\n  requested_level: light\n  graph_revision: 1\n\
+         tasks:\n  - id: T1\n    title: Impl\n    kind: code\n    depends_on: []\n\
+         \x20   spec_ref: specs/T1/SPEC.md\n\
+         \x20   write_paths: [src/**]\n\
+         \x20   proof: [\"cargo build\"]\n\
+         \x20   review_profiles: [code_bug_correctness]\n\
+         review_boundaries:\n  - id: B1\n    kind: phase\n    tasks: [T1]\n",
+    );
+    let out = bin(&dir)
+        .args(["--json", "plan", "check", "--mission", "m1"])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["code"], "DAG_BOUNDARIES_NOT_SUPPORTED");
 }
 
 #[test]

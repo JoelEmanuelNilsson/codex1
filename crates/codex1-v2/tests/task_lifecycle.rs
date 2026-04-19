@@ -199,6 +199,56 @@ fn finish_refuses_when_not_in_progress() {
     assert_eq!(env["code"], "TASK_STATE_INVALID");
 }
 
+/// Round 6 Fix #1: Planned → Ready must go through the CLI, not a
+/// hand-edit of STATE.json. `task ready` is the supported path.
+#[test]
+fn task_ready_transitions_planned_to_ready_and_emits_event() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    write_blueprint(
+        dir.path(),
+        "planning:\n  requested_level: light\n  graph_revision: 1\n\
+         tasks:\n  - id: T1\n    title: Impl\n    kind: code\n",
+    );
+    // Leave STATE.json untouched: T1 is implicitly `planned`.
+    let out = bin(&dir)
+        .args(["--json", "task", "ready", "--mission", "m1", "T1"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["ok"], true);
+    assert_eq!(env["schema"], "codex1.task.ready.v1");
+    assert_eq!(env["status"], "ready");
+    // state_revision must have bumped past the init value of 1.
+    assert!(env["state_revision"].as_u64().unwrap() >= 2);
+
+    // STATE.json reflects Ready; events.jsonl carries the audit record.
+    let state: Value =
+        serde_json::from_slice(&fs::read(dir.path().join("PLANS/m1/STATE.json")).unwrap()).unwrap();
+    assert_eq!(state["tasks"]["T1"]["status"], "ready");
+    let events = fs::read_to_string(dir.path().join("PLANS/m1/events.jsonl")).unwrap();
+    assert!(events.contains("\"kind\":\"task_marked_ready\""));
+    assert!(events.contains("\"task_id\":\"T1\""));
+}
+
+#[test]
+fn task_ready_refuses_when_not_planned() {
+    let dir = TempDir::new().unwrap();
+    mk_single_task_mission(&dir); // T1 is already `ready`
+    let out = bin(&dir)
+        .args(["--json", "task", "ready", "--mission", "m1", "T1"])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["code"], "TASK_STATE_INVALID");
+}
+
 #[test]
 fn status_envelope_after_proof_submitted_wants_review_open() {
     let dir = TempDir::new().unwrap();
@@ -225,6 +275,78 @@ fn status_envelope_after_proof_submitted_wants_review_open() {
     assert_eq!(env["next_action"]["kind"], "review_open");
     assert_eq!(env["next_action"]["task_id"], "T1");
     assert_eq!(env["review_required"], serde_json::json!(["T1"]));
+}
+
+/// Round 6 Fix #5: mutating commands accept --dry-run. Preconditions
+/// still validated, envelope carries `dry_run: true`, and STATE.json +
+/// events.jsonl remain unchanged.
+#[test]
+fn task_start_dry_run_validates_but_does_not_mutate() {
+    let dir = TempDir::new().unwrap();
+    mk_single_task_mission(&dir);
+
+    let sp = dir.path().join("PLANS/m1/STATE.json");
+    let ep = dir.path().join("PLANS/m1/events.jsonl");
+    let state_before: Value = serde_json::from_slice(&fs::read(&sp).unwrap()).unwrap();
+    let events_before = fs::read_to_string(&ep).unwrap();
+
+    // Dry-run succeeds (preconditions pass), reports dry_run: true.
+    let out = bin(&dir)
+        .args([
+            "--json",
+            "--dry-run",
+            "task",
+            "start",
+            "--mission",
+            "m1",
+            "T1",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["ok"], true);
+    assert_eq!(env["dry_run"], true);
+    assert_eq!(env["schema"], "codex1.task.start.v1");
+    // state_revision reports the WOULD-BE value.
+    assert!(env["state_revision"].as_u64().unwrap() >= 2);
+
+    // STATE.json + events.jsonl are unchanged on disk.
+    let state_after: Value = serde_json::from_slice(&fs::read(&sp).unwrap()).unwrap();
+    let events_after = fs::read_to_string(&ep).unwrap();
+    assert_eq!(state_before, state_after, "STATE.json must not change");
+    assert_eq!(events_before, events_after, "events.jsonl must not change");
+}
+
+#[test]
+fn task_start_dry_run_rejects_invalid_transition() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    // No blueprint → T1 not in DAG; dry-run still returns the error.
+    write_blueprint(
+        dir.path(),
+        "planning:\n  requested_level: light\n  graph_revision: 1\n\
+         tasks: []\n",
+    );
+    let out = bin(&dir)
+        .args([
+            "--json",
+            "--dry-run",
+            "task",
+            "start",
+            "--mission",
+            "m1",
+            "T99",
+        ])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["code"], "TASK_STATE_INVALID");
 }
 
 #[test]

@@ -161,13 +161,20 @@ impl StateStore {
     where
         F: FnOnce(&mut State) -> Result<EventDraft, CliError>,
     {
-        self.mutate_checked(None, f)
+        self.mutate_checked(None, false, f)
     }
 
     /// As [`mutate`] but rejects when the current `state_revision` does not
-    /// match `expected`. Wave 1 does not call this, but the plumbing is in
-    /// place so Wave 2's `task start`/`task finish` inherits it.
-    pub fn mutate_checked<F>(&self, expected: Option<u64>, f: F) -> Result<State, CliError>
+    /// match `expected`. When `dry_run` is true, preconditions are still
+    /// validated and the hypothetical new state is returned, but the
+    /// atomic write and the `events.jsonl` append are skipped. Round 6
+    /// Fix #5 introduced `dry_run`; pre-existing callers pass `false`.
+    pub fn mutate_checked<F>(
+        &self,
+        expected: Option<u64>,
+        dry_run: bool,
+        f: F,
+    ) -> Result<State, CliError>
     where
         F: FnOnce(&mut State) -> Result<EventDraft, CliError>,
     {
@@ -189,6 +196,12 @@ impl StateStore {
                 .ok_or_else(|| CliError::Internal {
                     message: "state_revision overflow".into(),
                 })?;
+        if dry_run {
+            // Preconditions validated, state_revision bumped in-memory
+            // so the envelope can show the would-be revision, but no
+            // side effects land.
+            return Ok(state);
+        }
         self.write_state(&state)?;
         let event = draft.into_event(state.state_revision, &now_iso());
         append_event(&self.events_path(), &event).map_err(|e| CliError::Io {
@@ -299,7 +312,7 @@ mod tests {
         let (_dir, store) = store_with_dir();
         store.init("example").unwrap();
         let err = store
-            .mutate_checked(Some(999), |_| Ok(EventDraft::new("never")))
+            .mutate_checked(Some(999), false, |_| Ok(EventDraft::new("never")))
             .unwrap_err();
         assert_eq!(err.code(), "REVISION_CONFLICT");
         assert_eq!(err.exit_code(), 4);

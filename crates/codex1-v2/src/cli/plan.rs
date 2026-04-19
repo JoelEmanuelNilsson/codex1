@@ -37,6 +37,48 @@ fn run_check(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError> {
             mission: mission.to_string(),
         });
     }
+
+    // Round 6 Fix #2: every task must declare the four fields the V2
+    // contract makes mandatory — spec_ref (so reviewers and workers
+    // know where the spec lives), write_paths (so waves can reason
+    // about isolation), proof (so `task finish` has something concrete
+    // to check), and review_profiles (so the bundle superset check in
+    // `review open` is meaningful). The serde defaults make these
+    // optional at parse time; `plan check` re-enforces them here.
+    for id in dag.ids() {
+        let spec = dag.tasks.get(&id).expect("ids come from tasks");
+        let mut missing: Vec<String> = Vec::new();
+        if spec.spec_ref.is_none() {
+            missing.push("spec_ref".into());
+        }
+        if spec.write_paths.is_empty() {
+            missing.push("write_paths".into());
+        }
+        if spec.proof.is_empty() {
+            missing.push("proof".into());
+        }
+        if spec.review_profiles.is_empty() {
+            missing.push("review_profiles".into());
+        }
+        if !missing.is_empty() {
+            return Err(CliError::DagTaskUnderspecified {
+                task_id: id,
+                missing,
+            });
+        }
+    }
+
+    // Round 6 Fix #4: `review_boundaries` is a parsed-but-not-enforced
+    // feature from the Wave 3 design. Until V2 ships the integration-
+    // review flow (open-boundary command + readiness check), declaring
+    // any boundary silently bypasses integration review. Reject loudly
+    // so planners don't accidentally rely on a non-existent gate.
+    if !blueprint.review_boundaries.is_empty() {
+        return Err(CliError::DagBoundariesNotSupported {
+            count: blueprint.review_boundaries.len(),
+        });
+    }
+
     Ok(envelope::success(
         CHECK_SCHEMA,
         &json!({
