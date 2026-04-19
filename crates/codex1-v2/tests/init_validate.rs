@@ -198,6 +198,33 @@ fn validate_errors_when_events_seq_greater_than_state_revision() {
 }
 
 #[test]
+fn validate_fails_closed_on_corrupt_review_bundle() {
+    // Round 8 follow-up: a malformed reviews/B*.json file must make
+    // `codex1 validate` refuse rather than report ok. `status` and
+    // `mission-close check` already fail closed; validate's contract
+    // to be the structural superset would be a lie otherwise.
+    let dir = TempDir::new().unwrap();
+    bin(&dir)
+        .args(["--json", "init", "--mission", "smoke", "--title", "Smoke"])
+        .assert()
+        .success();
+    let reviews = dir.path().join("PLANS/smoke/reviews");
+    fs::create_dir_all(&reviews).unwrap();
+    fs::write(reviews.join("B999.json"), b"{ not valid json").unwrap();
+
+    let out = bin(&dir)
+        .args(["--json", "validate", "--mission", "smoke"])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let env = parse_json(&out);
+    assert_eq!(env["ok"], false);
+    assert_eq!(env["code"], "REVIEW_BUNDLE_CORRUPT");
+}
+
+#[test]
 fn validate_warns_but_succeeds_when_events_lag_state() {
     let dir = TempDir::new().unwrap();
     bin(&dir)

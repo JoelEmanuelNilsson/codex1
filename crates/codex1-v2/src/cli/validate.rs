@@ -14,6 +14,7 @@ use crate::error::CliError;
 use crate::events;
 use crate::graph;
 use crate::mission::{lock::parse_and_validate, resolve_mission};
+use crate::review::{BUNDLES_DIRNAME, load_all_bundles};
 use crate::state::StateStore;
 
 use super::{Cli, emit_error, emit_success, resolve_repo};
@@ -108,6 +109,16 @@ fn run(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError> {
         }
     }
 
+    // 5. Review bundles parse. Round 8 follow-up: `validate` must fail
+    // closed when any `reviews/B*.json` is corrupt, matching the
+    // fail-closed behaviour `status` and `mission-close check` already
+    // exhibit. Without this, a corrupted mission-close bundle could
+    // sit invisibly in reviews/ while validate reports ok, which
+    // contradicts validate's "structural superset" claim and lets
+    // review truth loss hide from both humans and the qualification
+    // verifier.
+    let bundles = load_all_bundles(&paths.mission_dir.join(BUNDLES_DIRNAME))?;
+
     Ok(envelope::success(
         SCHEMA,
         &json!({
@@ -118,6 +129,7 @@ fn run(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError> {
             "task_count": dag.len(),
             "state_revision": state.state_revision,
             "last_event_seq": last_seq,
+            "review_bundle_count": bundles.len(),
             "warnings": warnings,
             "message": format!(
                 "Validation passed for mission {} (tasks: {}, state_revision: {}).",
