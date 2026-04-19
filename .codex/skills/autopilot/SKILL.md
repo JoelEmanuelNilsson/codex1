@@ -101,16 +101,26 @@ does not count toward any bundle's cleanliness.
 - Ralph blocks stop while the autopilot loop is active and not paused.
 - `$close` pauses autopilot; `$autopilot` resumes continue the mission.
 
-### Ralph parent-lane requirement (Round 13 P1)
+### Ralph parent-lane requirement (Rounds 13-14 P1)
 
 Ralph's Stop-blocking only fires in the session that owns the
 parent-lane lease. The lease is written by the `SessionStart` hook
 (`scripts/ralph-session-lease.sh claim`) and released by `SessionEnd`;
-both are wired in `.codex/hooks.json` / `.claude/hooks.json`. A second
-`claude` session in the same repo (a reviewer subagent, another
-terminal, etc.) does NOT own the lease and is allowed to stop freely.
-If the deployment has not wired SessionStart/SessionEnd, NO session
-blocks — the hook fails open rather than punishing every lane.
+both are wired in `.codex/hooks.json` / `.claude/hooks.json`.
+
+**Round 14 P1 tightening**: the `SessionStart` hook only claims the
+lease when `CODEX1_PARENT_LANE=1` is set in the environment. Without
+this env, secondary sessions (a second terminal, a reviewer launched
+via `claude -p`, etc.) cannot steal the lease by overwriting it. The
+Ralph wrapper that launches the parent Claude MUST export
+`CODEX1_PARENT_LANE=1`. Subagents spawned by the parent do inherit
+the env, but their `Stop` event is `SubagentStop` (not registered),
+so their claim is harmless — they never trigger the scan.
+
+If the deployment has not wired SessionStart/SessionEnd, no session
+blocks — the hook fails open rather than punishing every lane. If the
+runtime doesn't pipe `session_id` on hook stdin, the Stop hook falls
+back to scanning (fail-closed) rather than silently disabling Ralph.
 
 ## Example one-shot
 

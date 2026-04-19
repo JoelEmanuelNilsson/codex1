@@ -849,3 +849,136 @@ fn status_fails_closed_on_corrupt_bundle_file() {
     let env = last_json(&out);
     assert_eq!(env["code"], "REVIEW_BUNDLE_CORRUPT");
 }
+
+/// Round 14 P1: `review open-mission-close` must refuse when the
+/// mission is already terminal (`phase: complete`). Without this
+/// refusal, the CLI itself creates the dirty post-terminal bundle
+/// that makes `mission-close check` block while status claims clean
+/// completion.
+#[test]
+fn review_open_mission_close_refuses_terminal_mission() {
+    let dir = TempDir::new().unwrap();
+    bin(&dir)
+        .args(["--json", "init", "--mission", "m1", "--title", "t"])
+        .assert()
+        .success();
+    ratify_lock(&dir);
+    fs::write(
+        dir.path().join("PLANS/m1/PROGRAM-BLUEPRINT.md"),
+        "# BP\n\n<!-- codex1:plan-dag:start -->\n\
+         planning:\n  requested_level: light\n  graph_revision: 1\n\
+         tasks:\n  - id: T1\n    title: Impl\n    kind: code\n\
+         <!-- codex1:plan-dag:end -->\n",
+    )
+    .unwrap();
+    // Hand-write a terminal STATE (phase=complete, T1=complete) with
+    // the lineage fields so the fixture is internally consistent.
+    let sp = dir.path().join("PLANS/m1/STATE.json");
+    let current: Value = serde_json::from_slice(&fs::read(&sp).unwrap()).unwrap();
+    let new = serde_json::json!({
+        "mission_id": current["mission_id"],
+        "state_revision": current["state_revision"],
+        "phase": "complete",
+        "parent_loop": { "mode": "none", "paused": false },
+        "tasks": {
+            "T1": {
+                "status": "complete",
+                "task_run_id": "run-T1",
+                "proof_hash": "sha256:proof-T1",
+            }
+        }
+    });
+    fs::write(&sp, serde_json::to_vec_pretty(&new).unwrap()).unwrap();
+
+    let out = bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "open-mission-close",
+            "--mission",
+            "m1",
+            "--profiles",
+            "mission_close",
+        ])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["code"], "MISSION_ALREADY_TERMINAL");
+    assert_eq!(env["details"]["mission_id"], "m1");
+}
+
+/// Round 14 P1: when a mission is terminal but a NEW mission-close
+/// review bundle is Open (hand-written, or from a legacy build that
+/// didn't refuse the open), `status` must agree with
+/// `mission-close check` and route back to `mission_close_check`
+/// instead of reporting `complete`. Previously status short-circuited
+/// on `phase == Complete` and diverged from the check command.
+#[test]
+fn status_routes_to_mission_close_check_on_post_terminal_open_bundle() {
+    let dir = TempDir::new().unwrap();
+    boot_with_clean_task(&dir);
+    // Move the fixture forward to phase=complete. (boot_with_clean_task
+    // leaves T1 at review_clean + phase=executing. Flip both to their
+    // terminal values to simulate `mission-close complete` having run.)
+    let sp = dir.path().join("PLANS/m1/STATE.json");
+    let current: Value = serde_json::from_slice(&fs::read(&sp).unwrap()).unwrap();
+    let new = serde_json::json!({
+        "mission_id": current["mission_id"],
+        "state_revision": current["state_revision"],
+        "phase": "complete",
+        "parent_loop": { "mode": "none", "paused": false },
+        "tasks": {
+            "T1": {
+                "status": "complete",
+                "task_run_id": "run-T1",
+                "proof_hash": "sha256:proof-T1",
+            }
+        }
+    });
+    fs::write(&sp, serde_json::to_vec_pretty(&new).unwrap()).unwrap();
+
+    // Drop a hand-written Open mission-close bundle into reviews/
+    // (simulates the prior-build bug where `review open-mission-close`
+    // didn't refuse a terminal mission, or any future path that
+    // introduces post-terminal drift).
+    let open_mc = serde_json::json!({
+        "bundle_id": "B999",
+        "mission_id": "m1",
+        "graph_revision": 1,
+        "state_revision": current["state_revision"],
+        "target": { "kind": "mission_close" },
+        "requirements": [{
+            "id": "B999-mc",
+            "profile": "mission_close",
+            "min_outputs": 1,
+            "allowed_roles": ["reviewer"],
+        }],
+        "evidence_refs": ["PROGRAM-BLUEPRINT.md", "STATE.json"],
+        "evidence_snapshot_hash": "sha256:ignored",
+        "status": "open",
+        "opened_at": "2026-04-19T11:00:00Z",
+        "closed_at": null,
+        "opener_role": "parent",
+    });
+    fs::write(
+        dir.path().join("PLANS/m1/reviews/B999.json"),
+        serde_json::to_vec_pretty(&open_mc).unwrap(),
+    )
+    .unwrap();
+
+    // Status must route to mission_close_check, not complete —
+    // otherwise Ralph/status diverge from `mission-close check`.
+    let out = bin(&dir)
+        .args(["--json", "status", "--mission", "m1"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["verdict"], "continue_required");
+    assert_eq!(env["next_action"]["kind"], "mission_close_check");
+}

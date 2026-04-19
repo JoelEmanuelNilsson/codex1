@@ -263,6 +263,137 @@ fn ralph_hook_script_syntax_is_valid() {
     assert!(status.success(), "ralph-status-hook.sh failed `bash -n`");
 }
 
+/// Round 14 P1: `SessionStart` must refuse to claim the lease in a
+/// session that isn't the parent lane. Without this, a second
+/// `claude` session's `SessionStart` would overwrite the existing
+/// lease and steal parent-lane authority.
+#[test]
+fn secondary_session_cannot_steal_lease() {
+    use std::io::Write;
+
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let lease_script = ralph_hook_path()
+        .parent()
+        .unwrap()
+        .join("ralph-session-lease.sh");
+
+    // Parent A claims (with env gate).
+    let mut claim_a = std::process::Command::new("bash")
+        .arg(&lease_script)
+        .arg("claim")
+        .env("CODEX1_REPO_ROOT", dir.path())
+        .env("CODEX1_PARENT_LANE", "1")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    claim_a
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(br#"{"session_id": "sess-A"}"#)
+        .unwrap();
+    assert!(claim_a.wait().unwrap().success());
+
+    // Secondary session B runs SessionStart WITHOUT the parent-lane
+    // env: must be a no-op, lease stays owned by A.
+    let mut claim_b = std::process::Command::new("bash")
+        .arg(&lease_script)
+        .arg("claim")
+        .env("CODEX1_REPO_ROOT", dir.path())
+        // Deliberately no CODEX1_PARENT_LANE.
+        .env_remove("CODEX1_PARENT_LANE")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    claim_b
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(br#"{"session_id": "sess-B"}"#)
+        .unwrap();
+    assert!(claim_b.wait().unwrap().success());
+
+    let lease_path = dir.path().join(".codex1/parent-session.json");
+    let lease: Value = serde_json::from_slice(&fs::read(&lease_path).unwrap()).unwrap();
+    assert_eq!(
+        lease["session_id"], "sess-A",
+        "secondary session without CODEX1_PARENT_LANE must not steal the lease"
+    );
+}
+
+/// Round 14 P1: when the lease exists but the hook input does not
+/// include a `session_id`, the Stop hook must scan (fail-closed) rather
+/// than exit 0. Otherwise a non-Claude-Code runtime or a stripped
+/// hook payload silently disables Ralph.
+#[test]
+fn no_session_id_falls_back_to_scan_when_lease_present() {
+    use std::io::Write;
+
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    write_blueprint(
+        dir.path(),
+        "planning:\n  requested_level: light\n  graph_revision: 1\n\
+         tasks:\n  - id: T1\n    title: A\n    kind: code\n",
+    );
+    write_state(
+        dir.path(),
+        "executing",
+        "execute",
+        false,
+        &[("T1", "ready")],
+    );
+
+    // Create a lease so the parent-lane gate has something to inspect.
+    let lease_dir = dir.path().join(".codex1");
+    fs::create_dir_all(&lease_dir).unwrap();
+    fs::write(
+        lease_dir.join("parent-session.json"),
+        br#"{"session_id": "sess-some-parent"}"#,
+    )
+    .unwrap();
+
+    // Invoke the Stop hook with NO stdin — HOOK_SESSION_ID stays
+    // empty. New semantics: lease present + no session_id → scan →
+    // block (loop is active).
+    let out = std::process::Command::new("bash")
+        .arg(ralph_hook_path())
+        .arg("--repo-root")
+        .arg(dir.path())
+        .stdin(std::process::Stdio::null())
+        .output()
+        .expect("bash available");
+    assert!(
+        !out.status.success(),
+        "missing session_id with active loop must block; stdout={} stderr={}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // For comparison: a Stop with a matching session_id still blocks.
+    let mut child = std::process::Command::new("bash")
+        .arg(ralph_hook_path())
+        .arg("--repo-root")
+        .arg(dir.path())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(br#"{"session_id": "sess-some-parent"}"#)
+        .unwrap();
+    let out2 = child.wait_with_output().unwrap();
+    assert!(
+        !out2.status.success(),
+        "matching parent session still blocks"
+    );
+}
+
 #[test]
 fn ralph_session_lease_script_syntax_is_valid() {
     // Round 13 P1: the SessionStart/SessionEnd lease script must also
@@ -309,11 +440,15 @@ fn parent_lane_gate_blocks_only_the_lease_holder() {
     let hook = ralph_hook_path();
     let lease_script = hook.parent().unwrap().join("ralph-session-lease.sh");
 
-    // Parent session A claims the lease via SessionStart hook.
+    // Parent session A claims the lease via SessionStart hook. The
+    // CODEX1_PARENT_LANE=1 env gate (Round 14 P1) is what separates
+    // "this session owns the loop" from every other session firing
+    // SessionStart in the repo.
     let mut claim = std::process::Command::new("bash")
         .arg(&lease_script)
         .arg("claim")
         .env("CODEX1_REPO_ROOT", dir.path())
+        .env("CODEX1_PARENT_LANE", "1")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .spawn()

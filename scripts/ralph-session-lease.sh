@@ -140,6 +140,23 @@ shift || true
 
 case "$cmd" in
   claim)
+    # Round 14 P1: only the parent-orchestrator lane may claim the
+    # lease. Ralph (or any wrapper that wants Stop-blocking) MUST set
+    # `CODEX1_PARENT_LANE=1` in the env that the Claude process runs
+    # under. Without this gate, every root session's SessionStart
+    # would overwrite the lease and steal parent-lane authority from
+    # whoever actually owns the loop.
+    #
+    # Intentional design trade-off: env propagates to Agent-tool
+    # subagents, so their SessionStart would also try to claim. The
+    # Stop hook is NOT registered for SubagentStop, so a subagent's
+    # claim is harmless (no Stop hook runs in the subagent). The
+    # subagent's SessionEnd releases only if the lease's session_id
+    # matches its own — which it never does, so the parent's lease
+    # survives the subagent's lifecycle.
+    if [[ "${CODEX1_PARENT_LANE:-0}" != "1" ]]; then
+      exit 0
+    fi
     sid="$(read_session_id_from_stdin)"
     claim_lease "$sid"
     ;;

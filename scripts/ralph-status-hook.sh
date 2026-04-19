@@ -137,18 +137,25 @@ else
   REPO_ROOT="$(find_mission_root "$PWD" || echo "$PWD")"
 fi
 
-# Round 13 P1 parent-lane gate. A Stop event fires in every root Claude
-# session in this repo. Only the session that holds the parent-lane
-# lease is allowed to enforce the block — every other session is a
-# secondary/standalone lane and must exit silently.
+# Round 13 P1 / Round 14 P1 parent-lane gate. A Stop event fires in
+# every root Claude session in this repo. The lease
+# (.codex1/parent-session.json) holds the session_id of the
+# orchestrator that should enforce the block.
+#
+# Semantics:
+#   - No lease                          → exit 0 (no parent to enforce).
+#   - Lease + matching session_id       → scan (I am the parent).
+#   - Lease + different session_id      → exit 0 (I am a secondary).
+#   - Lease + no session_id on stdin    → scan (fail-closed; Round 14
+#       P1: Ralph must not silently become a no-op when the runtime
+#       doesn't pipe session_id — Codex Desktop, stripped hook input,
+#       etc.).
 #
 # Bypassable via CODEX1_SKIP_LANE_CHECK=1 for test fixtures that cover
 # the scan logic directly without hook plumbing.
 if [[ "${CODEX1_SKIP_LANE_CHECK:-0}" != "1" ]]; then
   LEASE_FILE="${REPO_ROOT}/.codex1/parent-session.json"
   if [[ ! -f "${LEASE_FILE}" ]]; then
-    # No lease → no parent lane claimed. Exit silently so ad-hoc
-    # sessions aren't gated on another session's loop.
     exit 0
   fi
   LEASE_SID="$(python3 -c '
@@ -159,9 +166,12 @@ try:
 except Exception:
     pass
 ' "${LEASE_FILE}" 2>/dev/null || true)"
-  if [[ -z "${LEASE_SID}" || "${LEASE_SID}" != "${HOOK_SESSION_ID}" ]]; then
-    # Lease belongs to a different session → I'm a subagent or
-    # parallel root session. Don't block.
+  # Only exit 0 when we can positively identify ourselves as a
+  # different session. Unknown identity (empty HOOK_SESSION_ID) falls
+  # through to the scan — the lease's existence proves a parent is
+  # live, and blocking a Stop we can't identify is safer than
+  # silently disabling Ralph.
+  if [[ -n "${HOOK_SESSION_ID}" && "${LEASE_SID}" != "${HOOK_SESSION_ID}" ]]; then
     exit 0
   fi
 fi

@@ -320,6 +320,18 @@ fn run_open_mission_close(
     let dag = graph::build_dag(&blueprint)?;
     let state = StateStore::new(paths.mission_dir.clone()).load()?;
 
+    // Round 14 P1: once the mission is terminal (phase: complete),
+    // opening a new mission-close bundle creates a dirty bundle that
+    // makes `mission-close check` block while status still claims
+    // complete. The only honest way to reopen review after terminal
+    // close is an explicit contradiction/replan command; freeform
+    // `review open-mission-close` must refuse.
+    if state.phase == crate::state::Phase::Complete {
+        return Err(CliError::MissionAlreadyTerminal {
+            mission_id: mission.to_string(),
+        });
+    }
+
     check_tasks_terminal(&state, &dag)?;
 
     let bundles_dir = paths.mission_dir.join(BUNDLES_DIRNAME);

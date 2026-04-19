@@ -173,6 +173,12 @@ pub enum CliError {
         bundle_id: String,
     },
 
+    #[error(
+        "mission {mission_id} is already terminal (phase: complete); \
+         cannot open a new mission-close review bundle"
+    )]
+    MissionAlreadyTerminal { mission_id: String },
+
     #[error("revision conflict: expected {expected}, actual {actual}")]
     RevisionConflict { expected: u64, actual: u64 },
 
@@ -212,6 +218,7 @@ impl CliError {
             Self::ReviewProfileMismatched { .. } => "REVIEW_PROFILE_MISMATCHED",
             Self::MissionCloseNotReady { .. } => "MISSION_CLOSE_NOT_READY",
             Self::ReviewBundleAlreadyOpen { .. } => "REVIEW_BUNDLE_ALREADY_OPEN",
+            Self::MissionAlreadyTerminal { .. } => "MISSION_ALREADY_TERMINAL",
             Self::RevisionConflict { .. } => "REVISION_CONFLICT",
             Self::Internal { .. } => "INTERNAL_ERROR",
         }
@@ -237,6 +244,7 @@ impl CliError {
 
     /// Optional human-actionable hint.
     #[must_use]
+    #[allow(clippy::too_many_lines)] // One arm per variant; splitting obscures.
     pub fn hint(&self) -> Option<String> {
         match self {
             Self::MissionIdInvalid { .. } => Some(
@@ -328,6 +336,13 @@ impl CliError {
                  --bundle {bundle_id}`, or submit the missing reviewer outputs \
                  and close that bundle clean."
             )),
+            Self::MissionAlreadyTerminal { .. } => Some(
+                "The mission has already run mission-close complete. Reopening \
+                 review after terminal close requires an explicit replan or \
+                 contradiction command; plain `review open-mission-close` will \
+                 not do it."
+                    .into(),
+            ),
             Self::RevisionConflict { .. } => Some(
                 "State changed under you; re-read STATE.json and retry.".into(),
             ),
@@ -433,6 +448,9 @@ impl CliError {
                     "task_ids": task_ids,
                     "non_terminal_count": non_terminal_count,
                 })
+            }
+            Self::MissionAlreadyTerminal { mission_id } => {
+                json!({ "mission_id": mission_id })
             }
             Self::ReviewBundleAlreadyOpen {
                 task_id,
