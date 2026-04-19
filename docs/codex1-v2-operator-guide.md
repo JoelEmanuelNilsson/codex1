@@ -65,19 +65,39 @@ author's local default, kept as a graceful fallback).
 ### Ralph hook
 
 A V2-shaped `.codex/hooks.json` ships in the repo. It invokes
-`scripts/ralph-status-hook.sh "$CODEX1_MISSION"` on every Stop event, so
-Codex operators get Ralph enforcement out of the box once they export the
-active mission id. Claude Code has a symmetrical slot at
-`.claude/settings.json` — V2 does not write that file (it is
-user-personal), but the operator-guide recipe for it is identical:
-`command: "${CODEX1_REPO_ROOT:-/Users/joel/codex1}/scripts/ralph-status-hook.sh $CODEX1_MISSION"`.
+`scripts/ralph-status-hook.sh` on every Stop event with **no arguments**.
+The hook then scans `<cwd>/PLANS/*/STATE.json` and asks `codex1 status`
+about each mission it finds; if any mission reports
+`stop_policy.allow_stop: false`, stop is blocked with a per-mission
+reason list.
 
-**Why the hook needs `CODEX1_MISSION`.** V2 refuses ambient mission
-resolution — every CLI call takes `--mission <id>` explicitly. The Stop
-hook is a single static command, so it can't know the active mission
-unless the operator tells it. The hook treats a missing
-`CODEX1_MISSION` as "no active mission, allow stop." See
-`docs/codex1-v2-ralph-hook.md` for the full install table.
+This means Ralph enforcement is first-class and automatic — there is no
+hidden env-var plumbing between the skills and the hook. Activating a
+parent loop via `codex1 parent-loop activate` writes to `STATE.json`;
+the hook reads `STATE.json` on the next stop event and sees the loop.
+No manual handoff, no opportunity to silently fail open by forgetting a
+`CODEX1_MISSION` export.
+
+Claude Code has a symmetrical slot at `.claude/settings.json` — V2 does
+not write that file (it is user-personal), but the recipe is identical:
+```json
+{
+  "hooks": {
+    "Stop": [
+      { "command": "${CODEX1_REPO_ROOT:-/Users/joel/codex1}/scripts/ralph-status-hook.sh" }
+    ]
+  }
+}
+```
+
+**Why scan-mode.** V2 refuses ambient mission *resolution* for CLI
+commands (every `codex1` subcommand takes `--mission <id>` explicitly).
+But the Stop hook asking "does any mission in this repo want to block
+right now?" is a well-defined repo-state query, not an ambiguous lookup.
+The hook reads the same authoritative `STATE.json` the CLI wrote, so
+there is no separate source of truth to drift.
+
+See `docs/codex1-v2-ralph-hook.md` for the full contract table.
 
 **Migrating from a cached V1 hook config.** V2 does not answer
 `codex1 internal ...` subcommands. If your runner has a cached Codex
@@ -90,27 +110,22 @@ and was removed in the Round 3 honesty fixes.
 
 ## Running a V2 session
 
-Before invoking any V2 skill or interacting with an active mission,
-export two environment variables so the resolver and the Stop hook find
-the right repo and the right mission:
+One environment variable is enough for the common case — where the V2
+checkout lives:
 
 ```bash
-export CODEX1_REPO_ROOT=/path/to/codex1          # where the V2 checkout lives
-export CODEX1_MISSION=<active mission id>        # the mission the skill will drive
+export CODEX1_REPO_ROOT=/path/to/codex1
 ```
 
-Rationale:
+This tells every skill's resolver preamble where to find
+`scripts/resolve-codex1-bin`. The Stop hook reuses the same variable to
+locate `scripts/ralph-status-hook.sh`. No `CODEX1_MISSION` export is
+needed — the hook discovers active missions from `PLANS/` on its own.
 
-- `CODEX1_REPO_ROOT` is what every skill's resolver preamble reads to
-  find `scripts/resolve-codex1-bin`. If unset, the resolver falls back to
-  `/Users/joel/codex1` — fine on the author's machine, broken elsewhere.
-- `CODEX1_MISSION` is what `.codex/hooks.json` passes to
-  `scripts/ralph-status-hook.sh`. Missing → Stop hook allows stop, which
-  is the correct conservative default when no mission is active.
-
-Both are session-scoped. If you switch missions, re-export
-`CODEX1_MISSION`. Two concurrent missions in the same shell are not a
-supported configuration.
+If you run Codex or Claude Code from a subdirectory, the hook's
+default `PWD`-based repo-root still needs to resolve to the mission
+root. Start your runner from the same directory that contains `PLANS/`,
+or pass `--repo-root` when invoking the hook manually for debugging.
 
 ### Skills
 

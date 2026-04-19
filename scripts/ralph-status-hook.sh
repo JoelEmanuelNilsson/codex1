@@ -1,98 +1,156 @@
 #!/usr/bin/env bash
-# Codex1 V2 Ralph status hook.
+# Codex1 V2 Ralph stop hook.
 #
-# Reads `codex1 status --mission <id> --json` and enforces the only
-# contract Ralph owns: if the CLI says the parent loop is active and not
-# paused, stop is blocked. Everything else is a pass-through.
+# Enforces the one contract Ralph owns: if any mission in <repo-root>/PLANS/
+# has an active, unpaused parent loop, stop is blocked. Everything else is a
+# pass-through.
 #
-# Usage:
+# Usage (scan mode — the default Codex Stop hook path):
+#   ralph-status-hook.sh [--repo-root <path>]
+#   → scans <repo-root>/PLANS/*/STATE.json (default <repo-root> = $PWD).
+#   → blocks stop when `codex1 status` says `stop_policy.allow_stop: false`
+#     for any mission; allows stop otherwise.
+#
+# Usage (single-mission mode — explicit check for one id):
 #   ralph-status-hook.sh <mission-id> [--repo-root <path>]
 #
+# Rationale: the Codex Stop hook command is a single static string, so it
+# cannot thread the active mission id through. V2 refuses ambient mission
+# *resolution* for CLI commands, but the Stop hook asking "does any mission
+# in this repo want to block right now?" is a well-defined repo-state query
+# that uses the same authoritative STATE.json that V2 writes. No env var
+# plumbing, no separate pointer file, no fail-open on forgotten setup.
+#
 # Exit codes:
-#   0 — stop allowed; Ralph may let the current thread stop normally.
-#   1 — stop blocked; print display_message to stderr for the parent.
-#   2 — status invocation itself failed; treat as blocking (fail-safe).
+#   0 — stop allowed; Ralph is silent.
+#   1 — stop blocked; reasons printed to stderr.
+#   2 — hook itself failed (missing binary, unparseable JSON); treat as
+#       blocking by default (fail-safe).
 #
 # Environment:
-#   CODEX1_BIN — path to the codex1 binary (default: `codex1` on PATH, or
-#                `codex1-v2` during Wave 4 development).
+#   CODEX1_BIN   — override the resolved V2 binary.
+#   PATH/cwd     — used by `resolve_codex1` and the default repo-root.
 
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck source=lib/resolve-codex1.sh
 source "${SCRIPT_DIR}/lib/resolve-codex1.sh"
 
-if [[ $# -lt 1 ]]; then
-  echo "usage: ralph-status-hook.sh <mission-id> [--repo-root <path>]" >&2
-  exit 2
-fi
+MISSION=""
+REPO_ROOT_ARG=""
 
-MISSION="$1"
-shift
-
-REPO_ROOT_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --repo-root)
-      REPO_ROOT_ARGS=(--repo-root "$2")
+      REPO_ROOT_ARG="$2"
       shift 2
       ;;
-    *)
-      echo "ralph-status-hook: unknown arg $1" >&2
+    -h|--help)
+      sed -n '2,30p' "$0" >&2
+      exit 0
+      ;;
+    -*|--*)
+      echo "ralph-status-hook: unknown flag $1" >&2
       exit 2
+      ;;
+    *)
+      if [[ -n "$MISSION" ]]; then
+        echo "ralph-status-hook: too many positional args (got $MISSION, $1)" >&2
+        exit 2
+      fi
+      MISSION="$1"
+      shift
       ;;
   esac
 done
 
-# Resolve a V2 codex1 binary. Ignores V1 binaries that happen to be named
-# `codex1` on PATH — see scripts/lib/resolve-codex1.sh.
-BIN="$(resolve_codex1 "${REPO_ROOT}")" || exit $?
+REPO_ROOT="${REPO_ROOT_ARG:-$PWD}"
 
-# Call the CLI. Capture both stdout (JSON envelope) and exit code.
-# `${REPO_ROOT_ARGS[@]:+"${REPO_ROOT_ARGS[@]}"}` expands to nothing when the
-# array is empty, which keeps `set -u` happy on macOS bash 3.2 as well as
-# newer bashes.
-if ! OUT=$("${BIN}" --json ${REPO_ROOT_ARGS[@]:+"${REPO_ROOT_ARGS[@]}"} status --mission "${MISSION}" 2>/dev/null); then
-  echo "ralph-status-hook: ${BIN} status failed for mission ${MISSION}" >&2
-  exit 2
-fi
+# Resolve V2 binary. For resolver purposes we prefer the repo that owns
+# *this* script (so the dev's own target/release/codex1 is found) rather
+# than the caller's cwd (which might be a qualification tempdir).
+BIN="$(resolve_codex1 "$(cd "${SCRIPT_DIR}/.." && pwd)")" || exit $?
 
-# Parse stop_policy.allow_stop. Use a small Python snippet if available for
-# portable JSON parsing; fall back to grep-based extraction.
-ALLOW_STOP=""
-REASON=""
-MSG=""
-if command -v python3 >/dev/null 2>&1; then
-  read -r ALLOW_STOP REASON MSG <<<"$(python3 - "${OUT}" <<'PY'
+# Parse one status envelope; emit "<allow>\t<reason>\t<display_message>".
+parse_status_envelope() {
+  local out="$1"
+  python3 - "$out" <<'PY'
 import json, sys
 env = json.loads(sys.argv[1])
 allow = "true" if env.get("stop_policy", {}).get("allow_stop") else "false"
 reason = env.get("stop_policy", {}).get("reason", "")
 msg = env.get("next_action", {}).get("display_message", "")
-# Use tab as separator so the shell read can split on whitespace safely.
 print(f"{allow}\t{reason}\t{msg}")
 PY
-)"
-else
-  # Crude fallback: look for "allow_stop":true/false in the JSON.
-  if echo "${OUT}" | grep -q '"allow_stop":true'; then
-    ALLOW_STOP=true
-  else
-    ALLOW_STOP=false
+}
+
+# Run `codex1 status --mission <id> --repo-root <REPO_ROOT> --json`.
+# Returns the stdout on success; exits 2 on invocation failure.
+codex1_status() {
+  local mid="$1"
+  local out
+  if ! out=$("${BIN}" --json --repo-root "${REPO_ROOT}" status --mission "${mid}" 2>/dev/null); then
+    echo "ralph-status-hook: ${BIN} status failed for mission ${mid}" >&2
+    exit 2
   fi
-  REASON="$(echo "${OUT}" | sed -n 's/.*"reason":"\([^"]*\)".*/\1/p' | head -n1)"
-  MSG="$(echo "${OUT}" | sed -n 's/.*"display_message":"\([^"]*\)".*/\1/p' | head -n1)"
-fi
+  printf '%s' "$out"
+}
 
-if [[ "${ALLOW_STOP}" == "true" ]]; then
-  exit 0
-fi
+check_single_mission() {
+  local mid="$1"
+  local out allow reason msg
+  out="$(codex1_status "$mid")"
+  IFS=$'\t' read -r allow reason msg <<<"$(parse_status_envelope "$out")"
+  if [[ "${allow}" == "true" ]]; then
+    exit 0
+  fi
+  printf 'Ralph blocked stop: %s\n' "${reason:-active_parent_loop}" >&2
+  [[ -n "${msg}" ]] && printf '%s\n' "${msg}" >&2
+  exit 1
+}
 
-# Stop blocked.
-printf 'Ralph blocked stop: %s\n' "${REASON:-active_parent_loop}" >&2
-if [[ -n "${MSG}" ]]; then
-  printf '%s\n' "${MSG}" >&2
+scan_all_missions() {
+  local plans_dir="${REPO_ROOT}/PLANS"
+  # No PLANS dir → no missions → allow stop.
+  [[ -d "$plans_dir" ]] || exit 0
+
+  local blocked=()
+  # Use nullglob-style iteration — fall through silently when no matches.
+  for mission_dir in "$plans_dir"/*/; do
+    [[ -d "$mission_dir" ]] || continue
+    [[ -f "${mission_dir}STATE.json" ]] || continue
+    local mid
+    mid="$(basename "$mission_dir")"
+
+    local out allow reason msg
+    # If a single mission's status blows up, skip rather than fail-open.
+    # (An unreadable STATE.json with codex1 refusing it is itself suspicious;
+    # we mark it as blocking to surface the problem.)
+    if ! out=$("${BIN}" --json --repo-root "${REPO_ROOT}" status --mission "${mid}" 2>/dev/null); then
+      blocked+=("${mid}: codex1 status failed (mission may be corrupt)")
+      continue
+    fi
+    IFS=$'\t' read -r allow reason msg <<<"$(parse_status_envelope "$out")"
+    if [[ "${allow}" == "false" ]]; then
+      blocked+=("${mid}: ${reason:-active_parent_loop}${msg:+ — ${msg}}")
+    fi
+  done
+
+  if [[ ${#blocked[@]} -eq 0 ]]; then
+    exit 0
+  fi
+
+  printf 'Ralph blocked stop: active parent loop in %d mission(s)\n' "${#blocked[@]}" >&2
+  local line
+  for line in "${blocked[@]}"; do
+    printf '  - %s\n' "$line" >&2
+  done
+  exit 1
+}
+
+if [[ -n "$MISSION" ]]; then
+  check_single_mission "$MISSION"
+else
+  scan_all_missions
 fi
-exit 1
