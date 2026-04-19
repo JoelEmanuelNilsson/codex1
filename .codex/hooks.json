@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'if [[ -z \"${CODEX1_MISSION:-}\" ]]; then exit 0; fi; \"${CODEX1_REPO_ROOT:-/Users/joel/codex1}/scripts/ralph-status-hook.sh\" \"$CODEX1_MISSION\"'",
+            "timeout": 30,
+            "statusMessage": "Codex1 V2 Ralph stop hook"
+          }
+        ]
+      }
+    ]
+  }
+}

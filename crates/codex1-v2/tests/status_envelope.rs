@@ -169,6 +169,38 @@ fn task_next_mirrors_next_action() {
     assert_eq!(env["schema"], "codex1.task.next.v1");
     assert_eq!(env["verdict"], "needs_user");
     assert_eq!(env["next_action"]["kind"], "user_decision");
+    // Round 4: `task next` must surface the wave-parallel hint so $execute
+    // does not need a separate `status` call to see it.
+    assert!(
+        env.get("ready_wave_parallel_safe").is_some(),
+        "task next must include ready_wave_parallel_safe"
+    );
+    // No ready tasks on a fresh empty-DAG mission → false.
+    assert_eq!(env["ready_wave_parallel_safe"], false);
+}
+
+#[test]
+fn task_next_reports_ready_wave_parallel_safe_true_for_disjoint_ready_tasks() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    write_blueprint(
+        dir.path(),
+        "planning:\n  requested_level: light\n  graph_revision: 1\n\
+         tasks:\n  - id: T1\n    title: A\n    kind: code\n    write_paths: [src/a/**]\n\
+         \x20 - id: T2\n    title: B\n    kind: code\n    write_paths: [src/b/**]\n",
+    );
+    set_state(dir.path(), &[("T1", "ready"), ("T2", "ready")], "executing");
+    let out = bin(&dir)
+        .args(["--json", "task", "next", "--mission", "m1"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["verdict"], "continue_required");
+    assert_eq!(env["ready_wave_parallel_safe"], true);
+    assert_eq!(env["ready_tasks"].as_array().unwrap().len(), 2);
 }
 
 #[test]

@@ -21,8 +21,8 @@ user's `~/.cargo/bin/codex1` may be a pre-existing V1 support CLI; this
 resolver probes for the V2 help surface before trusting any binary.
 
 ```bash
-CODEX1="$(/Users/joel/codex1/scripts/resolve-codex1-bin)" || {
-  echo "V2 codex1 not found; build with: cargo build -p codex1 --release" >&2
+CODEX1="$("${CODEX1_REPO_ROOT:-/Users/joel/codex1}/scripts/resolve-codex1-bin")" || {
+  echo "V2 codex1 not found. Set CODEX1_REPO_ROOT=<codex1 checkout> or build with: cargo build -p codex1 --release" >&2
   exit 1
 }
 ```

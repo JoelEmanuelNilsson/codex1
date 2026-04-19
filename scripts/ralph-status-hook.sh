@@ -51,7 +51,10 @@ done
 BIN="$(resolve_codex1 "${REPO_ROOT}")" || exit $?
 
 # Call the CLI. Capture both stdout (JSON envelope) and exit code.
-if ! OUT=$("${BIN}" --json "${REPO_ROOT_ARGS[@]}" status --mission "${MISSION}" 2>/dev/null); then
+# `${REPO_ROOT_ARGS[@]:+"${REPO_ROOT_ARGS[@]}"}` expands to nothing when the
+# array is empty, which keeps `set -u` happy on macOS bash 3.2 as well as
+# newer bashes.
+if ! OUT=$("${BIN}" --json ${REPO_ROOT_ARGS[@]:+"${REPO_ROOT_ARGS[@]}"} status --mission "${MISSION}" 2>/dev/null); then
   echo "ralph-status-hook: ${BIN} status failed for mission ${MISSION}" >&2
   exit 2
 fi

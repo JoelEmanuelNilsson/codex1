@@ -51,6 +51,10 @@ fn run_next(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError> {
             "verdict": v["verdict"],
             "next_action": v["next_action"],
             "ready_tasks": v["ready_tasks"],
+            // Round 4: surface the Round 3 wave-parallel hint here too, since
+            // $execute calls `task next` before `status` and would otherwise
+            // never see it.
+            "ready_wave_parallel_safe": v["ready_wave_parallel_safe"],
             "blocked": v["blocked"],
             "running_tasks": v["running_tasks"],
             "required_user_decision": v["required_user_decision"],

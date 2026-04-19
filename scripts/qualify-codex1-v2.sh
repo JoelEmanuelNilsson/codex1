@@ -119,17 +119,28 @@ verify() {
     exit 2
   fi
 
+  # Round 4: the verifier now also invokes the V2 binary's own `validate`
+  # and `status` against the mission dir. A fabricated mission that skips
+  # any V2 invariant (schema drift, event-seq > state_revision, STATE
+  # mission_id mismatch, missing clean mission-close bundle) will fail
+  # those subprocess checks even if the file-level checks pass.
+  local bin
+  bin="$(resolve_bin)" || exit $?
+
   # Structural + mission-grounded validation lives in Python so the
   # JSON-aware checks are robust (sentinel detection, string length,
-  # exact-value matching, STATE/events/bundle cross-checks).
-  python3 - "${receipt}" <<'PY'
+  # exact-value matching, STATE/events/bundle cross-checks, subprocess
+  # validate + status enforcement).
+  python3 - "${receipt}" "${bin}" <<'PY'
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 path = sys.argv[1]
+bin_path = sys.argv[2]  # Round 4: resolved V2 binary for subprocess checks.
 with open(path, "r", encoding="utf-8") as f:
     content = f.read()
 
@@ -418,7 +429,83 @@ else:
             "(mission-close cannot be legitimately complete without one)"
         )
 
-all_errs = state_errs + event_errs + bundle_errs
+# 4) Ground the receipt in the V2 binary's own machinery.
+#    mission_dir is <repo-root>/PLANS/<mission_id>, so the repo-root is
+#    the parent-of-parent. A forger would have to produce a mission dir
+#    that passes V2's real `validate` + emits a `verdict: complete,
+#    terminality: terminal, phase: complete` status envelope — at which
+#    point they've essentially re-run the V2 state machine by hand.
+binary_errs = []
+try:
+    repo_root = mission_dir.parent.parent
+except Exception as exc:  # noqa: BLE001
+    binary_errs.append(f"cannot derive repo-root from mission_dir: {exc}")
+    repo_root = None
+
+def run_cli(args, label):
+    try:
+        proc = subprocess.run(
+            [bin_path, "--repo-root", str(repo_root), "--json", *args],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except FileNotFoundError:
+        binary_errs.append(
+            f"resolved codex1 binary {bin_path!r} is not executable"
+        )
+        return None
+    except subprocess.TimeoutExpired:
+        binary_errs.append(f"codex1 {label} timed out after 30s")
+        return None
+
+    stdout = proc.stdout.strip().splitlines()
+    envelope = None
+    for line in reversed(stdout):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            envelope = json.loads(line)
+            break
+        except json.JSONDecodeError:
+            continue
+    if envelope is None:
+        binary_errs.append(
+            f"codex1 {label} produced no JSON envelope on stdout "
+            f"(exit={proc.returncode}, stderr={proc.stderr.strip()!r})"
+        )
+    return envelope
+
+if repo_root is not None:
+    validate_env = run_cli(["validate", "--mission", mission_id], "validate")
+    if validate_env is not None and validate_env.get("ok") is not True:
+        code = validate_env.get("code", "unknown")
+        msg = validate_env.get("message", "")
+        binary_errs.append(
+            f"codex1 validate refuses mission {mission_id!r}: code={code} message={msg!r}"
+        )
+
+    status_env = run_cli(["status", "--mission", mission_id], "status")
+    if status_env is not None:
+        if status_env.get("verdict") != "complete":
+            binary_errs.append(
+                f"codex1 status reports verdict={status_env.get('verdict')!r} "
+                f"(receipt claims complete)"
+            )
+        if status_env.get("terminality") != "terminal":
+            binary_errs.append(
+                f"codex1 status reports terminality={status_env.get('terminality')!r} "
+                f"(receipt claims terminal)"
+            )
+        if status_env.get("phase") != "complete":
+            binary_errs.append(
+                f"codex1 status reports phase={status_env.get('phase')!r} "
+                f"(receipt claims complete)"
+            )
+
+all_errs = state_errs + event_errs + bundle_errs + binary_errs
 if all_errs:
     print(f"qualify: mission at {mission_dir} does not match receipt:", file=sys.stderr)
     for e in all_errs:
@@ -427,6 +514,7 @@ if all_errs:
 
 print(f"qualify: receipt at {path} VALIDATED.")
 print(f"         cross-checked against mission {mission_id} at {mission_dir}")
+print(f"         V2 validate + status endorse the mission state")
 PY
 }
 

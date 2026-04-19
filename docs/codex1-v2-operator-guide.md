@@ -48,8 +48,8 @@ binary that doesn't match. Resolution order:
 All V2 skills begin with:
 
 ```bash
-CODEX1="$(/Users/joel/codex1/scripts/resolve-codex1-bin)" || {
-  echo "V2 codex1 not found; build with: cargo build -p codex1 --release" >&2
+CODEX1="$("${CODEX1_REPO_ROOT:-/Users/joel/codex1}/scripts/resolve-codex1-bin")" || {
+  echo "V2 codex1 not found. Set CODEX1_REPO_ROOT=<codex1 checkout> or build with: cargo build -p codex1 --release" >&2
   exit 1
 }
 ```
@@ -58,10 +58,26 @@ and then use `"$CODEX1" <subcommand>` for every invocation. This is the
 single source of truth for "where is the V2 binary" — no skill or script
 should invoke bare `codex1` and hope PATH is right.
 
+`CODEX1_REPO_ROOT` is the one knob operators need to set when the
+Codex1 checkout lives somewhere other than `/Users/joel/codex1` (the
+author's local default, kept as a graceful fallback).
+
 ### Ralph hook
 
-Register `scripts/ralph-status-hook.sh` at your runner's stop surface.
-See `docs/codex1-v2-ralph-hook.md` for the full install table.
+A V2-shaped `.codex/hooks.json` ships in the repo. It invokes
+`scripts/ralph-status-hook.sh "$CODEX1_MISSION"` on every Stop event, so
+Codex operators get Ralph enforcement out of the box once they export the
+active mission id. Claude Code has a symmetrical slot at
+`.claude/settings.json` — V2 does not write that file (it is
+user-personal), but the operator-guide recipe for it is identical:
+`command: "${CODEX1_REPO_ROOT:-/Users/joel/codex1}/scripts/ralph-status-hook.sh $CODEX1_MISSION"`.
+
+**Why the hook needs `CODEX1_MISSION`.** V2 refuses ambient mission
+resolution — every CLI call takes `--mission <id>` explicitly. The Stop
+hook is a single static command, so it can't know the active mission
+unless the operator tells it. The hook treats a missing
+`CODEX1_MISSION` as "no active mission, allow stop." See
+`docs/codex1-v2-ralph-hook.md` for the full install table.
 
 **Migrating from a cached V1 hook config.** V2 does not answer
 `codex1 internal ...` subcommands. If your runner has a cached Codex
@@ -71,6 +87,30 @@ otherwise the cached command will fail with `unrecognized subcommand`
 and stop will block. There is intentionally no compatibility shim: a
 fail-open shim created a silent allow-stop surface inside the V2 binary
 and was removed in the Round 3 honesty fixes.
+
+## Running a V2 session
+
+Before invoking any V2 skill or interacting with an active mission,
+export two environment variables so the resolver and the Stop hook find
+the right repo and the right mission:
+
+```bash
+export CODEX1_REPO_ROOT=/path/to/codex1          # where the V2 checkout lives
+export CODEX1_MISSION=<active mission id>        # the mission the skill will drive
+```
+
+Rationale:
+
+- `CODEX1_REPO_ROOT` is what every skill's resolver preamble reads to
+  find `scripts/resolve-codex1-bin`. If unset, the resolver falls back to
+  `/Users/joel/codex1` — fine on the author's machine, broken elsewhere.
+- `CODEX1_MISSION` is what `.codex/hooks.json` passes to
+  `scripts/ralph-status-hook.sh`. Missing → Stop hook allows stop, which
+  is the correct conservative default when no mission is active.
+
+Both are session-scoped. If you switch missions, re-export
+`CODEX1_MISSION`. Two concurrent missions in the same shell are not a
+supported configuration.
 
 ### Skills
 

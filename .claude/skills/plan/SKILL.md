@@ -21,8 +21,8 @@ is narrative-only and not executable — `"$CODEX1" plan check` fails with
 Every skill starts by resolving the V2 `codex1` binary to `$CODEX1`.
 
 ```bash
-CODEX1="$(/Users/joel/codex1/scripts/resolve-codex1-bin)" || {
-  echo "V2 codex1 not found; build with: cargo build -p codex1 --release" >&2
+CODEX1="$("${CODEX1_REPO_ROOT:-/Users/joel/codex1}/scripts/resolve-codex1-bin")" || {
+  echo "V2 codex1 not found. Set CODEX1_REPO_ROOT=<codex1 checkout> or build with: cargo build -p codex1 --release" >&2
   exit 1
 }
 ```
