@@ -7,7 +7,8 @@ description: Codex1 V2 planning. Use when the user invokes $plan, when OUTCOME-L
 
 Author the mission DAG inside `PROGRAM-BLUEPRINT.md` between the
 `<!-- codex1:plan-dag:start -->` / `:end -->` markers. A plan without a DAG
-is narrative-only and not executable.
+is narrative-only and not executable — `"$CODEX1" plan check` fails with
+`DAG_EMPTY` until at least one task exists.
 
 ## When to use
 
@@ -15,12 +16,25 @@ is narrative-only and not executable.
 - `OUTCOME-LOCK.md` is `ratified` and `plan waves` returns `waves: []`.
 - A replan needs new task IDs appended (never reused; may supersede).
 
+## Binary resolver
+
+Every skill starts by resolving the V2 `codex1` binary to `$CODEX1`.
+
+```bash
+CODEX1="$(/Users/joel/codex1/scripts/resolve-codex1-bin)" || {
+  echo "V2 codex1 not found; build with: cargo build -p codex1 --release" >&2
+  exit 1
+}
+```
+
+Use `"$CODEX1"` for every `codex1` invocation below.
+
 ## Steps
 
 1. Read the lock and any existing blueprint:
    ```bash
-   codex1 validate --mission <id> --json
-   codex1 plan graph --mission <id> --json    # current DAG, if any
+   "$CODEX1" validate --mission <id> --json
+   "$CODEX1" plan graph --mission <id> --json    # current DAG, if any
    ```
 
 2. Author task rows. Required fields per task:
@@ -39,10 +53,12 @@ is narrative-only and not executable.
 
 5. Verify:
    ```bash
-   codex1 plan check  --mission <id> --json
-   codex1 plan waves  --mission <id> --json
-   codex1 task next   --mission <id> --json
+   "$CODEX1" plan check  --mission <id> --json
+   "$CODEX1" plan waves  --mission <id> --json
+   "$CODEX1" task next   --mission <id> --json
    ```
+   `plan check` must return `ok: true`. An empty DAG fails with code
+   `DAG_EMPTY` — author at least one task before finishing `$plan`.
 
 ## Stop boundaries
 
@@ -65,5 +81,5 @@ When replanning, append new tasks (new IDs) and mark old tasks superseded:
 Then record the event:
 
 ```bash
-codex1 replan record --mission <id> --reason <code> --supersedes T4 --json
+"$CODEX1" replan record --mission <id> --reason <code> --supersedes T4 --json
 ```

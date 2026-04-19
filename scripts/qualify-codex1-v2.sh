@@ -51,11 +51,14 @@ prepare() {
     --repo-root "${tempdir}" \
     --json >/dev/null
 
+  local mission_dir="${tempdir}/PLANS/${mission_id}"
+
   cat <<EOF
 Codex1 V2 qualification tempdir prepared.
 
   MISSION_ID:      ${mission_id}
   REPO_ROOT:       ${tempdir}
+  MISSION_DIR:     ${mission_dir}
 
 Next steps (run these in your Codex or Claude Code session):
 
@@ -69,8 +72,13 @@ Next steps (run these in your Codex or Claude Code session):
        - ralph_hook: passed
        - verdict: complete
        - mission_id: ${mission_id}
+       - mission_dir: ${mission_dir}
      plus the session transcript or log reference.
-  4. Run:
+  4. DO NOT delete ${tempdir} — the verifier opens ${mission_dir} and
+     cross-checks STATE.json, events.jsonl, and the review bundles
+     against the receipt. A fabricated receipt pointing at a missing
+     or incomplete mission is rejected.
+  5. Run:
        ${REPO_ROOT}/scripts/qualify-codex1-v2.sh verify ${RECEIPT_FINAL}
 
 Simulation by direct CLI calls is explicitly forbidden — the live run
@@ -111,12 +119,15 @@ verify() {
     exit 2
   fi
 
-  # Structural validation lives in Python so the JSON-aware checks are
-  # robust (sentinel detection, string length, exact-value matching).
+  # Structural + mission-grounded validation lives in Python so the
+  # JSON-aware checks are robust (sentinel detection, string length,
+  # exact-value matching, STATE/events/bundle cross-checks).
   python3 - "${receipt}" <<'PY'
 import json
+import os
 import re
 import sys
+from pathlib import Path
 
 path = sys.argv[1]
 with open(path, "r", encoding="utf-8") as f:
@@ -145,9 +156,18 @@ required_exact = {
 # and not equal to a placeholder sentinel.
 required_non_placeholder = [
     "mission_id",
+    "mission_dir",
     "operator",
     "completed_at",
     "session_transcript_excerpt",
+]
+
+# Required numeric fields: must be non-zero integers. A forger who
+# writes task_count: 0 or final_state_revision: 0 gets rejected here
+# before the cross-check even runs.
+required_positive_int = [
+    "final_state_revision",
+    "final_event_seq",
 ]
 
 PLACEHOLDER = "TODO-FILL-IN"
@@ -180,7 +200,14 @@ for key in required_non_placeholder:
     elif is_placeholder(data[key]):
         errs.append(f"field {key!r} still has placeholder value {data[key]!r}")
 
-# Extra semantic check: session transcript must be substantial.
+for key in required_positive_int:
+    if key not in data:
+        errs.append(f"missing required field {key!r}")
+    elif not isinstance(data[key], int) or isinstance(data[key], bool) or data[key] <= 0:
+        errs.append(
+            f"field {key!r} must be a positive integer (got {data.get(key)!r})"
+        )
+
 excerpt = data.get("session_transcript_excerpt")
 if (
     isinstance(excerpt, str)
@@ -192,6 +219,9 @@ if (
         f"(>= 40 chars of real transcript required; got {len(excerpt.strip())})"
     )
 
+# Short-circuit if the structural pass already failed — the mission
+# cross-check below assumes `mission_dir`, `mission_id`, and numeric
+# fields are sane.
 if errs:
     print(f"qualify: receipt at {path} is INVALID:", file=sys.stderr)
     for e in errs:
@@ -203,9 +233,200 @@ if errs:
     print("Required non-placeholder fields:", file=sys.stderr)
     for k in required_non_placeholder:
         print(f"  {k}", file=sys.stderr)
+    print("Required positive-integer fields:", file=sys.stderr)
+    for k in required_positive_int:
+        print(f"  {k}", file=sys.stderr)
+    sys.exit(1)
+
+# ---- Mission-grounded cross-check ----
+#
+# A forger can write a receipt, but they cannot easily fabricate a
+# mission directory whose STATE.json, events.jsonl, and review bundles
+# all agree with the receipt while also obeying the V2 state-machine
+# invariants (monotonic seq, matching state_revision, required
+# event-stream milestones). That is the bar the verifier enforces here.
+
+mission_dir = Path(data["mission_dir"])
+mission_id = data["mission_id"]
+final_state_revision = int(data["final_state_revision"])
+final_event_seq = int(data["final_event_seq"])
+
+if not mission_dir.is_absolute():
+    print(
+        f"qualify: mission_dir must be an absolute path (got {mission_dir!r}). "
+        "Use the absolute path of PLANS/<mission_id>/ inside the qualification tempdir.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+if not mission_dir.is_dir():
+    print(
+        f"qualify: mission_dir {mission_dir} does not exist or is not a directory. "
+        "Preserve the qualification tempdir until `verify` runs; the verifier "
+        "opens STATE.json, events.jsonl, and reviews/ to cross-check the receipt.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+# 1) STATE.json
+state_path = mission_dir / "STATE.json"
+if not state_path.is_file():
+    print(f"qualify: STATE.json not found at {state_path}", file=sys.stderr)
+    sys.exit(1)
+try:
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+except json.JSONDecodeError as e:
+    print(f"qualify: STATE.json is not valid JSON: {e}", file=sys.stderr)
+    sys.exit(1)
+
+state_errs = []
+if state.get("mission_id") != mission_id:
+    state_errs.append(
+        f"STATE.json.mission_id={state.get('mission_id')!r} != receipt.mission_id={mission_id!r}"
+    )
+if state.get("phase") != "complete":
+    state_errs.append(
+        f"STATE.json.phase={state.get('phase')!r} but receipt claims verdict: complete "
+        f"(mission-close complete must have run)"
+    )
+if state.get("state_revision") != final_state_revision:
+    state_errs.append(
+        f"STATE.json.state_revision={state.get('state_revision')!r} "
+        f"!= receipt.final_state_revision={final_state_revision!r}"
+    )
+
+# 2) events.jsonl — every line parses, last seq matches, required
+#    milestone events are present in monotonic order.
+events_path = mission_dir / "events.jsonl"
+if not events_path.is_file():
+    print(f"qualify: events.jsonl not found at {events_path}", file=sys.stderr)
+    sys.exit(1)
+
+events = []
+try:
+    for lineno, raw in enumerate(events_path.read_text(encoding="utf-8").splitlines(), 1):
+        raw = raw.strip()
+        if not raw:
+            continue
+        events.append((lineno, json.loads(raw)))
+except json.JSONDecodeError as e:
+    print(f"qualify: events.jsonl has malformed JSON: {e}", file=sys.stderr)
+    sys.exit(1)
+
+event_errs = []
+if not events:
+    event_errs.append("events.jsonl is empty; a real $autopilot run must emit events")
+else:
+    last_seq = events[-1][1].get("seq")
+    sr = state.get("state_revision")
+    # last seq must equal state_revision (normal) or state_revision - 1
+    # (one-line lag permitted by the V2 validate contract).
+    if not (isinstance(last_seq, int) and isinstance(sr, int) and last_seq in (sr, sr - 1)):
+        event_errs.append(
+            f"events.jsonl last seq={last_seq!r} is not consistent with "
+            f"STATE.json.state_revision={sr!r} (allowed: equal or lag by 1)"
+        )
+    if last_seq != final_event_seq:
+        event_errs.append(
+            f"events.jsonl last seq={last_seq!r} != receipt.final_event_seq={final_event_seq!r}"
+        )
+
+    # Required milestone events (actual emitted names, per V2 source).
+    def find_first(kind_pred, extra_pred=None):
+        for _, ev in events:
+            if kind_pred(ev.get("kind")):
+                if extra_pred is None or extra_pred(ev):
+                    return ev
+        return None
+
+    autopilot_activated = find_first(
+        lambda k: k == "parent_loop_activated",
+        lambda ev: ev.get("mode") == "autopilot",
+    )
+    if autopilot_activated is None:
+        event_errs.append(
+            "no parent_loop_activated event with mode=autopilot found "
+            "(proof that $autopilot actually activated the loop)"
+        )
+
+    required_kinds = [
+        "task_started",
+        "task_finished",
+        "review_opened",
+        "review_closed",
+        "mission_closed",
+    ]
+    for kind in required_kinds:
+        if find_first(lambda k, _k=kind: k == _k) is None:
+            event_errs.append(
+                f"no {kind!r} event found in events.jsonl (required for a real $autopilot run)"
+            )
+
+    # Monotonic + ordered milestones: parent_loop_activated(autopilot) → task_started
+    # → task_finished → review_opened → review_closed → mission_closed.
+    def first_seq_where(kind_pred, extra_pred=None):
+        for _, ev in events:
+            if kind_pred(ev.get("kind")):
+                if extra_pred is None or extra_pred(ev):
+                    return ev.get("seq")
+        return None
+
+    order_expected = [
+        ("parent_loop_activated(autopilot)",
+         first_seq_where(lambda k: k == "parent_loop_activated",
+                         lambda ev: ev.get("mode") == "autopilot")),
+        ("task_started", first_seq_where(lambda k: k == "task_started")),
+        ("task_finished", first_seq_where(lambda k: k == "task_finished")),
+        ("review_opened", first_seq_where(lambda k: k == "review_opened")),
+        ("review_closed", first_seq_where(lambda k: k == "review_closed")),
+        ("mission_closed", first_seq_where(lambda k: k == "mission_closed")),
+    ]
+    prev_name, prev_seq = None, None
+    for name, seq in order_expected:
+        if seq is None:
+            continue  # already reported above
+        if prev_seq is not None and seq < prev_seq:
+            event_errs.append(
+                f"event order violated: first {name} at seq {seq} "
+                f"precedes first {prev_name} at seq {prev_seq}"
+            )
+        prev_name, prev_seq = name, seq
+
+# 3) Review bundles — at least one mission_close target with status clean.
+reviews_dir = mission_dir / "reviews"
+bundle_errs = []
+if not reviews_dir.is_dir():
+    bundle_errs.append(f"reviews/ directory not found at {reviews_dir}")
+else:
+    found_clean_mc = False
+    for entry in sorted(reviews_dir.iterdir()):
+        if entry.is_file() and entry.name.startswith("B") and entry.suffix == ".json":
+            try:
+                b = json.loads(entry.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as e:
+                bundle_errs.append(f"bundle {entry.name} is not valid JSON: {e}")
+                continue
+            target = b.get("target", {})
+            kind = target.get("kind") if isinstance(target, dict) else None
+            status = b.get("status")
+            if kind == "mission_close" and status == "clean":
+                found_clean_mc = True
+                break
+    if not found_clean_mc:
+        bundle_errs.append(
+            "no clean mission_close review bundle found under reviews/B*.json "
+            "(mission-close cannot be legitimately complete without one)"
+        )
+
+all_errs = state_errs + event_errs + bundle_errs
+if all_errs:
+    print(f"qualify: mission at {mission_dir} does not match receipt:", file=sys.stderr)
+    for e in all_errs:
+        print(f"  - {e}", file=sys.stderr)
     sys.exit(1)
 
 print(f"qualify: receipt at {path} VALIDATED.")
+print(f"         cross-checked against mission {mission_id} at {mission_dir}")
 PY
 }
 

@@ -16,16 +16,29 @@ bounded subagents that only produce findings — they never clear gates.
   requirement.
 - The last close produced findings and the task routed to `needs_repair`.
 
+## Binary resolver
+
+Every skill starts by resolving the V2 `codex1` binary to `$CODEX1`.
+
+```bash
+CODEX1="$(/Users/joel/codex1/scripts/resolve-codex1-bin)" || {
+  echo "V2 codex1 not found; build with: cargo build -p codex1 --release" >&2
+  exit 1
+}
+```
+
+Use `"$CODEX1"` for every `codex1` invocation below.
+
 ## Steps
 
 1. Activate the review parent loop:
    ```bash
-   codex1 parent-loop activate --mission <id> --mode review --json
+   "$CODEX1" parent-loop activate --mission <id> --mode review --json
    ```
 
 2. Open the bundle:
    ```bash
-   codex1 review open --mission <id> --task <task_id> \
+   "$CODEX1" review open --mission <id> --task <task_id> \
      --profiles code_bug_correctness,local_spec_intent --json
    ```
    Capture the returned `bundle_id`.
@@ -37,27 +50,27 @@ bounded subagents that only produce findings — they never clear gates.
 
 4. Submit each reviewer output:
    ```bash
-   codex1 review submit --mission <id> --bundle <B> --input path/to/out.json --json
+   "$CODEX1" review submit --mission <id> --bundle <B> --input path/to/out.json --json
    ```
    Stale bindings → `STALE_OUTPUT`. Parent-role outputs → refused.
 
 5. Check cleanliness:
    ```bash
-   codex1 review status --mission <id> --bundle <B> --json
+   "$CODEX1" review status --mission <id> --bundle <B> --json
    ```
 
 6. Close the bundle:
    ```bash
-   codex1 review close --mission <id> --bundle <B> --json
+   "$CODEX1" review close --mission <id> --bundle <B> --json
    ```
    Clean → task → `review_clean`. Findings → task → `needs_repair`.
 
 7. If `needs_repair`, hand back to `$execute` to re-run. If
-   `codex1 replan check` flags a mandatory trigger, hand to `$plan`.
+   `"$CODEX1" replan check` flags a mandatory trigger, hand to `$plan`.
 
 8. When no reviews are open and no tasks owe review, deactivate:
    ```bash
-   codex1 parent-loop deactivate --mission <id> --json
+   "$CODEX1" parent-loop deactivate --mission <id> --json
    ```
 
 ## Stop boundaries
@@ -68,4 +81,4 @@ bounded subagents that only produce findings — they never clear gates.
   clean or failed — reviewers only produce findings.
 - **P0/P1/P2 block clean.** P3 is recorded but does not block.
 - **Six-consecutive-non-clean rule.** After six failed closures on the
-  same task, `codex1 replan check` flags a mandatory replan trigger.
+  same task, `"$CODEX1" replan check` flags a mandatory replan trigger.

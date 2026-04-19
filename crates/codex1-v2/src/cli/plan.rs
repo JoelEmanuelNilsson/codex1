@@ -32,6 +32,11 @@ fn run_check(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError> {
     }
     let blueprint = blueprint::parse_blueprint(&paths.program_blueprint())?;
     let dag = graph::build_dag(&blueprint)?;
+    if dag.is_empty() {
+        return Err(CliError::DagEmpty {
+            mission: mission.to_string(),
+        });
+    }
     Ok(envelope::success(
         CHECK_SCHEMA,
         &json!({

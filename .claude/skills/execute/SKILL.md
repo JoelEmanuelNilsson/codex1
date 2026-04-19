@@ -15,39 +15,65 @@ loop, start the task, implement + write proof, finish the task, and hand to
 - `codex1 task next` returns `next_action.kind: start_task`.
 - The parent loop is in `execute` mode (re-entry after pause).
 
+## Binary resolver
+
+Every skill starts by resolving the V2 `codex1` binary to `$CODEX1`.
+
+```bash
+CODEX1="$(/Users/joel/codex1/scripts/resolve-codex1-bin)" || {
+  echo "V2 codex1 not found; build with: cargo build -p codex1 --release" >&2
+  exit 1
+}
+```
+
+Use `"$CODEX1"` for every `codex1` invocation below.
+
 ## Steps
 
 1. Activate the execute parent loop (Ralph will now block stop):
    ```bash
-   codex1 parent-loop activate --mission <id> --mode execute --json
+   "$CODEX1" parent-loop activate --mission <id> --mode execute --json
    ```
 
 2. Ask the CLI what to do next:
    ```bash
-   codex1 task next --mission <id> --json
+   "$CODEX1" task next --mission <id> --json
    ```
    Expect `next_action.kind: start_task` with a `task_id`.
 
-3. Start the task:
+3. Inspect the whole eligible wave. Status also returns:
+   - `ready_tasks: [...]` — every eligible task id in the current wave.
+   - `ready_wave_parallel_safe: bool` — true when the wave has ≥ 2 tasks
+     and every wave-safety check passes (disjoint writes, no read/write
+     conflicts, disjoint exclusive resources, no unknown side effects,
+     no intra-wave dep edges).
+
+   **If `ready_wave_parallel_safe` is `true`, start every id in `ready_tasks`
+   before finishing any of them.** Review bundles still serialize per task.
+
+   Otherwise, work only on `next_action.task_id` (the first id) and
+   re-query status after each finish.
+
+4. Start each task you have elected to run:
    ```bash
-   codex1 task start --mission <id> <task_id> --json
+   "$CODEX1" task start --mission <id> <task_id> --json
    ```
    Capture the returned `task_run_id` — reviewers bind to it.
 
-4. Read the spec at `specs/<task_id>/SPEC.md`, implement changes, and
+5. Read the spec at `specs/<task_id>/SPEC.md`, implement changes, and
    write `specs/<task_id>/PROOF.md` with the receipts the spec demands.
 
-5. Finish the task — the CLI hashes the proof file:
+6. Finish the task — the CLI hashes the proof file:
    ```bash
-   codex1 task finish --mission <id> <task_id> --json
+   "$CODEX1" task finish --mission <id> <task_id> --json
    ```
 
-6. Status will now emit `next_action.kind: review_open`. Hand over to
+7. Status will now emit `next_action.kind: review_open`. Hand over to
    `$review-loop` unless the user paused via `$close`.
 
-7. If there are no more ready tasks and none owe review, deactivate:
+8. If there are no more ready tasks and none owe review, deactivate:
    ```bash
-   codex1 parent-loop deactivate --mission <id> --json
+   "$CODEX1" parent-loop deactivate --mission <id> --json
    ```
 
 ## Stop boundaries

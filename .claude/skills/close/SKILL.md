@@ -15,24 +15,37 @@ parent's loop — resume continues, deactivate discards.
 - The user asks a clarifying question mid-execution or mid-review.
 - The parent needs time to decide between repair and replan.
 
+## Binary resolver
+
+Every skill starts by resolving the V2 `codex1` binary to `$CODEX1`.
+
+```bash
+CODEX1="$(/Users/joel/codex1/scripts/resolve-codex1-bin)" || {
+  echo "V2 codex1 not found; build with: cargo build -p codex1 --release" >&2
+  exit 1
+}
+```
+
+Use `"$CODEX1"` for every `codex1` invocation below.
+
 ## Steps
 
 1. Pause the parent loop:
    ```bash
-   codex1 parent-loop pause --mission <id> --json
+   "$CODEX1" parent-loop pause --mission <id> --json
    ```
-   After this, `codex1 status` returns `stop_policy.reason:
+   After this, `"$CODEX1" status` returns `stop_policy.reason:
    discussion_pause` and Ralph allows stop.
 
 2. Talk to the user. The CLI makes no further changes until resumed.
 
 3. Resume when ready:
    ```bash
-   codex1 parent-loop resume --mission <id> --json
+   "$CODEX1" parent-loop resume --mission <id> --json
    ```
    Or abandon the loop entirely:
    ```bash
-   codex1 parent-loop deactivate --mission <id> --json
+   "$CODEX1" parent-loop deactivate --mission <id> --json
    ```
 
 ## Stop boundaries
@@ -40,8 +53,8 @@ parent's loop — resume continues, deactivate discards.
 - `$close` does **not** mutate mission files beyond `parent_loop.paused`.
 - `$close` does **not** touch `OUTCOME-LOCK.md`, blueprint, or task state.
 - This is **not** `mission-close`. Terminal close is driven by
-  `codex1 mission-close check` + `codex1 mission-close complete` (Wave 5),
-  composed inside `$autopilot`.
+  `"$CODEX1" mission-close check` + `"$CODEX1" mission-close complete`
+  (Wave 5), composed inside `$autopilot`.
 
 ## Status behaviour while paused
 

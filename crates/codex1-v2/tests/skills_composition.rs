@@ -4,7 +4,14 @@
 use std::fs;
 use std::path::Path;
 
-const SKILLS: &[&str] = &["clarify", "plan", "execute", "review-loop", "close"];
+const SKILLS: &[&str] = &[
+    "clarify",
+    "plan",
+    "execute",
+    "review-loop",
+    "close",
+    "autopilot",
+];
 
 fn skill_path(name: &str) -> std::path::PathBuf {
     let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
@@ -46,22 +53,36 @@ fn every_skill_has_frontmatter_with_name_and_description() {
 
 #[test]
 fn every_skill_documents_cli_commands_it_drives() {
+    // Round 3 Fix 1: skills must invoke the V2 binary via the resolved
+    // `$CODEX1` environment variable, not bare `codex1` (which collides
+    // with the pre-existing V1 support CLI on many machines). The test
+    // greps for `"$CODEX1" <subcommand>` so any regression to a bare
+    // `codex1` invocation fails here.
     for name in SKILLS {
         let content = fs::read_to_string(skill_path(name)).unwrap();
         let required_commands: &[&str] = match *name {
-            "clarify" => &["codex1 init", "codex1 validate"],
-            "plan" => &["codex1 plan", "codex1 plan graph"],
+            "clarify" => &[r#""$CODEX1" init"#, r#""$CODEX1" validate"#],
+            "plan" => &[r#""$CODEX1" plan"#, r#""$CODEX1" plan graph"#],
             "execute" => &[
-                "codex1 task start",
-                "codex1 task finish",
-                "codex1 parent-loop",
+                r#""$CODEX1" task start"#,
+                r#""$CODEX1" task finish"#,
+                r#""$CODEX1" parent-loop"#,
             ],
             "review-loop" => &[
-                "codex1 review open",
-                "codex1 review submit",
-                "codex1 review close",
+                r#""$CODEX1" review open"#,
+                r#""$CODEX1" review submit"#,
+                r#""$CODEX1" review close"#,
             ],
-            "close" => &["codex1 parent-loop pause", "codex1 parent-loop resume"],
+            "close" => &[
+                r#""$CODEX1" parent-loop pause"#,
+                r#""$CODEX1" parent-loop resume"#,
+            ],
+            "autopilot" => &[
+                r#""$CODEX1" parent-loop activate"#,
+                r#""$CODEX1" mission-close check"#,
+                r#""$CODEX1" mission-close complete"#,
+                r#""$CODEX1" status"#,
+            ],
             _ => unreachable!(),
         };
         for cmd in required_commands {
@@ -70,6 +91,24 @@ fn every_skill_documents_cli_commands_it_drives() {
                 "{name}: SKILL.md must document {cmd}"
             );
         }
+    }
+}
+
+#[test]
+fn every_skill_has_the_binary_resolver_preamble() {
+    // Round 3 Fix 1: each skill must set $CODEX1 via the callable
+    // resolver before invoking any subcommand. This guards against a
+    // skill slipping through with bare `codex1` commands.
+    for name in SKILLS {
+        let content = fs::read_to_string(skill_path(name)).unwrap();
+        assert!(
+            content.contains("scripts/resolve-codex1-bin"),
+            "{name}: SKILL.md must reference scripts/resolve-codex1-bin"
+        );
+        assert!(
+            content.contains(r#"CODEX1="$("#),
+            "{name}: SKILL.md must set CODEX1 via command substitution"
+        );
     }
 }
 

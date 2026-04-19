@@ -55,6 +55,9 @@ pub enum CliError {
     #[error("PROGRAM-BLUEPRINT.md is missing the codex1:plan-dag markers")]
     DagNoBlock { path: String },
 
+    #[error("plan for mission {mission} has zero tasks")]
+    DagEmpty { mission: String },
+
     #[error("DAG schema error: {reason}")]
     DagBadSchema { reason: String },
 
@@ -115,6 +118,7 @@ impl CliError {
             Self::DagCycle { .. } => "DAG_CYCLE",
             Self::DagMissingDep { .. } => "DAG_MISSING_DEP",
             Self::DagNoBlock { .. } => "DAG_NO_BLOCK",
+            Self::DagEmpty { .. } => "DAG_EMPTY",
             Self::DagBadSchema { .. } => "DAG_BAD_SCHEMA",
             Self::StateCorrupt { .. } => "STATE_CORRUPT",
             Self::RepoRootInvalid { .. } => "REPO_ROOT_INVALID",
@@ -169,6 +173,11 @@ impl CliError {
                  <!-- codex1:plan-dag:start --> and <!-- codex1:plan-dag:end -->."
                     .into(),
             ),
+            Self::DagEmpty { .. } => Some(
+                "Author tasks under the codex1:plan-dag:start/end markers and \
+                 re-run codex1 plan check. An empty plan is not executable."
+                    .into(),
+            ),
             Self::StateCorrupt { .. } => {
                 Some("Inspect STATE.json and events.jsonl; V2 does not auto-repair.".into())
             }
@@ -210,6 +219,7 @@ impl CliError {
             Self::DagCycle { path, cycle } => json!({ "path": path, "cycle": cycle }),
             Self::DagMissingDep { task, missing } => json!({ "task": task, "missing": missing }),
             Self::DagNoBlock { path } => json!({ "path": path }),
+            Self::DagEmpty { mission } => json!({ "mission": mission }),
             Self::DagBadSchema { reason } => json!({ "reason": reason }),
             Self::RepoRootInvalid { reason, path } => json!({ "reason": reason, "path": path }),
             Self::Io { path, source } => json!({ "path": path, "source": source.to_string() }),

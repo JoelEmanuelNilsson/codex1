@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Print the absolute path of a V2 `codex1` binary, or fail loudly.
+#
+# Usage:
+#   CODEX1="$(scripts/resolve-codex1-bin)" || { echo "build V2 first" >&2; exit 1; }
+#   "$CODEX1" status --mission demo --json
+#
+# Resolution order matches scripts/lib/resolve-codex1.sh:
+#   1. $CODEX1_BIN (if set and V2)
+#   2. $CODEX1_REPO_ROOT/target/{release,debug}/codex1 (if V2)
+#      — defaults to the repo containing this script.
+#   3. `codex1` on PATH (only if V2)
+#   4. `codex1-v2` on PATH (only if V2)
+#
+# This is the callable entry point for Codex1 V2 skills. Skills source it
+# to set $CODEX1 so they never fall through to the user's pre-existing V1
+# `codex1` binary on PATH.
+
+set -eu
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/resolve-codex1.sh
+source "${SCRIPT_DIR}/lib/resolve-codex1.sh"
+
+REPO_ROOT="${CODEX1_REPO_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
+resolve_codex1 "${REPO_ROOT}"

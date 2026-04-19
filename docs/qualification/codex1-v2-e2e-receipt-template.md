@@ -22,7 +22,16 @@ The verifier extracts this fenced JSON block and rejects the receipt if:
 - `ralph_hook != "passed"`;
 - `verdict != "complete"`;
 - `terminality != "terminal"`;
-- `session_transcript_excerpt` is shorter than 40 characters after trimming.
+- `session_transcript_excerpt` is shorter than 40 characters after trimming;
+- `mission_dir` does not contain a live V2 mission whose STATE.json,
+  events.jsonl, and review-bundle files agree with the receipt (phase
+  `complete`, matching `state_revision`, a real `$autopilot` event trail,
+  at least one clean `mission_close` review bundle).
+
+**Preserve the qualification tempdir** until `verify` runs. The verifier
+opens `mission_dir` and cross-checks its contents against the receipt —
+if the directory was deleted between the run and `verify`, the receipt
+cannot be validated.
 
 ```json
 {
@@ -32,6 +41,7 @@ The verifier extracts this fenced JSON block and rejects the receipt if:
   "verdict": "TODO-FILL-IN",
   "terminality": "TODO-FILL-IN",
   "mission_id": "TODO-FILL-IN",
+  "mission_dir": "TODO-FILL-IN",
   "repo_root": "TODO-FILL-IN",
   "operator": "TODO-FILL-IN",
   "runner": "TODO-FILL-IN",
@@ -51,6 +61,10 @@ The verifier extracts this fenced JSON block and rejects the receipt if:
 }
 ```
 
+`mission_dir` is the absolute path of the `PLANS/<mission_id>/`
+directory inside the qualification tempdir (the `REPO_ROOT` printed by
+`scripts/qualify-codex1-v2.sh prepare`, joined with `PLANS/<mission_id>/`).
+
 Expected values on a valid run (must match exactly):
 
 - `skill_invocation: "autopilot"`
@@ -61,6 +75,7 @@ Expected values on a valid run (must match exactly):
 ## Mission context
 
 - mission_id: `<TODO qual-<ts>>`
+- mission_dir: `<TODO absolute path of PLANS/<mission_id>/ inside the qualification tempdir>`
 - repo_root: `<TODO absolute path of the tempdir>`
 - runner: `<TODO codex | claude-code | other>`
 - runner_version: `<TODO>`

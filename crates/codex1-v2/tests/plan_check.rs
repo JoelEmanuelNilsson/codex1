@@ -33,20 +33,23 @@ fn last_json(out: &[u8]) -> Value {
 }
 
 #[test]
-fn empty_tasks_passes_plan_check() {
+fn empty_tasks_rejected_by_plan_check() {
+    // V2 PRD: a plan without a DAG is not executable. `plan check` must
+    // fail so orchestrators never see a green light on an unshippable plan.
+    // (`status` still routes empty-DAG missions to `plan_dag_empty` for UX.)
     let dir = TempDir::new().unwrap();
     init(&dir);
     let out = bin(&dir)
         .args(["--json", "plan", "check", "--mission", "m1"])
         .assert()
-        .success()
+        .failure()
         .get_output()
         .stdout
         .clone();
     let env = last_json(&out);
-    assert_eq!(env["ok"], true);
-    assert_eq!(env["schema"], "codex1.plan.check.v1");
-    assert_eq!(env["task_count"], 0);
+    assert_eq!(env["ok"], false);
+    assert_eq!(env["code"], "DAG_EMPTY");
+    assert_eq!(env["details"]["mission"], "m1");
 }
 
 #[test]

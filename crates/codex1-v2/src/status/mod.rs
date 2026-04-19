@@ -22,7 +22,7 @@
 
 use serde::Serialize;
 
-use crate::graph::{Dag, waves::derive_waves};
+use crate::graph::{Dag, waves::WaveMode, waves::derive_waves};
 use crate::review::bundle::{ReviewBundle, ReviewStatus, ReviewTarget};
 use crate::state::{ParentLoopMode, Phase, State, TaskStatus};
 
@@ -41,6 +41,14 @@ pub struct StatusEnvelope {
     pub stop_policy: StopPolicy,
     pub next_action: NextAction,
     pub ready_tasks: Vec<String>,
+    /// True when the current wave has ≥ 2 eligible tasks AND every
+    /// wave-safety flag passes (disjoint writes, no read/write conflicts,
+    /// disjoint exclusive resources, no unknown side effects, and no
+    /// intra-wave dep edges). When true, `$execute` may start every
+    /// `ready_tasks[]` entry before finishing any. When false (including
+    /// `ready_tasks.len() <= 1`), the orchestrator must serialize on the
+    /// `next_action.task_id`.
+    pub ready_wave_parallel_safe: bool,
     pub running_tasks: Vec<String>,
     pub review_required: Vec<String>,
     pub blocked: Vec<String>,
@@ -153,6 +161,7 @@ pub fn project_status_with_bundles(
                 display_message: "Mission state is inconsistent; run codex1 validate.".into(),
             },
             ready_tasks: vec![],
+            ready_wave_parallel_safe: false,
             running_tasks: running_task_ids(state),
             review_required: vec![],
             blocked: vec![],
@@ -186,6 +195,7 @@ pub fn project_status_with_bundles(
                     display_message: "Mission is complete.".into(),
                 },
                 ready_tasks: vec![],
+                ready_wave_parallel_safe: false,
                 running_tasks: vec![],
                 review_required: vec![],
                 blocked: vec![],
@@ -227,6 +237,7 @@ pub fn project_status_with_bundles(
                 display_message: message.into(),
             },
             ready_tasks: vec![],
+            ready_wave_parallel_safe: false,
             running_tasks: running_task_ids(state),
             review_required: vec![],
             blocked: vec![],
@@ -236,6 +247,10 @@ pub fn project_status_with_bundles(
     }
 
     let waves = derive_waves(dag, state);
+    let ready_wave_parallel_safe = waves
+        .waves
+        .first()
+        .is_some_and(|w| w.mode == WaveMode::Parallel && w.tasks.len() >= 2);
     let ready_tasks: Vec<String> = waves
         .waves
         .iter()
@@ -268,6 +283,7 @@ pub fn project_status_with_bundles(
                 display_message: format!("Start task {first_task}."),
             },
             ready_tasks,
+            ready_wave_parallel_safe,
             running_tasks: running_task_ids(state),
             review_required: review_required.clone(),
             blocked: blocked_ids,
@@ -303,6 +319,7 @@ pub fn project_status_with_bundles(
                 display_message: format!("Open a review for task {first_review}."),
             },
             ready_tasks: vec![],
+            ready_wave_parallel_safe: false,
             running_tasks: running_task_ids(state),
             review_required,
             blocked: blocked_ids,
@@ -331,6 +348,7 @@ pub fn project_status_with_bundles(
             display_message: display,
         },
         ready_tasks: vec![],
+        ready_wave_parallel_safe: false,
         running_tasks: running_task_ids(state),
         review_required,
         blocked: blocked_ids,
@@ -695,6 +713,46 @@ mod tests {
     }
 
     #[test]
+    fn ready_wave_parallel_safe_false_for_single_ready_task() {
+        let dag = dag_of(vec![task("T1")]);
+        let state = state_with(&[("T1", TaskStatus::Ready)], Phase::Clarify);
+        let s = project_status(&state, &dag);
+        assert_eq!(s.verdict, Verdict::ContinueRequired);
+        assert!(!s.ready_wave_parallel_safe);
+    }
+
+    #[test]
+    fn ready_wave_parallel_safe_true_for_two_disjoint_ready_tasks() {
+        let mut t1 = task("T1");
+        let mut t2 = task("T2");
+        t1.write_paths = vec!["src/a/**".into()];
+        t2.write_paths = vec!["src/b/**".into()];
+        let dag = dag_of(vec![t1, t2]);
+        let state = state_with(
+            &[("T1", TaskStatus::Ready), ("T2", TaskStatus::Ready)],
+            Phase::Clarify,
+        );
+        let s = project_status(&state, &dag);
+        assert!(s.ready_wave_parallel_safe);
+        assert_eq!(s.ready_tasks.len(), 2);
+    }
+
+    #[test]
+    fn ready_wave_parallel_safe_false_for_overlapping_writes() {
+        let mut t1 = task("T1");
+        let mut t2 = task("T2");
+        t1.write_paths = vec!["src/**".into()];
+        t2.write_paths = vec!["src/foo/**".into()];
+        let dag = dag_of(vec![t1, t2]);
+        let state = state_with(
+            &[("T1", TaskStatus::Ready), ("T2", TaskStatus::Ready)],
+            Phase::Clarify,
+        );
+        let s = project_status(&state, &dag);
+        assert!(!s.ready_wave_parallel_safe);
+    }
+
+    #[test]
     fn envelope_serializes_with_expected_field_names() {
         let dag = dag_of(vec![]);
         let state = state_with(&[], Phase::Clarify);
@@ -710,6 +768,7 @@ mod tests {
             "stop_policy",
             "next_action",
             "ready_tasks",
+            "ready_wave_parallel_safe",
             "running_tasks",
             "review_required",
             "blocked",

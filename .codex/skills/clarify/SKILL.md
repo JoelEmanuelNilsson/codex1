@@ -14,11 +14,26 @@ is authored.
 - A new mission id is needed.
 - A mission exists but `OUTCOME-LOCK.md`'s `lock_status` is still `draft`.
 
+## Binary resolver
+
+Every skill starts by resolving the V2 `codex1` binary to `$CODEX1`. The
+user's `~/.cargo/bin/codex1` may be a pre-existing V1 support CLI; this
+resolver probes for the V2 help surface before trusting any binary.
+
+```bash
+CODEX1="$(/Users/joel/codex1/scripts/resolve-codex1-bin)" || {
+  echo "V2 codex1 not found; build with: cargo build -p codex1 --release" >&2
+  exit 1
+}
+```
+
+Use `"$CODEX1"` for every `codex1` invocation below.
+
 ## Steps
 
 1. If no mission exists yet, create one:
    ```bash
-   codex1 init --mission <safe-slug> --title "<human title>" --json
+   "$CODEX1" init --mission <safe-slug> --title "<human title>" --json
    ```
    Mission IDs must match `^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$`.
 
@@ -31,7 +46,7 @@ is authored.
 
 4. Validate:
    ```bash
-   codex1 validate --mission <id> --json
+   "$CODEX1" validate --mission <id> --json
    ```
    Must exit `ok: true`.
 
@@ -45,7 +60,7 @@ is authored.
 ## Example
 
 ```bash
-codex1 init --mission checkout-refactor --title "Unify checkout APIs" --json
+"$CODEX1" init --mission checkout-refactor --title "Unify checkout APIs" --json
 # ...interview user, edit OUTCOME-LOCK.md...
-codex1 validate --mission checkout-refactor --json
+"$CODEX1" validate --mission checkout-refactor --json
 ```

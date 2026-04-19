@@ -32,14 +32,45 @@ cargo build -p codex1 --release
 cp target/release/codex1 ~/.local/bin/
 ```
 
-Scripts that shipped pre-cutover may still reference `codex1-v2` and
-fall back via `CODEX1_BIN`; that path still works if you want to keep
-both binaries on PATH during transition.
+**About V1 on PATH.** Some machines already have `~/.cargo/bin/codex1`
+from the V1 support CLI. V2 does not try to install over it — instead,
+every skill and script resolves the V2 binary explicitly via
+`scripts/resolve-codex1-bin`, which probes candidates for the V2 help
+surface (`mission-close` and `parent-loop` subcommands) and rejects any
+binary that doesn't match. Resolution order:
+
+1. `$CODEX1_BIN` (if set and V2)
+2. `<repo-root>/target/release/codex1` (if V2)
+3. `<repo-root>/target/debug/codex1` (if V2)
+4. `codex1` on PATH (only if V2)
+5. `codex1-v2` on PATH (only if V2; legacy-development fallback)
+
+All V2 skills begin with:
+
+```bash
+CODEX1="$(/Users/joel/codex1/scripts/resolve-codex1-bin)" || {
+  echo "V2 codex1 not found; build with: cargo build -p codex1 --release" >&2
+  exit 1
+}
+```
+
+and then use `"$CODEX1" <subcommand>` for every invocation. This is the
+single source of truth for "where is the V2 binary" — no skill or script
+should invoke bare `codex1` and hope PATH is right.
 
 ### Ralph hook
 
 Register `scripts/ralph-status-hook.sh` at your runner's stop surface.
 See `docs/codex1-v2-ralph-hook.md` for the full install table.
+
+**Migrating from a cached V1 hook config.** V2 does not answer
+`codex1 internal ...` subcommands. If your runner has a cached Codex
+hook config that invokes `codex1 internal stop-hook`, refresh it to
+point at `scripts/ralph-status-hook.sh` before the next stop boundary —
+otherwise the cached command will fail with `unrecognized subcommand`
+and stop will block. There is intentionally no compatibility shim: a
+fail-open shim created a silent allow-stop surface inside the V2 binary
+and was removed in the Round 3 honesty fixes.
 
 ### Skills
 
