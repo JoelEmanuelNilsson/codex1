@@ -68,10 +68,13 @@ Use `"$CODEX1"` for every `codex1` invocation below.
 7. If `needs_repair`, hand back to `$execute` to re-run. If
    `"$CODEX1" replan check` flags a mandatory trigger, hand to `$plan`.
 
-8. When no reviews are open and no tasks owe review, deactivate:
-   ```bash
-   "$CODEX1" parent-loop deactivate --mission <id> --json
-   ```
+8. When no reviews are open and no tasks owe review, **task-level
+   review is done — do NOT deactivate the parent loop here.** Hand off
+   to `$close` so the mission-close review and `mission-close complete`
+   can run under the same active loop. `$close` is responsible for
+   `parent-loop deactivate` after terminal completion. Dropping Ralph
+   pressure before terminal close recreates V1's "final clean frontier
+   stalls before mission close" failure mode.
 
 ## Stop boundaries
 

@@ -32,6 +32,10 @@ fn boot_with_clean_task(dir: &TempDir) {
          <!-- codex1:plan-dag:end -->\n",
     )
     .unwrap();
+    // Round 9 lineage check: every terminal task needs a recorded
+    // task_run_id + proof_hash, and a Clean task-scoped review bundle
+    // bound to both. Fixture fakes all three so fast-forward tests
+    // stay honest about what the real execution path would produce.
     let sp = dir.path().join("PLANS/m1/STATE.json");
     let current: Value = serde_json::from_slice(&fs::read(&sp).unwrap()).unwrap();
     let new = serde_json::json!({
@@ -39,9 +43,51 @@ fn boot_with_clean_task(dir: &TempDir) {
         "state_revision": current["state_revision"],
         "phase": "executing",
         "parent_loop": { "mode": "none", "paused": false },
-        "tasks": { "T1": { "status": "review_clean" } }
+        "tasks": {
+            "T1": {
+                "status": "review_clean",
+                "task_run_id": "run-T1",
+                "proof_hash": "sha256:proof-T1"
+            }
+        }
     });
     fs::write(&sp, serde_json::to_vec_pretty(&new).unwrap()).unwrap();
+
+    // Write a Clean task-scoped review bundle bound to (T1, run-T1,
+    // sha256:proof-T1) so the lineage check in check_readiness is
+    // satisfied. Filename must match the B<digits>.json convention
+    // that review::load_all_bundles enforces; B100 keeps it out of
+    // the way of sequential bundle ids minted by later CLI calls.
+    let reviews = dir.path().join("PLANS/m1/reviews");
+    fs::create_dir_all(&reviews).unwrap();
+    let task_bundle = serde_json::json!({
+        "bundle_id": "B100",
+        "mission_id": "m1",
+        "graph_revision": 1,
+        "state_revision": current["state_revision"],
+        "target": {
+            "kind": "task",
+            "task_id": "T1",
+            "task_run_id": "run-T1"
+        },
+        "requirements": [{
+            "id": "req-b100-code",
+            "profile": "code_bug_correctness",
+            "min_outputs": 1,
+            "allowed_roles": ["reviewer"]
+        }],
+        "evidence_refs": ["specs/T1/PROOF.md"],
+        "evidence_snapshot_hash": "sha256:proof-T1",
+        "status": "clean",
+        "opened_at": "2026-04-19T10:00:00Z",
+        "closed_at": "2026-04-19T10:05:00Z",
+        "opener_role": "parent"
+    });
+    fs::write(
+        reviews.join("B100.json"),
+        serde_json::to_vec_pretty(&task_bundle).unwrap(),
+    )
+    .unwrap();
 }
 
 /// Flip OUTCOME-LOCK.md to `lock_status: ratified`. Round 8 Fix #1
@@ -365,6 +411,103 @@ fn status_envelope_emits_mission_close_complete_when_bundle_clean() {
     let env = last_json(&out);
     assert_eq!(env["next_action"]["kind"], "mission_close_complete");
     let _ = write_proof; // silence unused warning in this test
+}
+
+#[test]
+fn hand_authored_review_clean_without_proof_or_task_bundle_is_blocked() {
+    // Round 9 P1: a hand-authored STATE.json that jumps T1 to
+    // review_clean (no proof_hash, no task_run_id) plus only a clean
+    // mission-close bundle must NOT satisfy mission-close readiness.
+    // The lineage check surfaces TASK_PROOF_MISSING (or
+    // TASK_REVIEW_MISSING) so terminal close can't happen without
+    // actual proof-of-work and proof-of-review.
+    let dir = TempDir::new().unwrap();
+    bin(&dir)
+        .args(["--json", "init", "--mission", "m1", "--title", "t"])
+        .assert()
+        .success();
+    ratify_lock(&dir);
+    fs::write(
+        dir.path().join("PLANS/m1/PROGRAM-BLUEPRINT.md"),
+        "# BP\n\n<!-- codex1:plan-dag:start -->\n\
+         planning:\n  requested_level: light\n  graph_revision: 1\n\
+         tasks:\n  - id: T1\n    title: Impl\n    kind: code\n\
+         <!-- codex1:plan-dag:end -->\n",
+    )
+    .unwrap();
+    // Hand-author STATE: T1 claims review_clean with no lineage.
+    let sp = dir.path().join("PLANS/m1/STATE.json");
+    let current: Value = serde_json::from_slice(&fs::read(&sp).unwrap()).unwrap();
+    fs::write(
+        &sp,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "mission_id": current["mission_id"],
+            "state_revision": current["state_revision"],
+            "phase": "executing",
+            "parent_loop": { "mode": "none", "paused": false },
+            "tasks": { "T1": { "status": "review_clean" } }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    // Open + close a clean mission-close bundle (no task-review bundle).
+    let out = bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "open-mission-close",
+            "--mission",
+            "m1",
+            "--profiles",
+            "mission_close",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let bundle_id = last_json(&out)["bundle_id"].as_str().unwrap().to_string();
+    submit_clean_mc_output(&dir, &bundle_id);
+    bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "close",
+            "--mission",
+            "m1",
+            "--bundle",
+            &bundle_id,
+        ])
+        .assert()
+        .success();
+
+    // mission-close check must refuse with TASK_PROOF_MISSING.
+    let out = bin(&dir)
+        .args(["--json", "mission-close", "check", "--mission", "m1"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["can_close"], false);
+    let codes: Vec<&str> = env["blocking_reasons"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| b["code"].as_str().unwrap())
+        .collect();
+    assert!(
+        codes.contains(&"TASK_PROOF_MISSING"),
+        "expected TASK_PROOF_MISSING in {codes:?}"
+    );
+
+    // mission-close complete must refuse.
+    bin(&dir)
+        .args(["--json", "mission-close", "complete", "--mission", "m1"])
+        .assert()
+        .failure();
 }
 
 #[test]

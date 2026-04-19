@@ -121,6 +121,8 @@ pub fn check_readiness(
         }
     }
 
+    reasons.extend(check_task_lineage(state, dag, bundles));
+
     // Any task-targeting bundle that is Open or Failed is a blocker.
     for bundle in bundles {
         match (&bundle.target, bundle.status) {
@@ -192,6 +194,78 @@ pub fn check_readiness(
         mission_close_bundle: mc_summary.report_id,
         mission_close_clean: mc_summary.all_clean,
     }
+}
+
+/// Per-task lineage check. A task whose status claims
+/// `ReviewClean`/`Complete` must also have a real `proof_hash` and a
+/// Clean task-scoped review bundle bound to its current
+/// `(task_run_id, proof_hash)`. Without this, a hand-authored
+/// `STATE.json` can jump a task straight to `review_clean` and let
+/// mission-close terminalize with no proof-of-work or proof-of-review
+/// — status alone is too cheap a claim for the terminal-truth contract.
+fn check_task_lineage(state: &State, dag: &Dag, bundles: &[ReviewBundle]) -> Vec<BlockingReason> {
+    let mut reasons: Vec<BlockingReason> = Vec::new();
+    for id in dag.ids() {
+        let Some(task_state) = state.tasks.get(&id) else {
+            continue; // TASK_NOT_CLEAN in the earlier loop caught missing entry.
+        };
+        if task_state.status == TaskStatus::Superseded {
+            continue;
+        }
+        if !matches!(
+            task_state.status,
+            TaskStatus::ReviewClean | TaskStatus::Complete
+        ) {
+            continue; // TASK_NOT_CLEAN already recorded for non-terminal statuses.
+        }
+        let Some(proof_hash) = task_state.proof_hash.as_deref() else {
+            reasons.push(BlockingReason::task(
+                "TASK_PROOF_MISSING",
+                &id,
+                "terminal task has no recorded proof_hash (task finish never bound a proof)".into(),
+            ));
+            continue;
+        };
+        let Some(task_run_id) = task_state.task_run_id.as_deref() else {
+            reasons.push(BlockingReason::task(
+                "TASK_PROOF_MISSING",
+                &id,
+                "terminal task has no recorded task_run_id".into(),
+            ));
+            continue;
+        };
+        if !has_clean_task_bundle(bundles, &id, task_run_id, proof_hash) {
+            reasons.push(BlockingReason::task(
+                "TASK_REVIEW_MISSING",
+                &id,
+                "terminal task has no Clean task-scoped review bundle bound \
+                 to its current task_run_id and proof_hash"
+                    .into(),
+            ));
+        }
+    }
+    reasons
+}
+
+fn has_clean_task_bundle(
+    bundles: &[ReviewBundle],
+    id: &str,
+    task_run_id: &str,
+    proof_hash: &str,
+) -> bool {
+    bundles.iter().any(|b| {
+        if b.status != ReviewStatus::Clean {
+            return false;
+        }
+        let ReviewTarget::Task {
+            task_id: b_task_id,
+            task_run_id: b_run_id,
+        } = &b.target
+        else {
+            return false;
+        };
+        b_task_id == id && b_run_id == task_run_id && b.evidence_snapshot_hash == proof_hash
+    })
 }
 
 struct MissionCloseSummary {
@@ -326,6 +400,14 @@ mod tests {
     fn state_with(pairs: &[(&str, TaskStatus)], phase: Phase) -> State {
         let mut map = BTreeMap::new();
         for (id, status) in pairs {
+            // Give every terminal/in-flight task a recorded task_run_id
+            // and proof_hash so the lineage check has something real to
+            // bind against. Tests that want to exercise missing lineage
+            // use `state_with_bare` instead.
+            let has_proof = !matches!(
+                status,
+                TaskStatus::Planned | TaskStatus::Ready | TaskStatus::Superseded
+            );
             map.insert(
                 (*id).to_string(),
                 TaskState {
@@ -333,9 +415,17 @@ mod tests {
                     started_at: None,
                     finished_at: None,
                     reviewed_at: None,
-                    task_run_id: None,
+                    task_run_id: if has_proof {
+                        Some(format!("run-{id}"))
+                    } else {
+                        None
+                    },
                     proof_ref: None,
-                    proof_hash: None,
+                    proof_hash: if has_proof {
+                        Some(format!("sha256:proof-{id}"))
+                    } else {
+                        None
+                    },
                 },
             );
         }
@@ -345,6 +435,36 @@ mod tests {
             phase,
             parent_loop: ParentLoop::default(),
             tasks: map,
+        }
+    }
+
+    /// Build a Clean task-scoped review bundle whose target + evidence
+    /// hash matches the conventional `(run-<id>, sha256:proof-<id>)`
+    /// set by `state_with`. Tests use this so the lineage check sees a
+    /// real clean review bound to the task.
+    fn clean_task_bundle(task_id: &str) -> ReviewBundle {
+        use crate::review::bundle::ReviewRequirement;
+        ReviewBundle {
+            bundle_id: format!("BT-{task_id}"),
+            mission_id: "m".into(),
+            graph_revision: 1,
+            state_revision: 1,
+            target: ReviewTarget::Task {
+                task_id: task_id.into(),
+                task_run_id: format!("run-{task_id}"),
+            },
+            requirements: vec![ReviewRequirement {
+                id: "req".into(),
+                profile: "code_bug_correctness".into(),
+                min_outputs: 1,
+                allowed_roles: vec!["reviewer".into()],
+            }],
+            evidence_refs: vec![format!("specs/{task_id}/PROOF.md")],
+            evidence_snapshot_hash: format!("sha256:proof-{task_id}"),
+            status: ReviewStatus::Clean,
+            opened_at: "t".into(),
+            closed_at: Some("t".into()),
+            opener_role: "parent".into(),
         }
     }
 
@@ -495,12 +615,112 @@ mod tests {
             &ratified_lock(),
             &s,
             &dag,
-            &[mission_close_bundle(ReviewStatus::Clean, &s, &dag)],
+            &[
+                clean_task_bundle("T1"),
+                mission_close_bundle(ReviewStatus::Clean, &s, &dag),
+            ],
         );
-        assert!(r.can_close);
+        assert!(r.can_close, "reasons: {:?}", r.blocking_reasons);
         assert!(r.can_complete);
         assert!(r.mission_close_clean);
         assert_eq!(r.mission_close_bundle.as_deref(), Some("B9"));
+    }
+
+    #[test]
+    fn terminal_task_without_proof_hash_blocks() {
+        // Round 9 P1: a hand-authored STATE.json that jumps a task to
+        // review_clean without a proof_hash must not be allowed to
+        // close. The lineage check surfaces TASK_PROOF_MISSING so the
+        // mission can't terminalize on a status claim alone.
+        let dag = build_dag(&Blueprint {
+            planning: planning(),
+            tasks: vec![task("T1")],
+            review_boundaries: vec![],
+        })
+        .unwrap();
+        let mut s = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
+        if let Some(t) = s.tasks.get_mut("T1") {
+            t.proof_hash = None;
+            t.task_run_id = None;
+        }
+        let r = check_readiness(
+            &ratified_lock(),
+            &s,
+            &dag,
+            &[
+                clean_task_bundle("T1"),
+                mission_close_bundle(ReviewStatus::Clean, &s, &dag),
+            ],
+        );
+        assert!(!r.can_close);
+        assert!(
+            r.blocking_reasons
+                .iter()
+                .any(|b| b.code == "TASK_PROOF_MISSING"),
+            "reasons: {:?}",
+            r.blocking_reasons
+        );
+    }
+
+    #[test]
+    fn terminal_task_without_matching_task_review_blocks() {
+        // Round 9 P1: a clean mission-close bundle alone is not enough
+        // — each terminal task needs a Clean task-scoped bundle bound
+        // to its current (task_run_id, proof_hash).
+        let dag = build_dag(&Blueprint {
+            planning: planning(),
+            tasks: vec![task("T1")],
+            review_boundaries: vec![],
+        })
+        .unwrap();
+        let s = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
+        // Only a mission-close bundle — no task-scoped review bundle.
+        let r = check_readiness(
+            &ratified_lock(),
+            &s,
+            &dag,
+            &[mission_close_bundle(ReviewStatus::Clean, &s, &dag)],
+        );
+        assert!(!r.can_close);
+        assert!(
+            r.blocking_reasons
+                .iter()
+                .any(|b| b.code == "TASK_REVIEW_MISSING")
+        );
+    }
+
+    #[test]
+    fn stale_task_bundle_blocks_when_run_id_changes() {
+        // Round 9: a Clean task bundle from a previous run_id must not
+        // satisfy lineage for the current run. Re-run → stale.
+        let dag = build_dag(&Blueprint {
+            planning: planning(),
+            tasks: vec![task("T1")],
+            review_boundaries: vec![],
+        })
+        .unwrap();
+        let mut s = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
+        // Simulate a re-run: state's task_run_id moves forward, but the
+        // bundle we pass still references the prior run.
+        if let Some(t) = s.tasks.get_mut("T1") {
+            t.task_run_id = Some("run-T1-v2".into());
+            t.proof_hash = Some("sha256:proof-T1-v2".into());
+        }
+        let r = check_readiness(
+            &ratified_lock(),
+            &s,
+            &dag,
+            &[
+                clean_task_bundle("T1"), // bound to run-T1 / proof-T1 (old)
+                mission_close_bundle(ReviewStatus::Clean, &s, &dag),
+            ],
+        );
+        assert!(!r.can_close);
+        assert!(
+            r.blocking_reasons
+                .iter()
+                .any(|b| b.code == "TASK_REVIEW_MISSING")
+        );
     }
 
     #[test]
@@ -516,7 +736,10 @@ mod tests {
             &ratified_lock(),
             &s,
             &dag,
-            &[mission_close_bundle(ReviewStatus::Clean, &s, &dag)],
+            &[
+                clean_task_bundle("T1"),
+                mission_close_bundle(ReviewStatus::Clean, &s, &dag),
+            ],
         );
         assert!(r.can_close); // can_close is about readiness, not idempotency
         assert!(!r.can_complete); // but complete would be a no-op
@@ -538,9 +761,12 @@ mod tests {
             &ratified_lock(),
             &s,
             &dag,
-            &[mission_close_bundle(ReviewStatus::Clean, &s, &dag)],
+            &[
+                clean_task_bundle("T2"), // T1 is superseded, needs no lineage
+                mission_close_bundle(ReviewStatus::Clean, &s, &dag),
+            ],
         );
-        assert!(r.can_close);
+        assert!(r.can_close, "reasons: {:?}", r.blocking_reasons);
     }
 
     #[test]
@@ -613,11 +839,12 @@ mod tests {
             &s,
             &dag,
             &[
+                clean_task_bundle("T1"),
                 mission_close_bundle_id("B1", ReviewStatus::Clean, &s, &dag),
                 mission_close_bundle_id("B2", ReviewStatus::Clean, &s, &dag),
             ],
         );
-        assert!(r.can_close);
+        assert!(r.can_close, "reasons: {:?}", r.blocking_reasons);
         assert!(r.mission_close_clean);
     }
 

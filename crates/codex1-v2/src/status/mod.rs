@@ -572,6 +572,14 @@ mod tests {
     fn state_with(tasks: &[(&str, TaskStatus)], phase: Phase) -> State {
         let mut map = BTreeMap::new();
         for (id, status) in tasks {
+            // Round 9: give terminal/in-flight tasks a conventional
+            // task_run_id and proof_hash so the lineage check in
+            // `check_readiness` sees something real when status is
+            // ReviewClean or Complete.
+            let has_proof = !matches!(
+                status,
+                TaskStatus::Planned | TaskStatus::Ready | TaskStatus::Superseded
+            );
             map.insert(
                 (*id).to_string(),
                 TaskState {
@@ -579,9 +587,17 @@ mod tests {
                     started_at: None,
                     finished_at: None,
                     reviewed_at: None,
-                    task_run_id: None,
+                    task_run_id: if has_proof {
+                        Some(format!("run-{id}"))
+                    } else {
+                        None
+                    },
                     proof_ref: None,
-                    proof_hash: None,
+                    proof_hash: if has_proof {
+                        Some(format!("sha256:proof-{id}"))
+                    } else {
+                        None
+                    },
                 },
             );
         }
@@ -591,6 +607,34 @@ mod tests {
             phase,
             parent_loop: ParentLoop::default(),
             tasks: map,
+        }
+    }
+
+    /// Clean task-scoped review bundle that matches the conventional
+    /// `(run-<id>, sha256:proof-<id>)` lineage set by `state_with`.
+    fn clean_task_bundle(task_id: &str) -> ReviewBundle {
+        use crate::review::bundle::ReviewRequirement;
+        ReviewBundle {
+            bundle_id: format!("BT-{task_id}"),
+            mission_id: "example".into(),
+            graph_revision: 1,
+            state_revision: 1,
+            target: ReviewTarget::Task {
+                task_id: task_id.into(),
+                task_run_id: format!("run-{task_id}"),
+            },
+            requirements: vec![ReviewRequirement {
+                id: "req".into(),
+                profile: "code_bug_correctness".into(),
+                min_outputs: 1,
+                allowed_roles: vec!["reviewer".into()],
+            }],
+            evidence_refs: vec![format!("specs/{task_id}/PROOF.md")],
+            evidence_snapshot_hash: format!("sha256:proof-{task_id}"),
+            status: ReviewStatus::Clean,
+            opened_at: "t".into(),
+            closed_at: Some("t".into()),
+            opener_role: "parent".into(),
         }
     }
 
@@ -830,6 +874,7 @@ mod tests {
         let dag = dag_of(vec![task("T1")]);
         let state = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
         let bundles = vec![
+            clean_task_bundle("T1"),
             mission_close("B1", ReviewStatus::Clean, &state, &dag),
             mission_close("B2", ReviewStatus::Clean, &state, &dag),
         ];
