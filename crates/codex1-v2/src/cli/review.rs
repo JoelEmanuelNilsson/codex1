@@ -492,6 +492,27 @@ fn run_submit(
             reason: "reviewer_role not in requirement.allowed_roles".into(),
         });
     }
+    // Round 12 P1: reject wrong-lane outputs at submit time. This is
+    // the earliest surface the operator/reviewer touches, so failing
+    // fast here keeps mismatched packets out of reviews/outputs/ and
+    // out of the cleanliness math.
+    if !verdict.profile_mismatched.is_empty() {
+        let req = bundle
+            .requirements
+            .iter()
+            .find(|r| r.id == output.requirement_id)
+            .ok_or_else(|| CliError::Internal {
+                message: "profile_mismatched requirement not found; internal invariant broken"
+                    .into(),
+            })?;
+        return Err(CliError::ReviewProfileMismatched {
+            bundle_id: bundle.bundle_id.clone(),
+            requirement_id: output.requirement_id.clone(),
+            requirement_profile: req.profile.clone(),
+            output_profile: output.profile.clone(),
+            packet_id: output.packet_id.clone(),
+        });
+    }
 
     // Persist the reviewer output to reviews/outputs/R<N>.json. In
     // dry-run, compute the would-be id + path but don't create the file
@@ -591,6 +612,7 @@ fn run_status(cli: &Cli, mission: &str, bundle_id: &str) -> Result<serde_json::V
             "blocking_findings": verdict.blocking_findings,
             "stale_outputs": verdict.stale_outputs,
             "self_review_refused": verdict.self_review_refused,
+            "profile_mismatched": verdict.profile_mismatched,
             "accepted_outputs": verdict.accepted_outputs,
         }),
     ))
@@ -603,20 +625,28 @@ pub fn cmd_review_close(cli: &Cli, mission: &str, bundle_id: &str) -> i32 {
     }
 }
 
+/// Round 12 P1: write the bundle closure *before* the STATE.json
+/// mutation. Old order was (state → bundle), so a crash between them
+/// left the task as ReviewClean/NeedsRepair while the bundle stayed
+/// Open — a dual-truth split that `review close` could no longer heal
+/// because the task status had already left `ReviewOwed`.
+///
+/// New order:
+/// 1. If the bundle is `Open`, compute cleanliness and atomically
+///    persist the closed bundle file. After this point, the bundle is
+///    authoritative for the outcome (Clean or Failed).
+/// 2. Mutate STATE.json to match the bundle's closed outcome.
+///
+/// If step 2 fails (crash, signal, filesystem error), a re-run of
+/// `review close` enters the recovery branch: the bundle is already
+/// Closed, so skip step 1 and run step 2 only, deriving the outcome
+/// from the persisted bundle status. If the task is already in the
+/// target state (double-reconcile), the closure is a no-op event.
 #[allow(clippy::too_many_lines)] // Linear close pipeline; splitting obscures the flow.
 fn run_close(cli: &Cli, mission: &str, bundle_id: &str) -> Result<serde_json::Value, CliError> {
     let repo_root = resolve_repo(cli)?;
     let paths = resolve_mission(&repo_root, mission)?;
     let bundle = load_bundle(&paths.mission_dir, bundle_id)?;
-    if bundle.status != ReviewStatus::Open {
-        return Err(CliError::Internal {
-            message: format!(
-                "bundle {bundle_id} is already {:?}; cannot close twice",
-                bundle.status
-            ),
-        });
-    }
-    let outputs = load_outputs_for_bundle(&paths.mission_dir, bundle_id)?;
 
     let store = StateStore::new(paths.mission_dir.clone());
     let state = store.load()?;
@@ -627,67 +657,43 @@ fn run_close(cli: &Cli, mission: &str, bundle_id: &str) -> Result<serde_json::Va
         } => (Some(task_id.as_str()), Some(task_run_id.as_str())),
         _ => (None, None),
     };
-    let verdict = compute_cleanliness(
-        &bundle,
-        &outputs,
-        &CurrentTruth {
-            graph_revision: bundle.graph_revision,
-            state_revision: state.state_revision,
-            evidence_snapshot_hash: &bundle.evidence_snapshot_hash,
-            task_run_id,
-            task_id,
-        },
-    );
 
-    let clean = verdict.clean;
-    let task_owned = task_id.map(str::to_string);
-    let bundle_id_owned = bundle.bundle_id.clone();
+    // Determine authoritative outcome. For a fresh close (Open bundle)
+    // compute cleanliness from reviewer outputs. For a recovery close
+    // (bundle already Clean/Failed), trust the durably-persisted bundle
+    // status — the verdict was computed at original close time and
+    // recomputing against current STATE could diverge (e.g., a stale
+    // bundle whose evidence snapshot is no longer the current truth).
+    let (clean, blocking_findings) = match bundle.status {
+        ReviewStatus::Open => {
+            let outputs = load_outputs_for_bundle(&paths.mission_dir, bundle_id)?;
+            let verdict = compute_cleanliness(
+                &bundle,
+                &outputs,
+                &CurrentTruth {
+                    graph_revision: bundle.graph_revision,
+                    state_revision: state.state_revision,
+                    evidence_snapshot_hash: &bundle.evidence_snapshot_hash,
+                    task_run_id,
+                    task_id,
+                },
+            );
+            (verdict.clean, verdict.blocking_findings)
+        }
+        ReviewStatus::Clean => (true, 0),
+        ReviewStatus::Failed => (false, 0),
+    };
     let final_status = if clean {
         ReviewStatus::Clean
     } else {
         ReviewStatus::Failed
     };
+    let was_recovery = bundle.status != ReviewStatus::Open;
 
-    let state_after =
-        store.mutate_checked(cli.expect_revision, cli.dry_run, move |state| {
-            if let Some(tid) = task_owned.as_ref() {
-                let entry = state.tasks.get_mut(tid).ok_or_else(|| {
-                    CliError::TaskStateTransitionInvalid {
-                        task_id: tid.clone(),
-                        current: "missing_in_state".into(),
-                        attempted: "review_close".into(),
-                    }
-                })?;
-                if entry.status != TaskStatus::ReviewOwed {
-                    return Err(CliError::TaskStateTransitionInvalid {
-                        task_id: tid.clone(),
-                        current: format!("{:?}", entry.status),
-                        attempted: "review_close".into(),
-                    });
-                }
-                // Route failed reviews straight to NeedsRepair so the task is
-                // immediately eligible for a retry via `task start`. The audit
-                // log preserves which bundle failed.
-                entry.status = if clean {
-                    TaskStatus::ReviewClean
-                } else {
-                    TaskStatus::NeedsRepair
-                };
-                entry.reviewed_at = Some(now_rfc3339());
-                if clean {
-                    state.phase = Phase::Executing;
-                } else {
-                    state.phase = Phase::Repairing;
-                }
-            }
-            Ok(EventDraft::new("review_closed")
-                .with("bundle_id", bundle_id_owned.clone())
-                .with("clean", clean)
-                .with("blocking_findings", verdict.blocking_findings))
-        })?;
-
-    // Persist the bundle's new status. Skip the file write in dry-run.
-    if !cli.dry_run {
+    // Phase 1: durably persist the bundle closure. Dry-run previews it
+    // without writing. Recovery skips — the bundle is already in its
+    // final state on disk.
+    if bundle.status == ReviewStatus::Open && !cli.dry_run {
         let mut bundle_updated = bundle.clone();
         bundle_updated.status = final_status;
         bundle_updated.closed_at = Some(now_rfc3339());
@@ -702,6 +708,59 @@ fn run_close(cli: &Cli, mission: &str, bundle_id: &str) -> Result<serde_json::Va
         })?;
     }
 
+    // Phase 2: reconcile STATE.json with the bundle's final outcome.
+    let task_owned = task_id.map(str::to_string);
+    let bundle_id_owned = bundle.bundle_id.clone();
+    let state_after =
+        store.mutate_checked(cli.expect_revision, cli.dry_run, move |state| {
+            if let Some(tid) = task_owned.as_ref() {
+                let entry = state.tasks.get_mut(tid).ok_or_else(|| {
+                    CliError::TaskStateTransitionInvalid {
+                        task_id: tid.clone(),
+                        current: "missing_in_state".into(),
+                        attempted: "review_close".into(),
+                    }
+                })?;
+                let target = if clean {
+                    TaskStatus::ReviewClean
+                } else {
+                    TaskStatus::NeedsRepair
+                };
+                if entry.status == target {
+                    // Idempotent recovery: state already matches the
+                    // bundle's outcome. Emit a reconciled event so the
+                    // audit trail captures the redundant invocation.
+                    return Ok(EventDraft::new("review_close_reconciled")
+                        .with("bundle_id", bundle_id_owned.clone())
+                        .with("clean", clean)
+                        .with("recovery", was_recovery));
+                }
+                if entry.status != TaskStatus::ReviewOwed {
+                    return Err(CliError::TaskStateTransitionInvalid {
+                        task_id: tid.clone(),
+                        current: format!("{:?}", entry.status),
+                        attempted: "review_close".into(),
+                    });
+                }
+                // Route failed reviews straight to NeedsRepair so the
+                // task is immediately eligible for retry via
+                // `task start`. The audit log preserves which bundle
+                // failed.
+                entry.status = target;
+                entry.reviewed_at = Some(now_rfc3339());
+                state.phase = if clean {
+                    Phase::Executing
+                } else {
+                    Phase::Repairing
+                };
+            }
+            Ok(EventDraft::new("review_closed")
+                .with("bundle_id", bundle_id_owned.clone())
+                .with("clean", clean)
+                .with("blocking_findings", blocking_findings)
+                .with("recovery", was_recovery))
+        })?;
+
     Ok(envelope::success(
         CLOSE_SCHEMA,
         &json!({
@@ -709,14 +768,15 @@ fn run_close(cli: &Cli, mission: &str, bundle_id: &str) -> Result<serde_json::Va
             "bundle_id": bundle.bundle_id,
             "clean": clean,
             "task_id": task_id,
-            "blocking_findings": verdict.blocking_findings,
+            "blocking_findings": blocking_findings,
             "state_revision": state_after.state_revision,
+            "recovery": was_recovery,
             "message": if clean {
                 format!("Closed review bundle {} — clean.", bundle.bundle_id)
             } else {
                 format!(
                     "Closed review bundle {} — {} blocking findings; task routed to repair.",
-                    bundle.bundle_id, verdict.blocking_findings
+                    bundle.bundle_id, blocking_findings
                 )
             },
         }),

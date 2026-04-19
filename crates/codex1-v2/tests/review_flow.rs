@@ -652,3 +652,192 @@ fn review_open_rejects_profile_omission_from_blueprint() {
         .assert()
         .success();
 }
+
+/// Round 12 P1: `review submit` must reject outputs whose declared
+/// profile does not match the requirement's declared profile.
+/// Without this check, a wrong-lane reviewer (e.g., a bug-correctness
+/// reviewer claiming the `local_spec_intent` requirement's id) could
+/// satisfy `min_outputs` for the intent requirement without ever doing
+/// the intent review.
+#[test]
+fn review_submit_rejects_profile_mismatch() {
+    let dir = TempDir::new().unwrap();
+    boot(&dir);
+    let finish = do_start_and_finish(&dir, "T1");
+    let task_run_id = finish["task_run_id"].as_str().unwrap().to_string();
+    let proof_hash = finish["proof_hash"].as_str().unwrap().to_string();
+
+    let open = open_review(&dir, "T1", "code_bug_correctness");
+    let bundle_id = open["bundle_id"].as_str().unwrap().to_string();
+    let bundle: Value = serde_json::from_slice(
+        &fs::read(
+            dir.path()
+                .join(format!("PLANS/m1/reviews/{bundle_id}.json")),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let req_id = bundle["requirements"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let state_rev = bundle["state_revision"].as_u64().unwrap();
+    let graph_rev = bundle["graph_revision"].as_u64().unwrap();
+
+    // Requirement's declared profile is `code_bug_correctness`; this
+    // output declares `local_spec_intent`. Same requirement_id, wrong
+    // lane. Must be rejected.
+    let input = write_reviewer_output(
+        &dir,
+        &bundle_id,
+        &req_id,
+        "local_spec_intent", // <-- wrong lane
+        "T1",
+        &task_run_id,
+        &proof_hash,
+        state_rev,
+        graph_rev,
+        "reviewer",
+        "pkt-wrong-lane",
+        json!({ "result": "none", "findings": [] }),
+    );
+    let rel = input.strip_prefix(dir.path()).unwrap();
+    let out = bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "submit",
+            "--mission",
+            "m1",
+            "--bundle",
+            &bundle_id,
+            "--input",
+            rel.to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["code"], "REVIEW_PROFILE_MISMATCHED");
+    assert_eq!(
+        env["details"]["requirement_profile"],
+        "code_bug_correctness"
+    );
+    assert_eq!(env["details"]["output_profile"], "local_spec_intent");
+}
+
+/// Round 12 P1: close-time write order is (bundle → state). If the
+/// state mutation fails mid-flight, the bundle is already durably
+/// Closed and a re-run reconciles the task status idempotently. This
+/// test simulates the intermediate state (bundle=Clean, task still in
+/// `ReviewOwed`) and verifies a second `review close` heals it.
+#[test]
+fn review_close_recovers_after_state_mutation_dropped() {
+    let dir = TempDir::new().unwrap();
+    boot(&dir);
+    let finish = do_start_and_finish(&dir, "T1");
+    let task_run_id = finish["task_run_id"].as_str().unwrap().to_string();
+    let proof_hash = finish["proof_hash"].as_str().unwrap().to_string();
+
+    let open = open_review(&dir, "T1", "code_bug_correctness");
+    let bundle_id = open["bundle_id"].as_str().unwrap().to_string();
+    let bundle_path = dir
+        .path()
+        .join(format!("PLANS/m1/reviews/{bundle_id}.json"));
+    let bundle: Value = serde_json::from_slice(&fs::read(&bundle_path).unwrap()).unwrap();
+    let req_id = bundle["requirements"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let state_rev = bundle["state_revision"].as_u64().unwrap();
+    let graph_rev = bundle["graph_revision"].as_u64().unwrap();
+
+    let input = write_reviewer_output(
+        &dir,
+        &bundle_id,
+        &req_id,
+        "code_bug_correctness",
+        "T1",
+        &task_run_id,
+        &proof_hash,
+        state_rev,
+        graph_rev,
+        "reviewer",
+        "pkt-1",
+        json!({ "result": "none", "findings": [] }),
+    );
+    let rel = input.strip_prefix(dir.path()).unwrap();
+    bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "submit",
+            "--mission",
+            "m1",
+            "--bundle",
+            &bundle_id,
+            "--input",
+            rel.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // Simulate crash between phase 1 (bundle write) and phase 2
+    // (state mutation): hand-rewrite the bundle to Clean while the
+    // task status remains at ReviewOwed. This is the post-crash state
+    // the new write order produces.
+    let mut bundle_mut: Value = serde_json::from_slice(&fs::read(&bundle_path).unwrap()).unwrap();
+    bundle_mut["status"] = json!("clean");
+    bundle_mut["closed_at"] = json!("2026-04-19T10:00:00Z");
+    fs::write(
+        &bundle_path,
+        serde_json::to_vec_pretty(&bundle_mut).unwrap(),
+    )
+    .unwrap();
+    // Task is currently `ReviewOwed` because opening the bundle flipped
+    // it there; we intentionally do NOT flip it forward — that is the
+    // dropped mutation.
+
+    // Re-run close. Recovery path: bundle is already Clean, so skip
+    // the bundle write; phase 2 reconciles state ReviewOwed →
+    // ReviewClean. Envelope reports recovery=true.
+    let out = bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "close",
+            "--mission",
+            "m1",
+            "--bundle",
+            &bundle_id,
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["clean"], true);
+    assert_eq!(env["recovery"], true);
+
+    let state: Value =
+        serde_json::from_slice(&fs::read(dir.path().join("PLANS/m1/STATE.json")).unwrap()).unwrap();
+    assert_eq!(state["tasks"]["T1"]["status"], "review_clean");
+
+    // Running close a third time is idempotent: bundle Clean, state
+    // ReviewClean → reconciled no-op.
+    bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "close",
+            "--mission",
+            "m1",
+            "--bundle",
+            &bundle_id,
+        ])
+        .assert()
+        .success();
+}

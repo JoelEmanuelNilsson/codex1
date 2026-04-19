@@ -79,7 +79,7 @@ fn mk_single_task_mission(dir: &TempDir) {
          \x20   spec_ref: specs/T1/SPEC.md\n\
          \x20   write_paths: [src/**]\n\
          \x20   proof: [\"cargo build\"]\n\
-         \x20   review_profiles: [code_bug_correctness]\n",
+         \x20   review_profiles: [code_bug_correctness, local_spec_intent]\n",
     );
     set_state(dir.path(), &[("T1", "ready")], "executing");
 }
@@ -231,7 +231,7 @@ fn task_ready_transitions_planned_to_ready_and_emits_event() {
          \x20   spec_ref: specs/T1/SPEC.md\n\
          \x20   write_paths: [src/**]\n\
          \x20   proof: [\"cargo build\"]\n\
-         \x20   review_profiles: [code_bug_correctness]\n",
+         \x20   review_profiles: [code_bug_correctness, local_spec_intent]\n",
     );
     // Leave STATE.json untouched: T1 is implicitly `planned`.
     let out = bin(&dir)
@@ -303,7 +303,7 @@ fn task_ready_refuses_while_outcome_lock_is_draft() {
          \x20   spec_ref: specs/T1/SPEC.md\n\
          \x20   write_paths: [src/**]\n\
          \x20   proof: [\"cargo build\"]\n\
-         \x20   review_profiles: [code_bug_correctness]\n",
+         \x20   review_profiles: [code_bug_correctness, local_spec_intent]\n",
     );
     let out = bin(&dir)
         .args(["--json", "task", "ready", "--mission", "m1", "T1"])

@@ -137,6 +137,18 @@ pub enum CliError {
     },
 
     #[error(
+        "reviewer output declares profile {output_profile:?} but requirement {requirement_id} expects profile {requirement_profile:?}; \
+         the output and requirement profiles must match"
+    )]
+    ReviewProfileMismatched {
+        bundle_id: String,
+        requirement_id: String,
+        requirement_profile: String,
+        output_profile: String,
+        packet_id: String,
+    },
+
+    #[error(
         "mission-close review cannot open while {non_terminal_count} task(s) are not terminal: {task_ids}",
         task_ids = task_ids.join(", ")
     )]
@@ -190,6 +202,7 @@ impl CliError {
             Self::ProofInvalid { .. } => "PROOF_INVALID",
             Self::TaskStateTransitionInvalid { .. } => "TASK_STATE_INVALID",
             Self::StaleOutput { .. } => "STALE_OUTPUT",
+            Self::ReviewProfileMismatched { .. } => "REVIEW_PROFILE_MISMATCHED",
             Self::MissionCloseNotReady { .. } => "MISSION_CLOSE_NOT_READY",
             Self::ReviewBundleAlreadyOpen { .. } => "REVIEW_BUNDLE_ALREADY_OPEN",
             Self::RevisionConflict { .. } => "REVISION_CONFLICT",
@@ -286,6 +299,11 @@ impl CliError {
             Self::StaleOutput { .. } => Some(
                 "Re-run task start to mint a fresh task_run_id or re-open the review bundle.".into(),
             ),
+            Self::ReviewProfileMismatched { .. } => Some(
+                "Set the output's `profile` to match the requirement's declared `profile`, \
+                 or re-target the output at the requirement whose profile it was actually produced for."
+                    .into(),
+            ),
             Self::MissionCloseNotReady { .. } => Some(
                 "Run every task through review and mark it review_clean (or supersede it) \
                  before opening the mission-close bundle. The bundle binds to the terminal \
@@ -306,6 +324,7 @@ impl CliError {
 
     /// Structured details attached to the envelope.
     #[must_use]
+    #[allow(clippy::too_many_lines)] // One arm per variant; splitting obscures.
     pub fn details(&self) -> Value {
         match self {
             Self::MissionIdInvalid { got } | Self::DagBadId { got } => {
@@ -374,6 +393,21 @@ impl CliError {
                 reason,
             } => {
                 json!({ "task_id": task_id, "bundle_id": bundle_id, "reason": reason })
+            }
+            Self::ReviewProfileMismatched {
+                bundle_id,
+                requirement_id,
+                requirement_profile,
+                output_profile,
+                packet_id,
+            } => {
+                json!({
+                    "bundle_id": bundle_id,
+                    "requirement_id": requirement_id,
+                    "requirement_profile": requirement_profile,
+                    "output_profile": output_profile,
+                    "packet_id": packet_id,
+                })
             }
             Self::MissionCloseNotReady {
                 task_ids,

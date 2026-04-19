@@ -57,7 +57,13 @@ fn run_check(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError> {
 
 fn required_profiles_for_kind(kind: &str) -> &'static [&'static str] {
     match kind {
-        "code" => &["code_bug_correctness"],
+        // Round 12 P1: code slices need *both* bug-correctness and
+        // local-spec-intent review. `code_bug_correctness` alone lets a
+        // reviewer sign off on bug-free code that drifts from the
+        // slice's intent; `local_spec_intent` alone lets on-intent code
+        // ship with correctness defects. Requiring both binds the
+        // reviewer contract to "correct AND on-intent."
+        "code" => &["code_bug_correctness", "local_spec_intent"],
         _ => &[],
     }
 }

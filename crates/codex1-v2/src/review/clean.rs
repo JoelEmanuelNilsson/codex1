@@ -24,6 +24,13 @@ pub struct CleanlinessVerdict {
     pub blocking_findings: u32,
     pub stale_outputs: Vec<String>,
     pub self_review_refused: Vec<String>,
+    /// Round 12 P1: packets whose `profile` disagrees with the
+    /// requirement's declared `profile`. Keeps wrong-lane reviews from
+    /// silently satisfying an intent/spec requirement via a
+    /// bug-correctness output (or vice versa). Surfaced as a separate
+    /// bucket — not folded into `stale_outputs` — because the failure
+    /// mode is a lane-assignment bug, not evidence drift.
+    pub profile_mismatched: Vec<String>,
     pub accepted_outputs: Vec<String>,
 }
 
@@ -50,6 +57,7 @@ pub fn compute_cleanliness(
     let mut accepted: Vec<&ReviewerOutput> = Vec::with_capacity(outputs.len());
     let mut stale_outputs: Vec<String> = Vec::new();
     let mut self_review_refused: Vec<String> = Vec::new();
+    let mut profile_mismatched: Vec<String> = Vec::new();
 
     for out in outputs {
         if out.bundle_id != bundle.bundle_id {
@@ -73,6 +81,17 @@ pub fn compute_cleanliness(
         // Role must be allowed.
         if !req.allowed_roles.contains(&out.reviewer_role) {
             self_review_refused.push(out.packet_id.clone());
+            continue;
+        }
+        // Round 12 P1: the output's self-declared profile must match
+        // the requirement's declared profile. Without this, a reviewer
+        // running lane `code_bug_correctness` could clear a requirement
+        // that calls for `local_spec_intent` (or vice versa) just by
+        // claiming the requirement's id — and `min_outputs` would still
+        // be satisfied. Reject the packet as profile_mismatched; the
+        // requirement stays unsatisfied in the missing-profiles pass.
+        if out.profile != req.profile {
+            profile_mismatched.push(out.packet_id.clone());
             continue;
         }
         // Staleness check.
@@ -138,6 +157,7 @@ pub fn compute_cleanliness(
     accepted_ids.sort();
     stale_outputs.sort();
     self_review_refused.sort();
+    profile_mismatched.sort();
 
     CleanlinessVerdict {
         clean,
@@ -145,6 +165,7 @@ pub fn compute_cleanliness(
         blocking_findings: blocking,
         stale_outputs,
         self_review_refused,
+        profile_mismatched,
         accepted_outputs: accepted_ids,
     }
 }
@@ -341,5 +362,35 @@ mod tests {
         b.requirements[0].min_outputs = 2;
         let v = compute_cleanliness(&b, &[clean_output()], &truth());
         assert!(!v.clean);
+    }
+
+    #[test]
+    fn profile_mismatched_output_rejected() {
+        // Round 12 P1: two requirements (code_bug_correctness +
+        // local_spec_intent). An output with `requirement_id` pointing
+        // at the intent requirement but `profile: code_bug_correctness`
+        // must NOT satisfy the intent requirement — that is the
+        // wrong-lane-clears-wrong-gate bug.
+        let mut b = bundle();
+        b.requirements.push(ReviewRequirement {
+            id: "B1-intent".into(),
+            profile: "local_spec_intent".into(),
+            min_outputs: 1,
+            allowed_roles: vec!["reviewer".into()],
+        });
+        let correct = clean_output(); // profile=code_bug_correctness, req=B1-code
+        let mut wrong_lane = clean_output();
+        wrong_lane.requirement_id = "B1-intent".into();
+        wrong_lane.profile = "code_bug_correctness".into(); // wrong for B1-intent
+        wrong_lane.packet_id = "pkt-wrong".into();
+        let v = compute_cleanliness(&b, &[correct, wrong_lane], &truth());
+        assert!(!v.clean, "wrong-lane output must not clear the bundle");
+        assert!(
+            v.missing_profiles.iter().any(|p| p == "local_spec_intent"),
+            "intent requirement stays unsatisfied: {:?}",
+            v.missing_profiles
+        );
+        assert_eq!(v.profile_mismatched, vec!["pkt-wrong".to_string()]);
+        assert_eq!(v.accepted_outputs, vec!["pkt-1".to_string()]);
     }
 }
