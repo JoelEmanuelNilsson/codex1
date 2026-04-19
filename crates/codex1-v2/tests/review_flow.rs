@@ -291,6 +291,91 @@ fn p1_finding_routes_task_to_needs_repair() {
 }
 
 #[test]
+fn findings_count_regardless_of_result_discriminator() {
+    // Round 10 P1: a reviewer output can self-attest `result: "none"`
+    // and still include P0/P1/P2 findings — a schema inconsistency
+    // that used to let blocking findings slip through. Cleanliness
+    // now counts every `findings[]` entry regardless of `result`.
+    let dir = TempDir::new().unwrap();
+    boot(&dir);
+    let finish = do_start_and_finish(&dir, "T1");
+    let task_run_id = finish["task_run_id"].as_str().unwrap().to_string();
+    let proof_hash = finish["proof_hash"].as_str().unwrap().to_string();
+    let open = open_review(&dir, "T1", "code_bug_correctness");
+    let bundle_id = open["bundle_id"].as_str().unwrap().to_string();
+    let bundle: Value = serde_json::from_slice(
+        &fs::read(
+            dir.path()
+                .join(format!("PLANS/m1/reviews/{bundle_id}.json")),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let req_id = bundle["requirements"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let state_rev = bundle["state_revision"].as_u64().unwrap();
+    let graph_rev = bundle["graph_revision"].as_u64().unwrap();
+
+    // result: "none" (self-attested no findings) but findings[] has P1.
+    let input = write_reviewer_output(
+        &dir,
+        &bundle_id,
+        &req_id,
+        "code_bug_correctness",
+        "T1",
+        &task_run_id,
+        &proof_hash,
+        state_rev,
+        graph_rev,
+        "reviewer",
+        "pkt-mixed",
+        json!({
+            "result": "none",
+            "findings": [{
+                "severity": "P1",
+                "title": "Forgotten bug",
+                "rationale": "result says none but findings disagrees"
+            }]
+        }),
+    );
+    let rel = input.strip_prefix(dir.path()).unwrap();
+    bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "submit",
+            "--mission",
+            "m1",
+            "--bundle",
+            &bundle_id,
+            "--input",
+            rel.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let out = bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "close",
+            "--mission",
+            "m1",
+            "--bundle",
+            &bundle_id,
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["clean"], false);
+    assert_eq!(env["blocking_findings"], 1);
+}
+
+#[test]
 fn self_review_is_refused() {
     let dir = TempDir::new().unwrap();
     boot(&dir);

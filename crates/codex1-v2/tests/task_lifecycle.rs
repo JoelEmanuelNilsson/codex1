@@ -22,6 +22,15 @@ fn init(dir: &TempDir) {
         .args(["--json", "init", "--mission", "m1", "--title", "t"])
         .assert()
         .success();
+    // Round 10: status refuses to route past a draft lock. Ratify
+    // here so task-lifecycle tests observe their intended routing.
+    let lock_path = dir.path().join("PLANS/m1/OUTCOME-LOCK.md");
+    let content = fs::read_to_string(&lock_path).unwrap();
+    fs::write(
+        &lock_path,
+        content.replace("lock_status: draft", "lock_status: ratified"),
+    )
+    .unwrap();
 }
 
 fn write_blueprint(dir: &Path, yaml_body: &str) {
@@ -57,10 +66,20 @@ fn write_proof(dir: &Path, task_id: &str, content: &[u8]) {
 
 fn mk_single_task_mission(dir: &TempDir) {
     init(dir);
+    // Round 10: fixtures that drive `task ready` must satisfy the same
+    // plan-acceptance gates `plan check` runs — depends_on (explicit),
+    // spec_ref, write_paths, proof, review_profiles (with
+    // code_bug_correctness for kind=code). Older tests that only
+    // exercise `task start/finish` tolerate any blueprint, but the
+    // stricter blueprint also works for them.
     write_blueprint(
         dir.path(),
         "planning:\n  requested_level: light\n  graph_revision: 1\n\
-         tasks:\n  - id: T1\n    title: Impl\n    kind: code\n",
+         tasks:\n  - id: T1\n    title: Impl\n    kind: code\n    depends_on: []\n\
+         \x20   spec_ref: specs/T1/SPEC.md\n\
+         \x20   write_paths: [src/**]\n\
+         \x20   proof: [\"cargo build\"]\n\
+         \x20   review_profiles: [code_bug_correctness]\n",
     );
     set_state(dir.path(), &[("T1", "ready")], "executing");
 }
@@ -208,7 +227,11 @@ fn task_ready_transitions_planned_to_ready_and_emits_event() {
     write_blueprint(
         dir.path(),
         "planning:\n  requested_level: light\n  graph_revision: 1\n\
-         tasks:\n  - id: T1\n    title: Impl\n    kind: code\n",
+         tasks:\n  - id: T1\n    title: Impl\n    kind: code\n    depends_on: []\n\
+         \x20   spec_ref: specs/T1/SPEC.md\n\
+         \x20   write_paths: [src/**]\n\
+         \x20   proof: [\"cargo build\"]\n\
+         \x20   review_profiles: [code_bug_correctness]\n",
     );
     // Leave STATE.json untouched: T1 is implicitly `planned`.
     let out = bin(&dir)
@@ -232,6 +255,73 @@ fn task_ready_transitions_planned_to_ready_and_emits_event() {
     let events = fs::read_to_string(dir.path().join("PLANS/m1/events.jsonl")).unwrap();
     assert!(events.contains("\"kind\":\"task_marked_ready\""));
     assert!(events.contains("\"task_id\":\"T1\""));
+}
+
+#[test]
+fn task_ready_refuses_when_plan_check_would_fail() {
+    // Round 10 P1: `task ready` used to skip the plan-acceptance
+    // gates, so a blueprint that `plan check` rejects could still
+    // promote a task to ready. That let unaccepted plans become
+    // executable repo truth.
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    // Underspecified blueprint — missing spec_ref, write_paths,
+    // proof, review_profiles. plan check would reject with
+    // DAG_TASK_UNDERSPECIFIED.
+    write_blueprint(
+        dir.path(),
+        "planning:\n  requested_level: light\n  graph_revision: 1\n\
+         tasks:\n  - id: T1\n    title: Thin\n    kind: code\n",
+    );
+    let out = bin(&dir)
+        .args(["--json", "task", "ready", "--mission", "m1", "T1"])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["code"], "DAG_TASK_UNDERSPECIFIED");
+    assert_eq!(env["details"]["task_id"], "T1");
+}
+
+#[test]
+fn task_ready_refuses_while_outcome_lock_is_draft() {
+    // Round 10 P1: `task ready` must require a ratified outcome lock,
+    // otherwise $clarify can be skipped by going straight to
+    // $plan → $execute.
+    let dir = TempDir::new().unwrap();
+    // Deliberately skip the init() helper so the lock stays draft.
+    bin(&dir)
+        .args(["--json", "init", "--mission", "m1", "--title", "t"])
+        .assert()
+        .success();
+    write_blueprint(
+        dir.path(),
+        "planning:\n  requested_level: light\n  graph_revision: 1\n\
+         tasks:\n  - id: T1\n    title: Impl\n    kind: code\n    depends_on: []\n\
+         \x20   spec_ref: specs/T1/SPEC.md\n\
+         \x20   write_paths: [src/**]\n\
+         \x20   proof: [\"cargo build\"]\n\
+         \x20   review_profiles: [code_bug_correctness]\n",
+    );
+    let out = bin(&dir)
+        .args(["--json", "task", "ready", "--mission", "m1", "T1"])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["ok"], false);
+    assert!(
+        env["message"]
+            .as_str()
+            .unwrap()
+            .to_lowercase()
+            .contains("draft"),
+        "message should mention draft: {env:?}"
+    );
 }
 
 #[test]

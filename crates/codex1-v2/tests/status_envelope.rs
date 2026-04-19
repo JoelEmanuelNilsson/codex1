@@ -18,6 +18,16 @@ fn init(dir: &TempDir) {
         .args(["--json", "init", "--mission", "m1", "--title", "Test"])
         .assert()
         .success();
+    // Round 10: status refuses to route past a draft lock. Ratify
+    // here so tests exercising plan/execute/review routing aren't
+    // short-circuited by the lock check.
+    let lock_path = dir.path().join("PLANS/m1/OUTCOME-LOCK.md");
+    let content = fs::read_to_string(&lock_path).unwrap();
+    fs::write(
+        &lock_path,
+        content.replace("lock_status: draft", "lock_status: ratified"),
+    )
+    .unwrap();
 }
 
 fn write_blueprint(dir: &Path, yaml_body: &str) {
@@ -59,6 +69,33 @@ fn status(dir: &TempDir) -> Value {
         .stdout
         .clone();
     last_json(&out)
+}
+
+#[test]
+fn fresh_init_routes_to_clarify_not_plan() {
+    // Round 10 P1: `codex1 init` followed immediately by `status`
+    // used to tell the operator to run $plan even though the outcome
+    // lock was still draft. The projection must route draft locks to
+    // $clarify first so Ralph/autopilot can't push planning before
+    // clarification is ratified.
+    let dir = TempDir::new().unwrap();
+    bin(&dir)
+        .args(["--json", "init", "--mission", "m1", "--title", "Test"])
+        .assert()
+        .success();
+    // NOTE: deliberately skipping the ratify step from the
+    // post-init init() helper so the test exercises the draft lock.
+    let env = status(&dir);
+    assert_eq!(env["verdict"], "needs_user");
+    assert_eq!(env["next_action"]["kind"], "user_decision");
+    assert_eq!(env["required_user_decision"], "lock_not_ratified");
+    assert!(
+        env["next_action"]["display_message"]
+            .as_str()
+            .unwrap()
+            .to_lowercase()
+            .contains("clarify")
+    );
 }
 
 #[test]

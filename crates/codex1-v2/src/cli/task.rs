@@ -74,9 +74,32 @@ pub fn cmd_task_ready(cli: &Cli, mission: &str, task_id: &str) -> i32 {
 /// #1: `$plan` previously hand-edited STATE.json to set task statuses;
 /// that bypassed the lock + revision + events path. This command is the
 /// authoritative way to mark a task ready once its spec file exists.
+/// Round 10 P1: also runs the full plan-acceptance suite and requires a
+/// ratified outcome lock so an unaccepted plan can't become executable
+/// repo truth by going through this back door.
 fn run_ready(cli: &Cli, mission: &str, task_id: &str) -> Result<serde_json::Value, CliError> {
     validate_id_format(task_id)?;
-    let (paths, dag, _state) = load_mission(cli, mission)?;
+    let repo_root = super::resolve_repo(cli)?;
+    let paths = crate::mission::resolve_mission(&repo_root, mission)?;
+    if !paths.mission_dir.exists() {
+        return Err(CliError::MissionNotFound {
+            path: paths.mission_dir.display().to_string(),
+        });
+    }
+    // Ratified lock is a precondition — `$clarify` must have finished
+    // before any task becomes executable.
+    let lock = crate::mission::lock::parse_and_validate(&paths.outcome_lock())?;
+    if lock.frontmatter.lock_status != crate::mission::lock::LockStatus::Ratified {
+        return Err(CliError::Internal {
+            message: "cannot ready a task while OUTCOME-LOCK.md is still draft; run $clarify first"
+                .into(),
+        });
+    }
+    let blueprint = crate::blueprint::parse_blueprint(&paths.program_blueprint())?;
+    let dag = crate::graph::build_dag(&blueprint)?;
+    // Same plan-acceptance checks `plan check` runs, so a rejected
+    // plan cannot still mint a ready task.
+    super::plan::enforce_plan_acceptance(&paths.program_blueprint(), &blueprint, &dag)?;
     if !dag.tasks.contains_key(task_id) {
         return Err(CliError::TaskStateTransitionInvalid {
             task_id: task_id.into(),

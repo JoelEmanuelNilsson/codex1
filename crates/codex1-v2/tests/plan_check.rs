@@ -84,10 +84,13 @@ fn single_task_dag_passes() {
 fn underspecified_task_rejected() {
     let dir = TempDir::new().unwrap();
     init(&dir);
+    // Include depends_on: [] so the four content-field check (spec_ref,
+    // write_paths, proof, review_profiles) is what fires. The
+    // depends_on case has its own test below.
     write_blueprint(
         dir.path(),
         "planning:\n  requested_level: light\n  graph_revision: 1\n\
-         tasks:\n  - id: T1\n    title: Thin\n    kind: code\n",
+         tasks:\n  - id: T1\n    title: Thin\n    kind: code\n    depends_on: []\n",
     );
     let out = bin(&dir)
         .args(["--json", "plan", "check", "--mission", "m1"])
@@ -106,6 +109,36 @@ fn underspecified_task_rejected() {
             "missing should include {field}: {missing:?}"
         );
     }
+}
+
+#[test]
+fn missing_depends_on_rejected() {
+    // Round 10 P2: every task must declare `depends_on` explicitly
+    // so the dependency graph is deliberate and wave execution is
+    // auditable. Omitting the key (rather than setting it to `[]`)
+    // used to pass plan check silently.
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    write_blueprint(
+        dir.path(),
+        "planning:\n  requested_level: light\n  graph_revision: 1\n\
+         tasks:\n  - id: T1\n    title: A\n    kind: code\n\
+         \x20   spec_ref: specs/T1/SPEC.md\n\
+         \x20   write_paths: [src/**]\n\
+         \x20   proof: [\"cargo build\"]\n\
+         \x20   review_profiles: [code_bug_correctness]\n",
+    );
+    let out = bin(&dir)
+        .args(["--json", "plan", "check", "--mission", "m1"])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["code"], "DAG_TASK_UNDERSPECIFIED");
+    assert_eq!(env["details"]["task_id"], "T1");
+    assert_eq!(env["details"]["missing"], serde_json::json!(["depends_on"]));
 }
 
 #[test]

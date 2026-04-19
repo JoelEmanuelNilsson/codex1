@@ -27,6 +27,15 @@ fn init(dir: &TempDir) {
         .args(["--json", "init", "--mission", "m1", "--title", "t"])
         .assert()
         .success();
+    // Round 10: status refuses to route past a draft lock, so ratify
+    // it here so ralph-policy tests can exercise downstream routing.
+    let lock_path = dir.path().join("PLANS/m1/OUTCOME-LOCK.md");
+    let content = fs::read_to_string(&lock_path).unwrap();
+    fs::write(
+        &lock_path,
+        content.replace("lock_status: draft", "lock_status: ratified"),
+    )
+    .unwrap();
 }
 
 fn write_blueprint(dir: &Path, yaml_body: &str) {

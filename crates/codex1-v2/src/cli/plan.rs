@@ -38,13 +38,54 @@ fn run_check(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError> {
         });
     }
 
-    // Round 6 Fix #2: every task must declare the four fields the V2
-    // contract makes mandatory — spec_ref (so reviewers and workers
-    // know where the spec lives), write_paths (so waves can reason
-    // about isolation), proof (so `task finish` has something concrete
-    // to check), and review_profiles (so the bundle superset check in
-    // `review open` is meaningful). The serde defaults make these
-    // optional at parse time; `plan check` re-enforces them here.
+    enforce_plan_acceptance(&paths.program_blueprint(), &blueprint, &dag)?;
+
+    Ok(envelope::success(
+        CHECK_SCHEMA,
+        &json!({
+            "mission_id": mission,
+            "graph_revision": dag.graph_revision,
+            "task_count": dag.len(),
+            "task_ids": dag.ids(),
+            "message": format!(
+                "Plan check passed for mission {mission} ({} tasks).",
+                dag.len()
+            ),
+        }),
+    ))
+}
+
+fn required_profiles_for_kind(kind: &str) -> &'static [&'static str] {
+    match kind {
+        "code" => &["code_bug_correctness"],
+        _ => &[],
+    }
+}
+
+/// Shared plan-acceptance gate. Called from `plan check` and from
+/// `task ready` so a task cannot flip to ready on an unaccepted plan.
+/// Round 10 P1: `task ready` used to skip every contract check, which
+/// meant a blueprint that `plan check` rejected could still become
+/// executable repo truth.
+pub(crate) fn enforce_plan_acceptance(
+    blueprint_path: &std::path::Path,
+    blueprint: &crate::blueprint::Blueprint,
+    dag: &crate::graph::Dag,
+) -> Result<(), CliError> {
+    // Round 10 P2: every task must explicitly declare `depends_on`.
+    // The serde default makes the typed struct tolerant, but the V2
+    // planning contract says the dependency graph must be deliberate
+    // (even `[]`). Raw YAML check catches the missing key.
+    let missing_depends_on = crate::blueprint::tasks_missing_explicit_depends_on(blueprint_path)?;
+    if let Some(id) = missing_depends_on.into_iter().next() {
+        return Err(CliError::DagTaskUnderspecified {
+            task_id: id,
+            missing: vec!["depends_on".into()],
+        });
+    }
+
+    // Round 6 Fix #2: every task must declare the four fields V2 treats
+    // as the executability/proof/review contract.
     for id in dag.ids() {
         let spec = dag.tasks.get(&id).expect("ids come from tasks");
         let mut missing: Vec<String> = Vec::new();
@@ -68,22 +109,14 @@ fn run_check(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError> {
         }
     }
 
-    // Round 6 Fix #4: `review_boundaries` is a parsed-but-not-enforced
-    // feature from the Wave 3 design. Until V2 ships the integration-
-    // review flow (open-boundary command + readiness check), declaring
-    // any boundary silently bypasses integration review. Reject loudly
-    // so planners don't accidentally rely on a non-existent gate.
+    // Round 6 Fix #4: review_boundaries is parsed-but-not-enforced.
     if !blueprint.review_boundaries.is_empty() {
         return Err(CliError::DagBoundariesNotSupported {
             count: blueprint.review_boundaries.len(),
         });
     }
 
-    // Round 8 Fix #3: per-kind policy on `review_profiles`. Code tasks
-    // must always be inspected by a bug/correctness reviewer; otherwise
-    // a code slice can become review-clean on spec-intent alone. The
-    // superset rule in `review open` keeps this minimum from being
-    // dropped at open-time. Other kinds have no required profiles yet.
+    // Round 8 Fix #3: per-kind required review profiles.
     for id in dag.ids() {
         let spec = dag.tasks.get(&id).expect("ids come from tasks");
         let required = required_profiles_for_kind(&spec.kind);
@@ -107,26 +140,7 @@ fn run_check(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError> {
         }
     }
 
-    Ok(envelope::success(
-        CHECK_SCHEMA,
-        &json!({
-            "mission_id": mission,
-            "graph_revision": dag.graph_revision,
-            "task_count": dag.len(),
-            "task_ids": dag.ids(),
-            "message": format!(
-                "Plan check passed for mission {mission} ({} tasks).",
-                dag.len()
-            ),
-        }),
-    ))
-}
-
-fn required_profiles_for_kind(kind: &str) -> &'static [&'static str] {
-    match kind {
-        "code" => &["code_bug_correctness"],
-        _ => &[],
-    }
+    Ok(())
 }
 
 pub fn cmd_plan_graph(cli: &Cli, mission: &str) -> i32 {

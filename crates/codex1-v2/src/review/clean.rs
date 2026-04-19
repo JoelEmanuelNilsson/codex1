@@ -101,15 +101,20 @@ pub fn compute_cleanliness(
     }
 
     // Group accepted by requirement and count.
+    // Round 10 P1: count blocking findings *regardless* of the
+    // self-attested `result` discriminator. Reviewer outputs are
+    // model-authored JSON, and we've seen outputs set `result: "none"`
+    // while simultaneously populating `findings: [...]` with P0/P1/P2
+    // entries. Trusting `result` there lets a schema-inconsistent
+    // output clear a bundle that has real blocking findings. Findings
+    // dominate; `result` is ignored in cleanliness math.
     let mut per_req: BTreeMap<String, u32> = BTreeMap::new();
     let mut blocking = 0_u32;
     for out in &accepted {
         *per_req.entry(out.requirement_id.clone()).or_insert(0) += 1;
-        if out.result == ReviewerResultKind::Findings {
-            for f in &out.findings {
-                if f.severity.blocks_clean() {
-                    blocking += 1;
-                }
+        for f in &out.findings {
+            if f.severity.blocks_clean() {
+                blocking += 1;
             }
         }
     }

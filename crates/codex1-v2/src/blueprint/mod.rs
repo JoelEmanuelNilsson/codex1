@@ -160,6 +160,44 @@ pub fn parse_content(path: &Path, content: &str) -> Result<Blueprint, CliError> 
     })
 }
 
+/// Round 10 P2: return the list of task ids whose raw YAML mapping
+/// omits the `depends_on` key. The V2 plan contract requires every
+/// task to declare its dependency graph explicitly (even `[]`); the
+/// typed `Blueprint` struct defaults missing fields to empty, so
+/// enforcement has to happen against the raw mapping.
+pub fn tasks_missing_explicit_depends_on(path: &Path) -> Result<Vec<String>, CliError> {
+    let content = std::fs::read_to_string(path).map_err(|e| CliError::Io {
+        path: path.display().to_string(),
+        source: e,
+    })?;
+    let yaml = markers::extract_block(path, &content)?;
+    let root: serde_yaml::Value =
+        serde_yaml::from_str(yaml).map_err(|e| CliError::BlueprintInvalid {
+            path: path.display().to_string(),
+            reason: format!("YAML parse: {e}"),
+            source: None,
+        })?;
+    let tasks = root.get("tasks").and_then(|t| t.as_sequence());
+    let Some(tasks) = tasks else {
+        return Ok(vec![]);
+    };
+    let mut missing: Vec<String> = Vec::new();
+    for task in tasks {
+        let Some(map) = task.as_mapping() else {
+            continue;
+        };
+        let id = map
+            .get(serde_yaml::Value::String("id".into()))
+            .and_then(|v| v.as_str())
+            .unwrap_or("<unknown>")
+            .to_string();
+        if !map.contains_key(serde_yaml::Value::String("depends_on".into())) {
+            missing.push(id);
+        }
+    }
+    Ok(missing)
+}
+
 #[cfg(test)]
 mod tests {
     use super::markers::{END_MARKER, START_MARKER};

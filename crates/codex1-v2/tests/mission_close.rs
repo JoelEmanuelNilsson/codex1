@@ -798,7 +798,12 @@ fn draft_outcome_lock_blocks_mission_close() {
         .assert()
         .failure();
 
-    // status() routes to mission_close_check, not mission_close_complete.
+    // status() routes to user_decision / clarify, not mission_close_check.
+    // Round 10 P1 strengthened this: a draft lock shunts status to
+    // $clarify regardless of the rest of the mission state. Without
+    // that, a draft mission that happened to have terminal tasks and
+    // a clean mission-close bundle would be told to run mission-close
+    // — exactly the class of false completion V2 is preventing.
     let out = bin(&dir)
         .args(["--json", "status", "--mission", "m1"])
         .assert()
@@ -807,7 +812,8 @@ fn draft_outcome_lock_blocks_mission_close() {
         .stdout
         .clone();
     let env = last_json(&out);
-    assert_eq!(env["next_action"]["kind"], "mission_close_check");
+    assert_eq!(env["next_action"]["kind"], "user_decision");
+    assert_eq!(env["required_user_decision"], "lock_not_ratified");
 }
 
 #[test]

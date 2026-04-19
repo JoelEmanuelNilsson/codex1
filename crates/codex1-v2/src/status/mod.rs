@@ -190,6 +190,38 @@ pub fn project_status_with_bundles(
         };
     }
 
+    // Round 10 P1: a draft outcome lock blocks *all* downstream routing —
+    // no planning, no execution, no review. $clarify must ratify the
+    // Destination/Constraints/Success Criteria before the rest of the
+    // mission flow is meaningful. Previously status pointed at $plan or
+    // $execute while the lock was still template text, which recreates
+    // V1's "we started building before we knew what 'done' meant" bug.
+    if lock.frontmatter.lock_status != crate::mission::lock::LockStatus::Ratified {
+        return StatusEnvelope {
+            mission_id: state.mission_id.clone(),
+            state_revision: state.state_revision,
+            phase: state.phase,
+            terminality: Terminality::NonTerminal,
+            verdict: Verdict::NeedsUser,
+            parent_loop,
+            stop_policy: derive_stop_policy(active, state.parent_loop.paused, Verdict::NeedsUser),
+            next_action: NextAction {
+                kind: NextActionKind::UserDecision,
+                task_id: None,
+                args: vec![],
+                display_message:
+                    "Run $clarify to ratify OUTCOME-LOCK.md before planning or execution.".into(),
+            },
+            ready_tasks: vec![],
+            ready_wave_parallel_safe: false,
+            running_tasks: running_task_ids(state),
+            review_required: vec![],
+            blocked: vec![],
+            stale: vec![],
+            required_user_decision: Some("lock_not_ratified".into()),
+        };
+    }
+
     // If all tasks are terminal and DAG is non-empty, we're in the mission-
     // close zone. Three sub-cases: (a) phase is already Complete → truly
     // done; (b) mission-close bundle is clean → run `mission-close complete`;
@@ -844,6 +876,49 @@ mod tests {
             closed_at: None,
             opener_role: "parent".into(),
         }
+    }
+
+    fn draft_lock() -> crate::mission::lock::OutcomeLock {
+        use crate::mission::lock::{Frontmatter, LockStatus, OutcomeLock};
+        OutcomeLock {
+            path: std::path::PathBuf::from("/dev/null"),
+            frontmatter: Frontmatter {
+                mission_id: "example".into(),
+                title: "synthetic".into(),
+                lock_status: LockStatus::Draft,
+                created_at: String::new(),
+                updated_at: String::new(),
+            },
+        }
+    }
+
+    #[test]
+    fn draft_lock_routes_to_clarify_regardless_of_dag_or_tasks() {
+        // Round 10 P1: a freshly-initialized mission used to route to
+        // $plan even while the outcome lock was still draft. The
+        // projection must refuse planning/execution next-actions when
+        // the lock is unratified and point the operator at $clarify.
+        let dag = dag_of(vec![]);
+        let state = state_with(&[], Phase::Clarify);
+        let s = project_status_with_bundles(&draft_lock(), &state, &dag, &[]);
+        assert_eq!(s.verdict, Verdict::NeedsUser);
+        assert_eq!(s.next_action.kind, NextActionKind::UserDecision);
+        assert_eq!(
+            s.required_user_decision.as_deref(),
+            Some("lock_not_ratified")
+        );
+        assert!(s.next_action.display_message.contains("clarify"));
+
+        // Even with ready tasks the draft lock should win — planning
+        // is irrelevant until the destination is ratified.
+        let dag = dag_of(vec![task("T1")]);
+        let state = state_with(&[("T1", TaskStatus::Ready)], Phase::Clarify);
+        let s = project_status_with_bundles(&draft_lock(), &state, &dag, &[]);
+        assert_eq!(s.next_action.kind, NextActionKind::UserDecision);
+        assert_eq!(
+            s.required_user_decision.as_deref(),
+            Some("lock_not_ratified")
+        );
     }
 
     #[test]
