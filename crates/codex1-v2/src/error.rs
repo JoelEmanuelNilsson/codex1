@@ -77,6 +77,17 @@ pub enum CliError {
     DagBoundariesNotSupported { count: usize },
 
     #[error(
+        "task {task_id} (kind={kind}) is missing required review profile(s) for this kind: {missing}",
+        missing = missing.join(", ")
+    )]
+    DagKindReviewProfileMissing {
+        task_id: String,
+        kind: String,
+        missing: Vec<String>,
+        required: Vec<String>,
+    },
+
+    #[error(
         "review open for task {task_id} omits required profile(s): {missing}",
         missing = missing.join(", ")
     )]
@@ -125,6 +136,15 @@ pub enum CliError {
         reason: String,
     },
 
+    #[error(
+        "mission-close review cannot open while {non_terminal_count} task(s) are not terminal: {task_ids}",
+        task_ids = task_ids.join(", ")
+    )]
+    MissionCloseNotReady {
+        task_ids: Vec<String>,
+        non_terminal_count: usize,
+    },
+
     #[error("revision conflict: expected {expected}, actual {actual}")]
     RevisionConflict { expected: u64, actual: u64 },
 
@@ -151,6 +171,7 @@ impl CliError {
             Self::DagBadSchema { .. } => "DAG_BAD_SCHEMA",
             Self::DagTaskUnderspecified { .. } => "DAG_TASK_UNDERSPECIFIED",
             Self::DagBoundariesNotSupported { .. } => "DAG_BOUNDARIES_NOT_SUPPORTED",
+            Self::DagKindReviewProfileMissing { .. } => "DAG_KIND_REVIEW_PROFILE_MISSING",
             Self::ReviewProfileMissing { .. } => "REVIEW_PROFILE_MISSING",
             Self::StateCorrupt { .. } => "STATE_CORRUPT",
             Self::ReviewBundleCorrupt { .. } => "REVIEW_BUNDLE_CORRUPT",
@@ -159,6 +180,7 @@ impl CliError {
             Self::ProofInvalid { .. } => "PROOF_INVALID",
             Self::TaskStateTransitionInvalid { .. } => "TASK_STATE_INVALID",
             Self::StaleOutput { .. } => "STALE_OUTPUT",
+            Self::MissionCloseNotReady { .. } => "MISSION_CLOSE_NOT_READY",
             Self::RevisionConflict { .. } => "REVISION_CONFLICT",
             Self::Internal { .. } => "INTERNAL_ERROR",
         }
@@ -222,6 +244,11 @@ impl CliError {
                  integration-review flow. Task-level review_profiles still work."
                     .into(),
             ),
+            Self::DagKindReviewProfileMissing { required, .. } => Some(format!(
+                "Tasks of this kind must include every profile in {required:?} so \
+                 the review contract covers the kind's risk surface. Add \
+                 the missing profile(s) to this task's review_profiles."
+            )),
             Self::ReviewProfileMissing { .. } => Some(
                 "Pass every profile listed in the task's blueprint review_profiles \
                  via --profiles; additional profiles may be added, but none of \
@@ -247,6 +274,12 @@ impl CliError {
             }
             Self::StaleOutput { .. } => Some(
                 "Re-run task start to mint a fresh task_run_id or re-open the review bundle.".into(),
+            ),
+            Self::MissionCloseNotReady { .. } => Some(
+                "Run every task through review and mark it review_clean (or supersede it) \
+                 before opening the mission-close bundle. The bundle binds to the terminal \
+                 state that exists at open time."
+                    .into(),
             ),
             Self::RevisionConflict { .. } => Some(
                 "State changed under you; re-read STATE.json and retry.".into(),
@@ -283,6 +316,19 @@ impl CliError {
             Self::DagBoundariesNotSupported { count } => {
                 json!({ "count": count })
             }
+            Self::DagKindReviewProfileMissing {
+                task_id,
+                kind,
+                missing,
+                required,
+            } => {
+                json!({
+                    "task_id": task_id,
+                    "kind": kind,
+                    "missing": missing,
+                    "required": required,
+                })
+            }
             Self::ReviewProfileMissing {
                 task_id,
                 missing,
@@ -312,6 +358,15 @@ impl CliError {
                 reason,
             } => {
                 json!({ "task_id": task_id, "bundle_id": bundle_id, "reason": reason })
+            }
+            Self::MissionCloseNotReady {
+                task_ids,
+                non_terminal_count,
+            } => {
+                json!({
+                    "task_ids": task_ids,
+                    "non_terminal_count": non_terminal_count,
+                })
             }
             Self::RevisionConflict { expected, actual } => {
                 json!({ "expected": expected, "actual": actual })

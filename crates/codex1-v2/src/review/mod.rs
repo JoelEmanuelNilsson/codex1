@@ -19,7 +19,9 @@ use crate::error::CliError;
 
 // Re-exports consumed by T21/T22 review CLI commands and by test helpers.
 #[allow(unused_imports)]
-pub use bundle::{ReviewBundle, ReviewRequirement, ReviewStatus, ReviewTarget};
+pub use bundle::{
+    ReviewBundle, ReviewRequirement, ReviewStatus, ReviewTarget, mission_close_evidence_hash,
+};
 #[allow(unused_imports)]
 pub use clean::{CleanlinessVerdict, CurrentTruth, compute_cleanliness};
 #[allow(unused_imports)]

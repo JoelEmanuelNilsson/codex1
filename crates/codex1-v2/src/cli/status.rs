@@ -8,6 +8,7 @@ use crate::blueprint;
 use crate::envelope;
 use crate::error::CliError;
 use crate::graph;
+use crate::mission::lock::parse_and_validate as parse_lock;
 use crate::mission::resolve_mission;
 use crate::review::{BUNDLES_DIRNAME, load_all_bundles};
 use crate::state::StateStore;
@@ -30,12 +31,13 @@ fn run(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError> {
             path: paths.mission_dir.display().to_string(),
         });
     }
+    let lock = parse_lock(&paths.outcome_lock())?;
     let blueprint = blueprint::parse_blueprint(&paths.program_blueprint())?;
     let dag = graph::build_dag(&blueprint)?;
     let state = StateStore::new(paths.mission_dir.clone()).load()?;
     let bundles = load_all_bundles(&paths.mission_dir.join(BUNDLES_DIRNAME))?;
 
-    let envelope_struct = project_status_with_bundles(&state, &dag, &bundles);
+    let envelope_struct = project_status_with_bundles(&lock, &state, &dag, &bundles);
     let value = serde_json::to_value(&envelope_struct).map_err(|e| CliError::Internal {
         message: format!("serialize status envelope: {e}"),
     })?;

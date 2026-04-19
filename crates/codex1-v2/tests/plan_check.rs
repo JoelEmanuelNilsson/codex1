@@ -109,6 +109,61 @@ fn underspecified_task_rejected() {
 }
 
 #[test]
+fn code_task_without_bug_correctness_rejected() {
+    // Round 8 Fix #3: `kind: code` tasks must include `code_bug_correctness`
+    // in review_profiles so a code slice cannot become review-clean on
+    // spec-intent alone. `review open`'s superset rule then keeps the
+    // minimum from being dropped at open-time.
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    write_blueprint(
+        dir.path(),
+        "planning:\n  requested_level: light\n  graph_revision: 1\n\
+         tasks:\n  - id: T1\n    title: Impl\n    kind: code\n    depends_on: []\n\
+         \x20   spec_ref: specs/T1/SPEC.md\n\
+         \x20   write_paths: [src/**]\n\
+         \x20   proof: [\"cargo build\"]\n\
+         \x20   review_profiles: [local_spec_intent]\n",
+    );
+    let out = bin(&dir)
+        .args(["--json", "plan", "check", "--mission", "m1"])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["code"], "DAG_KIND_REVIEW_PROFILE_MISSING");
+    assert_eq!(env["details"]["task_id"], "T1");
+    assert_eq!(env["details"]["kind"], "code");
+    assert_eq!(
+        env["details"]["missing"],
+        serde_json::json!(["code_bug_correctness"])
+    );
+}
+
+#[test]
+fn code_task_with_bug_correctness_plus_extras_passes() {
+    // Adding profiles beyond the required minimum is fine — the check
+    // is a subset, not an equality.
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    write_blueprint(
+        dir.path(),
+        "planning:\n  requested_level: light\n  graph_revision: 1\n\
+         tasks:\n  - id: T1\n    title: Impl\n    kind: code\n    depends_on: []\n\
+         \x20   spec_ref: specs/T1/SPEC.md\n\
+         \x20   write_paths: [src/**]\n\
+         \x20   proof: [\"cargo build\"]\n\
+         \x20   review_profiles: [code_bug_correctness, local_spec_intent]\n",
+    );
+    bin(&dir)
+        .args(["--json", "plan", "check", "--mission", "m1"])
+        .assert()
+        .success();
+}
+
+#[test]
 fn review_boundaries_rejected_until_implemented() {
     let dir = TempDir::new().unwrap();
     init(&dir);

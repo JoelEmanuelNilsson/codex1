@@ -23,6 +23,7 @@
 use serde::Serialize;
 
 use crate::graph::{Dag, waves::WaveMode, waves::derive_waves};
+use crate::mission::lock::OutcomeLock;
 use crate::mission_close::check_readiness;
 use crate::review::bundle::ReviewBundle;
 use crate::state::{ParentLoopMode, Phase, State, TaskStatus};
@@ -116,19 +117,37 @@ pub enum NextActionKind {
 /// Project the given state and DAG into a status envelope without any
 /// review-bundle awareness. Callers that know about bundles should use
 /// [`project_status_with_bundles`] so the mission-close next actions fire
-/// correctly.
+/// correctly. A synthetic ratified lock is used so tests and early-wave
+/// callers that don't carry a real lock still get sensible routing.
 #[must_use]
 pub fn project_status(state: &State, dag: &Dag) -> StatusEnvelope {
-    project_status_with_bundles(state, dag, &[])
+    let lock = synthetic_ratified_lock(&state.mission_id);
+    project_status_with_bundles(&lock, state, dag, &[])
 }
 
-/// Full Wave 5 projection: considers mission-close review bundles when
-/// deciding whether to emit `mission_close_check` or
-/// `mission_close_complete` as the next action.
+fn synthetic_ratified_lock(mission_id: &str) -> OutcomeLock {
+    use crate::mission::lock::{Frontmatter, LockStatus};
+    OutcomeLock {
+        path: std::path::PathBuf::from("/dev/null"),
+        frontmatter: Frontmatter {
+            mission_id: mission_id.to_string(),
+            title: "synthetic".into(),
+            lock_status: LockStatus::Ratified,
+            created_at: String::new(),
+            updated_at: String::new(),
+        },
+    }
+}
+
+/// Full Wave 5 projection: considers outcome-lock status and mission-close
+/// review bundles when deciding whether to emit `mission_close_check` or
+/// `mission_close_complete` as the next action. An unratified lock keeps
+/// the projection on `mission_close_check` even with a clean MC bundle.
 #[must_use]
 #[allow(clippy::too_many_lines)] // Envelope construction is linear and reads better
 // as one function than split into helpers.
 pub fn project_status_with_bundles(
+    lock: &OutcomeLock,
     state: &State,
     dag: &Dag,
     bundles: &[ReviewBundle],
@@ -206,10 +225,11 @@ pub fn project_status_with_bundles(
         }
         // Not yet Complete: route through mission-close. Reuse
         // `check_readiness` so status and `mission-close check` share one
-        // rule — every mission-close bundle must be Clean, no Open or
-        // Failed ones allowed. Round 7: an earlier `bundles.iter().any`
-        // let an Open second bundle hide behind the first Clean one.
-        let readiness = check_readiness(state, dag, bundles);
+        // rule — ratified lock, every mission-close bundle Clean, no Open
+        // or Failed ones, and (Round 8 Fix #2) terminal-state binding
+        // still intact. The shared helper keeps status from declaring
+        // "ready to complete" when check disagrees.
+        let readiness = check_readiness(lock, state, dag, bundles);
         let (kind, message) = if readiness.can_complete {
             (
                 NextActionKind::MissionCloseComplete,
@@ -758,7 +778,12 @@ mod tests {
         assert!(!s.ready_wave_parallel_safe);
     }
 
-    fn mission_close(id: &str, status: ReviewStatus) -> ReviewBundle {
+    fn mission_close(
+        id: &str,
+        status: ReviewStatus,
+        state: &State,
+        dag: &crate::graph::Dag,
+    ) -> ReviewBundle {
         ReviewBundle {
             bundle_id: id.into(),
             mission_id: "example".into(),
@@ -767,7 +792,9 @@ mod tests {
             target: ReviewTarget::MissionClose,
             requirements: vec![],
             evidence_refs: vec![],
-            evidence_snapshot_hash: "sha256:x".into(),
+            // Round 8 Fix #2: bind to the terminal truth the reviewer
+            // would have certified for this `(state, dag)`.
+            evidence_snapshot_hash: crate::review::bundle::mission_close_evidence_hash(state, dag),
             status,
             opened_at: "t".into(),
             closed_at: None,
@@ -784,10 +811,11 @@ mod tests {
         let dag = dag_of(vec![task("T1")]);
         let state = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
         let bundles = vec![
-            mission_close("B1", ReviewStatus::Clean),
-            mission_close("B2", ReviewStatus::Open),
+            mission_close("B1", ReviewStatus::Clean, &state, &dag),
+            mission_close("B2", ReviewStatus::Open, &state, &dag),
         ];
-        let s = project_status_with_bundles(&state, &dag, &bundles);
+        let lock = super::synthetic_ratified_lock(&state.mission_id);
+        let s = project_status_with_bundles(&lock, &state, &dag, &bundles);
         assert_eq!(s.verdict, Verdict::ContinueRequired);
         assert_eq!(
             s.next_action.kind,
@@ -802,10 +830,11 @@ mod tests {
         let dag = dag_of(vec![task("T1")]);
         let state = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
         let bundles = vec![
-            mission_close("B1", ReviewStatus::Clean),
-            mission_close("B2", ReviewStatus::Clean),
+            mission_close("B1", ReviewStatus::Clean, &state, &dag),
+            mission_close("B2", ReviewStatus::Clean, &state, &dag),
         ];
-        let s = project_status_with_bundles(&state, &dag, &bundles);
+        let lock = super::synthetic_ratified_lock(&state.mission_id);
+        let s = project_status_with_bundles(&lock, &state, &dag, &bundles);
         assert_eq!(s.next_action.kind, NextActionKind::MissionCloseComplete);
     }
 

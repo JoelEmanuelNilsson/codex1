@@ -23,6 +23,7 @@ fn boot_with_clean_task(dir: &TempDir) {
         .args(["--json", "init", "--mission", "m1", "--title", "t"])
         .assert()
         .success();
+    ratify_lock(dir);
     fs::write(
         dir.path().join("PLANS/m1/PROGRAM-BLUEPRINT.md"),
         "# BP\n\n<!-- codex1:plan-dag:start -->\n\
@@ -41,6 +42,21 @@ fn boot_with_clean_task(dir: &TempDir) {
         "tasks": { "T1": { "status": "review_clean" } }
     });
     fs::write(&sp, serde_json::to_vec_pretty(&new).unwrap()).unwrap();
+}
+
+/// Flip OUTCOME-LOCK.md to `lock_status: ratified`. Round 8 Fix #1
+/// requires the lock to be ratified before mission-close can complete,
+/// so tests that fast-forward past $clarify need to flip the status
+/// themselves (the same hand-edit $clarify does in the skill).
+fn ratify_lock(dir: &TempDir) {
+    let lock_path = dir.path().join("PLANS/m1/OUTCOME-LOCK.md");
+    let content = fs::read_to_string(&lock_path).unwrap();
+    let ratified = content.replace("lock_status: draft", "lock_status: ratified");
+    assert_ne!(
+        content, ratified,
+        "test fixture expected a draft lock to flip to ratified"
+    );
+    fs::write(&lock_path, ratified).unwrap();
 }
 
 fn submit_clean_mc_output(dir: &TempDir, bundle_id: &str) {
@@ -352,6 +368,130 @@ fn status_envelope_emits_mission_close_complete_when_bundle_clean() {
 }
 
 #[test]
+fn open_mission_close_refuses_when_tasks_not_terminal() {
+    // Round 8 Fix #2a: mission-close review cannot open while any
+    // non-superseded task is non-terminal. The bundle must bind to the
+    // terminal truth it certifies, and there is no such truth yet.
+    let dir = TempDir::new().unwrap();
+    bin(&dir)
+        .args(["--json", "init", "--mission", "m1", "--title", "t"])
+        .assert()
+        .success();
+    ratify_lock(&dir);
+    fs::write(
+        dir.path().join("PLANS/m1/PROGRAM-BLUEPRINT.md"),
+        "# BP\n\n<!-- codex1:plan-dag:start -->\n\
+         planning:\n  requested_level: light\n  graph_revision: 1\n\
+         tasks:\n  - id: T1\n    title: Impl\n    kind: code\n\
+         <!-- codex1:plan-dag:end -->\n",
+    )
+    .unwrap();
+    // T1 is still Ready, not ReviewClean.
+    let sp = dir.path().join("PLANS/m1/STATE.json");
+    let current: Value = serde_json::from_slice(&fs::read(&sp).unwrap()).unwrap();
+    let new = serde_json::json!({
+        "mission_id": current["mission_id"],
+        "state_revision": current["state_revision"],
+        "phase": "executing",
+        "parent_loop": { "mode": "none", "paused": false },
+        "tasks": { "T1": { "status": "ready" } }
+    });
+    fs::write(&sp, serde_json::to_vec_pretty(&new).unwrap()).unwrap();
+
+    let out = bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "open-mission-close",
+            "--mission",
+            "m1",
+            "--profiles",
+            "mission_close",
+        ])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["code"], "MISSION_CLOSE_NOT_READY");
+    assert_eq!(env["details"]["non_terminal_count"], 1);
+    assert_eq!(env["details"]["task_ids"], serde_json::json!(["T1"]));
+}
+
+#[test]
+fn clean_mission_close_bundle_becomes_stale_when_truth_drifts() {
+    // Round 8 Fix #2c: open + close a Clean mission-close bundle, then
+    // mutate task terminal truth out-of-band. `mission-close check`
+    // must report MISSION_CLOSE_STALE and refuse to terminalize; status
+    // must stay on mission_close_check, not mission_close_complete.
+    let dir = TempDir::new().unwrap();
+    boot_with_clean_task(&dir);
+    let out = bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "open-mission-close",
+            "--mission",
+            "m1",
+            "--profiles",
+            "mission_close",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let bundle_id = last_json(&out)["bundle_id"].as_str().unwrap().to_string();
+    submit_clean_mc_output(&dir, &bundle_id);
+    bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "close",
+            "--mission",
+            "m1",
+            "--bundle",
+            &bundle_id,
+        ])
+        .assert()
+        .success();
+
+    // Drift: flip T1 from review_clean back to ready, simulating state
+    // mutating after the mission-close reviewer certified the mission.
+    let sp = dir.path().join("PLANS/m1/STATE.json");
+    let current: Value = serde_json::from_slice(&fs::read(&sp).unwrap()).unwrap();
+    let new = serde_json::json!({
+        "mission_id": current["mission_id"],
+        "state_revision": current["state_revision"].as_u64().unwrap() + 1,
+        "phase": current["phase"],
+        "parent_loop": current["parent_loop"],
+        "tasks": { "T1": { "status": "ready" } }
+    });
+    fs::write(&sp, serde_json::to_vec_pretty(&new).unwrap()).unwrap();
+
+    let out = bin(&dir)
+        .args(["--json", "mission-close", "check", "--mission", "m1"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["can_close"], false);
+    let codes: Vec<&str> = env["blocking_reasons"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| b["code"].as_str().unwrap())
+        .collect();
+    assert!(
+        codes.contains(&"MISSION_CLOSE_STALE"),
+        "expected MISSION_CLOSE_STALE in {codes:?}"
+    );
+}
+
+#[test]
 fn status_stays_on_check_when_a_second_mission_close_bundle_is_open() {
     // Round 7 P1: opening a second mission-close bundle after the first
     // closed clean must force status back to mission_close_check so it
@@ -438,6 +578,93 @@ fn status_stays_on_check_when_a_second_mission_close_bundle_is_open() {
         .map(|b| b["code"].as_str().unwrap())
         .collect();
     assert!(blocking_codes.contains(&"MISSION_CLOSE_OPEN"));
+}
+
+#[test]
+fn draft_outcome_lock_blocks_mission_close() {
+    // Round 8 Fix #1: mission-close must refuse to terminalize a mission
+    // whose outcome lock is still draft. $clarify must ratify first.
+    let dir = TempDir::new().unwrap();
+    boot_with_clean_task(&dir);
+    // Undo the ratify_lock() done inside boot_with_clean_task so the
+    // lock is back to draft.
+    let lock_path = dir.path().join("PLANS/m1/OUTCOME-LOCK.md");
+    let content = fs::read_to_string(&lock_path).unwrap();
+    fs::write(
+        &lock_path,
+        content.replace("lock_status: ratified", "lock_status: draft"),
+    )
+    .unwrap();
+
+    // Open, submit clean, close the MC bundle — everything except the
+    // lock is ready to complete.
+    let out = bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "open-mission-close",
+            "--mission",
+            "m1",
+            "--profiles",
+            "mission_close",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let bundle_id = last_json(&out)["bundle_id"].as_str().unwrap().to_string();
+    submit_clean_mc_output(&dir, &bundle_id);
+    bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "close",
+            "--mission",
+            "m1",
+            "--bundle",
+            &bundle_id,
+        ])
+        .assert()
+        .success();
+
+    // `mission-close check` refuses with LOCK_NOT_RATIFIED.
+    let out = bin(&dir)
+        .args(["--json", "mission-close", "check", "--mission", "m1"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["can_close"], false);
+    let blocking_codes: Vec<&str> = env["blocking_reasons"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| b["code"].as_str().unwrap())
+        .collect();
+    assert!(
+        blocking_codes.contains(&"LOCK_NOT_RATIFIED"),
+        "expected LOCK_NOT_RATIFIED in {blocking_codes:?}"
+    );
+
+    // `mission-close complete` also refuses.
+    bin(&dir)
+        .args(["--json", "mission-close", "complete", "--mission", "m1"])
+        .assert()
+        .failure();
+
+    // status() routes to mission_close_check, not mission_close_complete.
+    let out = bin(&dir)
+        .args(["--json", "status", "--mission", "m1"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["next_action"]["kind"], "mission_close_check");
 }
 
 #[test]

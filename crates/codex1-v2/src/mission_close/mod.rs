@@ -18,7 +18,10 @@
 use serde::Serialize;
 
 use crate::graph::Dag;
-use crate::review::bundle::{ReviewBundle, ReviewStatus, ReviewTarget};
+use crate::mission::lock::{LockStatus, OutcomeLock};
+use crate::review::bundle::{
+    ReviewBundle, ReviewStatus, ReviewTarget, mission_close_evidence_hash,
+};
 use crate::state::{Phase, State, TaskStatus};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -68,10 +71,29 @@ impl BlockingReason {
     }
 }
 
-/// Compute mission-close readiness from state + DAG + bundle inventory.
+/// Compute mission-close readiness from lock + state + DAG + bundle inventory.
 #[must_use]
-pub fn check_readiness(state: &State, dag: &Dag, bundles: &[ReviewBundle]) -> ReadinessReport {
+pub fn check_readiness(
+    lock: &OutcomeLock,
+    state: &State,
+    dag: &Dag,
+    bundles: &[ReviewBundle],
+) -> ReadinessReport {
     let mut reasons: Vec<BlockingReason> = Vec::new();
+
+    // Round 8 Fix #1: the outcome lock must be ratified before terminal
+    // close. $clarify flips `lock_status: draft → ratified` only after
+    // Destination/Constraints/Success Criteria are committed. Without
+    // this check, mission-close can finalize a mission whose destination
+    // never left the init template.
+    if lock.frontmatter.lock_status != LockStatus::Ratified {
+        reasons.push(BlockingReason::global(
+            "LOCK_NOT_RATIFIED",
+            "OUTCOME-LOCK.md is still draft; run $clarify to ratify \
+             before closing the mission"
+                .into(),
+        ));
+    }
 
     // DAG must not be empty; empty DAG cannot be "complete".
     if dag.is_empty() {
@@ -134,6 +156,31 @@ pub fn check_readiness(state: &State, dag: &Dag, bundles: &[ReviewBundle]) -> Re
     // falls back to a clean id when the mission is ready to complete.
     let (mc_summary, mc_reasons) = summarise_mission_close(bundles);
     reasons.extend(mc_reasons);
+
+    // Round 8 Fix #2c: a Clean mission-close bundle whose stored
+    // evidence hash no longer matches the current terminal-state
+    // fingerprint is stale — task truth drifted after the reviewer
+    // certified this mission. The bundle is not auto-marked Failed
+    // (a projection must not mutate state); the operator re-runs
+    // `review open-mission-close` to snapshot the new truth.
+    let current_mc_hash = mission_close_evidence_hash(state, dag);
+    for b in bundles {
+        if !matches!(b.target, ReviewTarget::MissionClose) {
+            continue;
+        }
+        if b.status != ReviewStatus::Clean {
+            continue;
+        }
+        if b.evidence_snapshot_hash != current_mc_hash {
+            reasons.push(BlockingReason::bundle(
+                "MISSION_CLOSE_STALE",
+                &b.bundle_id,
+                "mission-close bundle's evidence predates current \
+                 terminal task truth; re-run review open-mission-close"
+                    .into(),
+            ));
+        }
+    }
 
     let can_close = reasons.is_empty();
     let can_complete = can_close && state.phase != Phase::Complete;
@@ -214,9 +261,34 @@ mod tests {
     use super::check_readiness;
     use crate::blueprint::{Blueprint, Level, Planning, TaskSpec};
     use crate::graph::validate::build_dag;
-    use crate::review::bundle::{ReviewBundle, ReviewStatus, ReviewTarget};
+    use crate::mission::lock::{Frontmatter, LockStatus, OutcomeLock};
+    use crate::review::bundle::{
+        ReviewBundle, ReviewStatus, ReviewTarget, mission_close_evidence_hash,
+    };
     use crate::state::{ParentLoop, Phase, State, TaskState, TaskStatus};
     use std::collections::BTreeMap;
+    use std::path::PathBuf;
+
+    fn ratified_lock() -> OutcomeLock {
+        lock(LockStatus::Ratified)
+    }
+
+    fn draft_lock() -> OutcomeLock {
+        lock(LockStatus::Draft)
+    }
+
+    fn lock(status: LockStatus) -> OutcomeLock {
+        OutcomeLock {
+            path: PathBuf::from("/x/OUTCOME-LOCK.md"),
+            frontmatter: Frontmatter {
+                mission_id: "m".into(),
+                title: "t".into(),
+                lock_status: status,
+                created_at: "2026-04-19T00:00:00Z".into(),
+                updated_at: "2026-04-19T00:00:00Z".into(),
+            },
+        }
+    }
 
     fn planning() -> Planning {
         Planning {
@@ -276,11 +348,20 @@ mod tests {
         }
     }
 
-    fn mission_close_bundle(status: ReviewStatus) -> ReviewBundle {
-        mission_close_bundle_id("B9", status)
+    fn mission_close_bundle(
+        status: ReviewStatus,
+        state: &State,
+        dag: &crate::graph::Dag,
+    ) -> ReviewBundle {
+        mission_close_bundle_id("B9", status, state, dag)
     }
 
-    fn mission_close_bundle_id(id: &str, status: ReviewStatus) -> ReviewBundle {
+    fn mission_close_bundle_id(
+        id: &str,
+        status: ReviewStatus,
+        state: &State,
+        dag: &crate::graph::Dag,
+    ) -> ReviewBundle {
         ReviewBundle {
             bundle_id: id.into(),
             mission_id: "m".into(),
@@ -289,7 +370,10 @@ mod tests {
             target: ReviewTarget::MissionClose,
             requirements: vec![],
             evidence_refs: vec![],
-            evidence_snapshot_hash: "sha256:x".into(),
+            // Round 8 Fix #2: the evidence hash binds to the terminal
+            // truth the reviewer certified. Helper picks the current
+            // `(state, dag)` so clean bundles don't trip MISSION_CLOSE_STALE.
+            evidence_snapshot_hash: mission_close_evidence_hash(state, dag),
             status,
             opened_at: "t".into(),
             closed_at: None,
@@ -306,7 +390,7 @@ mod tests {
         })
         .unwrap();
         let s = state_with(&[], Phase::Clarify);
-        let r = check_readiness(&s, &dag, &[]);
+        let r = check_readiness(&ratified_lock(), &s, &dag, &[]);
         assert!(!r.can_close);
         assert!(r.blocking_reasons.iter().any(|b| b.code == "DAG_EMPTY"));
     }
@@ -320,7 +404,12 @@ mod tests {
         })
         .unwrap();
         let s = state_with(&[("T1", TaskStatus::Ready)], Phase::Executing);
-        let r = check_readiness(&s, &dag, &[mission_close_bundle(ReviewStatus::Clean)]);
+        let r = check_readiness(
+            &ratified_lock(),
+            &s,
+            &dag,
+            &[mission_close_bundle(ReviewStatus::Clean, &s, &dag)],
+        );
         assert!(!r.can_close);
         assert!(
             r.blocking_reasons
@@ -338,7 +427,7 @@ mod tests {
         })
         .unwrap();
         let s = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
-        let r = check_readiness(&s, &dag, &[]);
+        let r = check_readiness(&ratified_lock(), &s, &dag, &[]);
         assert!(!r.can_close);
         assert!(
             r.blocking_reasons
@@ -356,7 +445,12 @@ mod tests {
         })
         .unwrap();
         let s = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
-        let r = check_readiness(&s, &dag, &[mission_close_bundle(ReviewStatus::Open)]);
+        let r = check_readiness(
+            &ratified_lock(),
+            &s,
+            &dag,
+            &[mission_close_bundle(ReviewStatus::Open, &s, &dag)],
+        );
         assert!(!r.can_close);
         assert!(
             r.blocking_reasons
@@ -374,7 +468,12 @@ mod tests {
         })
         .unwrap();
         let s = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
-        let r = check_readiness(&s, &dag, &[mission_close_bundle(ReviewStatus::Failed)]);
+        let r = check_readiness(
+            &ratified_lock(),
+            &s,
+            &dag,
+            &[mission_close_bundle(ReviewStatus::Failed, &s, &dag)],
+        );
         assert!(!r.can_close);
         assert!(
             r.blocking_reasons
@@ -392,7 +491,12 @@ mod tests {
         })
         .unwrap();
         let s = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
-        let r = check_readiness(&s, &dag, &[mission_close_bundle(ReviewStatus::Clean)]);
+        let r = check_readiness(
+            &ratified_lock(),
+            &s,
+            &dag,
+            &[mission_close_bundle(ReviewStatus::Clean, &s, &dag)],
+        );
         assert!(r.can_close);
         assert!(r.can_complete);
         assert!(r.mission_close_clean);
@@ -408,7 +512,12 @@ mod tests {
         })
         .unwrap();
         let s = state_with(&[("T1", TaskStatus::Complete)], Phase::Complete);
-        let r = check_readiness(&s, &dag, &[mission_close_bundle(ReviewStatus::Clean)]);
+        let r = check_readiness(
+            &ratified_lock(),
+            &s,
+            &dag,
+            &[mission_close_bundle(ReviewStatus::Clean, &s, &dag)],
+        );
         assert!(r.can_close); // can_close is about readiness, not idempotency
         assert!(!r.can_complete); // but complete would be a no-op
     }
@@ -425,7 +534,12 @@ mod tests {
             &[("T1", TaskStatus::Superseded), ("T2", TaskStatus::Complete)],
             Phase::Executing,
         );
-        let r = check_readiness(&s, &dag, &[mission_close_bundle(ReviewStatus::Clean)]);
+        let r = check_readiness(
+            &ratified_lock(),
+            &s,
+            &dag,
+            &[mission_close_bundle(ReviewStatus::Clean, &s, &dag)],
+        );
         assert!(r.can_close);
     }
 
@@ -439,11 +553,12 @@ mod tests {
         .unwrap();
         let s = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
         let r = check_readiness(
+            &ratified_lock(),
             &s,
             &dag,
             &[
-                mission_close_bundle_id("B1", ReviewStatus::Clean),
-                mission_close_bundle_id("B2", ReviewStatus::Open),
+                mission_close_bundle_id("B1", ReviewStatus::Clean, &s, &dag),
+                mission_close_bundle_id("B2", ReviewStatus::Open, &s, &dag),
             ],
         );
         assert!(!r.can_close);
@@ -467,11 +582,12 @@ mod tests {
         .unwrap();
         let s = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
         let r = check_readiness(
+            &ratified_lock(),
             &s,
             &dag,
             &[
-                mission_close_bundle_id("B1", ReviewStatus::Clean),
-                mission_close_bundle_id("B2", ReviewStatus::Failed),
+                mission_close_bundle_id("B1", ReviewStatus::Clean, &s, &dag),
+                mission_close_bundle_id("B2", ReviewStatus::Failed, &s, &dag),
             ],
         );
         assert!(!r.can_close);
@@ -493,15 +609,43 @@ mod tests {
         .unwrap();
         let s = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
         let r = check_readiness(
+            &ratified_lock(),
             &s,
             &dag,
             &[
-                mission_close_bundle_id("B1", ReviewStatus::Clean),
-                mission_close_bundle_id("B2", ReviewStatus::Clean),
+                mission_close_bundle_id("B1", ReviewStatus::Clean, &s, &dag),
+                mission_close_bundle_id("B2", ReviewStatus::Clean, &s, &dag),
             ],
         );
         assert!(r.can_close);
         assert!(r.mission_close_clean);
+    }
+
+    #[test]
+    fn draft_lock_blocks_even_when_everything_else_is_clean() {
+        // Round 8 Fix #1: a mission with review_clean tasks and a clean
+        // mission-close bundle is still not ready to close if the
+        // outcome lock is still draft. $clarify must have ratified the
+        // destination first.
+        let dag = build_dag(&Blueprint {
+            planning: planning(),
+            tasks: vec![task("T1")],
+            review_boundaries: vec![],
+        })
+        .unwrap();
+        let s = state_with(&[("T1", TaskStatus::ReviewClean)], Phase::Executing);
+        let r = check_readiness(
+            &draft_lock(),
+            &s,
+            &dag,
+            &[mission_close_bundle(ReviewStatus::Clean, &s, &dag)],
+        );
+        assert!(!r.can_close);
+        assert!(
+            r.blocking_reasons
+                .iter()
+                .any(|b| b.code == "LOCK_NOT_RATIFIED")
+        );
     }
 
     #[test]
@@ -537,9 +681,13 @@ mod tests {
             opener_role: "parent".into(),
         };
         let r = check_readiness(
+            &ratified_lock(),
             &s,
             &dag,
-            &[task_bundle, mission_close_bundle(ReviewStatus::Clean)],
+            &[
+                task_bundle,
+                mission_close_bundle(ReviewStatus::Clean, &s, &dag),
+            ],
         );
         assert!(!r.can_close);
         assert!(

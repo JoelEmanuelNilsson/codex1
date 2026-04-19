@@ -79,6 +79,34 @@ fn run_check(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError> {
         });
     }
 
+    // Round 8 Fix #3: per-kind policy on `review_profiles`. Code tasks
+    // must always be inspected by a bug/correctness reviewer; otherwise
+    // a code slice can become review-clean on spec-intent alone. The
+    // superset rule in `review open` keeps this minimum from being
+    // dropped at open-time. Other kinds have no required profiles yet.
+    for id in dag.ids() {
+        let spec = dag.tasks.get(&id).expect("ids come from tasks");
+        let required = required_profiles_for_kind(&spec.kind);
+        if required.is_empty() {
+            continue;
+        }
+        let have: std::collections::BTreeSet<&str> =
+            spec.review_profiles.iter().map(String::as_str).collect();
+        let missing: Vec<String> = required
+            .iter()
+            .filter(|p| !have.contains(*p))
+            .map(|p| (*p).to_string())
+            .collect();
+        if !missing.is_empty() {
+            return Err(CliError::DagKindReviewProfileMissing {
+                task_id: id,
+                kind: spec.kind.clone(),
+                missing,
+                required: required.iter().map(|s| (*s).to_string()).collect(),
+            });
+        }
+    }
+
     Ok(envelope::success(
         CHECK_SCHEMA,
         &json!({
@@ -92,6 +120,13 @@ fn run_check(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError> {
             ),
         }),
     ))
+}
+
+fn required_profiles_for_kind(kind: &str) -> &'static [&'static str] {
+    match kind {
+        "code" => &["code_bug_correctness"],
+        _ => &[],
+    }
 }
 
 pub fn cmd_plan_graph(cli: &Cli, mission: &str) -> i32 {

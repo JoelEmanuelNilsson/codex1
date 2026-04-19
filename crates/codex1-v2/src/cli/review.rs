@@ -233,6 +233,39 @@ pub fn cmd_review_open_mission_close(cli: &Cli, mission: &str, profiles_csv: &st
     }
 }
 
+/// Round 8 Fix #2a: refuse to open a mission-close bundle while any
+/// non-superseded task is non-terminal. A mission-close review must
+/// certify the terminal surface that exists at open time; opening
+/// before tasks are `ReviewClean` or `Complete` lets the bundle close
+/// "clean" on work that hasn't actually happened yet.
+fn check_tasks_terminal(
+    state: &crate::state::State,
+    dag: &crate::graph::Dag,
+) -> Result<(), CliError> {
+    use crate::state::TaskStatus;
+    let mut non_terminal: Vec<String> = Vec::new();
+    for id in dag.ids() {
+        let status = state
+            .tasks
+            .get(&id)
+            .map_or(TaskStatus::Planned, |t| t.status);
+        if matches!(status, TaskStatus::Superseded) {
+            continue;
+        }
+        if !matches!(status, TaskStatus::ReviewClean | TaskStatus::Complete) {
+            non_terminal.push(id);
+        }
+    }
+    if non_terminal.is_empty() {
+        return Ok(());
+    }
+    let count = non_terminal.len();
+    Err(CliError::MissionCloseNotReady {
+        task_ids: non_terminal,
+        non_terminal_count: count,
+    })
+}
+
 fn run_open_mission_close(
     cli: &Cli,
     mission: &str,
@@ -259,6 +292,8 @@ fn run_open_mission_close(
     let dag = graph::build_dag(&blueprint)?;
     let state = StateStore::new(paths.mission_dir.clone()).load()?;
 
+    check_tasks_terminal(&state, &dag)?;
+
     let bundles_dir = paths.mission_dir.join(BUNDLES_DIRNAME);
     std::fs::create_dir_all(&bundles_dir).map_err(|e| CliError::Io {
         path: bundles_dir.display().to_string(),
@@ -276,18 +311,12 @@ fn run_open_mission_close(
         })
         .collect();
 
-    // Evidence snapshot: sha256 of the DAG's graph_revision + all terminal
-    // task ids joined. Keeps it deterministic so reviewers can rebuild
-    // the expected hash without new machinery.
-    let evidence_hash = {
-        use sha2::{Digest, Sha256};
-        let mut h = Sha256::new();
-        h.update(format!("graph_revision={}\n", dag.graph_revision).as_bytes());
-        for id in dag.ids() {
-            h.update(format!("{id}\n").as_bytes());
-        }
-        format!("sha256:{:x}", h.finalize())
-    };
+    // Round 8 Fix #2b: the evidence snapshot binds to terminal truth
+    // (graph_revision + sorted (task_id, status, proof_hash) of each
+    // non-superseded task), not just the DAG shape. Any post-close
+    // state drift makes `check_readiness` recompute a different hash
+    // and mark the clean bundle stale (MISSION_CLOSE_STALE).
+    let evidence_hash = crate::review::bundle::mission_close_evidence_hash(&state, &dag);
 
     let bundle = ReviewBundle {
         bundle_id: bundle_id.clone(),

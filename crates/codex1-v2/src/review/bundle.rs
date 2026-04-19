@@ -4,6 +4,53 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::graph::Dag;
+use crate::state::{State, TaskStatus};
+
+/// Compute the canonical mission-close evidence snapshot hash from
+/// `(graph_revision, non-superseded task terminal truth)`. This is what
+/// a mission-close reviewer is certifying: the graph shape plus every
+/// non-superseded task's final status and proof. If any of those change
+/// after the bundle closes, the recomputed hash will differ, and
+/// `mission_close::check_readiness` marks the clean bundle stale.
+///
+/// `state_revision` is deliberately excluded: it bumps for reasons that
+/// don't affect terminal truth (replan events, `parent_loop` toggles),
+/// and including it would make the hash too fragile. The sorted triple
+/// `(id, status, proof_hash)` is exactly the terminal truth.
+#[must_use]
+pub fn mission_close_evidence_hash(state: &State, dag: &Dag) -> String {
+    use sha2::{Digest, Sha256};
+    let mut ids: Vec<String> = dag.ids();
+    ids.sort();
+    let mut h = Sha256::new();
+    h.update(format!("graph_revision={}\n", dag.graph_revision).as_bytes());
+    h.update(b"tasks:\n");
+    for id in ids {
+        let Some(t) = state.tasks.get(&id) else {
+            h.update(format!("  {id}|pre_terminal|none\n").as_bytes());
+            continue;
+        };
+        // Superseded tasks do not contribute — the mission-close review
+        // certifies the terminal surface, not the replaced history.
+        if t.status == TaskStatus::Superseded {
+            continue;
+        }
+        // ReviewClean and Complete are both "terminal" from the
+        // reviewer's perspective: the latter just means `mission-close
+        // complete` ran and flipped the bucket. Coalesce them in the
+        // hash so idempotent completion doesn't invalidate the bundle.
+        let status_str = if matches!(t.status, TaskStatus::ReviewClean | TaskStatus::Complete) {
+            "terminal"
+        } else {
+            "pre_terminal"
+        };
+        let proof_str = t.proof_hash.as_deref().unwrap_or("none");
+        h.update(format!("  {id}|{status_str}|{proof_str}\n").as_bytes());
+    }
+    format!("sha256:{:x}", h.finalize())
+}
+
 /// A single review bundle: target + requirements + evidence binding.
 ///
 /// Wave 3 scope: task-targeted bundles only. Wave 5 adds mission-close

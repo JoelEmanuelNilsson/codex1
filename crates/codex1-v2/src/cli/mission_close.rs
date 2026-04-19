@@ -6,6 +6,7 @@ use crate::blueprint;
 use crate::envelope;
 use crate::error::CliError;
 use crate::graph;
+use crate::mission::lock::parse_and_validate as parse_lock;
 use crate::mission::resolve_mission;
 use crate::mission_close::{ReadinessReport, check_readiness};
 use crate::review::{BUNDLES_DIRNAME, load_all_bundles};
@@ -104,10 +105,11 @@ fn readiness(
             path: paths.mission_dir.display().to_string(),
         });
     }
+    let lock = parse_lock(&paths.outcome_lock())?;
     let blueprint = blueprint::parse_blueprint(&paths.program_blueprint())?;
     let dag = graph::build_dag(&blueprint)?;
     let state = StateStore::new(paths.mission_dir.clone()).load()?;
     let bundles = load_all_bundles(&paths.mission_dir.join(BUNDLES_DIRNAME))?;
-    let report = check_readiness(&state, &dag, &bundles);
+    let report = check_readiness(&lock, &state, &dag, &bundles);
     Ok((paths, report))
 }
