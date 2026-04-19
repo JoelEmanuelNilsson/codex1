@@ -8,6 +8,18 @@
 # is explicitly forbidden (it reintroduces the V1 "proxy backend" failure
 # mode the retrospective named).
 #
+# Threat model (intentional and reviewed):
+#   The verifier is offline. It layers (1) field-level receipt checks,
+#   (2) live `codex1 validate` against mission_dir, (3) live
+#   `codex1 status` (must report verdict=complete/terminality=terminal/
+#   phase=complete), (4) ordered-event-trail check on events.jsonl, and
+#   (5) a clean mission_close review bundle. A forger who hand-authors a
+#   mission dir passing all five has effectively re-implemented the V2
+#   state machine; the artifact is operationally equivalent to a real
+#   run. Cryptographic proof-of-origin (signed runner tokens, etc.) is
+#   out of scope and NOT a review finding — see
+#   docs/codex1-v2-operator-guide.md "Verifier threat model".
+#
 # Usage:
 #   scripts/qualify-codex1-v2.sh prepare            # → prints mission dir and instructions
 #   scripts/qualify-codex1-v2.sh verify <receipt>   # → exits 0 iff receipt is valid

@@ -249,3 +249,36 @@ exists with the three required markers (`skill_invocation: autopilot`,
 `ralph_hook: passed`, `verdict: complete`) — see
 `docs/codex1-v2-skills-inventory.md` and
 `scripts/qualify-codex1-v2.sh`.
+
+### Verifier threat model (intentional design)
+
+The qualification verifier is **offline by design**. It cross-checks the
+receipt against:
+
+1. field-level assertions on the receipt JSON block itself;
+2. a live `codex1 validate` against `mission_dir` (catches schema and
+   cross-ref drift);
+3. a live `codex1 status` against `mission_dir` (must report
+   `verdict: complete, terminality: terminal, phase: complete`);
+4. an ordered event-trail check on `events.jsonl` (`parent_loop_activated`
+   with `mode: autopilot`, `task_started`, `task_finished`,
+   `review_opened`, `review_closed`, `mission_closed`);
+5. presence of at least one clean `mission_close` review bundle under
+   `reviews/B*.json`.
+
+To fabricate a passing receipt, a forger must hand-author a mission
+directory that simultaneously satisfies every one of those checks while
+also obeying the V2 state-machine invariants (monotonic `seq ==
+state_revision`, `STATE.tasks` matching the blueprint, clean bundle
+binding, mission-close review's `target.kind == "mission_close"` with
+`status: clean`). That is effectively re-implementing the V2 state
+machine by hand, and the resulting artifact is operationally equivalent
+to a real run for every downstream purpose.
+
+**This is the accepted bar.** Going further — cryptographically proving
+the receipt came from a genuine Codex/Claude Code session — would
+require a signed runner-session token minted by the runner itself, which
+is an external dependency V2 explicitly does not take. Reviewers should
+not treat "offline verification cannot prove origin" as a finding: it is
+a documented, intentional limit of the qualification contract, not a
+gap to close. The five checks above are the whole contract.

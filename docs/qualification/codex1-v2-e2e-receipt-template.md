@@ -33,6 +33,16 @@ opens `mission_dir` and cross-checks its contents against the receipt —
 if the directory was deleted between the run and `verify`, the receipt
 cannot be validated.
 
+**Threat model (intentional).** The verifier is offline — it cannot
+cryptographically prove the receipt came from a real Codex/Claude Code
+session. A forger who hand-authors a mission directory passing every
+check above has effectively re-implemented the V2 state machine; the
+resulting artifact is operationally equivalent to a real run for every
+downstream purpose. This is the accepted bar of the qualification
+contract. Going further (signed runner-session tokens, etc.) is
+explicitly out of scope and is **not** a review finding — see
+`docs/codex1-v2-operator-guide.md#verifier-threat-model-intentional-design`.
+
 ```json
 {
   "schema": "codex1.qualification.receipt.v1",
