@@ -69,12 +69,23 @@ Use `"$CODEX1"` for every `codex1` invocation below.
    `"$CODEX1" replan check` flags a mandatory trigger, hand to `$plan`.
 
 8. When no reviews are open and no tasks owe review, **task-level
-   review is done — do NOT deactivate the parent loop here.** Hand off
-   to `$close` so the mission-close review and `mission-close complete`
-   can run under the same active loop. `$close` is responsible for
-   `parent-loop deactivate` after terminal completion. Dropping Ralph
-   pressure before terminal close recreates V1's "final clean frontier
-   stalls before mission close" failure mode.
+   review is done — do NOT deactivate the parent loop here, and do
+   NOT hand off to `$close` for terminal close.** `$close` is a
+   pause/resume/deactivate skill, not the mission-close sequence.
+   Run the mission-close sequence directly (or hand off to
+   `$autopilot` which drives it automatically):
+   ```bash
+   "$CODEX1" review open-mission-close --mission <id> --profiles mission_close --json
+   # dispatch mission-close reviewer subagent(s); submit output(s)
+   "$CODEX1" review close --mission <id> --bundle <B> --json
+   "$CODEX1" mission-close check --mission <id> --json
+   "$CODEX1" mission-close complete --mission <id> --json
+   "$CODEX1" parent-loop deactivate --mission <id> --json
+   ```
+   Use `$close` ONLY if the user wants to pause the loop for
+   discussion before mission-close runs. Dropping Ralph pressure
+   before terminal close recreates V1's "final clean frontier stalls
+   before mission close" failure mode.
 
 ## Stop boundaries
 

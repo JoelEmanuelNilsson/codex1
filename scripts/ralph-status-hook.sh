@@ -137,13 +137,15 @@ else
   REPO_ROOT="$(find_mission_root "$PWD" || echo "$PWD")"
 fi
 
-# Round 13 P1 / Round 14 P1 parent-lane gate. A Stop event fires in
-# every root Claude session in this repo. The lease
-# (.codex1/parent-session.json) holds the session_id of the
+# Rounds 13-15 parent-lane gate. A Stop event fires in every root
+# Claude session in this repo. The lease
+# (.codex1/parent-session.json) holds `{session_id, pid}` of the
 # orchestrator that should enforce the block.
 #
 # Semantics:
 #   - No lease                          → exit 0 (no parent to enforce).
+#   - Lease but pid is dead             → exit 0 (stale lease from a
+#       crashed parent; Ralph is not actively running).
 #   - Lease + matching session_id       → scan (I am the parent).
 #   - Lease + different session_id      → exit 0 (I am a secondary).
 #   - Lease + no session_id on stdin    → scan (fail-closed; Round 14
@@ -158,14 +160,26 @@ if [[ "${CODEX1_SKIP_LANE_CHECK:-0}" != "1" ]]; then
   if [[ ! -f "${LEASE_FILE}" ]]; then
     exit 0
   fi
-  LEASE_SID="$(python3 -c '
+  LEASE_SID_AND_PID="$(python3 -c '
 import json, sys
 try:
     with open(sys.argv[1]) as f:
-        print(json.load(f).get("session_id", ""))
+        d = json.load(f)
+    sid = d.get("session_id", "") or ""
+    pid = d.get("pid", "")
+    print(f"{sid}\t{pid}")
 except Exception:
-    pass
-' "${LEASE_FILE}" 2>/dev/null || true)"
+    print("\t")
+' "${LEASE_FILE}" 2>/dev/null || printf '\t')"
+  LEASE_SID="${LEASE_SID_AND_PID%%$'\t'*}"
+  LEASE_PID="${LEASE_SID_AND_PID##*$'\t'}"
+  # Stale-lease recovery: if the recorded parent pid is no longer
+  # alive, Ralph itself is dead — don't block on a ghost.
+  if [[ -n "${LEASE_PID}" ]] && [[ "${LEASE_PID}" =~ ^[0-9]+$ ]]; then
+    if ! kill -0 "${LEASE_PID}" 2>/dev/null; then
+      exit 0
+    fi
+  fi
   # Only exit 0 when we can positively identify ourselves as a
   # different session. Unknown identity (empty HOOK_SESSION_ID) falls
   # through to the scan — the lease's existence proves a parent is

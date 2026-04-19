@@ -263,10 +263,11 @@ fn ralph_hook_script_syntax_is_valid() {
     assert!(status.success(), "ralph-status-hook.sh failed `bash -n`");
 }
 
-/// Round 14 P1: `SessionStart` must refuse to claim the lease in a
-/// session that isn't the parent lane. Without this, a second
-/// `claude` session's `SessionStart` would overwrite the existing
-/// lease and steal parent-lane authority.
+/// Round 15 P1: first-claim-wins with PID-based staleness. A second
+/// session's `SessionStart` must not overwrite a lease whose pid is
+/// still alive — the parent's ownership is sticky. Without this, a
+/// subagent / second terminal / env-inheriting process would silently
+/// take over the parent lane.
 #[test]
 fn secondary_session_cannot_steal_lease() {
     use std::io::Write;
@@ -278,12 +279,16 @@ fn secondary_session_cannot_steal_lease() {
         .unwrap()
         .join("ralph-session-lease.sh");
 
-    // Parent A claims (with env gate).
+    // Use the test process's PID as the "parent" — guaranteed alive
+    // for the test's lifetime.
+    let live_pid = std::process::id().to_string();
+
+    // Session A claims first.
     let mut claim_a = std::process::Command::new("bash")
         .arg(&lease_script)
         .arg("claim")
         .env("CODEX1_REPO_ROOT", dir.path())
-        .env("CODEX1_PARENT_LANE", "1")
+        .env("CODEX1_PARENT_PID", &live_pid)
         .stdin(std::process::Stdio::piped())
         .spawn()
         .unwrap();
@@ -295,14 +300,14 @@ fn secondary_session_cannot_steal_lease() {
         .unwrap();
     assert!(claim_a.wait().unwrap().success());
 
-    // Secondary session B runs SessionStart WITHOUT the parent-lane
-    // env: must be a no-op, lease stays owned by A.
+    // Session B tries to claim with a DIFFERENT pid (also alive) —
+    // the existing lease's pid is still live, so claim must be a
+    // no-op regardless of B's own env.
     let mut claim_b = std::process::Command::new("bash")
         .arg(&lease_script)
         .arg("claim")
         .env("CODEX1_REPO_ROOT", dir.path())
-        // Deliberately no CODEX1_PARENT_LANE.
-        .env_remove("CODEX1_PARENT_LANE")
+        .env("CODEX1_PARENT_PID", &live_pid)
         .stdin(std::process::Stdio::piped())
         .spawn()
         .unwrap();
@@ -318,7 +323,109 @@ fn secondary_session_cannot_steal_lease() {
     let lease: Value = serde_json::from_slice(&fs::read(&lease_path).unwrap()).unwrap();
     assert_eq!(
         lease["session_id"], "sess-A",
-        "secondary session without CODEX1_PARENT_LANE must not steal the lease"
+        "first claim wins; a second live-pid claim must not steal"
+    );
+}
+
+/// Round 15 P1: if the lease's recorded pid is dead (Ralph crashed
+/// without releasing), a fresh session's `SessionStart` takes over
+/// as stale recovery. Without this, a crashed Ralph would forever
+/// prevent the next Ralph from claiming.
+#[test]
+fn stale_pid_lease_allows_takeover() {
+    use std::io::Write;
+
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let lease_script = ralph_hook_path()
+        .parent()
+        .unwrap()
+        .join("ralph-session-lease.sh");
+
+    // Plant a lease whose pid is guaranteed dead.
+    let lease_path = dir.path().join(".codex1/parent-session.json");
+    fs::create_dir_all(lease_path.parent().unwrap()).unwrap();
+    fs::write(
+        &lease_path,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "session_id": "sess-crashed",
+            "pid": 99_999_999,
+            "claimed_at": "2026-04-19T10:00:00Z",
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    // Fresh session C claims with an alive pid → stale recovery.
+    let live_pid = std::process::id().to_string();
+    let mut claim_c = std::process::Command::new("bash")
+        .arg(&lease_script)
+        .arg("claim")
+        .env("CODEX1_REPO_ROOT", dir.path())
+        .env("CODEX1_PARENT_PID", &live_pid)
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    claim_c
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(br#"{"session_id": "sess-C"}"#)
+        .unwrap();
+    assert!(claim_c.wait().unwrap().success());
+
+    let lease: Value = serde_json::from_slice(&fs::read(&lease_path).unwrap()).unwrap();
+    assert_eq!(
+        lease["session_id"], "sess-C",
+        "stale lease (dead pid) must allow a fresh claim to take over"
+    );
+}
+
+/// Round 15 P1: if the lease exists but its pid is dead, the Stop
+/// hook must treat it as no-lease and exit 0. Otherwise a crashed
+/// parent would leave every future session blocked on a ghost.
+#[test]
+fn stale_pid_lease_stop_hook_exits_zero() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    write_blueprint(
+        dir.path(),
+        "planning:\n  requested_level: light\n  graph_revision: 1\n\
+         tasks:\n  - id: T1\n    title: A\n    kind: code\n",
+    );
+    write_state(
+        dir.path(),
+        "executing",
+        "execute",
+        false,
+        &[("T1", "ready")],
+    );
+
+    // Plant a stale lease (dead pid).
+    let lease_path = dir.path().join(".codex1/parent-session.json");
+    fs::create_dir_all(lease_path.parent().unwrap()).unwrap();
+    fs::write(
+        &lease_path,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "session_id": "sess-crashed",
+            "pid": 99_999_999,
+            "claimed_at": "2026-04-19T10:00:00Z",
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let out = std::process::Command::new("bash")
+        .arg(ralph_hook_path())
+        .arg("--repo-root")
+        .arg(dir.path())
+        .stdin(std::process::Stdio::null())
+        .output()
+        .expect("bash available");
+    assert!(
+        out.status.success(),
+        "stale-pid lease must not block; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
     );
 }
 
@@ -440,15 +547,16 @@ fn parent_lane_gate_blocks_only_the_lease_holder() {
     let hook = ralph_hook_path();
     let lease_script = hook.parent().unwrap().join("ralph-session-lease.sh");
 
-    // Parent session A claims the lease via SessionStart hook. The
-    // CODEX1_PARENT_LANE=1 env gate (Round 14 P1) is what separates
-    // "this session owns the loop" from every other session firing
-    // SessionStart in the repo.
+    // Parent session A claims the lease via SessionStart hook.
+    // Round 15 P1: no env gate — claim records the parent pid and
+    // uses first-claim-wins + PID-based staleness. Test process's
+    // PID serves as the "alive parent pid" for the fixture.
+    let live_pid = std::process::id().to_string();
     let mut claim = std::process::Command::new("bash")
         .arg(&lease_script)
         .arg("claim")
         .env("CODEX1_REPO_ROOT", dir.path())
-        .env("CODEX1_PARENT_LANE", "1")
+        .env("CODEX1_PARENT_PID", &live_pid)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .spawn()

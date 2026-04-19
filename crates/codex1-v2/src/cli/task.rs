@@ -19,10 +19,12 @@ use crate::blueprint;
 use crate::envelope;
 use crate::error::CliError;
 use crate::graph::{self, validate::validate_id_format};
+use crate::mission::lock::parse_and_validate as parse_lock;
 use crate::mission::resolve_mission;
 use crate::proof::{default_proof_ref, read_and_hash};
+use crate::review::{BUNDLES_DIRNAME, load_all_bundles};
 use crate::state::{EventDraft, Phase, StateStore, TaskState, TaskStatus};
-use crate::status::project_status;
+use crate::status::project_status_with_bundles;
 
 use super::{Cli, emit_error, emit_success, now_rfc3339, resolve_repo};
 
@@ -40,8 +42,15 @@ pub fn cmd_task_next(cli: &Cli, mission: &str) -> i32 {
 }
 
 fn run_next(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError> {
-    let (_paths, dag, state) = load_mission(cli, mission)?;
-    let status = project_status(&state, &dag);
+    let (paths, dag, state) = load_mission(cli, mission)?;
+    // Round 15 P1: route `task next` through the same lock-aware
+    // projection `codex1 status` uses. The bare `project_status`
+    // synthesizes a ratified lock and passes empty bundles, which lets
+    // a draft-lock mission emit `start_task` even though `codex1
+    // status` correctly routes to `user_decision/lock_not_ratified`.
+    let lock = parse_lock(&paths.outcome_lock())?;
+    let bundles = load_all_bundles(&paths.mission_dir.join(BUNDLES_DIRNAME))?;
+    let status = project_status_with_bundles(&lock, &state, &dag, &bundles);
     let v = serde_json::to_value(&status).map_err(|e| CliError::Internal {
         message: format!("serialize status: {e}"),
     })?;

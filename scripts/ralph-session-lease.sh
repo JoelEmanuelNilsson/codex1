@@ -3,31 +3,39 @@
 #
 # Wired into Claude Code's SessionStart and SessionEnd hooks so that
 # the first (parent-orchestrator) Claude session in this repo records
-# its `session_id` to `.codex1/parent-session.json`. The Stop hook
-# later consults the lease to decide whether the current session is
-# THE parent lane or a secondary/standalone session that must not be
-# blocked.
+# its `session_id` + process pid to `.codex1/parent-session.json`. The
+# Stop hook later consults the lease to decide whether the current
+# session is THE parent lane or a secondary/standalone session that
+# must not be blocked.
 #
 # Usage (invoked by Claude Code hooks, hook JSON piped on stdin):
 #   ralph-session-lease.sh claim    # SessionStart
 #   ralph-session-lease.sh release  # SessionEnd
-#   ralph-session-lease.sh is-parent  # returns 0 if caller's session owns the lease
+#   ralph-session-lease.sh is-parent  # exit 0 iff caller owns the lease
 #
-# Semantics:
-#   claim     — writes {session_id, claimed_at} atomically; last writer
-#               wins (a second concurrent root session takes over).
-#   release   — deletes the lease if the current session owns it; no-op
-#               otherwise (tolerates a racey reclaim).
-#   is-parent — exit 0 if current session_id == lease.session_id; exit
-#               1 otherwise (no lease, or owned by someone else). Used
-#               by the Stop hook to gate its scan.
+# Round 15 P1 redesign: first-claim-wins with PID-based staleness.
+#
+#   - claim   — if no live lease exists, write {session_id, pid,
+#               claimed_at} with pid = $PPID (the Claude CLI process).
+#               If a lease exists and its pid is alive, back off; the
+#               parent's claim is sticky. If the lease's pid is dead,
+#               take over (stale recovery). Idempotent refresh if the
+#               current session already owns the lease.
+#   - release — delete the lease if the current session owns it; no-op
+#               otherwise.
+#   - is-parent — exit 0 iff current session_id matches the lease's.
+#
+# Why no `CODEX1_PARENT_LANE` env gate (Round 14's design)?
+#   (a) The shipped hooks.json never exported it, so the default
+#       install silently disabled Ralph.
+#   (b) If it WERE exported, Agent-tool subagents inherit env and their
+#       SessionStart would overwrite the parent's lease (last-writer-
+#       wins). PID-check fixes both: no env required, and a subagent's
+#       second claim sees the parent's live pid and backs off.
 #
 # The lease is NOT a general-purpose lock — it's an identity marker.
-# Without this marker, the Stop hook fails open (exit 0), which is the
-# correct choice for a session that never claimed the parent lane.
-# Without SessionStart wired, no session ever claims, so the hook
-# behaves as a no-op. Ralph setups that want stop-blocking must wire
-# both hooks.
+# Ralph setups that want stop-blocking must wire SessionStart,
+# SessionEnd, and Stop hooks.
 
 set -eu
 
@@ -79,20 +87,89 @@ except Exception:
 ' 2>/dev/null || true
 }
 
+# Check whether a pid is alive. `kill -0 <pid>` exits 0 if the pid
+# is a live process the user can signal. For Ralph's purpose this is
+# precise enough: the parent Claude CLI is always a process this user
+# owns, so a positive signal probe means the parent is still running.
+pid_is_alive() {
+  local pid="$1"
+  [[ -n "$pid" && "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null
+}
+
+# Overrideable for tests. The SessionStart hook script is spawned as a
+# child of the Claude CLI, so $PPID is the Claude CLI pid. Tests can
+# set CODEX1_PARENT_PID to simulate a specific parent process.
+current_parent_pid() {
+  if [[ -n "${CODEX1_PARENT_PID:-}" ]]; then
+    printf '%s' "${CODEX1_PARENT_PID}"
+  else
+    printf '%s' "${PPID}"
+  fi
+}
+
+# Returns 0 iff the lease at $LEASE_FILE exists AND its pid is alive.
+# Used by claim_lease to decide whether to back off (live owner) or
+# take over (stale lease).
+lease_is_live() {
+  [[ -f "$LEASE_FILE" ]] || return 1
+  local existing_pid
+  existing_pid="$(python3 -c '
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
+    pid = data.get("pid", "")
+    print(pid)
+except Exception:
+    pass
+' "${LEASE_FILE}" 2>/dev/null || true)"
+  pid_is_alive "$existing_pid"
+}
+
+lease_owner_sid() {
+  [[ -f "$LEASE_FILE" ]] || { printf ''; return 0; }
+  python3 -c '
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
+    sid = data.get("session_id", "")
+    if isinstance(sid, str):
+        print(sid)
+except Exception:
+    pass
+' "${LEASE_FILE}" 2>/dev/null || true
+}
+
 claim_lease() {
   local sid="$1"
+  local pid="$2"
   [[ -n "$sid" ]] || return 0
   mkdir -p "${LEASE_DIR}"
-  # Atomic write via temp+rename. Last writer wins — the reviewer's
-  # scenario of "a second root session overwrites" is intentional and
-  # unambiguous at the hook layer (sessions serialize on SessionStart).
-  python3 - "$sid" "$LEASE_FILE" <<'PY'
+  # First-claim-wins with PID-based staleness. See the file header.
+  if [[ -f "$LEASE_FILE" ]]; then
+    local existing_sid
+    existing_sid="$(lease_owner_sid)"
+    if [[ "$existing_sid" == "$sid" ]]; then
+      # Idempotent refresh: keep the lease but update claimed_at so
+      # long-lived sessions don't look stale to a future heuristic.
+      :
+    elif lease_is_live; then
+      # Another live session already owns the lease. Back off.
+      return 0
+    fi
+    # Lease is stale (pid dead) — fall through and overwrite.
+  fi
+  python3 - "$sid" "$pid" "$LEASE_FILE" <<'PY'
 import json, os, sys, time
 sid = sys.argv[1]
-path = sys.argv[2]
+pid = sys.argv[2]
+path = sys.argv[3]
 tmp = path + ".tmp"
 payload = {
     "session_id": sid,
+    "pid": int(pid) if pid.isdigit() else pid,
     "claimed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
 }
 with open(tmp, "w") as f:
@@ -140,25 +217,9 @@ shift || true
 
 case "$cmd" in
   claim)
-    # Round 14 P1: only the parent-orchestrator lane may claim the
-    # lease. Ralph (or any wrapper that wants Stop-blocking) MUST set
-    # `CODEX1_PARENT_LANE=1` in the env that the Claude process runs
-    # under. Without this gate, every root session's SessionStart
-    # would overwrite the lease and steal parent-lane authority from
-    # whoever actually owns the loop.
-    #
-    # Intentional design trade-off: env propagates to Agent-tool
-    # subagents, so their SessionStart would also try to claim. The
-    # Stop hook is NOT registered for SubagentStop, so a subagent's
-    # claim is harmless (no Stop hook runs in the subagent). The
-    # subagent's SessionEnd releases only if the lease's session_id
-    # matches its own — which it never does, so the parent's lease
-    # survives the subagent's lifecycle.
-    if [[ "${CODEX1_PARENT_LANE:-0}" != "1" ]]; then
-      exit 0
-    fi
     sid="$(read_session_id_from_stdin)"
-    claim_lease "$sid"
+    pid="$(current_parent_pid)"
+    claim_lease "$sid" "$pid"
     ;;
   release)
     sid="$(read_session_id_from_stdin)"

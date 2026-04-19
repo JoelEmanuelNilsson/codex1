@@ -728,6 +728,127 @@ fn review_submit_rejects_profile_mismatch() {
     assert_eq!(env["details"]["output_profile"], "local_spec_intent");
 }
 
+/// Round 15 P1: `review submit` must refuse outputs on a bundle
+/// whose status is Clean or Failed. Without this check, a late
+/// reviewer output against an already-closed bundle would make
+/// `review status`'s live cleanliness computation disagree with the
+/// stored `bundle.status` + `evidence_snapshot_hash` that
+/// `mission-close check` trusts.
+#[test]
+#[allow(clippy::too_many_lines)] // Two full submissions + open/close pipeline.
+fn submit_rejects_output_on_closed_bundle() {
+    let dir = TempDir::new().unwrap();
+    boot(&dir);
+    let finish = do_start_and_finish(&dir, "T1");
+    let task_run_id = finish["task_run_id"].as_str().unwrap().to_string();
+    let proof_hash = finish["proof_hash"].as_str().unwrap().to_string();
+
+    // Standard open → submit → close: produces a Clean bundle.
+    let open = open_review(&dir, "T1", "code_bug_correctness");
+    let bundle_id = open["bundle_id"].as_str().unwrap().to_string();
+    let bundle: Value = serde_json::from_slice(
+        &fs::read(
+            dir.path()
+                .join(format!("PLANS/m1/reviews/{bundle_id}.json")),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let req_id = bundle["requirements"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let state_rev = bundle["state_revision"].as_u64().unwrap();
+    let graph_rev = bundle["graph_revision"].as_u64().unwrap();
+
+    let clean_input = write_reviewer_output(
+        &dir,
+        &bundle_id,
+        &req_id,
+        "code_bug_correctness",
+        "T1",
+        &task_run_id,
+        &proof_hash,
+        state_rev,
+        graph_rev,
+        "reviewer",
+        "pkt-clean",
+        json!({ "result": "none", "findings": [] }),
+    );
+    let rel_clean = clean_input.strip_prefix(dir.path()).unwrap();
+    bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "submit",
+            "--mission",
+            "m1",
+            "--bundle",
+            &bundle_id,
+            "--input",
+            rel_clean.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "close",
+            "--mission",
+            "m1",
+            "--bundle",
+            &bundle_id,
+        ])
+        .assert()
+        .success();
+
+    // Now attempt a late submission — must be refused because the
+    // bundle is already Clean.
+    let late_input = write_reviewer_output(
+        &dir,
+        &bundle_id,
+        &req_id,
+        "code_bug_correctness",
+        "T1",
+        &task_run_id,
+        &proof_hash,
+        state_rev,
+        graph_rev,
+        "reviewer",
+        "pkt-late",
+        json!({
+            "result": "findings",
+            "findings": [{
+                "severity": "P1",
+                "title": "Late finding",
+                "rationale": "submitted after close",
+            }]
+        }),
+    );
+    let rel_late = late_input.strip_prefix(dir.path()).unwrap();
+    let out = bin(&dir)
+        .args([
+            "--json",
+            "review",
+            "submit",
+            "--mission",
+            "m1",
+            "--bundle",
+            &bundle_id,
+            "--input",
+            rel_late.to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["code"], "REVIEW_BUNDLE_ALREADY_CLOSED");
+    assert_eq!(env["details"]["bundle_id"], bundle_id);
+}
+
 /// Round 12 P1: close-time write order is (bundle → state). If the
 /// state mutation fails mid-flight, the bundle is already durably
 /// Closed and a re-run reconciles the task status idempotently. This

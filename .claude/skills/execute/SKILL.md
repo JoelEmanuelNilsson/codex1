@@ -72,14 +72,19 @@ Use `"$CODEX1"` for every `codex1` invocation below.
    `$review-loop` unless the user paused via `$close`.
 
 8. When every task is terminal (`review_clean` or `complete` — or
-   `superseded`), hand off to `$close`. **Do not run
-   `parent-loop deactivate` here.** Terminalizing the mission still
-   requires the mission-close review bundle and `mission-close
-   complete`; deactivating the loop before that point drops Ralph
-   pressure at exactly the frontier where mission-close needs to
-   fire. `$close` owns the deactivate step — after a clean
-   `mission-close complete`, it issues `parent-loop deactivate` as the
-   terminal transition.
+   `superseded`), **do not run `parent-loop deactivate` here, and do
+   not hand off to `$close` as the terminal step.** `$close` is a
+   pause skill; it does not run mission-close review. Drive the
+   mission-close sequence (or hand to `$autopilot` which drives it):
+   ```bash
+   "$CODEX1" review open-mission-close --mission <id> --profiles mission_close --json
+   # reviewer subagent submits output; parent closes the bundle
+   "$CODEX1" mission-close check --mission <id> --json
+   "$CODEX1" mission-close complete --mission <id> --json
+   "$CODEX1" parent-loop deactivate --mission <id> --json
+   ```
+   `$close` is appropriate only as a pause before mission-close, not
+   as the terminal handoff.
 
 ## Stop boundaries
 

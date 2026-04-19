@@ -179,6 +179,12 @@ pub enum CliError {
     )]
     MissionAlreadyTerminal { mission_id: String },
 
+    #[error(
+        "review bundle {bundle_id} is {status}; submissions are only accepted \
+         while a bundle is Open. Re-open the review before submitting new output."
+    )]
+    ReviewBundleAlreadyClosed { bundle_id: String, status: String },
+
     #[error("revision conflict: expected {expected}, actual {actual}")]
     RevisionConflict { expected: u64, actual: u64 },
 
@@ -219,6 +225,7 @@ impl CliError {
             Self::MissionCloseNotReady { .. } => "MISSION_CLOSE_NOT_READY",
             Self::ReviewBundleAlreadyOpen { .. } => "REVIEW_BUNDLE_ALREADY_OPEN",
             Self::MissionAlreadyTerminal { .. } => "MISSION_ALREADY_TERMINAL",
+            Self::ReviewBundleAlreadyClosed { .. } => "REVIEW_BUNDLE_ALREADY_CLOSED",
             Self::RevisionConflict { .. } => "REVISION_CONFLICT",
             Self::Internal { .. } => "INTERNAL_ERROR",
         }
@@ -343,6 +350,13 @@ impl CliError {
                  not do it."
                     .into(),
             ),
+            Self::ReviewBundleAlreadyClosed { .. } => Some(
+                "The reviewer lane already closed. Re-open or re-run the review \
+                 before submitting new output — late submissions would make \
+                 `review status` disagree with the stored `bundle.status` that \
+                 `mission-close check` trusts."
+                    .into(),
+            ),
             Self::RevisionConflict { .. } => Some(
                 "State changed under you; re-read STATE.json and retry.".into(),
             ),
@@ -451,6 +465,9 @@ impl CliError {
             }
             Self::MissionAlreadyTerminal { mission_id } => {
                 json!({ "mission_id": mission_id })
+            }
+            Self::ReviewBundleAlreadyClosed { bundle_id, status } => {
+                json!({ "bundle_id": bundle_id, "status": status })
             }
             Self::ReviewBundleAlreadyOpen {
                 task_id,

@@ -285,6 +285,48 @@ fn task_ready_refuses_when_plan_check_would_fail() {
     assert_eq!(env["details"]["task_id"], "T1");
 }
 
+/// Round 15 P1: `task next` must use the same lock-aware projection
+/// as `codex1 status`. Previously it called bare `project_status`,
+/// which synthesizes a ratified lock + empty bundles and could route
+/// to `start_task` even on a draft-lock mission. That let
+/// `task start` then transition the task to `in_progress` and bypass
+/// the clarify-before-execute invariant.
+#[test]
+fn task_next_refuses_draft_outcome_lock() {
+    let dir = TempDir::new().unwrap();
+    // Intentionally skip init()'s ratify so the lock stays draft.
+    bin(&dir)
+        .args(["--json", "init", "--mission", "m1", "--title", "t"])
+        .assert()
+        .success();
+    write_blueprint(
+        dir.path(),
+        "planning:\n  requested_level: light\n  graph_revision: 1\n\
+         tasks:\n  - id: T1\n    title: Impl\n    kind: code\n    depends_on: []\n\
+         \x20   spec_ref: specs/T1/SPEC.md\n\
+         \x20   write_paths: [src/**]\n\
+         \x20   proof: [\"cargo build\"]\n\
+         \x20   review_profiles: [code_bug_correctness, local_spec_intent]\n",
+    );
+    // Hand-write STATE so T1 looks ready — this is the exact shape
+    // that used to bypass the gate before this fix.
+    set_state(dir.path(), &[("T1", "ready")], "executing");
+
+    let out = bin(&dir)
+        .args(["--json", "task", "next", "--mission", "m1"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(
+        env["next_action"]["kind"], "user_decision",
+        "task next on draft lock must route to user_decision, not start_task: {env:?}"
+    );
+    assert_eq!(env["required_user_decision"], "lock_not_ratified");
+}
+
 #[test]
 fn task_ready_refuses_while_outcome_lock_is_draft() {
     // Round 10 P1: `task ready` must require a ratified outcome lock,

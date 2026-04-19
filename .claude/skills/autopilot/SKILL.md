@@ -101,26 +101,32 @@ does not count toward any bundle's cleanliness.
 - Ralph blocks stop while the autopilot loop is active and not paused.
 - `$close` pauses autopilot; `$autopilot` resumes continue the mission.
 
-### Ralph parent-lane requirement (Rounds 13-14 P1)
+### Ralph parent-lane authority (Rounds 13–15 P1)
 
 Ralph's Stop-blocking only fires in the session that owns the
-parent-lane lease. The lease is written by the `SessionStart` hook
+parent-lane lease at `.codex1/parent-session.json`. The lease is
+written by the `SessionStart` hook
 (`scripts/ralph-session-lease.sh claim`) and released by `SessionEnd`;
 both are wired in `.codex/hooks.json` / `.claude/hooks.json`.
 
-**Round 14 P1 tightening**: the `SessionStart` hook only claims the
-lease when `CODEX1_PARENT_LANE=1` is set in the environment. Without
-this env, secondary sessions (a second terminal, a reviewer launched
-via `claude -p`, etc.) cannot steal the lease by overwriting it. The
-Ralph wrapper that launches the parent Claude MUST export
-`CODEX1_PARENT_LANE=1`. Subagents spawned by the parent do inherit
-the env, but their `Stop` event is `SubagentStop` (not registered),
-so their claim is harmless — they never trigger the scan.
+**Round 15 P1 redesign**: the lease is **first-claim-wins with
+PID-based staleness**. No env gate is required — the default install
+works out of the box. The lease records `{session_id, pid,
+claimed_at}` where `pid` is the Claude CLI process. Subsequent
+`SessionStart` invocations:
 
-If the deployment has not wired SessionStart/SessionEnd, no session
-blocks — the hook fails open rather than punishing every lane. If the
-runtime doesn't pipe `session_id` on hook stdin, the Stop hook falls
-back to scanning (fail-closed) rather than silently disabling Ralph.
+- If their session_id matches the lease → idempotent refresh.
+- If the lease's pid is still alive (the parent is running) → back
+  off. Secondary sessions cannot steal.
+- If the lease's pid is dead (the parent crashed) → take over as
+  stale recovery.
+
+The Stop hook treats a dead-pid lease as no-lease and exits 0 — a
+ghost Ralph doesn't block. If hook stdin lacks `session_id` (Codex
+Desktop, stripped payload), the hook falls through to scanning
+(fail-closed) so Ralph doesn't silently disable itself. If the
+deployment hasn't wired `SessionStart`/`SessionEnd`, no session
+blocks — the hook fails open rather than punishing every lane.
 
 ## Example one-shot
 

@@ -435,6 +435,19 @@ fn run_submit(
     }
     let bundle = load_bundle(&paths.mission_dir, bundle_id)?;
 
+    // Round 15 P1: refuse submissions against a closed bundle. A late
+    // reviewer output against a Clean/Failed bundle would make
+    // `review status`'s live cleanliness computation disagree with the
+    // stored `bundle.status` and `evidence_snapshot_hash` that
+    // `mission-close check` trusts — visible findings could
+    // contradict a gate the close path already accepted.
+    if bundle.status != ReviewStatus::Open {
+        return Err(CliError::ReviewBundleAlreadyClosed {
+            bundle_id: bundle.bundle_id.clone(),
+            status: format!("{:?}", bundle.status),
+        });
+    }
+
     // Read and parse the reviewer output.
     let abs_input = if input_path.is_absolute() {
         input_path.to_path_buf()
