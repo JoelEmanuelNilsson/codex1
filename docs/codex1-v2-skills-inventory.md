@@ -1,12 +1,17 @@
 # Codex1 V2 Skills Inventory
 
-Repo-local skills live at `.claude/skills/<name>/SKILL.md` (Claude Code).
-A `.codex/skills/` mirror is produced at T44 cutover; until then V2
-skills only apply to Claude Code sessions.
+Repo-local skills live at `.claude/skills/<name>/SKILL.md` (Claude Code)
+and `.codex/skills/<name>/SKILL.md` (Codex). The two trees are byte-identical
+mirrors, maintained that way since the T44 cutover.
 
 User-global skill directories (`~/.claude/skills/`, `~/.codex/skills/`)
 are **out of scope** for V2. If you want global availability, symlink
 the repo-local files yourself.
+
+Every skill begins with a resolver preamble that sets `$CODEX1` via
+`${CODEX1_REPO_ROOT:-/Users/joel/codex1}/scripts/resolve-codex1-bin`;
+the CLI-command column below abbreviates `"$CODEX1"` as `codex1` for
+readability, but the skill files themselves always invoke `"$CODEX1"`.
 
 ## Skills
 
@@ -47,8 +52,13 @@ Each skill respects the retrospective's authority boundaries:
   **Not formal review evidence.**
 - **Worker** (subagent spawned by `$execute`): owns bounded
   implementation + proof. Cannot mutate mission truth.
-- **Ralph**: owns stop/resume guard over `codex1 status --json`. No
-  planning, executing, reviewing, subagent spawning.
+- **Ralph**: owns stop/resume guard over
+  `codex1 status --mission <id> --json`. Invoked by
+  `scripts/ralph-status-hook.sh` in scan mode by default — the hook
+  walks up from `$PWD` to the nearest `PLANS/` directory, iterates every
+  mission under it, and blocks stop if any reports
+  `stop_policy.allow_stop: false`. Ralph does no planning, executing,
+  reviewing, or subagent spawning.
 - **User**: owns interruption (`$close`) and direction.
 
 ## Parent loop modes
@@ -65,7 +75,14 @@ Every skill that runs CLI mutations activates the parent loop first:
 
 ## Qualification
 
-The single authoritative "V2 is done" artefact is
-`docs/qualification/codex1-v2-e2e-receipt.md`, produced by a live
-`$autopilot` run (see `scripts/qualify-codex1-v2.sh`). Claude ships the
-template; the operator produces the receipt.
+V2's "done" bar has two halves:
+
+- **Repo-ready** — the code, verifier, hook, skills, and tests shipped
+  in this commit satisfy every static gate (fmt/clippy/test green,
+  hook scans correctly, verifier rejects fabricated receipts). This
+  half is what the checked-in repo asserts.
+- **Operator-qualified** — a live `$autopilot` run produces
+  `docs/qualification/codex1-v2-e2e-receipt.md`; `scripts/qualify-codex1-v2.sh
+  verify` accepts it. This half is operator-owned by design — see
+  `docs/codex1-v2-operator-guide.md#qualification`. The repo cannot
+  produce this receipt itself.

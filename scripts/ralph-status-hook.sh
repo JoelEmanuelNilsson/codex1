@@ -65,7 +65,44 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-REPO_ROOT="${REPO_ROOT_ARG:-$PWD}"
+# Resolve the mission repo-root.
+#
+# Precedence (first hit wins):
+#   1. `--repo-root <path>` (explicit override; used by tests and debugging).
+#   2. Nearest ancestor of $PWD that contains a `PLANS/` directory.
+#   3. $PWD itself, if PLANS/ is right there.
+#   4. $PWD as a bare default (produces "no missions" → allow stop).
+#
+# Step 2 is a bounded walk-up — we search for a specific marker (`PLANS/`),
+# not an arbitrary config. Without this, the hook silently fails open when
+# the runner's cwd is a subdirectory of the mission repo. V2's
+# no-ambient-resolution rule applies to CLI commands (which must take
+# `--mission <id>` explicitly), not to the hook's question of "which
+# directory on disk contains this mission tree?"
+find_mission_root() {
+  local dir="${1:-$PWD}"
+  while :; do
+    if [[ -d "$dir/PLANS" ]]; then
+      printf '%s' "$dir"
+      return 0
+    fi
+    # Stop at filesystem root.
+    local parent
+    parent="$(dirname "$dir")"
+    [[ "$parent" == "$dir" ]] && break
+    dir="$parent"
+  done
+  # No PLANS/ anywhere above cwd — caller falls back to $PWD (will produce
+  # "no missions to check, allow stop", which is the correct answer when
+  # Codex is truly running outside any mission tree).
+  return 1
+}
+
+if [[ -n "${REPO_ROOT_ARG}" ]]; then
+  REPO_ROOT="${REPO_ROOT_ARG}"
+else
+  REPO_ROOT="$(find_mission_root "$PWD" || echo "$PWD")"
+fi
 
 # Resolve V2 binary. For resolver purposes we prefer the repo that owns
 # *this* script (so the dev's own target/release/codex1 is found) rather
