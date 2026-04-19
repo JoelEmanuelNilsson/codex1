@@ -17,6 +17,21 @@ fn init(dir: &TempDir) {
         .args(["--json", "init", "--mission", "m1", "--title", "Test"])
         .assert()
         .success();
+    // Round 13 P2: plan check now refuses a draft lock. Tests that
+    // exercise DAG-level plan acceptance must first ratify the lock,
+    // the same hand-edit $clarify does in the skill.
+    ratify_lock(dir);
+}
+
+fn ratify_lock(dir: &TempDir) {
+    let path = dir.path().join("PLANS/m1/OUTCOME-LOCK.md");
+    let content = fs::read_to_string(&path).unwrap();
+    let ratified = content.replace("lock_status: draft", "lock_status: ratified");
+    assert_ne!(
+        content, ratified,
+        "fixture expected draft lock to flip to ratified"
+    );
+    fs::write(&path, ratified).unwrap();
 }
 
 fn write_blueprint(dir: &Path, yaml_body: &str) {
@@ -223,6 +238,47 @@ fn code_task_with_bug_correctness_plus_extras_passes() {
          \x20   proof: [\"cargo build\"]\n\
          \x20   review_profiles: [code_bug_correctness, local_spec_intent]\n",
     );
+    bin(&dir)
+        .args(["--json", "plan", "check", "--mission", "m1"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn draft_outcome_lock_refuses_plan_check() {
+    // Round 13 P2: `plan check` is the user-facing acceptance gate
+    // for route truth. It must not certify a plan while
+    // OUTCOME-LOCK.md is still `lock_status: draft`; $clarify has to
+    // ratify destination truth first.
+    let dir = TempDir::new().unwrap();
+    // Skip the init() helper — init() ratifies the lock, but we want
+    // a draft here.
+    bin(&dir)
+        .args(["--json", "init", "--mission", "m1", "--title", "Test"])
+        .assert()
+        .success();
+    write_blueprint(
+        dir.path(),
+        "planning:\n  requested_level: light\n  graph_revision: 1\n\
+         tasks:\n  - id: T1\n    title: Impl\n    kind: code\n    depends_on: []\n\
+         \x20   spec_ref: specs/T1/SPEC.md\n\
+         \x20   write_paths: [src/**]\n\
+         \x20   proof: [\"cargo build\"]\n\
+         \x20   review_profiles: [code_bug_correctness, local_spec_intent]\n",
+    );
+    let out = bin(&dir)
+        .args(["--json", "plan", "check", "--mission", "m1"])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let env = last_json(&out);
+    assert_eq!(env["code"], "PLAN_CHECK_LOCK_DRAFT");
+    assert_eq!(env["details"]["mission"], "m1");
+
+    // Once ratified, plan check accepts.
+    ratify_lock(&dir);
     bin(&dir)
         .args(["--json", "plan", "check", "--mission", "m1"])
         .assert()

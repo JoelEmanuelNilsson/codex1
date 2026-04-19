@@ -71,10 +71,15 @@ Use `"$CODEX1"` for every `codex1` invocation below.
 7. Status will now emit `next_action.kind: review_open`. Hand over to
    `$review-loop` unless the user paused via `$close`.
 
-8. If there are no more ready tasks and none owe review, deactivate:
-   ```bash
-   "$CODEX1" parent-loop deactivate --mission <id> --json
-   ```
+8. When every task is terminal (`review_clean` or `complete` — or
+   `superseded`), hand off to `$close`. **Do not run
+   `parent-loop deactivate` here.** Terminalizing the mission still
+   requires the mission-close review bundle and `mission-close
+   complete`; deactivating the loop before that point drops Ralph
+   pressure at exactly the frontier where mission-close needs to
+   fire. `$close` owns the deactivate step — after a clean
+   `mission-close complete`, it issues `parent-loop deactivate` as the
+   terminal transition.
 
 ## Stop boundaries
 
@@ -83,6 +88,8 @@ Use `"$CODEX1"` for every `codex1` invocation below.
 - `$execute` never self-reviews. It hands off to `$review-loop`.
 - `$execute` never replans. If `codex1 replan check` reports a mandatory
   trigger, return to `$plan`.
+- `$execute` never deactivates the parent loop. Deactivate belongs to
+  `$close` after mission-close-complete (Round 13 P1 fix).
 
 ## On stale proof
 

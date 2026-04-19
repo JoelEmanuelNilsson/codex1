@@ -180,14 +180,34 @@ codex1 mission-close complete --mission <id> --json
 
 ### Ralph
 
-Ralph should call only:
+Ralph is not a CLI call — it's a Stop hook that consults `codex1 status`
+on every mission in `<repo-root>/PLANS/*/`. The shipped implementation
+is `scripts/ralph-status-hook.sh` and runs in **scan mode**: the hook
+enumerates mission directories and invokes:
 
 ```bash
 codex1 status --mission <id> --json
 ```
 
-For V2, Ralph must provide `--mission`. Mission auto-detection can be added
-later only through an explicit `mission current` command.
+per mission, blocking stop if any mission reports
+`stop_policy.allow_stop: false`. An optional single-mission mode (same
+script with a positional `<mission-id>` argument) exists for explicit
+CLI testing. CLI commands still refuse ambient mission resolution; the
+hook's scan-mode is a repo-state query, not a CLI command, which is
+why it is allowed to iterate without a `--mission` argument.
+
+#### Parent-lane authority (Round 13 P1)
+
+Stop hooks fire in every root Claude session in the repo — not just
+the parent orchestrator. To distinguish "this Stop is the parent loop
+that must block" from "this Stop is a bounded secondary session that
+must not," the Stop hook consults `.codex1/parent-session.json`, a
+session lease written by the SessionStart hook
+(`scripts/ralph-session-lease.sh`). Only the session_id that owns the
+lease runs the scan; other sessions exit 0 silently. No lease →
+exit 0 (deployments that don't wire SessionStart skip the gate).
+Mission-close-review and Agent-tool subagents never trigger this hook
+at all (they fire `SubagentStop`, which is not registered).
 
 ## Status Schema
 

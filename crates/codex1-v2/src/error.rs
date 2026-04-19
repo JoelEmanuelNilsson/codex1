@@ -77,6 +77,12 @@ pub enum CliError {
     DagBoundariesNotSupported { count: usize },
 
     #[error(
+        "plan check for mission {mission} refuses to certify route truth \
+         while OUTCOME-LOCK.md is still draft; run $clarify first"
+    )]
+    PlanCheckLockDraft { mission: String, path: String },
+
+    #[error(
         "task {task_id} (kind={kind}) is missing required review profile(s) for this kind: {missing}",
         missing = missing.join(", ")
     )]
@@ -193,6 +199,7 @@ impl CliError {
             Self::DagBadSchema { .. } => "DAG_BAD_SCHEMA",
             Self::DagTaskUnderspecified { .. } => "DAG_TASK_UNDERSPECIFIED",
             Self::DagBoundariesNotSupported { .. } => "DAG_BOUNDARIES_NOT_SUPPORTED",
+            Self::PlanCheckLockDraft { .. } => "PLAN_CHECK_LOCK_DRAFT",
             Self::DagKindReviewProfileMissing { .. } => "DAG_KIND_REVIEW_PROFILE_MISSING",
             Self::ReviewProfileMissing { .. } => "REVIEW_PROFILE_MISSING",
             Self::StateCorrupt { .. } => "STATE_CORRUPT",
@@ -266,6 +273,12 @@ impl CliError {
             Self::DagBoundariesNotSupported { .. } => Some(
                 "Remove the `review_boundaries:` block until V2 implements the \
                  integration-review flow. Task-level review_profiles still work."
+                    .into(),
+            ),
+            Self::PlanCheckLockDraft { .. } => Some(
+                "Run $clarify to ratify OUTCOME-LOCK.md (flip `lock_status: draft` \
+                 to `ratified`). Route truth cannot be certified before destination \
+                 truth is locked in."
                     .into(),
             ),
             Self::DagKindReviewProfileMissing { required, .. } => Some(format!(
@@ -350,6 +363,9 @@ impl CliError {
             }
             Self::DagBoundariesNotSupported { count } => {
                 json!({ "count": count })
+            }
+            Self::PlanCheckLockDraft { mission, path } => {
+                json!({ "mission": mission, "path": path })
             }
             Self::DagKindReviewProfileMissing {
                 task_id,

@@ -1,5 +1,29 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CODEX1_REPO_ROOT:-/Users/joel/codex1}/scripts/ralph-session-lease.sh\" claim",
+            "timeout": 10,
+            "statusMessage": "Codex1 V2 parent-lane lease claim"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CODEX1_REPO_ROOT:-/Users/joel/codex1}/scripts/ralph-session-lease.sh\" release",
+            "timeout": 10,
+            "statusMessage": "Codex1 V2 parent-lane lease release"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

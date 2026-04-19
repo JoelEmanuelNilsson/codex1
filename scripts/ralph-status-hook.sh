@@ -1,25 +1,36 @@
 #!/usr/bin/env bash
 # Codex1 V2 Ralph stop hook.
 #
-# Enforces the one contract Ralph owns: if any mission in <repo-root>/PLANS/
-# has an active, unpaused parent loop, stop is blocked. Everything else is a
-# pass-through.
+# Round 13 P1 — parent-lane gate. The hook now reads the hook JSON
+# from stdin (Claude Code always pipes it) and consults the
+# `.codex1/parent-session.json` lease written by the SessionStart
+# hook. If the current session_id does NOT own the lease, this is a
+# secondary or standalone Claude session (a separate terminal, a
+# reviewer subagent, etc.) and the hook exits 0 immediately without
+# scanning. Only the parent-orchestrator session whose SessionStart
+# claimed the lease runs the block-if-active scan.
+#
+# This closes the Round 13 P1 complaint that "reviewer/worker subagent
+# stopping from the same repo can be blocked by the parent loop."
+# Task/Agent-tool subagents fire SubagentStop (not registered), but
+# separately-launched `claude` sessions share this Stop hook via the
+# shared hooks.json; the lease is the only authority signal available.
+#
+# If no lease exists (SessionStart never fired, or released by
+# SessionEnd), the hook exits 0. That means a deployment that
+# doesn't wire SessionStart will never block — a deliberate
+# fail-open, because "no claim = no parent" is safer than "every
+# session blocks."
 #
 # Usage (scan mode — the default Codex Stop hook path):
 #   ralph-status-hook.sh [--repo-root <path>]
-#   → scans <repo-root>/PLANS/*/STATE.json (default <repo-root> = $PWD).
+#   → reads hook JSON on stdin (session_id used for lease check)
+#   → scans <repo-root>/PLANS/*/STATE.json (default <repo-root> = $PWD)
 #   → blocks stop when `codex1 status` says `stop_policy.allow_stop: false`
 #     for any mission; allows stop otherwise.
 #
 # Usage (single-mission mode — explicit check for one id):
 #   ralph-status-hook.sh <mission-id> [--repo-root <path>]
-#
-# Rationale: the Codex Stop hook command is a single static string, so it
-# cannot thread the active mission id through. V2 refuses ambient mission
-# *resolution* for CLI commands, but the Stop hook asking "does any mission
-# in this repo want to block right now?" is a well-defined repo-state query
-# that uses the same authoritative STATE.json that V2 writes. No env var
-# plumbing, no separate pointer file, no fail-open on forgotten setup.
 #
 # Exit codes:
 #   0 — stop allowed; Ralph is silent.
@@ -28,14 +39,36 @@
 #       blocking by default (fail-safe).
 #
 # Environment:
-#   CODEX1_BIN   — override the resolved V2 binary.
-#   PATH/cwd     — used by `resolve_codex1` and the default repo-root.
+#   CODEX1_BIN          — override the resolved V2 binary.
+#   CODEX1_SKIP_LANE_CHECK=1 — bypass the lease gate (test fixtures).
+#   PATH/cwd            — used by `resolve_codex1` and the default repo-root.
 
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/resolve-codex1.sh
 source "${SCRIPT_DIR}/lib/resolve-codex1.sh"
+
+# Round 13 P1: drain stdin once so the lease check and the rest of the
+# hook share the same session_id without either consuming the other's
+# JSON. Claude Code v2.1+ guarantees session_id in every hook payload.
+HOOK_INPUT=""
+if [[ ! -t 0 ]]; then
+  HOOK_INPUT="$(cat)"
+fi
+HOOK_SESSION_ID=""
+if [[ -n "${HOOK_INPUT}" ]]; then
+  HOOK_SESSION_ID="$(printf '%s' "${HOOK_INPUT}" | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    sid = data.get("session_id", "")
+    if isinstance(sid, str):
+        print(sid)
+except Exception:
+    pass
+' 2>/dev/null || true)"
+fi
 
 MISSION=""
 REPO_ROOT_ARG=""
@@ -102,6 +135,35 @@ if [[ -n "${REPO_ROOT_ARG}" ]]; then
   REPO_ROOT="${REPO_ROOT_ARG}"
 else
   REPO_ROOT="$(find_mission_root "$PWD" || echo "$PWD")"
+fi
+
+# Round 13 P1 parent-lane gate. A Stop event fires in every root Claude
+# session in this repo. Only the session that holds the parent-lane
+# lease is allowed to enforce the block — every other session is a
+# secondary/standalone lane and must exit silently.
+#
+# Bypassable via CODEX1_SKIP_LANE_CHECK=1 for test fixtures that cover
+# the scan logic directly without hook plumbing.
+if [[ "${CODEX1_SKIP_LANE_CHECK:-0}" != "1" ]]; then
+  LEASE_FILE="${REPO_ROOT}/.codex1/parent-session.json"
+  if [[ ! -f "${LEASE_FILE}" ]]; then
+    # No lease → no parent lane claimed. Exit silently so ad-hoc
+    # sessions aren't gated on another session's loop.
+    exit 0
+  fi
+  LEASE_SID="$(python3 -c '
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        print(json.load(f).get("session_id", ""))
+except Exception:
+    pass
+' "${LEASE_FILE}" 2>/dev/null || true)"
+  if [[ -z "${LEASE_SID}" || "${LEASE_SID}" != "${HOOK_SESSION_ID}" ]]; then
+    # Lease belongs to a different session → I'm a subagent or
+    # parallel root session. Don't block.
+    exit 0
+  fi
 fi
 
 # Resolve V2 binary. For resolver purposes we prefer the repo that owns

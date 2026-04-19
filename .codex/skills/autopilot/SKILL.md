@@ -101,6 +101,17 @@ does not count toward any bundle's cleanliness.
 - Ralph blocks stop while the autopilot loop is active and not paused.
 - `$close` pauses autopilot; `$autopilot` resumes continue the mission.
 
+### Ralph parent-lane requirement (Round 13 P1)
+
+Ralph's Stop-blocking only fires in the session that owns the
+parent-lane lease. The lease is written by the `SessionStart` hook
+(`scripts/ralph-session-lease.sh claim`) and released by `SessionEnd`;
+both are wired in `.codex/hooks.json` / `.claude/hooks.json`. A second
+`claude` session in the same repo (a reviewer subagent, another
+terminal, etc.) does NOT own the lease and is allowed to stop freely.
+If the deployment has not wired SessionStart/SessionEnd, NO session
+blocks — the hook fails open rather than punishing every lane.
+
 ## Example one-shot
 
 ```bash

@@ -6,6 +6,7 @@ use crate::blueprint;
 use crate::envelope;
 use crate::error::CliError;
 use crate::graph::{self, waves::derive_waves};
+use crate::mission::lock::{LockStatus, parse_and_validate};
 use crate::mission::resolve_mission;
 use crate::state::StateStore;
 
@@ -30,6 +31,20 @@ fn run_check(cli: &Cli, mission: &str) -> Result<serde_json::Value, CliError> {
             path: paths.mission_dir.display().to_string(),
         });
     }
+
+    // Round 13 P2: plan check is the user-facing route-truth gate;
+    // it must not certify a plan while the destination (OUTCOME-LOCK)
+    // is still draft. `$clarify` ratifies the lock; once ratified,
+    // plan check may accept. Keep `task ready`'s equivalent gate as a
+    // belt-and-suspenders second line.
+    let lock = parse_and_validate(&paths.outcome_lock())?;
+    if lock.frontmatter.lock_status != LockStatus::Ratified {
+        return Err(CliError::PlanCheckLockDraft {
+            mission: mission.to_string(),
+            path: paths.outcome_lock().display().to_string(),
+        });
+    }
+
     let blueprint = blueprint::parse_blueprint(&paths.program_blueprint())?;
     let dag = graph::build_dag(&blueprint)?;
     if dag.is_empty() {
