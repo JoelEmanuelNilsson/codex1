@@ -35,13 +35,13 @@ pub fn run(ctx: &Ctx, task_id: &str) -> CliResult<()> {
 
     // Build per-target spec/proof refs + aggregated diffs from write_paths.
     let mut target_specs: Vec<Value> = Vec::new();
-    let mut target_proofs: Vec<String> = Vec::new();
+    let mut proofs: Vec<String> = Vec::new();
     let mut diffs: Vec<Value> = Vec::new();
     for tid in &targets {
         let target = plan_tasks.get(tid).cloned();
         target_specs.push(target_spec_value(&paths, tid, target.as_ref()));
         if let Some(p) = proof_path_string(&paths, tid) {
-            target_proofs.push(p);
+            proofs.push(p);
         }
         if let Some(t) = target.as_ref() {
             for path in &t.write_paths {
@@ -57,6 +57,9 @@ pub fn run(ctx: &Ctx, task_id: &str) -> CliResult<()> {
         .unwrap_or_else(|| "code_bug_correctness".to_string());
     let mission_summary = read_interpreted_destination(&paths.outcome()).unwrap_or_default();
 
+    // `proofs` is the canonical field name from `docs/cli-contract-schemas.md`.
+    // `target_specs`, `profiles`, `mission_id`, and `reviewer_instructions`
+    // are additive extensions documented alongside.
     let env = JsonOk::new(
         Some(state.mission_id.clone()),
         Some(state.revision),
@@ -66,7 +69,7 @@ pub fn run(ctx: &Ctx, task_id: &str) -> CliResult<()> {
             "profiles": profiles,
             "targets": targets,
             "target_specs": target_specs,
-            "target_proofs": target_proofs,
+            "proofs": proofs,
             "diffs": diffs,
             "mission_summary": mission_summary,
             "mission_id": state.mission_id,

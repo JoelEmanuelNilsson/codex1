@@ -14,7 +14,7 @@ use std::path::Path;
 use serde::Deserialize;
 
 use crate::core::paths::MissionPaths;
-use crate::state::schema::{MissionState, TaskStatus};
+use crate::state::schema::{MissionState, ReviewVerdict, TaskStatus};
 
 /// Light task shape extracted from PLAN.yaml. Only the fields needed
 /// for wave / review-target derivation are parsed; unknown keys are
@@ -97,14 +97,23 @@ pub fn next_ready_wave(tasks: &[PlanTask], state: &MissionState) -> Option<Ready
     None
 }
 
-/// Review-kind tasks whose dependencies are satisfied (so the review
-/// could fire now). Returns `(review_task_id, target_task_ids)` tuples.
+/// Review-kind tasks whose dependencies are satisfied AND that do not
+/// already have a `clean` record in `state.reviews`. Returns
+/// `(review_task_id, target_task_ids)` tuples.
 pub fn ready_reviews(tasks: &[PlanTask], state: &MissionState) -> Vec<(String, Vec<String>)> {
     tasks
         .iter()
-        .filter(|t| is_review_kind(t) && task_is_ready(t, state))
+        .filter(|t| is_review_kind(t) && task_is_ready(t, state) && !review_is_clean(&t.id, state))
         .map(|t| (t.id.clone(), review_targets(t)))
         .collect()
+}
+
+/// True when `state.reviews[task_id]` exists with verdict `Clean`.
+fn review_is_clean(task_id: &str, state: &MissionState) -> bool {
+    state
+        .reviews
+        .get(task_id)
+        .is_some_and(|r| matches!(r.verdict, ReviewVerdict::Clean))
 }
 
 /// Extract `review_target.tasks` (cloned), falling back to an empty
@@ -156,20 +165,28 @@ fn is_review_kind(t: &PlanTask) -> bool {
 
 /// True when all `depends_on` entries are complete/superseded AND the
 /// task itself is not already finished or actively being worked.
+///
+/// For non-review kinds, `AwaitingReview` counts as done (handed off to
+/// a planned review) — not as "ready". Only `review` kinds may have a
+/// target dep in `AwaitingReview` and still be ready themselves.
 fn task_is_ready(task: &PlanTask, state: &MissionState) -> bool {
+    let is_review = is_review_kind(task);
     let deps_ok = task.depends_on.iter().all(|dep| {
-        state
-            .tasks
-            .get(dep)
-            .is_some_and(|r| matches!(r.status, TaskStatus::Complete | TaskStatus::Superseded))
+        state.tasks.get(dep).is_some_and(|r| {
+            matches!(r.status, TaskStatus::Complete | TaskStatus::Superseded)
+                || (is_review && matches!(r.status, TaskStatus::AwaitingReview))
+        })
     });
     if !deps_ok {
         return false;
     }
     match state.tasks.get(&task.id).map(|r| &r.status) {
         Some(TaskStatus::Complete | TaskStatus::Superseded | TaskStatus::InProgress) => false,
-        // Pending, Ready, AwaitingReview, or absent-from-state all count
-        // as "work left to do" once dependencies are satisfied.
+        // For non-review tasks, AwaitingReview means the work is done
+        // and a planned review owns the next step — not "ready".
+        Some(TaskStatus::AwaitingReview) if !is_review => false,
+        // Pending, Ready, absent-from-state, or AwaitingReview on a
+        // review kind all count as "work left to do".
         _ => true,
     }
 }

@@ -23,7 +23,50 @@ fn init_demo(tmp: &TempDir, mission: &str) -> PathBuf {
         .args(["init", "--mission", mission])
         .assert()
         .success();
+    // `plan choose-level` requires OUTCOME.md to be ratified. Every
+    // test in this file is past that gate, so ratify as part of setup.
+    seed_valid_outcome(&mission_dir);
+    cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "ratify", "--mission", mission])
+        .assert()
+        .success();
     mission_dir
+}
+
+fn seed_valid_outcome(mission_dir: &Path) {
+    let outcome = r#"---
+mission_id: demo
+status: draft
+title: Test mission
+original_user_goal: |
+  Drive the planning surface in tests.
+interpreted_destination: |
+  A ratified OUTCOME that every planning test can build on.
+must_be_true:
+  - OUTCOME is ratified.
+success_criteria:
+  - Planning commands accept this outcome.
+non_goals:
+  - Shipping real product from a test.
+constraints:
+  - Runs offline.
+quality_bar:
+  - Deterministic.
+proof_expectations:
+  - assert_cmd stdout.
+review_expectations:
+  - None.
+known_risks:
+  - None.
+resolved_questions: []
+---
+
+# Outcome
+
+Test-only outcome.
+"#;
+    fs::write(mission_dir.join("OUTCOME.md"), outcome).unwrap();
 }
 
 fn parse_stdout_json(output: &std::process::Output) -> Value {
@@ -71,12 +114,15 @@ fn choose_level_accepts_numeric_alias_1() {
     assert_eq!(state["plan"]["requested_level"], "light");
     assert_eq!(state["plan"]["effective_level"], "light");
     assert_eq!(state["phase"], "plan");
-    assert_eq!(state["revision"], 1);
+    // init_demo ratifies OUTCOME.md first (+1 revision), then choose-level
+    // mutates (+1). Final revision is 2, not 1.
+    assert_eq!(state["revision"], 2);
 
     let events = read_events(&mission_dir);
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0]["kind"], "plan.choose_level");
-    assert_eq!(events[0]["payload"]["requested_level"], "light");
+    assert_eq!(events.len(), 2, "one ratify event + one choose-level event");
+    assert_eq!(events[0]["kind"], "outcome.ratified");
+    assert_eq!(events[1]["kind"], "plan.choose_level");
+    assert_eq!(events[1]["payload"]["requested_level"], "light");
 }
 
 #[test]
@@ -134,8 +180,9 @@ fn choose_level_with_escalate_bumps_to_hard() {
     assert_eq!(state["plan"]["effective_level"], "hard");
 
     let events = read_events(&mission_dir);
+    // events[0] is outcome.ratified (from init_demo), events[1] is choose-level.
     assert_eq!(
-        events[0]["payload"]["escalation_reason"], "touches hooks",
+        events[1]["payload"]["escalation_reason"], "touches hooks",
         "audit event should capture escalation reason"
     );
 }
@@ -287,7 +334,8 @@ fn choose_level_dry_run_does_not_mutate() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = init_demo(&tmp, "demo");
     let before = read_state(&mission_dir);
-    assert_eq!(before["revision"], 0);
+    // Baseline after ratify: revision 1, phase plan.
+    assert_eq!(before["revision"], 1);
 
     let output = cmd()
         .current_dir(tmp.path())
@@ -313,11 +361,13 @@ fn choose_level_dry_run_does_not_mutate() {
     assert_eq!(json["data"]["requested_level"], "medium");
 
     let after = read_state(&mission_dir);
-    assert_eq!(after["revision"], 0);
+    assert_eq!(after["revision"], 1);
     assert!(after["plan"]["requested_level"].is_null());
-    assert_eq!(after["phase"], "clarify");
-    let events = fs::read_to_string(mission_dir.join("EVENTS.jsonl")).unwrap();
-    assert_eq!(events, "");
+    assert_eq!(after["phase"], "plan");
+    // Only the ratify event is present; dry-run wrote nothing.
+    let events = read_events(&mission_dir);
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["kind"], "outcome.ratified");
 }
 
 #[test]

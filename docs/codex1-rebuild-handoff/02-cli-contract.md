@@ -86,10 +86,22 @@ codex1 replan check
 codex1 loop pause
 codex1 loop resume
 codex1 loop deactivate
+codex1 loop activate
 
 codex1 close check
 codex1 close complete
+codex1 close record-review
 ```
+
+`loop activate` is the canonical entry point other subsystems use to set
+`state.loop.active = true` without inventing their own loop-state
+mutation (skills call it from `$execute` / `$autopilot` after plan lock).
+
+`close record-review` records the main-thread outcome of the
+mission-close review — it is the only write path that transitions
+`MissionCloseReviewState::Open → Passed`. Planned review tasks still use
+`codex1 review record`; this command exists specifically because the
+mission-close review has no `review` task in the DAG.
 
 Do not add more commands until the minimal set is excellent.
 

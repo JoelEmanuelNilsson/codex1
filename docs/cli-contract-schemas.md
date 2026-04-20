@@ -33,6 +33,12 @@ If you are a Phase B worker:
 }
 ```
 
+**Optional fields.** `hint` and `context` are omitted from the serialized
+envelope when they are null / empty — the CLI uses
+`#[serde(skip_serializing_if = "…")]` for both. Callers MUST treat
+missing `hint`/`context` as equivalent to the empty value. `ok`, `code`,
+`message`, and `retryable` are always present.
+
 ## Error codes (canonical set)
 
 | Code | Meaning | Retryable |
@@ -74,6 +80,23 @@ If you are a Phase B worker:
 3. Neither → walk up from CWD to the nearest single-mission `PLANS/` directory. Error if 0 or >1 candidates.
 4. Paths resolve to absolute; symlinks are followed by the filesystem.
 
+### Per-command relative path resolution
+
+Some commands take path arguments that reference artifacts inside the
+mission directory. The resolution rule is pinned here so callers don't
+have to discover it by trial:
+
+- `codex1 task finish T<id> --proof <path>`: relative paths are resolved
+  against the mission directory (e.g. `--proof specs/T1/PROOF.md`
+  resolves to `<mission_dir>/specs/T1/PROOF.md`). Absolute paths are
+  used verbatim. Rationale: skills and workers think in terms of the
+  mission, not the CWD.
+- `codex1 review record T<id> --findings-file <path>`: resolved against
+  CWD. The findings file is the caller's own output, not a mission
+  artifact; the CLI copies it into `reviews/<id>.md` under the mission.
+- `codex1 close record-review --findings-file <path>`: same as above —
+  CWD-relative; copied to `reviews/mission-close-<rev>.md`.
+
 ## STATE.json schema
 
 Defined in `crates/codex1/src/state/schema.rs`. Pinned shape (Rust types):
@@ -100,10 +123,13 @@ Downstream units mutate only the fields they own:
 - `cli-outcome` → `outcome`, `phase`.
 - `cli-plan-*` → `plan`, `phase`.
 - `cli-task` → `tasks`, `phase`.
-- `cli-review` → `reviews`, `replan.consecutive_dirty_by_target`.
+- `cli-review` → `reviews`, `replan.consecutive_dirty_by_target`,
+  `tasks[review_task_id]` (review record transitions the review task
+  itself to Complete on clean, matching normal task lifecycle).
 - `cli-replan` → `replan`.
 - `cli-loop` → `loop`.
-- `cli-close` → `close`, `phase`.
+- `cli-close` → `close`, `phase`,
+  `replan.consecutive_dirty_by_target["__mission_close__"]`.
 
 ## Mutation protocol
 
@@ -230,12 +256,20 @@ Alternate shapes for review/close/replan ready states.
 { "data": {
     "task_id": "T4",
     "review_profile": "code_bug_correctness",
+    "profiles": ["code_bug_correctness","integration_intent"],
     "targets": ["T2"],
-    "diffs": [{"path":"…","lines":[…]}],
+    "target_specs": [{"task_id":"T2","spec_path":"specs/T2/SPEC.md","spec_excerpt":"…"}],
+    "diffs": [{"path":"crates/codex1/src/cli/task/**"}],
     "proofs": ["specs/T2/PROOF.md"],
-    "mission_summary": "…"
+    "mission_summary": "…",
+    "mission_id": "demo",
+    "reviewer_instructions": "You are a Codex1 reviewer. …"
   } }
 ```
+`target_specs`, `profiles`, `mission_id`, and `reviewer_instructions`
+are additive convenience fields. `proofs` is the canonical name for the
+list of target proof paths (the binary historically emitted
+`target_proofs`; it now emits `proofs`).
 
 ### `review record --clean|--findings-file`
 Success:
@@ -244,9 +278,17 @@ Success:
     "review_task_id": "T4",
     "verdict": "clean",
     "category": "accepted_current",
-    "reviewers": ["code-reviewer","intent-reviewer"]
+    "reviewers": ["code-reviewer","intent-reviewer"],
+    "findings_file": null,
+    "replan_triggered": false,
+    "warnings": []
   } }
 ```
+`findings_file` (relative path under `reviews/`), `replan_triggered`
+(true when the 6-consecutive-dirty threshold was just breached), and
+`warnings` (non-fatal notes such as `late_same_boundary`) are additive
+fields; `review_task_id`, `verdict`, `category`, and `reviewers` are
+guaranteed.
 
 ### `replan check`
 ```json
@@ -274,6 +316,34 @@ Success:
   } }
 ```
 Idempotent: subsequent calls return `TERMINAL_ALREADY_COMPLETE`.
+
+### `close record-review --clean|--findings-file <path>`
+
+Records the main-thread outcome of the mission-close review. Mutates
+`state.close.review_state` (`NotStarted → Open` on first call, `Open →
+Passed` on `--clean`) and the
+`replan.consecutive_dirty_by_target["__mission_close__"]` counter. The
+6-consecutive-dirty threshold still triggers a replan. Success envelope:
+```json
+{ "data": {
+    "verdict": "clean",
+    "review_state": "passed",
+    "consecutive_dirty": 0,
+    "findings_file": null,
+    "reviewers": ["mission-close-auditor"],
+    "replan_triggered": false,
+    "dry_run": false
+  } }
+```
+
+### `loop activate --mode <clarify|plan|execute|review_loop|mission_close>`
+
+Sets `state.loop.active = true, paused = false, mode = <mode>`. Idempotent:
+if the loop is already active in the same mode, returns `noop: true`
+without a revision bump. Rejects `none` (`deactivate` exists for that)
+and unknown mode strings. Same success-shape as `pause`/`resume`/
+`deactivate`: the flattened `LoopState` plus `noop`, `dry_run`, optional
+`before`.
 
 ### `status` (unified)
 ```json

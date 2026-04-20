@@ -74,7 +74,11 @@ pub struct Cli {
 pub enum Commands {
     /// Create PLANS/<mission>/ with blank OUTCOME.md, PLAN.yaml, STATE.json.
     Init(init::InitArgs),
-    /// Report CLI health. Never crashes on missing auth or config.
+    /// Report CLI health as a stable JSON envelope: `version`, `config`
+    /// path + existence, `install` (binary-on-PATH + `~/.local/bin`
+    /// writability), `auth` (always `required: false`), `cwd`, and any
+    /// `warnings`. Never crashes on missing auth or config — returns
+    /// `{ok: true, ...}` and surfaces problems as warnings instead.
     Doctor,
     /// Print the one-liner for wiring the Ralph Stop hook.
     Hook {

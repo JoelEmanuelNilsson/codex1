@@ -73,8 +73,6 @@ pub enum CliError {
     Json(#[from] serde_json::Error),
     #[error(transparent)]
     Yaml(#[from] serde_yaml::Error),
-    #[error(transparent)]
-    Other(#[from] anyhow::Error),
 }
 
 impl CliError {
@@ -101,7 +99,6 @@ impl CliError {
             Self::ParseError { .. } => "PARSE_ERROR",
             Self::NotImplemented { .. } => "NOT_IMPLEMENTED",
             Self::Io(_) | Self::Json(_) | Self::Yaml(_) => "PARSE_ERROR",
-            Self::Other(_) => "INTERNAL",
         }
     }
 
@@ -162,7 +159,7 @@ impl CliError {
     #[must_use]
     pub fn kind(&self) -> ExitKind {
         match self {
-            Self::Io(_) | Self::Json(_) | Self::Yaml(_) | Self::Other(_) => ExitKind::Bug,
+            Self::Io(_) | Self::Json(_) | Self::Yaml(_) => ExitKind::Bug,
             _ => ExitKind::HandledError,
         }
     }

@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::core::error::CliError;
+
 /// Top-level config shape. All fields are optional.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
@@ -23,12 +25,16 @@ pub fn default_config_path() -> Option<PathBuf> {
 }
 
 /// Read the config file if it exists. Missing file = `Ok(None)`.
-pub fn load(path: &Path) -> Result<Option<Config>, anyhow::Error> {
+/// Parse/IO failures surface as canonical `CliError` variants so the
+/// error set stays closed — there is no `INTERNAL` escape hatch.
+pub fn load(path: &Path) -> Result<Option<Config>, CliError> {
     if !path.exists() {
         return Ok(None);
     }
     let raw = std::fs::read_to_string(path)?;
-    let parsed: Config = toml::from_str(&raw)?;
+    let parsed: Config = toml::from_str(&raw).map_err(|err| CliError::ParseError {
+        message: format!("config.toml parse error: {err}"),
+    })?;
     Ok(Some(parsed))
 }
 

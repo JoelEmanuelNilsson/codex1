@@ -19,6 +19,14 @@ use crate::state::{self, Phase, PlanLevel};
 pub fn run(level: Option<String>, escalate: Option<String>, ctx: &Ctx) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
 
+    // Gate on outcome ratification: the handoff specifies that planning
+    // cannot begin until OUTCOME.md has been ratified. This matches the
+    // error-code set documented in docs/cli-reference.md for this command.
+    let current = state::load(&paths)?;
+    if !current.outcome.ratified {
+        return Err(CliError::OutcomeNotRatified);
+    }
+
     let requested = match level {
         Some(raw) => parse_level(&raw)?,
         None => prompt_for_level()?,

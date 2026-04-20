@@ -95,8 +95,8 @@ codex1 --json outcome ratify --mission demo --expect-revision 0
 - `--level <LEVEL>` — accepts `light` / `medium` / `hard` or numeric aliases `1` / `2` / `3`.
 - `--escalate <REASON>` — reason the effective level is higher than requested.
 **Success:** `{"ok":true,"data":{"requested_level":"medium","effective_level":"hard","escalation_reason":"…","next_action":{"kind":"plan_scaffold","args":["codex1","plan","scaffold","--level","hard"]}}}`
-**Errors:** `OUTCOME_NOT_RATIFIED`, `MISSION_NOT_FOUND`.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 3 (`cli-plan-level`) implements this.
+**Errors:** `OUTCOME_NOT_RATIFIED`, `MISSION_NOT_FOUND`, `REVISION_CONFLICT`.
+**Phase status:** Implemented. Rejects invocation when OUTCOME.md is not yet ratified.
 **Example:**
 ```bash
 codex1 --json plan choose-level --level medium

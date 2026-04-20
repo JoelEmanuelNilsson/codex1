@@ -275,25 +275,24 @@ fn apply_record(
     // review, same boundary) but does not mutate truth beyond recording.
     if matches!(category, ReviewRecordCategory::AcceptedCurrent) {
         match *verdict {
-            ReviewVerdict::Clean => apply_clean(state, targets),
-            ReviewVerdict::Dirty => apply_dirty(state, targets),
+            ReviewVerdict::Clean => apply_clean(state, review_task_id, targets),
+            ReviewVerdict::Dirty => apply_dirty(state, review_task_id, targets),
             ReviewVerdict::Pending => {}
         }
     }
     Ok(())
 }
 
-fn apply_clean(state: &mut MissionState, targets: &[String]) {
+fn apply_clean(state: &mut MissionState, review_task_id: &str, targets: &[String]) {
+    let now = OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string());
     for tid in targets {
         if let Some(task) = state.tasks.get_mut(tid) {
             if matches!(task.status, TaskStatus::AwaitingReview) {
                 task.status = TaskStatus::Complete;
                 if task.finished_at.is_none() {
-                    task.finished_at = Some(
-                        OffsetDateTime::now_utc()
-                            .format(&Rfc3339)
-                            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string()),
-                    );
+                    task.finished_at = Some(now.clone());
                 }
             }
         }
@@ -302,9 +301,33 @@ fn apply_clean(state: &mut MissionState, targets: &[String]) {
             .consecutive_dirty_by_target
             .insert(tid.clone(), 0);
     }
+    // The review task itself transitions to Complete so `state.tasks`
+    // stays a truthful picture of every DAG node. Without this, clients
+    // reading only `state.tasks` (e.g. CLOSEOUT.md writer, status
+    // ready-task projection) see the review task as eternally pending.
+    mark_review_task_complete(state, review_task_id, &now);
 }
 
-fn apply_dirty(state: &mut MissionState, targets: &[String]) {
+fn mark_review_task_complete(state: &mut MissionState, review_task_id: &str, now: &str) {
+    use crate::state::schema::TaskRecord;
+    let entry = state
+        .tasks
+        .entry(review_task_id.to_string())
+        .or_insert_with(|| TaskRecord {
+            id: review_task_id.to_string(),
+            status: TaskStatus::Complete,
+            started_at: None,
+            finished_at: None,
+            proof_path: None,
+            superseded_by: None,
+        });
+    entry.status = TaskStatus::Complete;
+    if entry.finished_at.is_none() {
+        entry.finished_at = Some(now.to_string());
+    }
+}
+
+fn apply_dirty(state: &mut MissionState, _review_task_id: &str, targets: &[String]) {
     for tid in targets {
         let entry = state
             .replan
