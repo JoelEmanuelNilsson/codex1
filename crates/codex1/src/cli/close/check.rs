@@ -92,12 +92,33 @@ pub fn derive_blockers(state: &MissionState) -> Vec<Blocker> {
             .unwrap_or_else(|| "replan triggered".to_string());
         blockers.push(Blocker::new("REPLAN_REQUIRED", detail));
     }
-    for (task_id, record) in &state.tasks {
-        if !matches!(record.status, TaskStatus::Complete | TaskStatus::Superseded) {
-            blockers.push(Blocker::new(
-                "TASK_NOT_READY",
-                format!("{task_id} is {}", serde_variant(&record.status)),
-            ));
+    // Enumerate every DAG node that is not yet Complete/Superseded.
+    // Walk `state.plan.task_ids` (the authoritative DAG snapshot) so
+    // tasks that were never started still show up as `TASK_NOT_READY`,
+    // and fall back to `state.tasks` when the plan is not yet locked
+    // (task_ids empty) so early-phase users still see per-task detail.
+    if state.plan.task_ids.is_empty() {
+        for (task_id, record) in &state.tasks {
+            if !matches!(record.status, TaskStatus::Complete | TaskStatus::Superseded) {
+                blockers.push(Blocker::new(
+                    "TASK_NOT_READY",
+                    format!("{task_id} is {}", serde_variant(&record.status)),
+                ));
+            }
+        }
+    } else {
+        for id in &state.plan.task_ids {
+            match state.tasks.get(id) {
+                Some(t) if matches!(t.status, TaskStatus::Complete | TaskStatus::Superseded) => {}
+                Some(t) => blockers.push(Blocker::new(
+                    "TASK_NOT_READY",
+                    format!("{id} is {}", serde_variant(&t.status)),
+                )),
+                None => blockers.push(Blocker::new(
+                    "TASK_NOT_READY",
+                    format!("{id} has not started"),
+                )),
+            }
         }
     }
     for (review_id, record) in &state.reviews {
@@ -108,7 +129,7 @@ pub fn derive_blockers(state: &MissionState) -> Vec<Blocker> {
             ));
         }
     }
-    if tasks_all_complete(state) {
+    if readiness::tasks_complete(state) {
         match state.close.review_state {
             MissionCloseReviewState::NotStarted => {
                 blockers.push(Blocker::new(
@@ -127,16 +148,6 @@ pub fn derive_blockers(state: &MissionState) -> Vec<Blocker> {
     }
 
     blockers
-}
-
-fn tasks_all_complete(state: &MissionState) -> bool {
-    if state.tasks.is_empty() {
-        return false;
-    }
-    state
-        .tasks
-        .values()
-        .all(|t| matches!(t.status, TaskStatus::Complete | TaskStatus::Superseded))
 }
 
 pub fn run(ctx: &Ctx) -> CliResult<()> {

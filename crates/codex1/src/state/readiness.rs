@@ -71,13 +71,13 @@ pub fn close_ready(state: &MissionState) -> bool {
     matches!(derive_verdict(state), Verdict::MissionCloseReviewPassed)
 }
 
-fn tasks_complete(state: &MissionState) -> bool {
-    // Source of truth for "every task" is `state.plan.task_ids`, which
-    // `plan check` populates from PLAN.yaml at lock time. `state.tasks`
-    // only contains entries for tasks that have been started; relying on
-    // it alone would silently ignore any DAG node that has not been
-    // touched yet and flip a half-finished mission into
-    // `ready_for_mission_close_review`.
+/// True iff every DAG task (`state.plan.task_ids`) has a terminal
+/// record (`Complete`/`Superseded`) in `state.tasks`. Shared between
+/// `status`, `close check`, and any other caller that needs one
+/// definition of "done" — iterating `state.tasks.values()` alone
+/// would silently ignore DAG nodes that have never been started.
+#[must_use]
+pub fn tasks_complete(state: &MissionState) -> bool {
     let dag = &state.plan.task_ids;
     if dag.is_empty() {
         // Plan isn't locked (or the plan has zero tasks). Either way,
