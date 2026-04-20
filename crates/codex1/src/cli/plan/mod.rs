@@ -1,9 +1,13 @@
-//! `codex1 plan` — Phase B Unit 3 owns `ChooseLevel` and `Scaffold`.
+//! `codex1 plan` dispatcher.
 //!
-//! Units 4 and 5 will replace the `Check`, `Graph`, and `Waves` arms with
-//! real handlers and add sibling modules; this unit does not touch those.
+//! Foundation pins the subcommand enum and `dispatch`. Phase B units fill
+//! in the handlers: Unit 3 owns `ChooseLevel` and `Scaffold`; Unit 4 owns
+//! `Check` (with its `dag`/`parsed` helpers); Unit 5 owns `Graph` and `Waves`.
 
+pub mod check;
 pub mod choose_level;
+pub mod dag;
+pub mod parsed;
 pub mod scaffold;
 
 use std::path::PathBuf;
@@ -54,9 +58,7 @@ pub fn dispatch(cmd: PlanCmd, ctx: &Ctx) -> CliResult<()> {
     match cmd {
         PlanCmd::ChooseLevel { level, escalate } => choose_level::run(level, escalate, ctx),
         PlanCmd::Scaffold { level } => scaffold::run(level, ctx),
-        PlanCmd::Check => Err(CliError::NotImplemented {
-            command: "plan check".to_string(),
-        }),
+        PlanCmd::Check => check::run(ctx),
         PlanCmd::Graph { .. } => Err(CliError::NotImplemented {
             command: "plan graph".to_string(),
         }),
