@@ -1,9 +1,19 @@
-//! `codex1 replan` stub — owned by Phase B Unit 8.
+//! `codex1 replan` — detect and record replan decisions.
+//!
+//! `check` inspects `state.replan.consecutive_dirty_by_target` and
+//! reports whether the "six consecutive dirty reviews on the same
+//! active target" threshold has been reached. `record` mutates
+//! `state.replan`, supersedes referenced tasks, clears the plan lock,
+//! and transitions the mission back to `Phase::Plan`.
 
 use clap::Subcommand;
 
 use crate::cli::Ctx;
-use crate::core::error::{CliError, CliResult};
+use crate::core::error::CliResult;
+
+pub mod check;
+pub mod record;
+pub mod triggers;
 
 #[derive(Debug, Subcommand)]
 pub enum ReplanCmd {
@@ -13,17 +23,15 @@ pub enum ReplanCmd {
     Record {
         #[arg(long, value_name = "CODE")]
         reason: String,
+        /// Task id to mark `Superseded` (may be passed multiple times).
         #[arg(long, value_name = "TASK_ID")]
-        supersedes: Option<String>,
+        supersedes: Vec<String>,
     },
 }
 
-pub fn dispatch(cmd: ReplanCmd, _ctx: &Ctx) -> CliResult<()> {
-    let label = match cmd {
-        ReplanCmd::Check => "replan check",
-        ReplanCmd::Record { .. } => "replan record",
-    };
-    Err(CliError::NotImplemented {
-        command: label.to_string(),
-    })
+pub fn dispatch(cmd: ReplanCmd, ctx: &Ctx) -> CliResult<()> {
+    match cmd {
+        ReplanCmd::Check => check::run(ctx),
+        ReplanCmd::Record { reason, supersedes } => record::run(ctx, &reason, &supersedes),
+    }
 }
