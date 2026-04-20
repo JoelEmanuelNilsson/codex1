@@ -1,0 +1,6 @@
+interface:
+  display_name: "Plan"
+  short_description: "Create a full Codex1 mission plan with a task DAG"
+  default_prompt: "Use $plan to scaffold, fill, and lock PLAN.yaml for the active mission."
+policy:
+  allow_implicit_invocation: true
