@@ -77,6 +77,12 @@ pub struct PlanState {
     pub effective_level: Option<PlanLevel>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hash: Option<String>,
+    /// Full list of task ids from the locked PLAN.yaml DAG (in the order
+    /// they appear). Populated by `plan check` at lock time so
+    /// `readiness::tasks_complete` can recognize "all DAG nodes done"
+    /// without silently ignoring missing entries in `state.tasks`.
+    #[serde(default)]
+    pub task_ids: Vec<TaskId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

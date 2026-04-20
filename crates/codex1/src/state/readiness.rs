@@ -72,13 +72,24 @@ pub fn close_ready(state: &MissionState) -> bool {
 }
 
 fn tasks_complete(state: &MissionState) -> bool {
-    if state.tasks.is_empty() {
+    // Source of truth for "every task" is `state.plan.task_ids`, which
+    // `plan check` populates from PLAN.yaml at lock time. `state.tasks`
+    // only contains entries for tasks that have been started; relying on
+    // it alone would silently ignore any DAG node that has not been
+    // touched yet and flip a half-finished mission into
+    // `ready_for_mission_close_review`.
+    let dag = &state.plan.task_ids;
+    if dag.is_empty() {
+        // Plan isn't locked (or the plan has zero tasks). Either way,
+        // mission-close isn't applicable: treat as "not done".
         return false;
     }
-    state
-        .tasks
-        .values()
-        .all(|t| matches!(t.status, TaskStatus::Complete | TaskStatus::Superseded))
+    dag.iter().all(|id| {
+        state
+            .tasks
+            .get(id)
+            .is_some_and(|t| matches!(t.status, TaskStatus::Complete | TaskStatus::Superseded))
+    })
 }
 
 fn has_blocking_dirty(state: &MissionState) -> bool {

@@ -92,6 +92,7 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
         "effective_level": level_str(&summary.effective_level),
     });
 
+    let task_ids_to_record = summary.task_ids.clone();
     let mutation = state::mutate(
         &paths,
         ctx.expect_revision,
@@ -102,6 +103,10 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
             s.plan.hash = Some(hash.clone());
             s.plan.requested_level = Some(summary.requested_level.clone());
             s.plan.effective_level = Some(summary.effective_level.clone());
+            // Snapshot the full DAG task-id list so `state::readiness`
+            // can recognize "all DAG nodes done" without silently
+            // ignoring DAG nodes that were never started.
+            s.plan.task_ids = task_ids_to_record.clone();
             if matches!(s.phase, Phase::Plan) {
                 s.phase = Phase::Execute;
             }
@@ -130,6 +135,8 @@ struct Summary {
     hard_evidence_count: usize,
     requested_level: PlanLevel,
     effective_level: PlanLevel,
+    /// Full DAG task-id list in plan order, used by `plan.task_ids`.
+    task_ids: Vec<String>,
 }
 
 /// Validate the parsed plan. On first failure this exits the process with
@@ -302,6 +309,7 @@ fn validate(plan: &ParsedPlan, paths: &MissionPaths) -> Summary {
         hard_evidence_count,
         requested_level,
         effective_level,
+        task_ids,
     }
 }
 

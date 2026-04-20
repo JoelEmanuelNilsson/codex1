@@ -60,6 +60,8 @@ fn write_findings(mission_dir: &Path, name: &str, body: &str) -> PathBuf {
 /// Builder for seeding `STATE.json` into common configurations.
 struct StateBuilder {
     value: Value,
+    plan_locked: bool,
+    explicit_task_ids: Option<Vec<String>>,
 }
 
 impl StateBuilder {
@@ -79,6 +81,8 @@ impl StateBuilder {
                 "close": { "review_state": "not_started" },
                 "events_cursor": 0
             }),
+            plan_locked: false,
+            explicit_task_ids: None,
         }
     }
 
@@ -96,6 +100,17 @@ impl StateBuilder {
             "requested_level": "medium",
             "effective_level": "medium"
         });
+        self.plan_locked = true;
+        self
+    }
+
+    /// Override the computed DAG task-id list. By default, `build()`
+    /// derives `plan.task_ids` from the tasks added via `.task(...)`
+    /// on a plan-locked state; use this when a test needs to simulate
+    /// "plan locked with DAG node Tk but Tk never started".
+    #[allow(dead_code)]
+    fn dag_task_ids(mut self, ids: &[&str]) -> Self {
+        self.explicit_task_ids = Some(ids.iter().map(|s| s.to_string()).collect());
         self
     }
 
@@ -152,7 +167,22 @@ impl StateBuilder {
         self
     }
 
-    fn build(self) -> Value {
+    fn build(mut self) -> Value {
+        if self.plan_locked {
+            let ids: Vec<String> = if let Some(explicit) = &self.explicit_task_ids {
+                explicit.clone()
+            } else if let Some(tasks_map) = self.value["tasks"].as_object() {
+                tasks_map.keys().cloned().collect()
+            } else {
+                Vec::new()
+            };
+            if let Some(plan_obj) = self.value["plan"].as_object_mut() {
+                plan_obj.insert(
+                    "task_ids".to_string(),
+                    Value::Array(ids.into_iter().map(Value::String).collect()),
+                );
+            }
+        }
         self.value
     }
 }

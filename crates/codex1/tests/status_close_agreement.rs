@@ -159,16 +159,23 @@ fn fixtures() -> Vec<(String, MissionState)> {
     s.outcome.ratified = true;
     out.push(("outcome_only".into(), s));
 
+    // `tasks_complete` now reads the DAG from `state.plan.task_ids`
+    // (snapshot by `plan check` in production). Fixtures that set
+    // `plan.locked = true` must also populate `task_ids`.
+    let dag = vec!["T1".to_string(), "T2".to_string()];
+
     // 3. Plan locked, no tasks → continue_required (tasks empty isn't "complete").
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
+    s.plan.task_ids = dag.clone();
     out.push(("plan_locked_no_tasks".into(), s));
 
     // 4. Plan locked, T1 pending → continue_required.
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
+    s.plan.task_ids = dag.clone();
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::Pending));
     s.tasks
@@ -179,6 +186,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
+    s.plan.task_ids = dag.clone();
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::InProgress));
     s.tasks
@@ -189,6 +197,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
+    s.plan.task_ids = dag.clone();
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::AwaitingReview));
     s.tasks
@@ -199,6 +208,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
+    s.plan.task_ids = dag.clone();
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::Complete));
     s.tasks
@@ -209,6 +219,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
+    s.plan.task_ids = dag.clone();
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::Complete));
     s.tasks
@@ -220,6 +231,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
+    s.plan.task_ids = dag.clone();
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::Complete));
     s.tasks
@@ -231,6 +243,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
+    s.plan.task_ids = vec!["T1".to_string()];
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::Complete));
     s.close.terminal_at = Some("2026-04-20T00:00:00Z".into());
@@ -240,6 +253,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
+    s.plan.task_ids = dag.clone();
     s.replan.triggered = true;
     s.replan.triggered_reason = Some("six dirty reviews".into());
     out.push(("replan".into(), s));
@@ -248,6 +262,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
+    s.plan.task_ids = dag.clone();
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::AwaitingReview));
     s.tasks
@@ -260,6 +275,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
+    s.plan.task_ids = dag.clone();
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::Complete));
     s.tasks
@@ -272,6 +288,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
+    s.plan.task_ids = dag.clone();
     s.loop_ = LoopState {
         active: true,
         paused: false,
@@ -285,6 +302,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
+    s.plan.task_ids = dag.clone();
     s.loop_ = LoopState {
         active: true,
         paused: true,
@@ -298,6 +316,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
+    s.plan.task_ids = dag.clone();
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::Superseded));
     s.tasks
@@ -308,6 +327,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
+    s.plan.task_ids = vec!["T1".to_string(), "T2".to_string(), "T3".to_string()];
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::Complete));
     s.tasks
@@ -320,6 +340,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
+    s.plan.task_ids = dag.clone();
     s.loop_ = LoopState {
         active: true,
         paused: false,
@@ -339,12 +360,31 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
+    s.plan.task_ids = dag.clone();
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::AwaitingReview));
     s.reviews
         .insert("T2".into(), review_rec("T2", ReviewVerdict::Dirty, 3));
     s.replan.consecutive_dirty_by_target.insert("T1".into(), 2);
     out.push(("dirty_without_replan".into(), s));
+
+    // 21 (new, regresses F8): Plan locked with T1/T2/T3/T4 in DAG but only
+    // T1 has been finished (state.tasks = {T1: Complete}). Must remain
+    // `continue_required` — tasks_complete must see the un-touched DAG
+    // nodes as not-done and NOT prematurely flip to
+    // ready_for_mission_close_review.
+    let mut s = base("demo");
+    s.outcome.ratified = true;
+    s.plan.locked = true;
+    s.plan.task_ids = vec![
+        "T1".to_string(),
+        "T2".to_string(),
+        "T3".to_string(),
+        "T4".to_string(),
+    ];
+    s.tasks
+        .insert("T1".into(), task_rec("T1", TaskStatus::Complete));
+    out.push(("one_task_done_out_of_four".into(), s));
 
     out
 }
