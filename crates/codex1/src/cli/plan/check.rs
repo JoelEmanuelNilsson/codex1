@@ -106,7 +106,7 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
             // Snapshot the full DAG task-id list so `state::readiness`
             // can recognize "all DAG nodes done" without silently
             // ignoring DAG nodes that were never started.
-            s.plan.task_ids = task_ids_to_record.clone();
+            s.plan.task_ids.clone_from(&task_ids_to_record);
             if matches!(s.phase, Phase::Plan) {
                 s.phase = Phase::Execute;
             }

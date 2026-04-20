@@ -110,7 +110,7 @@ impl StateBuilder {
     /// "plan locked with DAG node Tk but Tk never started".
     #[allow(dead_code)]
     fn dag_task_ids(mut self, ids: &[&str]) -> Self {
-        self.explicit_task_ids = Some(ids.iter().map(|s| s.to_string()).collect());
+        self.explicit_task_ids = Some(ids.iter().map(std::string::ToString::to_string).collect());
         self
     }
 

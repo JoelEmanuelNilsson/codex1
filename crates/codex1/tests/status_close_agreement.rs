@@ -168,14 +168,14 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
-    s.plan.task_ids = dag.clone();
+    s.plan.task_ids.clone_from(&dag);
     out.push(("plan_locked_no_tasks".into(), s));
 
     // 4. Plan locked, T1 pending → continue_required.
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
-    s.plan.task_ids = dag.clone();
+    s.plan.task_ids.clone_from(&dag);
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::Pending));
     s.tasks
@@ -186,7 +186,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
-    s.plan.task_ids = dag.clone();
+    s.plan.task_ids.clone_from(&dag);
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::InProgress));
     s.tasks
@@ -197,7 +197,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
-    s.plan.task_ids = dag.clone();
+    s.plan.task_ids.clone_from(&dag);
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::AwaitingReview));
     s.tasks
@@ -208,7 +208,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
-    s.plan.task_ids = dag.clone();
+    s.plan.task_ids.clone_from(&dag);
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::Complete));
     s.tasks
@@ -219,7 +219,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
-    s.plan.task_ids = dag.clone();
+    s.plan.task_ids.clone_from(&dag);
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::Complete));
     s.tasks
@@ -231,7 +231,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
-    s.plan.task_ids = dag.clone();
+    s.plan.task_ids.clone_from(&dag);
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::Complete));
     s.tasks
@@ -253,7 +253,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
-    s.plan.task_ids = dag.clone();
+    s.plan.task_ids.clone_from(&dag);
     s.replan.triggered = true;
     s.replan.triggered_reason = Some("six dirty reviews".into());
     out.push(("replan".into(), s));
@@ -262,7 +262,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
-    s.plan.task_ids = dag.clone();
+    s.plan.task_ids.clone_from(&dag);
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::AwaitingReview));
     s.tasks
@@ -275,7 +275,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
-    s.plan.task_ids = dag.clone();
+    s.plan.task_ids.clone_from(&dag);
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::Complete));
     s.tasks
@@ -288,7 +288,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
-    s.plan.task_ids = dag.clone();
+    s.plan.task_ids.clone_from(&dag);
     s.loop_ = LoopState {
         active: true,
         paused: false,
@@ -302,7 +302,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
-    s.plan.task_ids = dag.clone();
+    s.plan.task_ids.clone_from(&dag);
     s.loop_ = LoopState {
         active: true,
         paused: true,
@@ -316,7 +316,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
-    s.plan.task_ids = dag.clone();
+    s.plan.task_ids.clone_from(&dag);
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::Superseded));
     s.tasks
@@ -340,7 +340,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
-    s.plan.task_ids = dag.clone();
+    s.plan.task_ids.clone_from(&dag);
     s.loop_ = LoopState {
         active: true,
         paused: false,
@@ -360,7 +360,7 @@ fn fixtures() -> Vec<(String, MissionState)> {
     let mut s = base("demo");
     s.outcome.ratified = true;
     s.plan.locked = true;
-    s.plan.task_ids = dag.clone();
+    s.plan.task_ids.clone_from(&dag);
     s.tasks
         .insert("T1".into(), task_rec("T1", TaskStatus::AwaitingReview));
     s.reviews

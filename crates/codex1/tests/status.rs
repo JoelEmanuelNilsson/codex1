@@ -331,6 +331,7 @@ fn all_tasks_complete_reports_ready_for_mission_close_review() {
     let mut state = base_state("demo");
     state.outcome.ratified = true;
     state.plan.locked = true;
+    state.plan.task_ids = vec!["T1".into(), "T2".into(), "T3".into(), "T4".into()];
     state.phase = Phase::MissionClose;
     state.tasks.insert(
         task("T1", TaskStatus::Complete).0,
@@ -363,6 +364,7 @@ fn mission_close_review_passed_reports_close_next_action() {
     let mut state = base_state("demo");
     state.outcome.ratified = true;
     state.plan.locked = true;
+    state.plan.task_ids = vec!["T1".into(), "T2".into(), "T3".into(), "T4".into()];
     state.phase = Phase::MissionClose;
     state.tasks.insert(
         task("T1", TaskStatus::Complete).0,
