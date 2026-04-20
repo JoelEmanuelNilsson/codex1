@@ -1,0 +1,252 @@
+//! End-to-end replan-trigger integration test.
+//!
+//! Walks a mission up to a plan-locked state, issues a planned review
+//! task, and records six consecutive dirty reviews against the same
+//! target. After the sixth dirty:
+//! - `replan check` must report `required: true` with a non-null reason
+//!   mentioning the target.
+//! - `state.replan.triggered` must be `true`.
+//!
+//! Then runs `replan record --reason six_dirty --supersedes <Tn>` and
+//! asserts the mission rolls back to `phase: plan`, `plan.locked: false`,
+//! and all counters clear.
+//!
+//! The review-target reset between rounds is performed by writing
+//! STATE.json directly (same pattern `tests/review.rs` uses). This is
+//! accepted per the Unit 20 brief — "issue a planned review task; record
+//! 6 consecutive dirty reviews" — and matches the mission-close semantics
+//! where only the main thread (not the CLI) can hand a target back into
+//! review.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use assert_cmd::Command;
+use serde_json::{json, Value};
+use tempfile::TempDir;
+
+const MISSION: &str = "demo";
+
+fn cmd() -> Command {
+    Command::cargo_bin("codex1").expect("binary builds")
+}
+
+fn init_mission(tmp: &TempDir) -> PathBuf {
+    let mission_dir = tmp.path().join("PLANS").join(MISSION);
+    cmd()
+        .current_dir(tmp.path())
+        .args(["init", "--mission", MISSION])
+        .assert()
+        .success();
+    mission_dir
+}
+
+fn parse(output: &std::process::Output) -> Value {
+    let s = std::str::from_utf8(&output.stdout).expect("utf-8 stdout");
+    serde_json::from_str::<Value>(s).unwrap_or_else(|e| panic!("bad JSON:\n{s}\n{e}"))
+}
+
+fn run_ok(cwd: &Path, args: &[&str]) -> Value {
+    let out = cmd().current_dir(cwd).args(args).output().expect("runs");
+    assert!(
+        out.status.success(),
+        "expected success ({args:?}); stderr: {}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    parse(&out)
+}
+
+fn read_state(mission_dir: &Path) -> Value {
+    serde_json::from_str(&fs::read_to_string(mission_dir.join("STATE.json")).unwrap()).unwrap()
+}
+
+fn write_state(mission_dir: &Path, state: &Value) {
+    fs::write(
+        mission_dir.join("STATE.json"),
+        serde_json::to_vec_pretty(state).unwrap(),
+    )
+    .unwrap();
+}
+
+/// Mission fixture: T1 (work, complete) + T2 (work, awaiting_review) +
+/// T3 (review targeting T2). Plan is locked; outcome ratified.
+fn seed_plan_locked(mission_dir: &Path) {
+    let plan = r"mission_id: demo
+
+planning_level:
+  requested: light
+  effective: light
+
+outcome_interpretation:
+  summary: replan-trigger e2e
+
+architecture:
+  summary: replan-trigger e2e
+  key_decisions: []
+
+planning_process:
+  evidence: []
+
+tasks:
+  - id: T1
+    title: Root
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+    write_paths:
+      - src/T1/**
+  - id: T2
+    title: Work under review
+    kind: code
+    depends_on: [T1]
+    spec: specs/T2/SPEC.md
+    write_paths:
+      - src/T2/**
+  - id: T3
+    title: Review of T2
+    kind: review
+    depends_on: [T2]
+    spec: specs/T3/SPEC.md
+    review_target:
+      tasks: [T2]
+    review_profiles:
+      - code_bug_correctness
+
+risks: []
+
+mission_close:
+  criteria: []
+";
+    fs::write(mission_dir.join("PLAN.yaml"), plan).unwrap();
+    for tid in ["T1", "T2", "T3"] {
+        let dir = mission_dir.join("specs").join(tid);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("SPEC.md"), format!("# {tid}\n")).unwrap();
+        if matches!(tid, "T1" | "T2") {
+            fs::write(dir.join("PROOF.md"), format!("# proof {tid}\n")).unwrap();
+        }
+    }
+    let mut state = read_state(mission_dir);
+    state["outcome"] = json!({ "ratified": true, "ratified_at": "2026-04-20T00:00:00Z" });
+    state["plan"]["locked"] = Value::Bool(true);
+    state["plan"]["requested_level"] = Value::String("light".into());
+    state["plan"]["effective_level"] = Value::String("light".into());
+    state["phase"] = Value::String("execute".into());
+    state["tasks"] = json!({
+        "T1": {
+            "id": "T1",
+            "status": "complete",
+            "started_at": "2026-04-20T00:00:00Z",
+            "finished_at": "2026-04-20T00:00:01Z",
+            "proof_path": "specs/T1/PROOF.md",
+            "superseded_by": null,
+        },
+        "T2": {
+            "id": "T2",
+            "status": "awaiting_review",
+            "started_at": "2026-04-20T00:00:02Z",
+            "finished_at": "2026-04-20T00:00:03Z",
+            "proof_path": "specs/T2/PROOF.md",
+            "superseded_by": null,
+        },
+    });
+    write_state(mission_dir, &state);
+}
+
+/// Bounce T2 back into AwaitingReview so we can re-run `review start`.
+fn reset_target(mission_dir: &Path, task_id: &str) {
+    let mut state = read_state(mission_dir);
+    state["tasks"][task_id]["status"] = Value::String("awaiting_review".into());
+    write_state(mission_dir, &state);
+}
+
+#[test]
+fn e2e_six_dirty_reviews_trigger_replan_and_record_clears_counters() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_mission(&tmp);
+    seed_plan_locked(&mission_dir);
+
+    // Write findings file once; every round reuses it.
+    let findings = tmp.path().join("findings.md");
+    fs::write(&findings, "# Findings\n- P0: regression\n").unwrap();
+
+    // Initial replan check: nothing yet.
+    let before = run_ok(tmp.path(), &["replan", "check", "--mission", MISSION]);
+    assert_eq!(before["data"]["required"], false);
+    assert!(before["data"]["reason"].is_null());
+    assert_eq!(before["data"]["triggered_already"], false);
+
+    // Record six dirty reviews against T3 targeting T2. Reset T2 to
+    // AwaitingReview between rounds so `review start` accepts it each time.
+    for i in 0..6 {
+        reset_target(&mission_dir, "T2");
+        run_ok(tmp.path(), &["review", "start", "T3", "--mission", MISSION]);
+        let ok = run_ok(
+            tmp.path(),
+            &[
+                "review",
+                "record",
+                "T3",
+                "--findings-file",
+                findings.to_str().unwrap(),
+                "--mission",
+                MISSION,
+            ],
+        );
+        assert_eq!(ok["data"]["verdict"], "dirty");
+        let triggered = ok["data"]["replan_triggered"].as_bool().unwrap_or(false);
+        assert_eq!(triggered, i == 5, "round {i}: replan_triggered unexpected");
+    }
+
+    // After 6 dirty, replan check must require replan and mention T2.
+    let required = run_ok(tmp.path(), &["replan", "check", "--mission", MISSION]);
+    assert_eq!(required["data"]["required"], true);
+    let reason = required["data"]["reason"].as_str().expect("reason present");
+    assert!(reason.contains("T2"), "reason missing T2: {reason}");
+    assert_eq!(required["data"]["triggered_already"], true);
+    assert_eq!(
+        required["data"]["consecutive_dirty_by_target"]["T2"], 6,
+        "T2 counter should be at threshold"
+    );
+
+    let state = read_state(&mission_dir);
+    assert_eq!(state["replan"]["triggered"], true);
+
+    // Record the replan, superseding T2 (the dirty target).
+    let recorded = run_ok(
+        tmp.path(),
+        &[
+            "replan",
+            "record",
+            "--mission",
+            MISSION,
+            "--reason",
+            "six_dirty",
+            "--supersedes",
+            "T2",
+        ],
+    );
+    assert_eq!(recorded["data"]["reason"], "six_dirty");
+    assert_eq!(recorded["data"]["supersedes"], json!(["T2"]));
+    assert_eq!(recorded["data"]["phase_after"], "plan");
+    assert_eq!(recorded["data"]["plan_locked"], false);
+
+    let state = read_state(&mission_dir);
+    assert_eq!(state["phase"], "plan");
+    assert_eq!(state["plan"]["locked"], false);
+    assert_eq!(state["replan"]["triggered"], true);
+    assert_eq!(state["replan"]["consecutive_dirty_by_target"], json!({}));
+    assert_eq!(state["tasks"]["T2"]["status"], "superseded");
+    let superseded_by = state["tasks"]["T2"]["superseded_by"]
+        .as_str()
+        .expect("T2 superseded_by present");
+    assert!(
+        superseded_by.starts_with("replan-"),
+        "superseded_by should be a replan-<rev> marker: {superseded_by}"
+    );
+
+    let after = run_ok(tmp.path(), &["replan", "check", "--mission", MISSION]);
+    assert_eq!(after["data"]["required"], false);
+    assert_eq!(after["data"]["consecutive_dirty_by_target"], json!({}));
+    assert_eq!(after["data"]["triggered_already"], true);
+}
