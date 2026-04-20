@@ -7,15 +7,17 @@
 pub mod check;
 pub mod choose_level;
 pub mod dag;
+pub mod graph;
 pub mod parsed;
 pub mod scaffold;
+pub mod waves;
 
 use std::path::PathBuf;
 
 use clap::{Subcommand, ValueEnum};
 
 use crate::cli::Ctx;
-use crate::core::error::{CliError, CliResult};
+use crate::core::error::CliResult;
 
 #[derive(Debug, Subcommand)]
 pub enum PlanCmd {
@@ -59,11 +61,7 @@ pub fn dispatch(cmd: PlanCmd, ctx: &Ctx) -> CliResult<()> {
         PlanCmd::ChooseLevel { level, escalate } => choose_level::run(level, escalate, ctx),
         PlanCmd::Scaffold { level } => scaffold::run(level, ctx),
         PlanCmd::Check => check::run(ctx),
-        PlanCmd::Graph { .. } => Err(CliError::NotImplemented {
-            command: "plan graph".to_string(),
-        }),
-        PlanCmd::Waves => Err(CliError::NotImplemented {
-            command: "plan waves".to_string(),
-        }),
+        PlanCmd::Graph { format, out } => graph::run(ctx, format, out),
+        PlanCmd::Waves => waves::run(ctx),
     }
 }
