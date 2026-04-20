@@ -1,0 +1,6 @@
+interface:
+  display_name: "Review Loop"
+  short_description: "Run reviewer subagents and record findings"
+  default_prompt: "Use $review-loop to run reviewer subagents and record clean/dirty findings."
+policy:
+  allow_implicit_invocation: true
