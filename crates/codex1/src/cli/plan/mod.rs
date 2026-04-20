@@ -1,4 +1,12 @@
-//! `codex1 plan` stub — owned by Phase B Units 3/4/5.
+//! `codex1 plan` dispatcher.
+//!
+//! Foundation pins the subcommand enum and `dispatch`. Phase B unit 4 owns
+//! the `Check` arm; units 3 and 5 own the other arms. Each sibling module
+//! exposes a `run(ctx)` entry point.
+
+pub mod check;
+pub mod dag;
+pub mod parsed;
 
 use std::path::PathBuf;
 
@@ -44,15 +52,17 @@ pub enum GraphFormat {
     Json,
 }
 
-pub fn dispatch(cmd: PlanCmd, _ctx: &Ctx) -> CliResult<()> {
-    let label = match cmd {
-        PlanCmd::ChooseLevel { .. } => "plan choose-level",
-        PlanCmd::Scaffold { .. } => "plan scaffold",
-        PlanCmd::Check => "plan check",
-        PlanCmd::Graph { .. } => "plan graph",
-        PlanCmd::Waves => "plan waves",
+pub fn dispatch(cmd: PlanCmd, ctx: &Ctx) -> CliResult<()> {
+    let not_implemented = |label: &str| {
+        Err(CliError::NotImplemented {
+            command: label.to_string(),
+        })
     };
-    Err(CliError::NotImplemented {
-        command: label.to_string(),
-    })
+    match cmd {
+        PlanCmd::Check => check::run(ctx),
+        PlanCmd::ChooseLevel { .. } => not_implemented("plan choose-level"),
+        PlanCmd::Scaffold { .. } => not_implemented("plan scaffold"),
+        PlanCmd::Graph { .. } => not_implemented("plan graph"),
+        PlanCmd::Waves => not_implemented("plan waves"),
+    }
 }

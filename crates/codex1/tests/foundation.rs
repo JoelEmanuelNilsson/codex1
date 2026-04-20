@@ -147,12 +147,12 @@ fn plan_stubs_return_not_implemented() {
     init_demo(&tmp, "demo");
     let output = cmd()
         .current_dir(tmp.path())
-        .args(["plan", "check", "--mission", "demo"])
+        .args(["plan", "waves", "--mission", "demo"])
         .output()
         .expect("runs");
     let json = parse_stdout_json(&output);
     assert_eq!(json["code"], "NOT_IMPLEMENTED");
-    assert_eq!(json["context"]["command"], "plan check");
+    assert_eq!(json["context"]["command"], "plan waves");
 }
 
 #[test]
