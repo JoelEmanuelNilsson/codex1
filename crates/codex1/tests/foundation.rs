@@ -129,34 +129,10 @@ fn status_without_mission_reports_needs_user() {
 // (cli-outcome) has replaced the stub with the real implementation.
 // See `tests/outcome.rs` for the Phase B integration coverage.
 
-#[test]
-fn plan_stubs_return_not_implemented() {
-    let tmp = TempDir::new().unwrap();
-    init_demo(&tmp, "demo");
-    let output = cmd()
-        .current_dir(tmp.path())
-        .args(["plan", "waves", "--mission", "demo"])
-        .output()
-        .expect("runs");
-    let json = parse_stdout_json(&output);
-    assert_eq!(json["code"], "NOT_IMPLEMENTED");
-    assert_eq!(json["context"]["command"], "plan waves");
-}
-
-#[test]
-fn review_stubs_return_not_implemented() {
-    // The task stubs were replaced by Unit 6 (cli-task). Stand-in: any
-    // still-stubbed subcommand. Review stays stubbed until Unit 7 lands.
-    let tmp = TempDir::new().unwrap();
-    init_demo(&tmp, "demo");
-    let output = cmd()
-        .current_dir(tmp.path())
-        .args(["review", "status", "T1", "--mission", "demo"])
-        .output()
-        .expect("runs");
-    let json = parse_stdout_json(&output);
-    assert_eq!(json["code"], "NOT_IMPLEMENTED");
-}
+// `plan_stubs_return_not_implemented` and `review_stubs_return_not_implemented`
+// removed: every Phase B sub-command group now has a real implementation;
+// per-command coverage lives in tests/{outcome,plan_check,plan_waves,
+// plan_scaffold,task,review,replan,loop_,close,status,status_close_agreement}.rs.
 
 #[test]
 fn mission_not_found_has_helpful_hint() {
