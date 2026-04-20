@@ -35,7 +35,7 @@ fn init_demo(tmp: &TempDir, mission: &str) -> PathBuf {
 }
 
 fn seed_valid_outcome(mission_dir: &Path) {
-    let outcome = r#"---
+    let outcome = "---
 mission_id: demo
 status: draft
 title: Test mission
@@ -65,7 +65,7 @@ resolved_questions: []
 # Outcome
 
 Test-only outcome.
-"#;
+";
     fs::write(mission_dir.join("OUTCOME.md"), outcome).unwrap();
 }
 
