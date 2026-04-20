@@ -7,6 +7,9 @@ use clap::{Subcommand, ValueEnum};
 use crate::cli::Ctx;
 use crate::core::error::{CliError, CliResult};
 
+pub mod graph;
+pub mod waves;
+
 #[derive(Debug, Subcommand)]
 pub enum PlanCmd {
     /// Interactive planning-level selection handshake.
@@ -44,15 +47,18 @@ pub enum GraphFormat {
     Json,
 }
 
-pub fn dispatch(cmd: PlanCmd, _ctx: &Ctx) -> CliResult<()> {
-    let label = match cmd {
-        PlanCmd::ChooseLevel { .. } => "plan choose-level",
-        PlanCmd::Scaffold { .. } => "plan scaffold",
-        PlanCmd::Check => "plan check",
-        PlanCmd::Graph { .. } => "plan graph",
-        PlanCmd::Waves => "plan waves",
-    };
-    Err(CliError::NotImplemented {
-        command: label.to_string(),
-    })
+pub fn dispatch(cmd: PlanCmd, ctx: &Ctx) -> CliResult<()> {
+    match cmd {
+        PlanCmd::Waves => waves::run(ctx),
+        PlanCmd::Graph { format, out } => graph::run(ctx, format, out),
+        PlanCmd::ChooseLevel { .. } => Err(CliError::NotImplemented {
+            command: "plan choose-level".to_string(),
+        }),
+        PlanCmd::Scaffold { .. } => Err(CliError::NotImplemented {
+            command: "plan scaffold".to_string(),
+        }),
+        PlanCmd::Check => Err(CliError::NotImplemented {
+            command: "plan check".to_string(),
+        }),
+    }
 }
