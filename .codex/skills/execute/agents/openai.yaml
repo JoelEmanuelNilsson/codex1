@@ -1,0 +1,6 @@
+interface:
+  display_name: "Execute"
+  short_description: "Run the next Codex1 task or ready wave"
+  default_prompt: "Use $execute to run the next ready task or wave for the active Codex1 mission."
+policy:
+  allow_implicit_invocation: true
