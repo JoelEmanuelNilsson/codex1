@@ -125,21 +125,9 @@ fn status_without_mission_reports_needs_user() {
     assert_eq!(json["data"]["stop"]["allow"], true);
 }
 
-#[test]
-fn outcome_stubs_return_not_implemented() {
-    let tmp = TempDir::new().unwrap();
-    init_demo(&tmp, "demo");
-    let output = cmd()
-        .current_dir(tmp.path())
-        .args(["outcome", "check", "--mission", "demo"])
-        .output()
-        .expect("runs");
-    assert!(!output.status.success());
-    let json = parse_stdout_json(&output);
-    assert_eq!(json["ok"], Value::Bool(false));
-    assert_eq!(json["code"], "NOT_IMPLEMENTED");
-    assert_eq!(json["context"]["command"], "outcome check");
-}
+// `outcome_stubs_return_not_implemented` removed: Phase B Unit 2
+// (cli-outcome) has replaced the stub with the real implementation.
+// See `tests/outcome.rs` for the Phase B integration coverage.
 
 #[test]
 fn plan_stubs_return_not_implemented() {
