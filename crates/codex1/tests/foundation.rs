@@ -144,12 +144,14 @@ fn plan_stubs_return_not_implemented() {
 }
 
 #[test]
-fn task_stubs_return_not_implemented() {
+fn review_stubs_return_not_implemented() {
+    // The task stubs were replaced by Unit 6 (cli-task). Stand-in: any
+    // still-stubbed subcommand. Review stays stubbed until Unit 7 lands.
     let tmp = TempDir::new().unwrap();
     init_demo(&tmp, "demo");
     let output = cmd()
         .current_dir(tmp.path())
-        .args(["task", "next", "--mission", "demo"])
+        .args(["review", "status", "T1", "--mission", "demo"])
         .output()
         .expect("runs");
     let json = parse_stdout_json(&output);

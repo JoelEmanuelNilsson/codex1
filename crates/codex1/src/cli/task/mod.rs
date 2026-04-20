@@ -1,11 +1,23 @@
-//! `codex1 task` stub — owned by Phase B Unit 6.
+//! `codex1 task` — Phase B Unit 6 (task lifecycle + worker packet).
+//!
+//! Each subcommand is a thin wrapper over helpers in `lifecycle.rs` and
+//! `worker_packet.rs`. The `TaskCmd` variants are foundation-pinned so
+//! `cli::mod` compiles regardless of this unit's merge order.
 
 use std::path::PathBuf;
 
 use clap::Subcommand;
 
 use crate::cli::Ctx;
-use crate::core::error::{CliError, CliResult};
+use crate::core::error::CliResult;
+
+mod finish;
+mod lifecycle;
+mod next;
+mod packet;
+mod start;
+mod status_cmd;
+mod worker_packet;
 
 #[derive(Debug, Subcommand)]
 pub enum TaskCmd {
@@ -35,15 +47,12 @@ pub enum TaskCmd {
     },
 }
 
-pub fn dispatch(cmd: TaskCmd, _ctx: &Ctx) -> CliResult<()> {
-    let label = match cmd {
-        TaskCmd::Next => "task next",
-        TaskCmd::Start { .. } => "task start",
-        TaskCmd::Finish { .. } => "task finish",
-        TaskCmd::Status { .. } => "task status",
-        TaskCmd::Packet { .. } => "task packet",
-    };
-    Err(CliError::NotImplemented {
-        command: label.to_string(),
-    })
+pub fn dispatch(cmd: TaskCmd, ctx: &Ctx) -> CliResult<()> {
+    match cmd {
+        TaskCmd::Next => next::run(ctx),
+        TaskCmd::Start { task } => start::run(&task, ctx),
+        TaskCmd::Finish { task, proof } => finish::run(&task, &proof, ctx),
+        TaskCmd::Status { task } => status_cmd::run(&task, ctx),
+        TaskCmd::Packet { task } => packet::run(&task, ctx),
+    }
 }
