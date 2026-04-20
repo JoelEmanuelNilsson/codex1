@@ -6,10 +6,11 @@ Paste this prompt into a new implementation agent when you want it to build the 
 You are implementing Codex1 from scratch or as a clean rebuild. Treat the folder `docs/codex1-rebuild-handoff/` as the product contract. Read these files in order:
 
 1. docs/codex1-rebuild-handoff/README.md
-2. docs/codex1-rebuild-handoff/01-product-flow.md
-3. docs/codex1-rebuild-handoff/02-cli-contract.md
-4. docs/codex1-rebuild-handoff/03-planning-artifacts.md
-5. docs/codex1-rebuild-handoff/04-roles-models-prompts.md
+2. docs/codex1-rebuild-handoff/00-why-and-lessons.md
+3. docs/codex1-rebuild-handoff/01-product-flow.md
+4. docs/codex1-rebuild-handoff/02-cli-contract.md
+5. docs/codex1-rebuild-handoff/03-planning-artifacts.md
+6. docs/codex1-rebuild-handoff/04-roles-models-prompts.md
 
 Also read the official OpenAI agent-friendly CLI guide:
 https://developers.openai.com/codex/use-cases/agent-friendly-clis
@@ -22,6 +23,8 @@ CLI Creator is installed locally at:
 The high-level product is:
 
 Codex1 is a skills-first native Codex workflow where users invoke $clarify, $plan, $execute, $review-loop, $close, or $autopilot. These skills use a small deterministic codex1 CLI. The CLI stores visible mission files, validates a full plan with a task DAG, derives execution waves, reports next actions, records task progress, records main-thread review outcomes, pauses/resumes the active loop, checks close readiness, and emits one status JSON for Ralph. Workers execute assigned tasks. Reviewers return findings only. The main thread records mission truth. Ralph only blocks active unpaused loops by reading codex1 status --json.
+
+The reason for this rebuild is not that contracts are bad. It is that the old system spread contracts across too many truth surfaces and made the user feel like they were debugging the machine. Keep the contracts, but center them in a small command-shaped CLI, visible files, and clear skills.
 
 Non-negotiables:
 

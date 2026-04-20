@@ -206,6 +206,7 @@ Use advisors:
 - Before mission close.
 - When the plan looks overcomplicated.
 - When repair vs replan is unclear.
+- When repeated findings suggest the architecture, not just the code, is wrong.
 
 ## Hard Planning Subagent Requirements
 
@@ -235,4 +236,3 @@ planning_process:
 ```
 
 Do not make this a bureaucracy. The purpose is to ensure hard planning actually gets critique.
-

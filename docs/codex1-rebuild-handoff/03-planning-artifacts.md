@@ -220,6 +220,10 @@ tasks:
     kind: design
     depends_on: []
     spec: specs/T1/SPEC.md
+    read_paths: []
+    write_paths: []
+    exclusive_resources: []
+    unknown_side_effects: false
     acceptance:
       - "..."
     proof:
@@ -326,11 +330,29 @@ No reason is needed.
 Every task:
 
 - Has `id`.
+- Has `title`.
 - Has `kind`.
 - Has `depends_on`.
 - Has `spec`.
 - Uses `depends_on: []` if root.
 - References existing task IDs.
+
+Executable work tasks should also declare:
+
+- `read_paths`
+- `write_paths`
+- `exclusive_resources`
+- `unknown_side_effects`
+- side-effect declarations when relevant:
+  - `generated_paths`
+  - `shared_state`
+  - `commands`
+  - `external_services`
+  - `env_mutations`
+  - `package_manager_mutation`
+  - `schema_or_migration`
+- `proof`
+- review expectations or a downstream planned review task
 
 Task IDs:
 
@@ -415,6 +437,13 @@ No stored wave drift.
 Main thread can still inspect waves through CLI.
 User does not need stored waves in the plan file.
 ```
+
+Wave eligibility:
+
+- All dependencies are complete or review-clean.
+- Task status is ready, or needs repair and has a current failed review target assigned for repair.
+- No mandatory replan trigger is open for that task.
+- Required spec/proof/plan freshness checks pass.
 
 ## Review Tasks
 

@@ -203,6 +203,8 @@ Pause the active loop so the user can talk without Ralph forcing continuation.
 
 `$close` is not mission completion.
 
+`$close` is a discussion-mode boundary. When the user invokes it, the main thread should pause the loop, answer/clarify/discuss with the user, and then resume or deactivate only after the user/main thread decides.
+
 Commands:
 
 ```bash
@@ -237,3 +239,5 @@ flowchart TD
 ```
 
 Ralph must not inspect plan/review files directly. Ralph must not manage subagents. Ralph must not use `.ralph` mission truth.
+
+Only the active main thread should feel Ralph stop pressure. Worker/reviewer/explorer/advisor subagents should be prompted to complete their bounded job and stop normally. Do not build fake role-detection into Ralph to enforce this; keep Ralph status-only and keep subagent behavior prompt-governed.

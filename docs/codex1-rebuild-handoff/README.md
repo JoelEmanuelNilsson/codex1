@@ -6,13 +6,16 @@ It is written for a new AI implementation agent that has no chat context and sho
 
 ## Read Order
 
-1. `01-product-flow.md`
-2. `02-cli-contract.md`
-3. `03-planning-artifacts.md`
-4. `04-roles-models-prompts.md`
-5. `05-build-prompt.md`
+1. `00-why-and-lessons.md`
+2. `01-product-flow.md`
+3. `02-cli-contract.md`
+4. `03-planning-artifacts.md`
+5. `04-roles-models-prompts.md`
+6. `05-build-prompt.md`
 
 The older single-file architecture draft at `../codex1-rebuild-clear-architecture.md` is background. This folder is the sharper handoff contract.
+
+If this folder disagrees with older V2 docs, this folder wins. Older docs are useful inspiration, but they contain machinery this rebuild explicitly avoids.
 
 ## Source Inspiration
 
@@ -48,6 +51,16 @@ Codex1 should apply that lesson to Codex missions themselves.
 ## Product In One Paragraph
 
 Codex1 is a skills-first native Codex workflow. Users invoke `$clarify`, `$plan`, `$execute`, `$review-loop`, `$close`, or `$autopilot`. Those skills use a small deterministic `codex1` CLI. The CLI stores visible mission files, validates a full plan with a task DAG, derives execution waves, reports next actions, records task progress, records main-thread review results, pauses/resumes the active loop, checks close readiness, and emits one status JSON for Ralph. Workers execute assigned tasks. Reviewers return findings only. The main thread records mission truth. Ralph only blocks active unpaused loops by reading `codex1 status --json`.
+
+## Layer Ownership
+
+| Layer | Owns | Must Not Own |
+| --- | --- | --- |
+| Skills | User-facing workflow, interviewing, planning posture, orchestration instructions | Hidden state, stale truth derivation, gate math |
+| CLI | Validation, status projection, task DAG checks, wave derivation, task/review/close state | Architecture choice, user intent, AI role identity |
+| Visible files | Outcome, plan, state, audit, specs, proofs, reviews, closeout | Chat-only truth |
+| Subagents | Bounded exploration, writing, reviewing, critique | Mission truth, mission close, hidden state |
+| Ralph | Stop guard over `codex1 status --json` | Planning, reviewing, executing, subagent management |
 
 ## Non-Negotiables
 

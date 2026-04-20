@@ -36,6 +36,8 @@ Every command:
 
 - Has `--help`.
 - Supports `--json`.
+- Supports `--mission <mission-id>` unless it is `codex1 init` or a command explicitly creating/selecting a mission.
+- Supports `--repo-root <path>` or another explicit repo-root mechanism; avoid hidden active-mission resolution.
 - Emits stable JSON.
 - Emits stable error codes.
 - Avoids giant prose output.
@@ -47,6 +49,7 @@ Mutating commands:
 - Must be idempotent where possible.
 - Must fail clearly when preconditions are missing.
 - Should support `--dry-run` if implementation cost is small.
+- Should support `--expect-revision <N>` or equivalent stale-writer protection.
 - Should not mutate files when validation fails.
 
 ## Minimal Command Surface
@@ -157,6 +160,8 @@ It should answer:
 - Is close ready?
 - Should Ralph allow stop?
 
+`verdict` is the primary status field. `phase`, `loop`, `next_action`, `close_ready`, and `stop` must be internally consistent with the verdict.
+
 Example:
 
 ```json
@@ -189,6 +194,21 @@ Example:
 ```
 
 `codex1 status` and `codex1 close check` must share readiness logic. They must not disagree about whether a mission is complete.
+
+Suggested verdict values:
+
+```text
+continue_required
+needs_user
+blocked
+ready_for_mission_close_review
+mission_close_review_open
+mission_close_review_passed
+complete
+invalid_state
+```
+
+Use precise mission-close vocabulary. Do not call the mission complete when it is only ready for mission-close review.
 
 ## Outcome Commands
 
@@ -344,6 +364,34 @@ Transitions task into progress.
 
 Records proof metadata and marks task ready for downstream dependencies or review.
 
+## State And Event Safety
+
+`STATE.json` owns current operational state.
+
+`EVENTS.jsonl` is append-only audit history. It is not replay authority unless replay semantics are explicitly implemented and tested.
+
+Every mutating command should:
+
+- Read current `STATE.json`.
+- Check expected revision if provided.
+- Validate preconditions.
+- Write state atomically.
+- Append exactly one event describing the mutation.
+- Return the new state revision in JSON.
+
+Stale writers should receive a stable error:
+
+```json
+{
+  "ok": false,
+  "code": "REVISION_CONFLICT",
+  "message": "Expected state revision 12 but current revision is 13.",
+  "retryable": true
+}
+```
+
+This is artifact validity, not caller identity enforcement.
+
 ## Review Commands
 
 `codex1 review start T4 --json`
@@ -363,6 +411,33 @@ Records clean review result entered by the main thread.
 Records findings entered by the main thread.
 
 The CLI does not know whether the caller is main thread or reviewer. The workflow and prompts govern that. Do not build caller identity checks.
+
+Review profiles:
+
+| Profile | Use |
+| --- | --- |
+| `code_bug_correctness` | Code-producing task or code-heavy repair |
+| `local_spec_intent` | One task/spec versus intended behavior |
+| `integration_intent` | Multiple tasks/wave/subsystem interaction |
+| `plan_quality` | Plan critique before locking, especially hard plans |
+| `mission_close` | Final close review |
+
+Review record freshness:
+
+- A review record should name the review task or mission-close boundary it applies to.
+- If the target task/review boundary was superseded, the CLI should not count the record as current.
+- Late records may be preserved for audit, but they must not silently change current truth.
+
+Late-output categories:
+
+```text
+accepted_current
+late_same_boundary
+stale_superseded
+contaminated_after_terminal
+```
+
+The CLI may classify parent-recorded review results into these categories. It must not require reviewer agents to write complex schemas directly.
 
 ## Replan Commands
 
@@ -442,6 +517,9 @@ REVIEW_FINDINGS_BLOCK
 REPLAN_REQUIRED
 CLOSE_NOT_READY
 STATE_CORRUPT
+REVISION_CONFLICT
+STALE_REVIEW_RECORD
+TERMINAL_ALREADY_COMPLETE
 ```
 
 ## Verification Bar
