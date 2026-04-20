@@ -1,0 +1,6 @@
+interface:
+  display_name: "Autopilot"
+  short_description: "End-to-end Codex1 mission autopilot"
+  default_prompt: "Use $autopilot to take a Codex1 mission from clarify to terminal close."
+policy:
+  allow_implicit_invocation: true
