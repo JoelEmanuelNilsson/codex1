@@ -1,11 +1,24 @@
-//! `codex1 review` stub — owned by Phase B Unit 7.
+//! `codex1 review` — reviewer packet emission, start/record/status.
+//!
+//! The CLI does not check caller identity; the main thread records review
+//! outcomes. Reviewer subagents only return findings (findings-file copied
+//! to `PLANS/<mission>/reviews/<id>.md`). See
+//! `docs/cli-contract-schemas.md` § Review record freshness for
+//! classification rules.
 
 use std::path::PathBuf;
 
 use clap::Subcommand;
 
 use crate::cli::Ctx;
-use crate::core::error::{CliError, CliResult};
+use crate::core::error::CliResult;
+
+mod classify;
+mod packet;
+mod plan_read;
+mod record;
+mod start;
+mod status_cmd;
 
 #[derive(Debug, Subcommand)]
 pub enum ReviewCmd {
@@ -24,10 +37,14 @@ pub enum ReviewCmd {
         #[arg(value_name = "TASK_ID")]
         task: String,
         /// Mark review clean (no P0/P1/P2 findings).
-        #[arg(long, conflicts_with = "findings_file")]
+        #[arg(
+            long,
+            conflicts_with = "findings_file",
+            required_unless_present = "findings_file"
+        )]
         clean: bool,
         /// Path to a markdown file with P0/P1/P2 findings.
-        #[arg(long, value_name = "PATH")]
+        #[arg(long, value_name = "PATH", required_unless_present = "clean")]
         findings_file: Option<PathBuf>,
         /// Comma-separated reviewer actor ids.
         #[arg(long, value_name = "LIST")]
@@ -40,14 +57,24 @@ pub enum ReviewCmd {
     },
 }
 
-pub fn dispatch(cmd: ReviewCmd, _ctx: &Ctx) -> CliResult<()> {
-    let label = match cmd {
-        ReviewCmd::Start { .. } => "review start",
-        ReviewCmd::Packet { .. } => "review packet",
-        ReviewCmd::Record { .. } => "review record",
-        ReviewCmd::Status { .. } => "review status",
-    };
-    Err(CliError::NotImplemented {
-        command: label.to_string(),
-    })
+pub fn dispatch(cmd: ReviewCmd, ctx: &Ctx) -> CliResult<()> {
+    match cmd {
+        ReviewCmd::Start { task } => start::run(ctx, &task),
+        ReviewCmd::Packet { task } => packet::run(ctx, &task),
+        ReviewCmd::Record {
+            task,
+            clean,
+            findings_file,
+            reviewers,
+        } => record::run(
+            ctx,
+            &record::RecordInputs {
+                task_id: &task,
+                clean,
+                findings_file,
+                reviewers_csv: reviewers,
+            },
+        ),
+        ReviewCmd::Status { task } => status_cmd::run(ctx, &task),
+    }
 }
