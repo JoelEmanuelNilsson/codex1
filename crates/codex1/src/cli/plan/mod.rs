@@ -1,4 +1,10 @@
-//! `codex1 plan` stub — owned by Phase B Units 3/4/5.
+//! `codex1 plan` — Phase B Unit 3 owns `ChooseLevel` and `Scaffold`.
+//!
+//! Units 4 and 5 will replace the `Check`, `Graph`, and `Waves` arms with
+//! real handlers and add sibling modules; this unit does not touch those.
+
+pub mod choose_level;
+pub mod scaffold;
 
 use std::path::PathBuf;
 
@@ -44,15 +50,18 @@ pub enum GraphFormat {
     Json,
 }
 
-pub fn dispatch(cmd: PlanCmd, _ctx: &Ctx) -> CliResult<()> {
-    let label = match cmd {
-        PlanCmd::ChooseLevel { .. } => "plan choose-level",
-        PlanCmd::Scaffold { .. } => "plan scaffold",
-        PlanCmd::Check => "plan check",
-        PlanCmd::Graph { .. } => "plan graph",
-        PlanCmd::Waves => "plan waves",
-    };
-    Err(CliError::NotImplemented {
-        command: label.to_string(),
-    })
+pub fn dispatch(cmd: PlanCmd, ctx: &Ctx) -> CliResult<()> {
+    match cmd {
+        PlanCmd::ChooseLevel { level, escalate } => choose_level::run(level, escalate, ctx),
+        PlanCmd::Scaffold { level } => scaffold::run(level, ctx),
+        PlanCmd::Check => Err(CliError::NotImplemented {
+            command: "plan check".to_string(),
+        }),
+        PlanCmd::Graph { .. } => Err(CliError::NotImplemented {
+            command: "plan graph".to_string(),
+        }),
+        PlanCmd::Waves => Err(CliError::NotImplemented {
+            command: "plan waves".to_string(),
+        }),
+    }
 }
