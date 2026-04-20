@@ -1,14 +1,23 @@
-//! `codex1 outcome` stub — owned by Phase B Unit 2 (`cli-outcome`).
+//! `codex1 outcome` — OUTCOME.md validation and ratification.
 //!
-//! Foundation pins the subcommand variants so `cli::mod` can reference
-//! them by path. Phase B replaces the `dispatch` body with real
-//! `check` / `ratify` implementations and adds any needed helpers in
-//! sibling files under this directory.
+//! `outcome check` is a read-only validator that reports every missing
+//! required field and every `[codex1-fill:…]` / boilerplate placeholder.
+//!
+//! `outcome ratify` re-runs the same validation, then (on success)
+//! mutates STATE.json via `state::mutate` to set
+//! `outcome.ratified = true`, records `outcome.ratified_at`, advances
+//! `phase` from `Clarify` to `Plan`, and flips
+//! `status: draft` → `status: ratified` inside OUTCOME.md itself.
 
 use clap::Subcommand;
 
 use crate::cli::Ctx;
-use crate::core::error::{CliError, CliResult};
+use crate::core::error::CliResult;
+
+mod check;
+mod emit;
+mod ratify;
+mod validate;
 
 #[derive(Debug, Subcommand)]
 pub enum OutcomeCmd {
@@ -18,12 +27,9 @@ pub enum OutcomeCmd {
     Ratify,
 }
 
-pub fn dispatch(cmd: OutcomeCmd, _ctx: &Ctx) -> CliResult<()> {
-    let label = match cmd {
-        OutcomeCmd::Check => "outcome check",
-        OutcomeCmd::Ratify => "outcome ratify",
-    };
-    Err(CliError::NotImplemented {
-        command: label.to_string(),
-    })
+pub fn dispatch(cmd: OutcomeCmd, ctx: &Ctx) -> CliResult<()> {
+    match cmd {
+        OutcomeCmd::Check => check::run(ctx),
+        OutcomeCmd::Ratify => ratify::run(ctx),
+    }
 }
