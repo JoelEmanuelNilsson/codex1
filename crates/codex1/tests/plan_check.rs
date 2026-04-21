@@ -653,3 +653,58 @@ fn re_running_on_locked_plan_is_idempotent() {
         "idempotent re-check must not append events"
     );
 }
+
+/// Regression guard for F11 (iter-4): a mission locked by a pre-`plan.task_ids`
+/// binary must be able to backfill `task_ids` on the next `plan check`,
+/// THEN resume idempotent behavior.
+#[test]
+fn plan_check_backfills_missing_task_ids_and_then_stays_idempotent() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = seed_valid_mission(&tmp, "demo");
+
+    let first = run_check(&tmp, "demo", &[]);
+    assert!(first.status.success());
+    let state_after_first = read_state(&mission_dir);
+    let revision_after_first = state_after_first["revision"].as_u64().unwrap();
+    let task_ids_after_first: Vec<String> = state_after_first["plan"]["task_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(task_ids_after_first, ["T1", "T2", "T3", "T4"]);
+
+    let mut stripped = state_after_first.clone();
+    if let Some(plan_obj) = stripped["plan"].as_object_mut() {
+        plan_obj.remove("task_ids");
+    }
+    fs::write(
+        mission_dir.join("STATE.json"),
+        serde_json::to_vec_pretty(&stripped).unwrap(),
+    )
+    .unwrap();
+
+    let backfill = run_check(&tmp, "demo", &[]);
+    assert!(backfill.status.success());
+    let state_after_backfill = read_state(&mission_dir);
+    let revision_after_backfill = state_after_backfill["revision"].as_u64().unwrap();
+    let task_ids_after_backfill: Vec<String> = state_after_backfill["plan"]["task_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(task_ids_after_backfill, ["T1", "T2", "T3", "T4"]);
+    assert!(
+        revision_after_backfill > revision_after_first,
+        "backfill must bump revision (was {revision_after_first}, now {revision_after_backfill})"
+    );
+
+    let idempotent = run_check(&tmp, "demo", &[]);
+    assert!(idempotent.status.success());
+    let revision_after_idempotent = read_state(&mission_dir)["revision"].as_u64().unwrap();
+    assert_eq!(
+        revision_after_backfill, revision_after_idempotent,
+        "second re-check after backfill must be idempotent (no revision bump)"
+    );
+}
