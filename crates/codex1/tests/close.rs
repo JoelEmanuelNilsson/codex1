@@ -1104,6 +1104,42 @@ fn close_refuses_when_completed_task_proof_file_is_missing() {
     assert_eq!(json["code"], "CLOSE_NOT_READY");
 }
 
+#[cfg(unix)]
+#[test]
+fn close_check_rejects_symlinked_relative_proof_path() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    let state = StateBuilder::fresh("demo")
+        .ratified()
+        .plan_locked()
+        .task("T1", "complete")
+        .mission_close_review("passed")
+        .revision(6)
+        .build();
+    write_state(&mission_dir, &state);
+    let outside = mission_dir.join("outside-proof.md");
+    fs::write(&outside, "# outside\n").unwrap();
+    let proof = mission_dir.join("specs/T1/PROOF.md");
+    fs::remove_file(&proof).unwrap();
+    symlink(&outside, &proof).unwrap();
+
+    let check = cmd()
+        .current_dir(tmp.path())
+        .args(["close", "check", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(check.status.success());
+    let json = parse_stdout(&check);
+    assert_eq!(json["data"]["ready"], false);
+    assert!(json["data"]["blockers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|b| b["code"] == "PROOF_MISSING"));
+}
+
 #[test]
 fn status_agrees_with_close_check_when_proof_missing_after_passed_review() {
     let tmp = TempDir::new().unwrap();

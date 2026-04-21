@@ -46,6 +46,9 @@ pub fn run(ctx: &Ctx, reason: &str, supersedes: &[String]) -> CliResult<()> {
                 });
             }
         }
+        if let Some(closed_at) = state.close.terminal_at.clone() {
+            return Err(CliError::TerminalAlreadyComplete { closed_at });
+        }
         validate_supersedes(&state, supersedes)?;
         emit_result(&state.mission_id, state.revision, reason, supersedes, true);
         return Ok(());
@@ -57,6 +60,9 @@ pub fn run(ctx: &Ctx, reason: &str, supersedes: &[String]) -> CliResult<()> {
         "replan.recorded",
         json!({ "reason": reason, "supersedes": supersedes }),
         |state| {
+            if let Some(closed_at) = state.close.terminal_at.clone() {
+                return Err(CliError::TerminalAlreadyComplete { closed_at });
+            }
             validate_supersedes(state, supersedes)?;
             apply_replan(state, reason, supersedes);
             Ok(())
@@ -164,6 +170,7 @@ fn apply_replan(state: &mut MissionState, reason: &str, supersedes: &[String]) {
     state.replan.triggered_reason = Some(reason.to_string());
     state.plan.locked = false;
     state.phase = Phase::Plan;
+    state.close.review_state = crate::state::schema::MissionCloseReviewState::NotStarted;
 }
 
 /// Render a `TaskStatus` the same way serde would (snake_case), so error

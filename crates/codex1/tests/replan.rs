@@ -178,6 +178,70 @@ fn record_six_dirty_supersedes_tasks_and_unlocks_plan() {
 }
 
 #[test]
+fn record_resets_passed_mission_close_review_state() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    patch_state(&mission_dir, |state| {
+        state["phase"] = json!("mission_close");
+        state["plan"]["locked"] = json!(true);
+        state["close"]["review_state"] = json!("passed");
+        let mut t1 = task("complete");
+        t1["id"] = json!("T1");
+        state["tasks"] = json!({ "T1": t1 });
+    });
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args([
+            "replan",
+            "record",
+            "--mission",
+            "demo",
+            "--reason",
+            "user_request",
+        ])
+        .output()
+        .expect("runs");
+    assert!(output.status.success());
+    let state = read_state(&mission_dir);
+    assert_eq!(state["close"]["review_state"], "not_started");
+}
+
+#[test]
+fn record_rejects_terminal_mission() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    patch_state(&mission_dir, |state| {
+        state["phase"] = json!("terminal");
+        state["close"]["terminal_at"] = json!("2026-04-21T00:00:00Z");
+        state["plan"]["locked"] = json!(true);
+    });
+    let before = read_state(&mission_dir);
+    let events_before = fs::read_to_string(mission_dir.join("EVENTS.jsonl")).unwrap();
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args([
+            "replan",
+            "record",
+            "--mission",
+            "demo",
+            "--reason",
+            "user_request",
+        ])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "TERMINAL_ALREADY_COMPLETE");
+    assert_eq!(read_state(&mission_dir), before);
+    assert_eq!(
+        fs::read_to_string(mission_dir.join("EVENTS.jsonl")).unwrap(),
+        events_before
+    );
+}
+
+#[test]
 fn record_rejects_unknown_reason() {
     let tmp = TempDir::new().unwrap();
     init_demo(&tmp, "demo");

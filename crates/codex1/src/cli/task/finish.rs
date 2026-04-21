@@ -9,6 +9,7 @@ use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::{CliError, CliResult};
 use crate::core::mission::resolve_mission;
+use crate::core::paths::resolve_existing_proof_file;
 use crate::state::{self, schema::TaskStatus};
 
 use super::lifecycle::{ensure_task_record, load_plan, now_rfc3339, status_str};
@@ -29,18 +30,12 @@ pub fn run(task_id: &str, proof: &Path, ctx: &Ctx) -> CliResult<()> {
         });
     }
 
-    // Resolve proof path. Absolute paths are taken verbatim; relative
-    // paths are joined against mission_dir.
-    let proof_abs: PathBuf = if proof.is_absolute() {
-        proof.to_path_buf()
+    let proof_abs: PathBuf = resolve_existing_proof_file(&paths, proof)?;
+    let proof_display = if proof.is_absolute() {
+        proof_abs.display().to_string()
     } else {
-        paths.mission_dir.join(proof)
+        proof.to_string_lossy().replace('\\', "/")
     };
-    if !proof_abs.is_file() {
-        return Err(CliError::ProofMissing {
-            path: proof_abs.clone(),
-        });
-    }
 
     let current_status = state
         .tasks
@@ -64,12 +59,6 @@ pub fn run(task_id: &str, proof: &Path, ctx: &Ctx) -> CliResult<()> {
         TaskStatus::Complete
     };
     let next_status_str = status_str(&next_status);
-
-    // Store proof path relative to mission dir when possible.
-    let proof_display = match proof_abs.strip_prefix(&paths.mission_dir) {
-        Ok(rel) => rel.display().to_string(),
-        Err(_) => proof_abs.display().to_string(),
-    };
 
     if ctx.dry_run {
         let env = JsonOk::new(

@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::process::Output;
 
 use assert_cmd::Command;
-use serde_json::Value;
+use serde_json::{json, Value};
 use tempfile::TempDir;
 
 fn cmd() -> Command {
@@ -317,6 +317,47 @@ fn check_and_ratify_reject_mission_id_mismatch() {
         .expect("runs");
     assert!(!output.status.success());
     assert_eq!(read_state(&mission_dir), before);
+}
+
+#[test]
+fn ratify_rejects_when_plan_is_locked() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    seed_valid_outcome(&mission_dir, "demo");
+    cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "ratify", "--mission", "demo"])
+        .assert()
+        .success();
+
+    let state_path = mission_dir.join("STATE.json");
+    let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["phase"] = json!("execute");
+    state["plan"] = json!({
+        "locked": true,
+        "requested_level": "medium",
+        "effective_level": "medium",
+        "hash": "sha256:locked"
+    });
+    fs::write(&state_path, serde_json::to_string_pretty(&state).unwrap()).unwrap();
+
+    let rewritten = fs::read_to_string(mission_dir.join("OUTCOME.md"))
+        .unwrap()
+        .replace("status: ratified", "status: draft");
+    fs::write(mission_dir.join("OUTCOME.md"), rewritten).unwrap();
+
+    let before = read_state(&mission_dir);
+    let before_events = read_events(&mission_dir);
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "ratify", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    assert_eq!(read_state(&mission_dir), before);
+    assert_eq!(read_events(&mission_dir), before_events);
 }
 
 #[test]

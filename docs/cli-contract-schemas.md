@@ -91,8 +91,9 @@ have to discover it by trial:
 - `codex1 task finish T<id> --proof <path>`: relative paths are resolved
   against the mission directory (e.g. `--proof specs/T1/PROOF.md`
   resolves to `<mission_dir>/specs/T1/PROOF.md`). Absolute paths are
-  used verbatim. Rationale: skills and workers think in terms of the
-  mission, not the CWD.
+  used verbatim. Relative proof paths must stay inside the mission tree;
+  mission-local symlink escapes are refused. Rationale: skills and workers
+  think in terms of the mission, not the CWD.
 - `codex1 review record T<id> --findings-file <path>`: resolved against
   CWD. The findings file is the caller's own output, not a mission
   artifact; the CLI copies it into `reviews/<id>.md` under the mission.
@@ -172,7 +173,9 @@ Only `accepted_current` affects the consecutive-dirty counter. Others are append
 - `accepted_current` **clean** → reset to 0.
 - `late_same_boundary` / `stale_superseded` / `contaminated_after_terminal` → do not affect counter.
 - Reset to 0 on replan (`replan record`).
-- Counter value ≥ 6 → `REPLAN_REQUIRED`.
+- Counter value ≥ 6 sets `replan.triggered = true` on the successful
+  `review record` mutation; later readiness surfaces report
+  `REPLAN_REQUIRED`.
 
 ## Verdict derivation (shared by `status` and `close check`)
 
@@ -191,7 +194,7 @@ if all tasks complete/superseded:
 else                                -> continue_required
 ```
 
-`close_ready = (verdict == mission_close_review_passed)`.
+`close_ready = (verdict == mission_close_review_passed) && no close-path blockers remain`.
 
 `stop.allow` is true iff the loop is inactive/paused, or the verdict is in `{terminal_complete, mission_close_review_passed, needs_user}`.
 
@@ -320,7 +323,9 @@ Success:
     "mission_id": "demo"
   } }
 ```
-Idempotent: subsequent calls return `TERMINAL_ALREADY_COMPLETE`.
+Recovery exception: if the mission is already terminal but `CLOSEOUT.md`
+is missing, `close complete` repairs the missing artifact and returns
+success. Otherwise subsequent calls return `TERMINAL_ALREADY_COMPLETE`.
 
 ### `close record-review --clean|--findings-file <path>`
 

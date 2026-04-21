@@ -30,6 +30,14 @@ use crate::state::{self, Phase, PlanLevel, TaskStatus};
 use super::dag::{topo_sort, TopoOutcome};
 use super::parsed::{ParsedPlan, TaskSpec, HARD_EVIDENCE_KINDS, PLAN_LEVELS, TASK_KINDS};
 
+const REVIEW_PROFILES: &[&str] = &[
+    "code_bug_correctness",
+    "local_spec_intent",
+    "integration_intent",
+    "plan_quality",
+    "mission_close",
+];
+
 pub fn run(ctx: &Ctx) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let current = state::load(&paths)?;
@@ -228,6 +236,51 @@ fn validate(plan: &ParsedPlan, paths: &MissionPaths, state: &state::MissionState
     });
     let requested_level = parse_level("planning_level.requested", level.requested.as_deref());
     let effective_level = parse_level("planning_level.effective", level.effective.as_deref());
+    if level_rank(&effective_level) < level_rank(&requested_level) {
+        exit_with_validation_error(
+            "PLAN_INVALID",
+            "planning_level.effective must not be lower than planning_level.requested",
+            Some("Use an effective planning level equal to or higher than the requested level."),
+            json!({
+                "requested_level": level_str(&requested_level),
+                "effective_level": level_str(&effective_level),
+            }),
+        );
+    }
+    if let Some(recorded_requested) = state.plan.requested_level.as_ref() {
+        if recorded_requested != &requested_level {
+            exit_with_validation_error(
+                "PLAN_INVALID",
+                &format!(
+                    "PLAN.yaml planning_level.requested `{}` does not match recorded choose-level state `{}`",
+                    level_str(&requested_level),
+                    level_str(recorded_requested)
+                ),
+                Some("Re-run `codex1 plan choose-level` if you intend to change the planning level."),
+                json!({
+                    "recorded_requested_level": level_str(recorded_requested),
+                    "plan_requested_level": level_str(&requested_level),
+                }),
+            );
+        }
+    }
+    if let Some(recorded_effective) = state.plan.effective_level.as_ref() {
+        if recorded_effective != &effective_level {
+            exit_with_validation_error(
+                "PLAN_INVALID",
+                &format!(
+                    "PLAN.yaml planning_level.effective `{}` does not match recorded choose-level state `{}`",
+                    level_str(&effective_level),
+                    level_str(recorded_effective)
+                ),
+                Some("Re-run `codex1 plan choose-level` if you intend to change the planning level."),
+                json!({
+                    "recorded_effective_level": level_str(recorded_effective),
+                    "plan_effective_level": level_str(&effective_level),
+                }),
+            );
+        }
+    }
 
     let outcome = plan.outcome_interpretation.as_ref().unwrap_or_else(|| {
         exit_with_validation_error(
@@ -704,6 +757,27 @@ fn validate_tasks(
                     );
                 }
             }
+            if task.review_profiles.is_empty() {
+                exit_with_validation_error(
+                    "PLAN_INVALID",
+                    &format!("review task {id} has empty review_profiles"),
+                    Some("List at least one canonical reviewer profile."),
+                    json!({ "task_id": id }),
+                );
+            }
+            for profile in &task.review_profiles {
+                if !REVIEW_PROFILES.contains(&profile.as_str()) {
+                    exit_with_validation_error(
+                        "PLAN_INVALID",
+                        &format!("review task {id} has unknown review profile `{profile}`"),
+                        Some(&format!("Use one of {}.", REVIEW_PROFILES.join(", "))),
+                        json!({
+                            "task_id": id,
+                            "review_profile": profile,
+                        }),
+                    );
+                }
+            }
         }
     }
 
@@ -729,6 +803,22 @@ fn parse_level(field: &str, value: Option<&str>) -> PlanLevel {
             Some(&format!("Use one of {}.", PLAN_LEVELS.join(", "))),
             json!({ "field": field, "value": other }),
         ),
+    }
+}
+
+fn level_rank(level: &PlanLevel) -> u8 {
+    match level {
+        PlanLevel::Light => 0,
+        PlanLevel::Medium => 1,
+        PlanLevel::Hard => 2,
+    }
+}
+
+fn level_str(level: &PlanLevel) -> &'static str {
+    match level {
+        PlanLevel::Light => "light",
+        PlanLevel::Medium => "medium",
+        PlanLevel::Hard => "hard",
     }
 }
 
@@ -788,12 +878,4 @@ fn plan_hash(bytes: &[u8]) -> String {
         let _ = write!(out, "{b:02x}");
     }
     out
-}
-
-fn level_str(l: &PlanLevel) -> &'static str {
-    match l {
-        PlanLevel::Light => "light",
-        PlanLevel::Medium => "medium",
-        PlanLevel::Hard => "hard",
-    }
 }

@@ -78,7 +78,7 @@ codex1 --json outcome check --mission demo
 **Mutates state:** yes.
 **Arguments:** none beyond globals. Requires `--mission <id>`.
 **Success:** `{"ok":true,"mission_id":"demo","revision":1,"data":{"ratified_at":"2026-04-20T…Z"}}`
-**Errors:** `OUTCOME_INCOMPLETE`, `MISSION_NOT_FOUND`, `REVISION_CONFLICT` (if `--expect-revision` mismatches).
+**Errors:** `OUTCOME_INCOMPLETE`, `PLAN_INVALID` (if `PLAN.yaml` is already locked), `MISSION_NOT_FOUND`, `REVISION_CONFLICT` (if `--expect-revision` mismatches).
 **Phase status:** Implemented.
 **Example:**
 ```bash
@@ -292,7 +292,7 @@ codex1 --json review packet T4 --mission demo
 - `--findings-file <PATH>` — markdown file containing P0/P1/P2 findings.
 - `--reviewers <LIST>` — comma-separated reviewer actor ids (e.g. `code-reviewer,intent-reviewer`).
 **Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"review_task_id":"T4","verdict":"clean","category":"accepted_current","reviewers":["code-reviewer","intent-reviewer"]}}`
-**Errors:** `STALE_REVIEW_RECORD`, `REVIEW_FINDINGS_BLOCK` (if the call would push the consecutive-dirty counter over the threshold with no active repair path), `REPLAN_REQUIRED`, `REVISION_CONFLICT`, `MISSION_NOT_FOUND`.
+**Errors:** `STALE_REVIEW_RECORD`, `REVIEW_FINDINGS_BLOCK`, `REVISION_CONFLICT`, `MISSION_NOT_FOUND`. Crossing the dirty threshold still returns success; the success envelope sets `replan_triggered: true`.
 **Phase status:** Implemented.
 **Examples:**
 ```bash
@@ -340,8 +340,8 @@ codex1 --json replan check --mission demo
 **Arguments:**
 - `--reason <CODE>` (required) — e.g. `six_dirty`, `architecture_shift`.
 - `--supersedes <TASK_ID>` — optional; the task id whose boundary is superseded.
-**Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"reason":"six_dirty","supersedes":"T4","phase_after":"plan","plan_locked":false}}`
-**Errors:** `REVISION_CONFLICT`, `MISSION_NOT_FOUND`.
+**Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"reason":"six_dirty","supersedes":["T4"],"phase_after":"plan","plan_locked":false}}`
+**Errors:** `REVISION_CONFLICT`, `MISSION_NOT_FOUND`, `TERMINAL_ALREADY_COMPLETE`.
 **Phase status:** Implemented.
 **Example:**
 ```bash
@@ -445,11 +445,11 @@ codex1 --json close record-review --clean --mission demo
 
 ## codex1 close complete
 
-**Purpose:** Write `CLOSEOUT.md` and mark the mission terminal. Only succeeds if `close check` would pass.
+**Purpose:** Write `CLOSEOUT.md` and mark the mission terminal. Only succeeds if `close check` would pass. If the mission is already terminal but `CLOSEOUT.md` is missing, the command repairs the missing closeout and returns success.
 **Mutates state:** yes (sets `close.terminal_at`, advances `phase` to `terminal`).
 **Arguments:** none beyond globals.
 **Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"closeout_path":"PLANS/demo/CLOSEOUT.md","terminal_at":"2026-04-20T…Z","mission_id":"demo"}}`
-**Errors:** `CLOSE_NOT_READY`, `TERMINAL_ALREADY_COMPLETE` (idempotent re-invocation), `REVISION_CONFLICT`, `MISSION_NOT_FOUND`.
+**Errors:** `CLOSE_NOT_READY`, `TERMINAL_ALREADY_COMPLETE` (already terminal with an existing `CLOSEOUT.md`), `REVISION_CONFLICT`, `MISSION_NOT_FOUND`.
 **Phase status:** Implemented.
 **Example:**
 ```bash
@@ -462,7 +462,7 @@ codex1 --json close complete --mission demo
 
 **Purpose:** Unified mission status. Consumed by skills, the main thread, Ralph, and humans debugging mission state. Shares `verdict` / `close_ready` derivation with `codex1 close check` via `state::readiness`.
 **Mutates state:** no.
-**Arguments:** none beyond globals. Omitting `--mission` causes the command to walk up from CWD. If no mission resolves at all, it emits a graceful `stop.allow: true` envelope so Ralph never blocks a stray shell; if multiple missions resolve ambiguously, it returns `MISSION_NOT_FOUND` and requires explicit disambiguation.
+**Arguments:** none beyond globals. Omitting `--mission` causes the command to walk up from CWD. If no `PLANS/` tree resolves at all, it emits a graceful `stop.allow: true` envelope so Ralph never blocks a stray shell; if an in-repo `PLANS/` tree is empty, if multiple missions resolve ambiguously, or if an explicit selector is wrong, it returns `MISSION_NOT_FOUND`.
 **Success (Phase B target shape):**
 ```json
 {

@@ -622,6 +622,29 @@ fn review_packet_uses_recorded_absolute_proof_path() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn review_packet_omits_symlinked_relative_proof_path() {
+    use std::os::unix::fs::symlink;
+
+    let seeded = Seeded::with_targets(&["T2"]);
+    let outside = seeded.mission_dir.join("outside-proof.md");
+    fs::write(&outside, "# external proof\n").unwrap();
+    let proof = seeded.mission_dir.join("specs/T2/PROOF.md");
+    fs::remove_file(&proof).unwrap();
+    symlink(&outside, &proof).unwrap();
+
+    let packet = run_ok(
+        seeded.path(),
+        &["review", "packet", "T5", "--mission", MISSION],
+    );
+    let proofs = packet["data"]["proofs"].as_array().unwrap();
+    assert!(
+        proofs.is_empty(),
+        "symlinked mission-local proof must be omitted: {proofs:?}"
+    );
+}
+
 fn set_terminal(mission_dir: &Path) {
     let state_path = mission_dir.join("STATE.json");
     let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();

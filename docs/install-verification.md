@@ -14,13 +14,14 @@ git clone https://github.com/JoelEmanuelNilsson/codex1 && cd codex1
 make install-local
 ```
 
-`make install-local` runs `cargo build --release` and copies `target/release/codex1` to `$HOME/.local/bin/codex1`. To install elsewhere, pass `INSTALL_DIR=<path> make install-local`.
+`make install-local` runs `cargo build --release` and copies `target/release/codex1` to `$HOME/.local/bin/codex1`. To install elsewhere, pass `INSTALL_DIR=<path> make install-local`; use the same `INSTALL_DIR=<path>` when you run `make verify-installed` or `make verify-contract`.
 
 ## PATH
 
 ```bash
-echo "$PATH" | tr ':' '\n' | grep -qx "$HOME/.local/bin" \
-  || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
+echo "$PATH" | tr ':' '\n' | grep -qx "$INSTALL_DIR" \
+  || echo "export PATH=\"$INSTALL_DIR:\$PATH\"" >> ~/.zshrc
 exec "$SHELL"
 ```
 
@@ -29,8 +30,10 @@ If you use bash, replace `~/.zshrc` with `~/.bashrc` (or `~/.bash_profile` on ma
 ## Verify from /tmp (the critical step)
 
 ```bash
+INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 cd /tmp
-command -v codex1                           # must print $HOME/.local/bin/codex1
+PATH="$INSTALL_DIR:$PATH"
+command -v codex1                           # must print $INSTALL_DIR/codex1
 codex1 --help                               # must show the full command tree
 codex1 --json doctor                        # must print {"ok":true,...} without errors
 codex1 --json init --mission demo           # creates PLANS/demo/
@@ -44,6 +47,8 @@ Every one of these must succeed before you move on. If `codex1 status` prints an
 
 ```bash
 make verify-contract      # fmt + clippy + cargo test + install-local + smoke (verify-installed)
+# custom install location
+INSTALL_DIR=/absolute/custom/bin make install-local verify-installed
 ```
 
 The Makefile target chains `fmt clippy test install-local verify-installed`; `verify-installed` does the installed-binary smoke check.

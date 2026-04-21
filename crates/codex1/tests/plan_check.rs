@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Output;
 
 use assert_cmd::Command;
-use serde_json::Value;
+use serde_json::{json, Value};
 use tempfile::TempDir;
 
 fn cmd() -> Command {
@@ -358,6 +358,52 @@ fn plan_check_rejects_hash_change_while_locked_without_replan() {
         .contains("changed after the plan was locked"));
     assert_eq!(read_state(&mission_dir), before_state);
     assert_eq!(read_events(&mission_dir), before_events);
+}
+
+#[test]
+fn plan_check_rejects_downgraded_hard_level() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = seed_valid_mission(&tmp, "demo");
+    let state_path = mission_dir.join("STATE.json");
+    let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["phase"] = json!("plan");
+    state["plan"]["requested_level"] = json!("hard");
+    state["plan"]["effective_level"] = json!("hard");
+    fs::write(&state_path, serde_json::to_string_pretty(&state).unwrap()).unwrap();
+
+    let yaml = valid_4_task_yaml()
+        .replace("requested: medium", "requested: hard")
+        .replace("effective: medium", "effective: light");
+    write_plan(&mission_dir, &yaml);
+
+    let output = run_check(&tmp, "demo", &[]);
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    assert!(json["message"]
+        .as_str()
+        .unwrap()
+        .contains("planning_level.effective"));
+}
+
+#[test]
+fn plan_check_rejects_unknown_review_profile() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = seed_valid_mission(&tmp, "demo");
+    let yaml = valid_4_task_yaml().replace(
+        "review_profiles:\n      - code_bug_correctness\n",
+        "review_profiles:\n      - totally_invalid_profile\n",
+    );
+    write_plan(&mission_dir, &yaml);
+
+    let output = run_check(&tmp, "demo", &[]);
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    assert!(json["message"]
+        .as_str()
+        .unwrap()
+        .contains("unknown review profile"));
 }
 
 #[test]
@@ -1298,6 +1344,8 @@ tasks:
     spec: specs/T4/SPEC.md
     review_target:
       tasks: [T1, T2, T3]
+    review_profiles:
+      - code_bug_correctness
 
 risks:
   - risk: "r"

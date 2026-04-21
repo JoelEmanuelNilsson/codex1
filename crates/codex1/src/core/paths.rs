@@ -175,6 +175,28 @@ pub fn resolve_existing_mission_file(
     Ok(file)
 }
 
+pub fn resolve_existing_proof_file(
+    paths: &MissionPaths,
+    proof: &Path,
+) -> Result<PathBuf, CliError> {
+    if proof.is_absolute() {
+        if proof.is_file() {
+            return Ok(proof.to_path_buf());
+        }
+        return Err(CliError::ProofMissing {
+            path: proof.to_path_buf(),
+        });
+    }
+
+    let abs = paths.mission_dir.join(proof);
+    if !abs.is_file() {
+        return Err(CliError::ProofMissing { path: abs });
+    }
+    ensure_artifact_file_read_safe(paths, &abs, "proof file")
+        .map_err(|_| CliError::ProofMissing { path: abs.clone() })?;
+    Ok(abs)
+}
+
 /// Validate that CLI-owned mission writes cannot be redirected outside
 /// `PLANS/<mission-id>` by symlinked mission roots or artifact parents.
 pub fn ensure_mission_write_safe(paths: &MissionPaths) -> Result<(), CliError> {

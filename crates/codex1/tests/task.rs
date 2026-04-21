@@ -785,6 +785,39 @@ fn finish_with_missing_proof_file_errors() {
     assert!(json["context"]["path"].is_string());
 }
 
+#[cfg(unix)]
+#[test]
+fn finish_rejects_relative_proof_symlink_escape() {
+    use std::os::unix::fs::symlink;
+
+    let (tmp, dir) = seed_mission(PLAN_LINEAR_NO_REVIEW, &[]);
+    run(tmp.path(), &["task", "start", "T1", "--mission", "demo"]);
+    let outside = tmp.path().join("outside-proof.md");
+    write(&outside, "proof");
+    let mission_proof = dir.join("specs/T1/PROOF.md");
+    fs::create_dir_all(mission_proof.parent().unwrap()).unwrap();
+    if mission_proof.exists() {
+        fs::remove_file(&mission_proof).unwrap();
+    }
+    symlink(&outside, &mission_proof).unwrap();
+
+    let out = run(
+        tmp.path(),
+        &[
+            "task",
+            "finish",
+            "T1",
+            "--proof",
+            "specs/T1/PROOF.md",
+            "--mission",
+            "demo",
+        ],
+    );
+    assert!(!out.status.success());
+    let json = parse_json(&out);
+    assert_eq!(json["code"], "PROOF_MISSING");
+}
+
 #[test]
 fn finish_stale_revision_wins_over_missing_proof() {
     let (tmp, _dir) = seed_mission(PLAN_LINEAR_NO_REVIEW, &[]);

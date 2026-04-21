@@ -15,7 +15,8 @@ use crate::core::envelope::JsonOk;
 use crate::core::error::CliResult;
 use crate::core::mission::resolve_mission;
 use crate::core::paths::{
-    ensure_artifact_file_read_safe, resolve_existing_mission_file, MissionPaths,
+    ensure_artifact_file_read_safe, resolve_existing_mission_file, resolve_existing_proof_file,
+    MissionPaths,
 };
 use crate::state::{self, schema::MissionState};
 
@@ -113,18 +114,13 @@ fn proof_path_string(paths: &MissionPaths, state: &MissionState, task_id: &str) 
         .get(task_id)
         .and_then(|r| r.proof_path.as_deref())
     {
-        let path = Path::new(raw);
-        let abs = if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            paths.mission_dir.join(path)
-        };
-        if abs.is_file() {
+        if let Ok(abs) = resolve_existing_proof_file(paths, Path::new(raw)) {
             return Some(relative_from_repo(paths, &abs));
         }
     }
+    let rel = format!("specs/{task_id}/PROOF.md");
     let abs = paths.proof_file_for(task_id);
-    if abs.is_file() {
+    if resolve_existing_proof_file(paths, Path::new(&rel)).is_ok() {
         Some(relative_from_repo(paths, &abs))
     } else {
         None

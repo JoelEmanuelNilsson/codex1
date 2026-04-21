@@ -348,6 +348,8 @@ tasks:
     spec: specs/T5/SPEC.md
     review_target:
       tasks: [T4]
+    review_profiles:
+      - code_bug_correctness
 
 risks:
   - risk: x
@@ -492,6 +494,8 @@ tasks:
     spec: specs/T3/SPEC.md
     review_target:
       tasks: [T2]
+    review_profiles:
+      - code_bug_correctness
   - id: T4
     title: Replacement work
     kind: code
@@ -504,6 +508,8 @@ tasks:
     spec: specs/T5/SPEC.md
     review_target:
       tasks: [T4]
+    review_profiles:
+      - code_bug_correctness
 
 risks:
   - risk: x

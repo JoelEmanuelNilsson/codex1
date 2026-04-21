@@ -18,6 +18,15 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let state = state::load(&paths)?;
     state::check_expected_revision(ctx.expect_revision, &state)?;
+    if state.plan.locked {
+        return Err(CliError::PlanInvalid {
+            message: "cannot ratify OUTCOME.md after PLAN.yaml is locked".to_string(),
+            hint: Some(
+                "If the clarified destination changed, record a replan instead of re-ratifying the locked mission."
+                    .to_string(),
+            ),
+        });
+    }
     let outcome_path = paths.outcome();
     ensure_artifact_file_read_safe(&paths, &outcome_path, "OUTCOME.md")?;
     ensure_artifact_file_write_safe(&paths, &outcome_path, "OUTCOME.md")?;

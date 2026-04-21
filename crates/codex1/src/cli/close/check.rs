@@ -13,8 +13,7 @@ use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::CliResult;
 use crate::core::mission::resolve_mission;
-use crate::core::paths::ensure_mission_write_safe;
-use crate::core::paths::MissionPaths;
+use crate::core::paths::{ensure_mission_write_safe, resolve_existing_proof_file, MissionPaths};
 use crate::state::readiness::{self, Verdict};
 use crate::state::schema::{
     MissionCloseReviewState, MissionState, ReviewRecordCategory, ReviewVerdict, TaskStatus,
@@ -194,16 +193,12 @@ fn proof_exists(paths: &MissionPaths, proof_path: Option<&str>) -> Result<(), St
     let Some(raw) = proof_path else {
         return Ok(());
     };
-    let path = std::path::Path::new(raw);
-    let abs = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        paths.mission_dir.join(path)
-    };
-    if abs.is_file() {
-        Ok(())
-    } else {
-        Err(format!("proof file not found at {}", abs.display()))
+    match resolve_existing_proof_file(paths, std::path::Path::new(raw)) {
+        Ok(_) => Ok(()),
+        Err(crate::core::error::CliError::ProofMissing { path }) => {
+            Err(format!("proof file not found at {}", path.display()))
+        }
+        Err(err) => Err(err.to_string()),
     }
 }
 
