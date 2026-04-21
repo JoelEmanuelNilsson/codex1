@@ -538,6 +538,52 @@ fn record_review_expect_revision_mismatch_returns_conflict() {
     assert_eq!(json["context"]["actual"], 5);
 }
 
+/// Regression for test-adequacy round-1 P2-4: the mission-close review
+/// must support `NotStarted → Open → Passed` (dirty then clean) as a
+/// legitimate lifecycle. Existing tests only exercise
+/// `NotStarted → Passed` (clean first record) or `NotStarted → Open`
+/// (dirty first record); the Open → Passed transition is untested.
+#[test]
+fn record_review_open_then_clean_transitions_to_passed() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    seed_ready_for_mission_close_review(&mission_dir);
+    let findings = write_findings(&mission_dir, "round1.md", "# P1 finding\n");
+
+    // First record dirty — review_state → Open.
+    cmd()
+        .current_dir(tmp.path())
+        .args([
+            "close",
+            "record-review",
+            "--findings-file",
+            findings.to_str().unwrap(),
+            "--mission",
+            "demo",
+        ])
+        .assert()
+        .success();
+    let mid = read_state(&mission_dir);
+    assert_eq!(mid["close"]["review_state"], "open");
+
+    // Second record clean — review_state → Passed.
+    cmd()
+        .current_dir(tmp.path())
+        .args(["close", "record-review", "--clean", "--mission", "demo"])
+        .assert()
+        .success();
+    let after = read_state(&mission_dir);
+    assert_eq!(after["close"]["review_state"], "passed");
+    // And the mission-close dirty counter stays where the dirty record
+    // left it (1), because clean does not reset the mission-close target
+    // — only the corresponding `apply_clean` path in review/record.rs
+    // resets per-task counters.
+    assert_eq!(
+        after["replan"]["consecutive_dirty_by_target"]["__mission_close__"],
+        1
+    );
+}
+
 // ---------------------------------------------------------------------------
 // complete
 // ---------------------------------------------------------------------------

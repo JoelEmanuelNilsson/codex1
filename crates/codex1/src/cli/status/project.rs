@@ -20,9 +20,22 @@ pub fn build(state: &MissionState, tasks: &[PlanTask]) -> Value {
     let close_ready = readiness::close_ready(state);
     let stop = stop_projection(state, verdict);
 
-    let wave = next_ready_wave(tasks, state);
-    let reviews_ready = ready_reviews(tasks, state);
-    let repair_targets = dirty_repair_targets(tasks, state);
+    // When the plan is not locked (fresh mission, or post-replan
+    // `replan record` that cleared the lock), wave / review derivation
+    // is meaningless: the caller is supposed to be planning, not
+    // picking tasks. Short-circuit to empty projections so a skill
+    // reading `ready_tasks` nonempty + `next_action.kind: plan` never
+    // gets mixed signals. Mirrors the guard at
+    // `cli/plan/waves.rs:66-79`.
+    let (wave, reviews_ready, repair_targets) = if state.plan.locked {
+        (
+            next_ready_wave(tasks, state),
+            ready_reviews(tasks, state),
+            dirty_repair_targets(tasks, state),
+        )
+    } else {
+        (None, Vec::new(), Vec::new())
+    };
 
     let next_action = derive_next_action(
         state,
@@ -201,6 +214,30 @@ fn derive_next_action(
             "tasks": ids,
             "parallel_safe": true,
             "hint": format!("Run wave {} with $execute.", w.wave_id),
+        });
+    }
+    // Distinguish an empty/missing plan from a plan that deadlocked on
+    // work: if any task is `awaiting_review` with no ready review
+    // target, surface the concrete block instead of the "plan may be
+    // missing" message. Matches the e2e audit remediation at
+    // `docs/audits/round-1/e2e-walkthrough.md` P2-1b.
+    let awaiting: Vec<&String> = state
+        .tasks
+        .iter()
+        .filter(|(_, r)| matches!(r.status, crate::state::schema::TaskStatus::AwaitingReview))
+        .map(|(id, _)| id)
+        .collect();
+    if !awaiting.is_empty() {
+        let ids = awaiting
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return json!({
+            "kind": "blocked",
+            "reason": format!(
+                "tasks {ids} are awaiting review but no review task is ready; check the DAG for review-loop deadlock"
+            ),
         });
     }
     json!({

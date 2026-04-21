@@ -31,6 +31,7 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string());
 
     if ctx.dry_run {
+        state::check_expected_revision(ctx.expect_revision, &state)?;
         let would_phase = advance_phase(&state.phase);
         let env = JsonOk::new(
             Some(state.mission_id.clone()),
@@ -49,6 +50,13 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
     let outcome_path = paths.outcome();
     let rewritten_outcome = rewrite_status_to_ratified(&report.frontmatter_raw, &report.body)?;
 
+    // Mutate STATE.json first. OUTCOME.md is the auxiliary artifact; if
+    // the state bump fails the file must not already read `ratified`,
+    // otherwise a subsequent ratify attempt sees a half-flipped world.
+    // The reverse order (write OUTCOME.md first, then mutate state) was
+    // an atomicity bug: a crash between the two writes would leave
+    // OUTCOME.md `ratified` on disk while `state.outcome.ratified`
+    // remained `false`, breaking the file-vs-state consistency invariant.
     let mutation = state::mutate(
         &paths,
         ctx.expect_revision,
@@ -61,10 +69,10 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
             state_mut.outcome.ratified = true;
             state_mut.outcome.ratified_at = Some(ratified_at.clone());
             state_mut.phase = advance_phase(&state_mut.phase);
-            atomic_write(&outcome_path, rewritten_outcome.as_bytes())?;
             Ok(())
         },
     )?;
+    atomic_write(&outcome_path, rewritten_outcome.as_bytes())?;
 
     let env = JsonOk::new(
         Some(state.mission_id.clone()),

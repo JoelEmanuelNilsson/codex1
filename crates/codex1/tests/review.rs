@@ -615,6 +615,62 @@ fn late_same_boundary_is_flagged() {
     assert!(!warnings.is_empty(), "expected late warning");
 }
 
+/// Regression for test-adequacy round-1 P2-1: a `late_same_boundary`
+/// record classifies only — it must NOT move the
+/// `consecutive_dirty_by_target` counter, and must NOT reset an
+/// existing streak. The existing `late_same_boundary_is_flagged` test
+/// only checks the category string, not the counter invariant.
+#[test]
+fn late_same_boundary_does_not_bump_or_reset_dirty_counter() {
+    // Seed a mission with an existing dirty streak on T2 (say 3). Then
+    // start T5, bump revision (to force late classification), and
+    // record a dirty finding. The counter for T2 must stay at exactly 3.
+    let s = Seeded::new();
+    // Pre-seed the dirty counter. Also write a findings file for the
+    // dirty path so the record is not --clean.
+    let state_path = s.mission_dir.join("STATE.json");
+    let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["replan"]["consecutive_dirty_by_target"] = serde_json::json!({
+        "T2": 3,
+        "T3": 3,
+    });
+    fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
+
+    let findings = s.mission_dir.join("findings.md");
+    fs::write(&findings, "# P1 finding\n").unwrap();
+
+    run_ok(s.path(), &["review", "start", "T5", "--mission", MISSION]);
+    bump_revision_without_mutation(&s.mission_dir);
+    let ok = run_ok(
+        s.path(),
+        &[
+            "review",
+            "record",
+            "T5",
+            "--findings-file",
+            findings.to_str().unwrap(),
+            "--mission",
+            MISSION,
+        ],
+    );
+    assert_eq!(ok["data"]["category"], "late_same_boundary");
+    // Counter must be untouched — neither bumped (dirty path) nor reset
+    // (clean path would zero it, but clean is also gated on
+    // AcceptedCurrent).
+    let state_after: Value =
+        serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    assert_eq!(
+        state_after["replan"]["consecutive_dirty_by_target"]["T2"],
+        3
+    );
+    assert_eq!(
+        state_after["replan"]["consecutive_dirty_by_target"]["T3"],
+        3
+    );
+    // replan.triggered must stay false (would only flip at 6).
+    assert_eq!(state_after["replan"]["triggered"], false);
+}
+
 #[test]
 fn status_without_start_returns_null_record() {
     let s = Seeded::new();

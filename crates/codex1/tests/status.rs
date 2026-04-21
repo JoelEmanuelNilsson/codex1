@@ -505,6 +505,93 @@ fn revision_matches_state_revision() {
     assert_eq!(json["mission_id"], "demo");
 }
 
+/// Regression for e2e-walkthrough round-1 P2-2: when the plan is
+/// unlocked (e.g. after `replan record`), `ready_tasks` must be empty
+/// so skills reading `ready_tasks nonempty + next_action.kind=plan`
+/// never get mixed signals.
+#[test]
+fn unlocked_plan_emits_empty_ready_tasks_and_review_required() {
+    let fx = Fixture::new("demo");
+    let mut state = base_state("demo");
+    state.outcome.ratified = true;
+    state.plan.locked = false;
+    // Seed task records that WOULD otherwise show up as ready.
+    state
+        .tasks
+        .insert("T1".into(), task("T1", TaskStatus::Ready).1);
+    state
+        .tasks
+        .insert("T2".into(), task("T2", TaskStatus::Pending).1);
+    fx.write_state(&state);
+    fx.write_plan(simple_plan());
+
+    let json = fx.status();
+    assert_eq!(json["data"]["plan_locked"], false);
+    assert_eq!(json["data"]["verdict"], "needs_user");
+    assert_eq!(json["data"]["next_action"]["kind"], "plan");
+    assert_eq!(json["data"]["ready_tasks"], serde_json::json!([]));
+    assert_eq!(json["data"]["review_required"], serde_json::json!([]));
+    assert_eq!(json["data"]["parallel_safe"], false);
+}
+
+/// Regression for e2e-walkthrough round-1 P2-1b: the "No ready wave
+/// derivable" fallback must not claim the plan is missing/empty when
+/// the real blocker is a task sitting in `awaiting_review` with no
+/// ready review task.
+#[test]
+fn blocked_surfaces_awaiting_review_when_plan_is_valid() {
+    let fx = Fixture::new("demo");
+    let mut state = base_state("demo");
+    state.outcome.ratified = true;
+    state.plan.locked = true;
+    state.plan.task_ids = vec!["T1".into(), "T2".into(), "T3".into()];
+    // Seed tasks: T1 complete, T2 awaiting_review, T3 (the review)
+    // already complete. No wave is ready (nothing to start), but T2
+    // is still awaiting_review. The projection must surface that
+    // concrete block instead of the "plan may be missing" fallback.
+    state
+        .tasks
+        .insert("T1".into(), task("T1", TaskStatus::Complete).1);
+    state
+        .tasks
+        .insert("T2".into(), task("T2", TaskStatus::AwaitingReview).1);
+    state
+        .tasks
+        .insert("T3".into(), task("T3", TaskStatus::Complete).1);
+    let plan = r"mission_id: demo
+tasks:
+  - id: T1
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+  - id: T2
+    kind: code
+    depends_on: [T1]
+    spec: specs/T2/SPEC.md
+  - id: T3
+    kind: review
+    depends_on: [T1]
+    spec: specs/T3/SPEC.md
+    review_target:
+      tasks: [T1]
+";
+    fx.write_plan(plan);
+    fx.write_state(&state);
+    let json = fx.status();
+    // The derived next_action must be `blocked`, and its reason must
+    // name the awaiting_review task.
+    assert_eq!(json["data"]["next_action"]["kind"], "blocked");
+    let reason = json["data"]["next_action"]["reason"].as_str().unwrap();
+    assert!(
+        reason.contains("T2") && reason.contains("awaiting review"),
+        "reason should mention the awaiting-review task: {reason}"
+    );
+    assert!(
+        !reason.contains("PLAN.yaml may be missing"),
+        "reason should not claim PLAN.yaml is missing when it is valid: {reason}"
+    );
+}
+
 #[test]
 fn active_loop_with_stop_allowing_verdict_does_not_contradict_itself() {
     // Loop is active-unpaused but verdict is `needs_user` (plan not

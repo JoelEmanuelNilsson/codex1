@@ -31,6 +31,45 @@ use self::events::{append_event, Event};
 use self::fs_atomic::atomic_write;
 pub use self::schema::*;
 
+/// Enforce `--expect-revision <N>` against an already-loaded state.
+///
+/// Used by idempotent / dry-run short-circuits so every command path
+/// that honors `--expect-revision` applies strict-equality semantics,
+/// regardless of whether the call actually lands a mutation. See
+/// `docs/cli-contract-schemas.md:74` and `docs/mission-anatomy.md:51`.
+pub fn check_expected_revision(
+    expected: Option<u64>,
+    state: &MissionState,
+) -> Result<(), CliError> {
+    if let Some(expected) = expected {
+        if expected != state.revision {
+            return Err(CliError::RevisionConflict {
+                expected,
+                actual: state.revision,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Fail closed on work-phase mutations when the plan is not locked.
+///
+/// `codex1 replan record` unlocks the plan (`plan.locked = false`) and
+/// the next expected action is `plan`. Task/review mutations during
+/// that window can attach state to tasks whose spec has since been
+/// changed (or superseded) — a state-corruption regression. Mirrors
+/// the blocker at `cli/close/check.rs:84` and the short-circuit at
+/// `cli/plan/waves.rs:66`.
+pub fn require_plan_locked(state: &MissionState) -> Result<(), CliError> {
+    if state.plan.locked {
+        return Ok(());
+    }
+    Err(CliError::PlanInvalid {
+        message: "plan is not locked; cannot mutate tasks or reviews until it is".to_string(),
+        hint: Some("Run `codex1 plan check` to lock PLAN.yaml first.".to_string()),
+    })
+}
+
 /// Read-only state load. Takes a shared fs2 lock during the read.
 pub fn load(paths: &MissionPaths) -> Result<MissionState, CliError> {
     let state_path = paths.state();
@@ -84,10 +123,26 @@ where
     mutator(&mut state)?;
     state.revision = state.revision.saturating_add(1);
     state.events_cursor = state.events_cursor.saturating_add(1);
-    let serialized = serde_json::to_vec_pretty(&state)?;
-    atomic_write(&state_path, &serialized)?;
+    // Ordering: append EVENTS.jsonl FIRST, then persist STATE.json.
+    //
+    // The invariant at `docs/mission-anatomy.md:62` is "the `seq` of the
+    // latest line matches `state.events_cursor`". A crash between the
+    // two persistent writes leaves the system in one of two shapes:
+    //
+    // - Events-before-state (current order): EVENTS has `seq = N+1` but
+    //   STATE still reads `events_cursor = N`. An external sweep can
+    //   detect "trailing JSONL line beyond events_cursor" and flag it.
+    // - State-before-events (prior order): STATE claims `events_cursor
+    //   = N+1` with no matching JSONL line. The audit trail is missing
+    //   a mutation, which is silently wrong.
+    //
+    // The trailing-line shape is recoverable (the operation can be
+    // retried and will re-append, keeping the audit log append-only);
+    // the missing-line shape is not. Prefer the recoverable failure.
     let event = Event::new(state.events_cursor, event_kind, event_payload);
     append_event(&paths.events(), &event)?;
+    let serialized = serde_json::to_vec_pretty(&state)?;
+    atomic_write(&state_path, &serialized)?;
     drop(lock);
     Ok(Mutation {
         new_revision: state.revision,

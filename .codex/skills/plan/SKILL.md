@@ -187,7 +187,7 @@ Mission-close review is mandatory at the end even if no review task is listed th
 If `$plan` is invoked during execution for a replan:
 
 - Append new tasks with new IDs; never reuse IDs.
-- Record `codex1 replan record --supersedes <id>` for each task that is being superseded.
+- Record the replan with `codex1 replan record --reason <code> --supersedes <id>` (pass `--supersedes` once per task being superseded; `--reason` is mandatory). Valid reason codes live in `crates/codex1/src/cli/replan/triggers.rs::ALLOWED_REASONS` (e.g. `six_dirty`, `scope_change`, `user_request`).
 - Re-run `codex1 --json plan check` before locking.
 - Update `planning_process.evidence` with a new `advisor` or `plan_review` entry that explains why the replan is needed.
 

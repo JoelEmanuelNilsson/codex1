@@ -26,17 +26,17 @@ Run the loop below until `task next` returns a kind outside `run_task` / `run_wa
 ### Step 1. Read the next action
 
 ```bash
-codex1 --json task next
+codex1 --json status
 ```
 
-Inspect `data.next.kind`:
+`codex1 --json status` is the single source of truth (per `docs/codex1-rebuild-handoff/01-product-flow.md:151`); `task next` narrows to work-only kinds and cannot surface `repair` or `replan`. Inspect `data.next_action.kind`:
 
 - `run_task` — run this single task. The main thread may run it serially (for small/local edits) or spawn one worker.
 - `run_wave` with `parallel_safe: true` — spawn one worker per task in `tasks`.
 - `run_wave` with `parallel_safe: false` — run the wave's tasks sequentially (one at a time), respecting `blockers` / `exclusive_resources`.
 - `run_review` — return to the main thread with: "Next action is a review task. Hand to `$review-loop`." Do not record findings here.
 - `mission_close_review` — return with: "Hand to `$review-loop` in mission-close mode."
-- `repair` — run the named repair task (same flow as `run_task`), then return to Step 1.
+- `repair` — the status payload lists the target ids under `data.next_action.task_ids`. Run the named repair task (same flow as `run_task`), then return to Step 1.
 - `replan` — return with: "Replan required. Hand to `$plan replan`."
 
 `$execute` returns control to the main thread on `run_review`, `mission_close_review`, and `replan`. It does not call into other skills.

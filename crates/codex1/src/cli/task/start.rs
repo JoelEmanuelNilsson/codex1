@@ -17,6 +17,9 @@ use super::lifecycle::{deps_satisfied, ensure_task_record, load_plan, now_rfc333
 pub fn run(task_id: &str, ctx: &Ctx) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let state = state::load(&paths)?;
+    // Refuse to start tasks while the plan is unlocked (e.g. during a
+    // pending replan). See `state::require_plan_locked` for rationale.
+    state::require_plan_locked(&state)?;
     let plan = load_plan(&paths)?;
 
     let Some(plan_task) = plan.get(task_id) else {
@@ -39,6 +42,11 @@ pub fn run(task_id: &str, ctx: &Ctx) -> CliResult<()> {
 
     // Idempotent: already in progress → no mutation.
     if matches!(current_status, TaskStatus::InProgress) {
+        // Stale-writer protection applies even when the call does no
+        // work — otherwise `--expect-revision` silently succeeds
+        // against a state that has moved on. See
+        // `docs/cli-contract-schemas.md:74` (strict equality).
+        state::check_expected_revision(ctx.expect_revision, &state)?;
         let started_at = record
             .and_then(|r| r.started_at.clone())
             .unwrap_or_default();
@@ -67,6 +75,7 @@ pub fn run(task_id: &str, ctx: &Ctx) -> CliResult<()> {
     }
 
     if ctx.dry_run {
+        state::check_expected_revision(ctx.expect_revision, &state)?;
         let env = JsonOk::new(
             Some(state.mission_id.clone()),
             Some(state.revision),

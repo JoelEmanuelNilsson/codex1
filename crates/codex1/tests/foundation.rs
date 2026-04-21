@@ -179,3 +179,163 @@ fn events_jsonl_is_append_only_friendly() {
     let content = fs::read_to_string(&events).unwrap();
     assert_eq!(content, "");
 }
+
+/// Regression for test-adequacy round-1 P2-3: assert the full error
+/// envelope shape for three representative error codes so a regression
+/// that silently drops `hint`, flips `retryable`, or reshapes
+/// `context` is caught.
+#[test]
+fn error_envelope_shape_is_stable_across_representative_codes() {
+    // MISSION_NOT_FOUND — hint expected, retryable=false.
+    let tmp = TempDir::new().unwrap();
+    let json = parse_stdout_json(
+        &cmd()
+            .current_dir(tmp.path())
+            .args(["status", "--mission", "does-not-exist"])
+            .output()
+            .expect("runs"),
+    );
+    assert_eq!(json["ok"], Value::Bool(false));
+    assert_eq!(json["code"], "MISSION_NOT_FOUND");
+    assert!(json["message"].as_str().is_some_and(|m| !m.is_empty()));
+    assert_eq!(json["retryable"], Value::Bool(false));
+    assert!(json["hint"].is_string());
+
+    // REVISION_CONFLICT — retryable=true, context has expected+actual.
+    let tmp = TempDir::new().unwrap();
+    init_demo(&tmp, "demo");
+    let json = parse_stdout_json(
+        &cmd()
+            .current_dir(tmp.path())
+            .args([
+                "loop",
+                "activate",
+                "--mission",
+                "demo",
+                "--expect-revision",
+                "99",
+            ])
+            .output()
+            .expect("runs"),
+    );
+    assert_eq!(json["code"], "REVISION_CONFLICT");
+    assert_eq!(json["retryable"], Value::Bool(true));
+    assert_eq!(json["context"]["expected"], 99);
+    // Actual revision for a freshly-init'd mission is 0.
+    assert_eq!(json["context"]["actual"], 0);
+    assert!(json["hint"].is_string());
+}
+
+/// Regression for test-adequacy round-1 P2-2 / correctness-invariants
+/// P2-1: the fs2 exclusive lock on `STATE.json.lock` must serialize
+/// concurrent writers. Two `codex1 loop activate` processes racing on
+/// the same mission with `--expect-revision 0` must produce exactly
+/// one success (revision=1) and exactly one `REVISION_CONFLICT`. The
+/// test proves (a) lock serialization and (b) `--expect-revision`
+/// fail-closed under contention.
+#[test]
+fn concurrent_loop_activate_serializes_via_fs2_lock() {
+    use std::sync::Arc;
+    use std::thread;
+
+    let tmp = TempDir::new().unwrap();
+    init_demo(&tmp, "demo");
+    let root = Arc::new(tmp.path().to_path_buf());
+
+    let r1 = root.clone();
+    let h1 = thread::spawn(move || {
+        Command::cargo_bin("codex1")
+            .expect("binary builds")
+            .current_dir(&*r1)
+            .args([
+                "loop",
+                "activate",
+                "--mission",
+                "demo",
+                "--expect-revision",
+                "0",
+            ])
+            .output()
+            .expect("runs")
+    });
+    let r2 = root.clone();
+    let h2 = thread::spawn(move || {
+        Command::cargo_bin("codex1")
+            .expect("binary builds")
+            .current_dir(&*r2)
+            .args([
+                "loop",
+                "activate",
+                "--mission",
+                "demo",
+                "--expect-revision",
+                "0",
+            ])
+            .output()
+            .expect("runs")
+    });
+    let o1 = h1.join().unwrap();
+    let o2 = h2.join().unwrap();
+
+    let successes: usize = [&o1, &o2].iter().filter(|o| o.status.success()).count();
+    assert_eq!(
+        successes,
+        1,
+        "exactly one activate should succeed; got both success={:?}, both stdout=\n{}\n---\n{}",
+        (o1.status.success(), o2.status.success()),
+        String::from_utf8_lossy(&o1.stdout),
+        String::from_utf8_lossy(&o2.stdout),
+    );
+    // The other one must surface REVISION_CONFLICT (not a raw deadlock /
+    // corrupt error, and not NotImplemented).
+    let failing = if o1.status.success() { &o2 } else { &o1 };
+    let json: Value = serde_json::from_slice(&failing.stdout).expect("failing run emits JSON");
+    assert_eq!(json["ok"], Value::Bool(false));
+    assert_eq!(json["code"], "REVISION_CONFLICT");
+
+    // Final revision on disk is exactly 1 (one successful write).
+    let state: Value = serde_json::from_str(
+        &fs::read_to_string(tmp.path().join("PLANS/demo/STATE.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(state["revision"], 1);
+    // EVENTS.jsonl has exactly one new event line with seq=1.
+    let events = fs::read_to_string(tmp.path().join("PLANS/demo/EVENTS.jsonl")).unwrap();
+    let lines: Vec<&str> = events.lines().filter(|l| !l.is_empty()).collect();
+    assert_eq!(
+        lines.len(),
+        1,
+        "exactly one event line expected; got {}: {events}",
+        lines.len()
+    );
+    let evt: Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(evt["seq"], 1);
+}
+
+/// Regression for test-adequacy round-1 P1-4: a corrupt PLAN.yaml must
+/// surface `PLAN_INVALID` through the named-conversion error path so
+/// callers get the canonical code. (The reviewer asked for PARSE_ERROR
+/// as an alternative, but the production path at
+/// `cli/plan/check.rs:52` translates bad YAML into `CliError::PlanInvalid`
+/// with a hint — which is the actually-reachable shape.)
+#[test]
+fn corrupt_plan_yaml_returns_plan_invalid_with_hint() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    // Overwrite the scaffolded PLAN.yaml with invalid YAML.
+    fs::write(
+        mission_dir.join("PLAN.yaml"),
+        "tasks:\n  - id: T1\n    depends_on: [unterminated",
+    )
+    .unwrap();
+    let json = parse_stdout_json(
+        &cmd()
+            .current_dir(tmp.path())
+            .args(["plan", "check", "--mission", "demo"])
+            .output()
+            .expect("runs"),
+    );
+    assert_eq!(json["ok"], Value::Bool(false));
+    assert_eq!(json["code"], "PLAN_INVALID");
+    assert!(json["hint"].is_string());
+}

@@ -69,6 +69,13 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
     // Peek at state for dry-run (and to surface terminal/stale errors before
     // we enter the mutation closure in the wet path).
     let peek = state::load(&paths)?;
+    // Refuse to record a review while the plan is unlocked. We allow
+    // the terminal-contamination path above to still return its
+    // specific error code (it runs after classification); the
+    // plan-locked guard kicks in only when the state is non-terminal.
+    if peek.close.terminal_at.is_none() {
+        state::require_plan_locked(&peek)?;
+    }
     let peek_category = classify(&ClassifyInput {
         state: &peek,
         review_task_id: inputs.task_id,
@@ -91,6 +98,7 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
     }
 
     if ctx.dry_run {
+        state::check_expected_revision(ctx.expect_revision, &peek)?;
         let stored_findings = findings_path.map(|p| {
             relative_from_repo(&paths, &paths.review_file_for(inputs.task_id))
                 .or_else(|| Some(p.display().to_string()))

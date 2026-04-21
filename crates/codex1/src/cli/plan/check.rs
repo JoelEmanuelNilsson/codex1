@@ -72,6 +72,10 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
     let already_locked_same = hash_matches && !task_ids_missing;
 
     if ctx.dry_run || already_locked_same {
+        // Enforce `--expect-revision` on short-circuits too, matching
+        // the strict-equality invariant in
+        // `docs/cli-contract-schemas.md:74`.
+        state::check_expected_revision(ctx.expect_revision, &current)?;
         // Dry-run reports `locked: false` regardless of current state
         // (the invariant is "this call did not mutate"). Idempotent
         // re-runs report `locked: true` to confirm the plan is locked.
@@ -247,6 +251,15 @@ fn validate(plan: &ParsedPlan, paths: &MissionPaths) -> Summary {
     // Task-level validation.
     let task_ids = validate_tasks(&plan.tasks, paths);
 
+    // Review-loop deadlock: a non-review task `Tx` depends on a task
+    // `Td` that is the review target of some review `Tr`, AND `Tr`
+    // (transitively) depends on `Tx`. `Td` can only become Complete
+    // via `Tr` clean review, but `Tr` cannot start until `Tx` is
+    // Complete — unreachable. Detect this before locking so skills do
+    // not land a plan that deadlocks on first execution. See
+    // `docs/audits/round-1/e2e-walkthrough.md` P2-1.
+    detect_review_loop_deadlock(&plan.tasks);
+
     // Hard-plan evidence gate.
     let hard_evidence_count = process
         .evidence
@@ -319,6 +332,97 @@ fn validate(plan: &ParsedPlan, paths: &MissionPaths) -> Summary {
         effective_level,
         task_ids,
     }
+}
+
+/// Detect the review-loop deadlock shape described in the module
+/// docstring. Exits with a structured `PLAN_INVALID` envelope on hit
+/// and returns normally when the plan is reachable.
+fn detect_review_loop_deadlock(tasks: &[TaskSpec]) {
+    use std::collections::{BTreeMap, BTreeSet};
+    // Build dep lookup keyed by id (exclude entries with missing ids —
+    // earlier passes already reject those).
+    let deps_by_id: BTreeMap<String, BTreeSet<String>> = tasks
+        .iter()
+        .filter_map(|t| {
+            let id = t.id.clone()?;
+            let deps = t.depends_on.clone().unwrap_or_default();
+            Some((id, deps.into_iter().collect()))
+        })
+        .collect();
+    // For every review task, enumerate the set of ids that (transitively)
+    // depend on it — these are the tasks that cannot run until the
+    // review clears.
+    for review_task in tasks.iter().filter(|t| t.kind.as_deref() == Some("review")) {
+        let Some(review_id) = review_task.id.clone() else {
+            continue;
+        };
+        let Some(target) = review_task.review_target.as_ref() else {
+            continue;
+        };
+        let targets: BTreeSet<String> = target.tasks.iter().cloned().collect();
+        let upstream = ancestors(&review_id, &deps_by_id);
+        // Any non-review task whose `depends_on` contains one of the
+        // review's targets AND that also appears upstream of the
+        // review is a deadlock: the target cannot progress without
+        // the review, and the review cannot progress without the task.
+        for task in tasks {
+            let Some(tid) = task.id.clone() else { continue };
+            if task.kind.as_deref() == Some("review") {
+                continue;
+            }
+            if !upstream.contains(&tid) {
+                continue;
+            }
+            let Some(task_deps) = task.depends_on.as_ref() else {
+                continue;
+            };
+            if let Some(bad_dep) = task_deps.iter().find(|d| targets.contains(*d)) {
+                exit_with_validation_error(
+                    "PLAN_INVALID",
+                    &format!(
+                        "review-loop deadlock: task `{tid}` depends on `{bad_dep}` which can only be reviewed by `{review_id}`, but `{review_id}` transitively depends on `{tid}`"
+                    ),
+                    Some(
+                        "Either move the review after its targets (remove the upstream dep) or drop the circular dep.",
+                    ),
+                    json!({
+                        "task_id": tid,
+                        "dep": bad_dep,
+                        "review_task_id": review_id,
+                    }),
+                );
+            }
+        }
+    }
+}
+
+/// Return the set of task ids that are (transitively) depended upon by
+/// `start`. Self is not included. Walks the `depends_on` graph upward
+/// with a visited-set to avoid infinite loops on malformed cycles
+/// (cycles are caught separately by `topo_sort`).
+fn ancestors(
+    start: &str,
+    deps_by_id: &std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+) -> std::collections::BTreeSet<String> {
+    use std::collections::BTreeSet;
+    let mut out: BTreeSet<String> = BTreeSet::new();
+    let mut stack: Vec<String> = deps_by_id
+        .get(start)
+        .map(|ds| ds.iter().cloned().collect())
+        .unwrap_or_default();
+    while let Some(id) = stack.pop() {
+        if !out.insert(id.clone()) {
+            continue;
+        }
+        if let Some(ds) = deps_by_id.get(&id) {
+            for d in ds {
+                if !out.contains(d) {
+                    stack.push(d.clone());
+                }
+            }
+        }
+    }
+    out
 }
 
 fn validate_tasks(tasks: &[TaskSpec], paths: &MissionPaths) -> Vec<String> {

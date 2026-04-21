@@ -50,6 +50,7 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string());
 
     if ctx.dry_run {
+        state::check_expected_revision(ctx.expect_revision, &current)?;
         emit_success(
             &current.mission_id,
             Some(current.revision),

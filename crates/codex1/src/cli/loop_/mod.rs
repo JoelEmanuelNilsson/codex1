@@ -14,7 +14,7 @@ use crate::core::error::{CliError, CliResult};
 use crate::core::mission::resolve_mission;
 use crate::core::paths::MissionPaths;
 use crate::state;
-use crate::state::schema::{LoopMode, LoopState, MissionState};
+use crate::state::schema::{LoopMode, LoopState};
 
 pub mod activate;
 pub mod deactivate;
@@ -72,11 +72,11 @@ pub(crate) fn run_transition(
             // Enforce --expect-revision first: callers that pinned the
             // revision want to know the state moved out from under them,
             // even if the transition is also semantically invalid.
-            check_expected_revision(ctx, &current)?;
+            state::check_expected_revision(ctx.expect_revision, &current)?;
             Err(err)
         }
         Transition::NoOp => {
-            check_expected_revision(ctx, &current)?;
+            state::check_expected_revision(ctx.expect_revision, &current)?;
             emit(
                 &paths,
                 current.revision,
@@ -89,7 +89,7 @@ pub(crate) fn run_transition(
         }
         Transition::Apply(target) => {
             if ctx.dry_run {
-                check_expected_revision(ctx, &current)?;
+                state::check_expected_revision(ctx.expect_revision, &current)?;
                 emit(
                     &paths,
                     current.revision,
@@ -116,18 +116,6 @@ pub(crate) fn run_transition(
             Ok(())
         }
     }
-}
-
-fn check_expected_revision(ctx: &Ctx, state: &MissionState) -> CliResult<()> {
-    if let Some(expected) = ctx.expect_revision {
-        if expected != state.revision {
-            return Err(CliError::RevisionConflict {
-                expected,
-                actual: state.revision,
-            });
-        }
-    }
-    Ok(())
 }
 
 fn emit(

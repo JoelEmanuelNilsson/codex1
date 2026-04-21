@@ -48,10 +48,12 @@ description: >
 
 ## Reviewer profiles
 
+Models follow the reviewer matrix in `docs/codex1-rebuild-handoff/04-roles-models-prompts.md`.
+
 | Profile | When | Model | Lanes |
 | --- | --- | --- | --- |
-| `code_bug_correctness` | Code-producing or code-heavy repair task | `claude-opus-4-7` high | 1-2 |
-| `local_spec_intent` | One task/spec versus intended behavior | `claude-opus-4-7` or `gpt-5.4` high | 1 |
+| `code_bug_correctness` | Code-producing or code-heavy repair task | `gpt-5.3-codex` high | 1-2 |
+| `local_spec_intent` | One task/spec versus intended behavior | `gpt-5.4` high | 1 |
 | `integration_intent` | Multi-task / wave / subsystem interaction | `gpt-5.4` high | 1 |
 | `plan_quality` | Plan critique before lock (hard plans) | `gpt-5.4` high or xhigh | 1-2 |
 | `mission_close` | Final mission-close review | `gpt-5.4` high | 2 for important missions |

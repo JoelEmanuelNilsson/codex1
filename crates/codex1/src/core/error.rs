@@ -177,3 +177,78 @@ impl CliError {
 }
 
 pub type CliResult<T> = Result<T, CliError>;
+
+#[cfg(test)]
+mod tests {
+    //! Unit-level coverage for the envelope shape and `code()` mapping of
+    //! reserved variants that the integration tests cannot always exercise
+    //! (`ConfigMissing`, `NotImplemented`, `ReplanRequired`, plus the
+    //! transparent `Io` passthrough). Keeps the `CliError` contract
+    //! regression-tested even when no live command path produces them.
+
+    use super::*;
+
+    #[test]
+    fn config_missing_envelope_shape_is_stable() {
+        let err = CliError::ConfigMissing {
+            message: "auth not set".to_string(),
+        };
+        assert_eq!(err.code(), "CONFIG_MISSING");
+        assert!(!err.retryable());
+        let env = err.to_envelope();
+        let json = serde_json::to_value(&env).expect("envelope serializes");
+        assert_eq!(json["ok"], false);
+        assert_eq!(json["code"], "CONFIG_MISSING");
+        assert!(json["hint"].is_string(), "hint: {}", json["hint"]);
+    }
+
+    #[test]
+    fn not_implemented_envelope_shape_is_stable() {
+        let err = CliError::NotImplemented {
+            command: "internal stub".to_string(),
+        };
+        assert_eq!(err.code(), "NOT_IMPLEMENTED");
+        assert!(!err.retryable());
+        let env = err.to_envelope();
+        let json = serde_json::to_value(&env).expect("envelope serializes");
+        assert_eq!(json["ok"], false);
+        assert_eq!(json["code"], "NOT_IMPLEMENTED");
+        assert_eq!(json["context"]["command"], "internal stub");
+    }
+
+    #[test]
+    fn replan_required_envelope_shape_is_stable() {
+        let err = CliError::ReplanRequired {
+            message: "six consecutive dirty reviews for T4".to_string(),
+        };
+        assert_eq!(err.code(), "REPLAN_REQUIRED");
+        assert!(!err.retryable());
+        let env = err.to_envelope();
+        let json = serde_json::to_value(&env).expect("envelope serializes");
+        assert_eq!(json["ok"], false);
+        assert_eq!(json["code"], "REPLAN_REQUIRED");
+    }
+
+    #[test]
+    fn io_error_maps_to_parse_error_and_bug_exit() {
+        let err: CliError = std::io::Error::from(std::io::ErrorKind::PermissionDenied).into();
+        assert_eq!(err.code(), "PARSE_ERROR");
+        assert!(matches!(err.kind(), ExitKind::Bug));
+    }
+
+    #[test]
+    fn revision_conflict_envelope_shape_is_stable() {
+        let err = CliError::RevisionConflict {
+            expected: 7,
+            actual: 8,
+        };
+        let env = err.to_envelope();
+        let json = serde_json::to_value(&env).expect("envelope serializes");
+        assert_eq!(json["ok"], false);
+        assert_eq!(json["code"], "REVISION_CONFLICT");
+        assert_eq!(json["retryable"], true);
+        assert_eq!(json["context"]["expected"], 7);
+        assert_eq!(json["context"]["actual"], 8);
+        assert!(json["hint"].is_string());
+    }
+}

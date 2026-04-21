@@ -619,3 +619,41 @@ fn finish_expect_revision_mismatch_returns_revision_conflict() {
     let json = parse_json(&out);
     assert_eq!(json["code"], "REVISION_CONFLICT");
 }
+
+/// Regression for correctness-invariants round-1 P1-5: the idempotent
+/// short-circuit in `task start` (already-in-progress) must still
+/// enforce `--expect-revision`, otherwise stale-writer probes silently
+/// succeed against a state that moved on.
+#[test]
+fn start_idempotent_branch_still_enforces_expect_revision() {
+    let (tmp, _dir) = seed_mission(PLAN_LINEAR_NO_REVIEW, &[]);
+    // First start lands cleanly and takes revision from 0 to 1.
+    let ok = run(tmp.path(), &["task", "start", "T1", "--mission", "demo"]);
+    assert!(ok.status.success());
+    let json = parse_json(&ok);
+    assert_eq!(json["revision"], 1);
+    // Second call hits the idempotent branch (task is InProgress) but
+    // passes a stale `--expect-revision`. It MUST fail REVISION_CONFLICT
+    // rather than silently return `idempotent: true`.
+    let out = run(
+        tmp.path(),
+        &[
+            "task",
+            "start",
+            "T1",
+            "--expect-revision",
+            "99",
+            "--mission",
+            "demo",
+        ],
+    );
+    assert!(
+        !out.status.success(),
+        "stdout: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let json = parse_json(&out);
+    assert_eq!(json["code"], "REVISION_CONFLICT");
+    assert_eq!(json["context"]["expected"], 99);
+    assert_eq!(json["context"]["actual"], 1);
+}

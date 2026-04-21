@@ -60,6 +60,7 @@ assumption about state; trust only the envelope.
 | `replan`                    | Invoke `$plan replan`, return to Step 1.                        |
 | `close`                     | Confirm with the user, then `codex1 close complete`, then stop. |
 | `blocked`                   | Escalate to the user; do not loop.                              |
+| `fix_state`                 | Escalate to the user; do not auto-fix STATE.json.                |
 | `closed`                    | Report terminal completion and stop.                            |
 
 The full verdict x next_action.kind dispatch table plus the pseudocode main loop with

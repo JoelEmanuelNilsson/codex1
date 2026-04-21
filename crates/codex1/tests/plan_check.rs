@@ -92,7 +92,7 @@ tasks:
   - id: T4
     title: "Review integration"
     kind: review
-    depends_on: [T2, T3]
+    depends_on: [T2]
     spec: specs/T4/SPEC.md
     review_target:
       tasks: [T2]
@@ -707,4 +707,85 @@ fn plan_check_backfills_missing_task_ids_and_then_stays_idempotent() {
         revision_after_backfill, revision_after_idempotent,
         "second re-check after backfill must be idempotent (no revision bump)"
     );
+}
+
+/// Regression for e2e-walkthrough round-1 P2-1: a plan where a non-review
+/// task transitively upstream of a review depends on one of that
+/// review's targets deadlocks at execution. `plan check` must refuse
+/// to lock such a plan.
+#[test]
+fn review_loop_deadlock_returns_plan_invalid() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    for id in ["T1", "T2", "T3", "T4"] {
+        write_spec(&mission_dir, id, &format!("# {id}\n"));
+    }
+    // T4 is a review with targets [T1,T2,T3] that depends on all three.
+    // T3 depends on T2, T2 depends on T1. T3 → AwaitingReview (via T4)
+    // cannot Complete without T4 clean, but T4 depends on T3. Deadlock.
+    let yaml = r#"mission_id: demo
+
+planning_level:
+  requested: medium
+  effective: medium
+
+outcome_interpretation:
+  summary: "x"
+
+architecture:
+  summary: "x"
+  key_decisions: ["x"]
+
+planning_process:
+  evidence:
+    - kind: direct_reasoning
+      summary: "x"
+
+tasks:
+  - id: T1
+    title: "t1"
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+  - id: T2
+    title: "t2"
+    kind: code
+    depends_on: [T1]
+    spec: specs/T2/SPEC.md
+  - id: T3
+    title: "t3"
+    kind: code
+    depends_on: [T2]
+    spec: specs/T3/SPEC.md
+  - id: T4
+    title: "review all"
+    kind: review
+    depends_on: [T1, T2, T3]
+    spec: specs/T4/SPEC.md
+    review_target:
+      tasks: [T1, T2, T3]
+
+risks:
+  - risk: "r"
+    mitigation: "m"
+
+mission_close:
+  criteria: ["c"]
+"#;
+    write_plan(&mission_dir, yaml);
+
+    let output = run_check(&tmp, "demo", &[]);
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    let message = json["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("deadlock") || message.contains("review-loop"),
+        "message should flag deadlock: {message}"
+    );
+    // Confirm idempotent re-runs still flag it (no lock leaked).
+    let again = run_check(&tmp, "demo", &[]);
+    assert!(!again.status.success());
+    let state = read_state(&mission_dir);
+    assert_eq!(state["plan"]["locked"], false);
 }

@@ -36,6 +36,9 @@ pub fn run(ctx: &Ctx, task_id: &str) -> CliResult<()> {
             closed_at: closed_at.clone(),
         });
     }
+    // Refuse to start a review while the plan is unlocked (e.g. during
+    // a pending replan). See `state::require_plan_locked` for rationale.
+    state::require_plan_locked(&state)?;
     for tid in &targets {
         let Some(task) = state.tasks.get(tid) else {
             return Err(CliError::TaskNotReady {

@@ -92,6 +92,7 @@ fn record_clean(
     reviewers: &[String],
 ) -> CliResult<()> {
     if ctx.dry_run {
+        state::check_expected_revision(ctx.expect_revision, current)?;
         emit_success(
             &current.mission_id,
             Some(current.revision),
@@ -150,6 +151,7 @@ fn record_dirty(
     let findings_body = std::fs::read_to_string(findings_source)?;
 
     if ctx.dry_run {
+        state::check_expected_revision(ctx.expect_revision, current)?;
         // Preview the post-mutation values off the loaded snapshot. Under
         // contention with another writer the preview may drift, but a
         // dry-run is advisory by definition.

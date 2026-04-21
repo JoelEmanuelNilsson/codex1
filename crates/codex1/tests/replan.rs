@@ -376,3 +376,104 @@ fn check_after_record_shows_cleared_counters_and_triggered() {
     assert_eq!(json["data"]["consecutive_dirty_by_target"], json!({}));
     assert_eq!(json["data"]["triggered_already"], true);
 }
+
+/// Regression for e2e-walkthrough round-1 P1-1: after `replan record`
+/// unlocks the plan, work-phase mutations must refuse until a new
+/// `plan check` re-locks. Prior behavior accepted `task start` /
+/// `task finish` in this window, attaching mutations to tasks whose
+/// spec could subsequently change.
+#[test]
+fn task_start_after_replan_record_refuses_with_plan_invalid() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    patch_state(&mission_dir, |state| {
+        // Seed a mission that has been through replan record: plan
+        // unlocked, replan.triggered, phase back to plan, and one
+        // task in ready state the replan flow preserves.
+        state["phase"] = json!("plan");
+        state["outcome"]["ratified"] = json!(true);
+        state["plan"]["locked"] = json!(false);
+        state["plan"]["task_ids"] = json!(["T1", "T2"]);
+        state["replan"]["triggered"] = json!(true);
+        state["replan"]["triggered_reason"] = json!("six_dirty");
+        let mut t1 = task("superseded");
+        t1["id"] = json!("T1");
+        t1["superseded_by"] = json!("replan-5");
+        let mut t2 = task("ready");
+        t2["id"] = json!("T2");
+        state["tasks"] = json!({ "T1": t1, "T2": t2 });
+    });
+    // Seed a PLAN.yaml so the command gets past the plan-parse step.
+    let plan = r#"mission_id: demo
+planning_level:
+  requested: light
+  effective: light
+outcome_interpretation:
+  summary: "x"
+architecture:
+  summary: "x"
+  key_decisions: ["x"]
+planning_process:
+  evidence:
+    - kind: direct_reasoning
+      summary: "x"
+tasks:
+  - id: T1
+    title: "one"
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+  - id: T2
+    title: "two"
+    kind: code
+    depends_on: []
+    spec: specs/T2/SPEC.md
+risks:
+  - risk: x
+    mitigation: y
+mission_close:
+  criteria: [ok]
+"#;
+    std::fs::write(mission_dir.join("PLAN.yaml"), plan).unwrap();
+    for id in ["T1", "T2"] {
+        let d = mission_dir.join("specs").join(id);
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("SPEC.md"), format!("# {id} spec\n")).unwrap();
+    }
+
+    // task start must refuse with PLAN_INVALID, not accept the start.
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["task", "start", "T2", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(
+        !output.status.success(),
+        "stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    let hint = json["hint"].as_str().unwrap_or_default();
+    assert!(
+        hint.contains("plan check"),
+        "hint should steer to plan check: {hint}"
+    );
+
+    // After re-locking, the guard relaxes. (We do not drive plan check
+    // here — just confirm the plan-locked=true flip alone lifts the
+    // block, which proves the guard keys off exactly the flag.)
+    patch_state(&mission_dir, |s| {
+        s["plan"]["locked"] = json!(true);
+    });
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["task", "start", "T2", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(
+        output.status.success(),
+        "task start should succeed after relock: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}

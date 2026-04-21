@@ -31,8 +31,17 @@ pub fn run(level: Option<String>, escalate: Option<String>, ctx: &Ctx) -> CliRes
         Some(raw) => parse_level(&raw)?,
         None => prompt_for_level()?,
     };
+    // `--escalate` pins the effective level to `hard`, but the handoff
+    // (02-cli-contract.md:325 Implementation rule) requires that
+    // `escalation_reason` is emitted only when the effective level is
+    // *higher* than the requested level. If the caller passes
+    // `--escalate` while already asking for `hard`, the request is a
+    // no-op and we drop the reason rather than stamp a phantom on it.
     let (effective, escalation_reason) = match escalate {
-        Some(reason) => (PlanLevel::Hard, Some(reason)),
+        Some(reason) if level_rank(&requested) < level_rank(&PlanLevel::Hard) => {
+            (PlanLevel::Hard, Some(reason))
+        }
+        Some(_) => (requested.clone(), None),
         None => (requested.clone(), None),
     };
 
@@ -41,14 +50,7 @@ pub fn run(level: Option<String>, escalate: Option<String>, ctx: &Ctx) -> CliRes
     if ctx.dry_run {
         // Validate against current state, but do not write.
         let state = state::load(&paths)?;
-        if let Some(expected) = ctx.expect_revision {
-            if expected != state.revision {
-                return Err(CliError::RevisionConflict {
-                    expected,
-                    actual: state.revision,
-                });
-            }
-        }
+        state::check_expected_revision(ctx.expect_revision, &state)?;
         let env = JsonOk::new(
             Some(paths.mission_id.clone()),
             Some(state.revision),
@@ -142,20 +144,36 @@ fn build_payload(
     escalation_reason: Option<&str>,
 ) -> serde_json::Value {
     let effective_str = level_str(effective);
+    let escalated = level_rank(effective) > level_rank(requested);
     let mut data = json!({
         "requested_level": level_str(requested),
         "effective_level": effective_str,
+        "escalation_required": escalated,
         "next_action": {
             "kind": "plan_scaffold",
             "args": ["codex1", "plan", "scaffold", "--level", effective_str],
         },
     });
-    if let Some(reason) = escalation_reason {
-        data.as_object_mut()
-            .expect("object")
-            .insert("escalation_reason".to_string(), json!(reason));
+    if escalated {
+        if let Some(reason) = escalation_reason {
+            // `json!({…})` above always returns an Object, so the
+            // `as_object_mut` call below cannot fail.
+            data.as_object_mut()
+                .expect("build_payload constructs a JSON object literal")
+                .insert("escalation_reason".to_string(), json!(reason));
+        }
     }
     data
+}
+
+/// Numeric rank for `PlanLevel` so the escalation guard can compare
+/// `effective > requested` without reaching for `Ord` on the enum.
+pub(crate) fn level_rank(level: &PlanLevel) -> u8 {
+    match level {
+        PlanLevel::Light => 0,
+        PlanLevel::Medium => 1,
+        PlanLevel::Hard => 2,
+    }
 }
 
 fn with_dry_run(mut data: serde_json::Value) -> serde_json::Value {

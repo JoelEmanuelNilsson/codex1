@@ -65,7 +65,7 @@ Return:
 
 When: code-producing or code-heavy repair task.
 
-Model: `claude-opus-4-7`, reasoning `high`. Use 1-2 lanes for high-risk code.
+Model: `gpt-5.3-codex`, reasoning `high`. Use 1-2 lanes for high-risk code.
 
 Profile-specific scope:
 
@@ -85,7 +85,7 @@ Do not:
 
 When: reviewing one task or spec against its intended behavior.
 
-Model: `claude-opus-4-7` or `gpt-5.4`, reasoning `high`. 1 lane.
+Model: `gpt-5.4`, reasoning `high`. 1 lane.
 
 Profile-specific scope:
 

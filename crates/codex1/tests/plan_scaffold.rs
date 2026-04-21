@@ -407,3 +407,98 @@ fn scaffold_before_choose_level_rejects() {
     let json = parse_stdout_json(&output);
     assert_eq!(json["code"], "PLAN_INVALID");
 }
+
+/// Handoff 02-cli-contract.md:325 rule: `escalation_reason` must only be
+/// emitted when effective > requested. `--escalate` on top of `--level
+/// hard` is a no-op; the payload must not carry a phantom reason.
+#[test]
+fn choose_level_escalate_on_hard_suppresses_escalation_reason() {
+    let tmp = TempDir::new().unwrap();
+    init_demo(&tmp, "demo");
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args([
+            "plan",
+            "choose-level",
+            "--mission",
+            "demo",
+            "--level",
+            "hard",
+            "--escalate",
+            "already hard",
+        ])
+        .output()
+        .expect("runs");
+    assert!(output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["data"]["requested_level"], "hard");
+    assert_eq!(json["data"]["effective_level"], "hard");
+    assert!(
+        json["data"].get("escalation_reason").is_none(),
+        "escalation_reason must be absent when requested == effective: {}",
+        json["data"]
+    );
+    assert_eq!(json["data"]["escalation_required"], false);
+}
+
+/// Handoff example at 02-cli-contract.md:306-315 shows
+/// `escalation_required: true` on real escalation; the CLI must emit it.
+#[test]
+fn choose_level_escalation_required_flag_appears_on_bump() {
+    let tmp = TempDir::new().unwrap();
+    init_demo(&tmp, "demo");
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args([
+            "plan",
+            "choose-level",
+            "--mission",
+            "demo",
+            "--level",
+            "light",
+            "--escalate",
+            "touches hooks",
+        ])
+        .output()
+        .expect("runs");
+    assert!(output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["data"]["requested_level"], "light");
+    assert_eq!(json["data"]["effective_level"], "hard");
+    assert_eq!(json["data"]["escalation_required"], true);
+    assert_eq!(json["data"]["escalation_reason"], "touches hooks");
+}
+
+/// test-adequacy P1-3: planning pre-ratify must surface
+/// `OUTCOME_NOT_RATIFIED` as the top-level error-envelope code, not just
+/// as a blocker inside `close check`.
+#[test]
+fn choose_level_before_ratify_returns_outcome_not_ratified() {
+    let tmp = TempDir::new().unwrap();
+    let mission = "unratified";
+    let mission_dir = tmp.path().join("PLANS").join(mission);
+    cmd()
+        .current_dir(tmp.path())
+        .args(["init", "--mission", mission])
+        .assert()
+        .success();
+    // Intentionally skip `outcome ratify`. `choose-level` must refuse.
+    assert!(mission_dir.join("OUTCOME.md").is_file());
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args([
+            "plan",
+            "choose-level",
+            "--mission",
+            mission,
+            "--level",
+            "medium",
+        ])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["code"], "OUTCOME_NOT_RATIFIED");
+    assert_eq!(json["retryable"], false);
+}
