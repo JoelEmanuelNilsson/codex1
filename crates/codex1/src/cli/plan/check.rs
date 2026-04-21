@@ -59,9 +59,17 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
     let hash = plan_hash(raw.as_bytes());
 
     // Idempotent short-circuit: same hash on an already-locked plan → no mutation.
+    //
+    // Exception — upgrade-in-place: if a previously-locked state has no
+    // `plan.task_ids` snapshot (pre-F8 binary, or hand-edited state),
+    // fall through so the mutation closure backfills it. Without this
+    // guard, an upgraded binary would perpetually re-enter the
+    // short-circuit and `status` / `close check` would be stuck with
+    // `verdict=continue_required` and no actionable blockers.
     let current = state::load(&paths)?;
-    let already_locked_same =
-        current.plan.locked && current.plan.hash.as_deref() == Some(hash.as_str());
+    let hash_matches = current.plan.locked && current.plan.hash.as_deref() == Some(hash.as_str());
+    let task_ids_missing = current.plan.task_ids.is_empty();
+    let already_locked_same = hash_matches && !task_ids_missing;
 
     if ctx.dry_run || already_locked_same {
         // Dry-run reports `locked: false` regardless of current state
