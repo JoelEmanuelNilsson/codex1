@@ -18,7 +18,7 @@ pub fn run(task_id: &str, proof: &Path, ctx: &Ctx) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let state = state::load(&paths)?;
     state::check_expected_revision(ctx.expect_revision, &state)?;
-    state::require_plan_locked(&state)?;
+    state::require_executable_plan(&paths, &state)?;
     let plan = load_plan(&paths, &state)?;
 
     // Validate the task exists in PLAN.yaml.
@@ -82,11 +82,12 @@ pub fn run(task_id: &str, proof: &Path, ctx: &Ctx) -> CliResult<()> {
         let finished_at = finished_at.clone();
         let proof_display = proof_display.clone();
         let next_status = next_status.clone();
+        let guard_paths = paths.clone();
         state::mutate_dynamic_maybe(&paths, ctx.expect_revision, move |state| {
             // Re-check `plan.locked` under the exclusive lock to
             // close the TOCTOU between the pre-mutate shared-lock
             // load and this closure. See round-2 correctness P1-1.
-            state::require_plan_locked(state)?;
+            state::require_executable_plan(&guard_paths, state)?;
             let rec = ensure_task_record(state, &task_id);
             if !matches!(rec.status, TaskStatus::InProgress) {
                 return Err(CliError::TaskNotReady {

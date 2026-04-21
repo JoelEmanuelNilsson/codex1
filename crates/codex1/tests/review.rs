@@ -783,13 +783,13 @@ fn t4_record_findings_increments_dirty_and_copies_file() {
 #[test]
 fn t5_six_dirty_triggers_replan() {
     let s = Seeded::with_targets(&["T2"]);
-    let findings_src = s.path().join("findings.md");
-    fs::write(&findings_src, "# F\n- P0: bug\n").unwrap();
 
     for i in 0..6 {
         // Reset T2 to AwaitingReview so `review start` accepts it each round.
         set_task_status(&s.mission_dir, "T2", "awaiting_review");
         run_ok(s.path(), &["review", "start", "T5", "--mission", MISSION]);
+        let findings_src = s.path().join(format!("findings-{i}.md"));
+        fs::write(&findings_src, format!("# F\n- P0: bug round {i}\n")).unwrap();
         let ok = run_ok(
             s.path(),
             &[
@@ -822,12 +822,12 @@ fn t5_six_dirty_triggers_replan() {
 #[test]
 fn t6_clean_interrupts_dirty_streak() {
     let s = Seeded::with_targets(&["T2"]);
-    let findings_src = s.path().join("findings.md");
-    fs::write(&findings_src, "# F\n- P0: x\n").unwrap();
 
-    for _ in 0..3 {
+    for i in 0..3 {
         set_task_status(&s.mission_dir, "T2", "awaiting_review");
         run_ok(s.path(), &["review", "start", "T5", "--mission", MISSION]);
+        let findings_src = s.path().join(format!("findings-{i}.md"));
+        fs::write(&findings_src, format!("# F\n- P0: x round {i}\n")).unwrap();
         run_ok(
             s.path(),
             &[

@@ -614,6 +614,7 @@ fn paused_loop_allows_stop_in_status() {
     state.plan.hash = Some(codex1::state::plan_hash(
         &std::fs::read(mission_dir.join("PLAN.yaml")).unwrap(),
     ));
+    state.plan.task_ids = vec!["T1".to_string()];
     state.tasks.insert(
         "T1".to_string(),
         TaskRecord {

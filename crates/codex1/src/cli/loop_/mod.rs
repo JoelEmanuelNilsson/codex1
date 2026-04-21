@@ -66,6 +66,7 @@ pub(crate) fn run_transition(
 ) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let current = state::load(&paths)?;
+    state::check_expected_revision(ctx.expect_revision, &current)?;
     state::require_not_terminal(&current)?;
 
     match classify(&current.loop_) {
@@ -73,11 +74,9 @@ pub(crate) fn run_transition(
             // Enforce --expect-revision first: callers that pinned the
             // revision want to know the state moved out from under them,
             // even if the transition is also semantically invalid.
-            state::check_expected_revision(ctx.expect_revision, &current)?;
             Err(err)
         }
         Transition::NoOp => {
-            state::check_expected_revision(ctx.expect_revision, &current)?;
             emit(
                 &paths,
                 current.revision,
@@ -90,7 +89,6 @@ pub(crate) fn run_transition(
         }
         Transition::Apply(target) => {
             if ctx.dry_run {
-                state::check_expected_revision(ctx.expect_revision, &current)?;
                 emit(
                     &paths,
                     current.revision,

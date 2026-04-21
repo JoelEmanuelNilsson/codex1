@@ -168,9 +168,14 @@ fn read_interpreted_destination(path: &Path) -> Option<String> {
 }
 
 fn extract_frontmatter(raw: &str) -> Option<&str> {
-    let rest = raw
-        .strip_prefix("---\n")
-        .or_else(|| raw.strip_prefix("---\r\n"))?;
-    let end = rest.find("\n---").or_else(|| rest.find("\r\n---"))?;
-    Some(&rest[..end])
+    let trimmed = raw.trim_start_matches('\u{feff}');
+    if let Some(rest) = trimmed.strip_prefix("---\n") {
+        let end = rest.find("\n---")?;
+        return Some(&rest[..end]);
+    }
+    if let Some(rest) = trimmed.strip_prefix("---\r\n") {
+        let end = rest.find("\r\n---")?;
+        return Some(&rest[..end]);
+    }
+    Some(trimmed)
 }

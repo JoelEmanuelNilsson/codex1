@@ -19,7 +19,7 @@ use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::{CliError, CliResult};
 use crate::core::mission::resolve_mission;
-use crate::core::paths::{ensure_artifact_parent_write_safe, MissionPaths};
+use crate::core::paths::{ensure_artifact_file_write_safe, MissionPaths};
 use crate::state::fs_atomic::atomic_write;
 use crate::state::schema::{
     MissionState, ReviewRecord, ReviewRecordCategory, ReviewVerdict, TaskStatus,
@@ -77,6 +77,7 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
                     "verdict": verdict_str(&verdict),
                     "reviewers": reviewers,
                     "targets": [],
+                    "category": "stale_superseded",
                 }),
                 |_state| Ok(()),
             )?;
@@ -90,7 +91,36 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
     }
 
     let plan_tasks = load_tasks(&paths, &peek)?;
-    let review_task = fetch_review_task(&plan_tasks, inputs.task_id)?;
+    let review_task = match fetch_review_task(&plan_tasks, inputs.task_id) {
+        Ok(task) => task,
+        Err(_err)
+            if peek.reviews.contains_key(inputs.task_id)
+                || peek.tasks.contains_key(inputs.task_id) =>
+        {
+            if !ctx.dry_run {
+                state::mutate(
+                    &paths,
+                    ctx.expect_revision,
+                    "review.stale",
+                    json!({
+                        "review_task_id": inputs.task_id,
+                        "verdict": verdict_str(&verdict),
+                        "reviewers": reviewers,
+                        "targets": [],
+                        "category": "stale_superseded",
+                    }),
+                    |_state| Ok(()),
+                )?;
+            }
+            return Err(CliError::StaleReviewRecord {
+                message: format!(
+                    "Review {} is no longer present in the locked PLAN.yaml; record not applied",
+                    inputs.task_id
+                ),
+            });
+        }
+        Err(err) => return Err(err),
+    };
     let targets = review_targets(&review_task)?;
 
     // Use a preflight state snapshot for dry-run (and to surface terminal/stale
@@ -190,10 +220,13 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
     } else {
         None
     };
-    let findings_source_is_existing_artifact = findings_path.is_some_and(|src| {
-        let dest = paths.review_file_for(inputs.task_id);
-        src.canonicalize().ok() == dest.canonicalize().ok()
-    });
+    if findings_body.is_some() {
+        ensure_artifact_file_write_safe(
+            &paths,
+            &paths.review_file_for(inputs.task_id),
+            "review findings",
+        )?;
+    }
 
     let review_task_id = inputs.task_id.to_string();
     let review_task_for_closure = review_task.clone();
@@ -218,7 +251,6 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
                 reviewers: &reviewers_for_closure,
                 paths: &paths,
                 findings_body: findings_body_for_closure.as_deref(),
-                findings_source_is_existing_artifact,
             },
         )?;
         let event_kind = if matches!(applied.category, ReviewRecordCategory::StaleSuperseded) {
@@ -271,7 +303,6 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
     if matches!(category, ReviewRecordCategory::AcceptedCurrent) {
         if let (Some(body), Some(_rel)) = (findings_body.as_deref(), stored_findings_rel.as_ref()) {
             let dest = paths.review_file_for(inputs.task_id);
-            ensure_artifact_parent_write_safe(&paths, &dest)?;
             atomic_write(&dest, body)?;
         }
     }
@@ -312,7 +343,6 @@ struct ApplyRecordInput<'a> {
     reviewers: &'a [String],
     paths: &'a MissionPaths,
     findings_body: Option<&'a [u8]>,
-    findings_source_is_existing_artifact: bool,
 }
 
 fn apply_record(
@@ -364,9 +394,7 @@ fn apply_record(
     let findings_rel = if matches!(category, ReviewRecordCategory::AcceptedCurrent) {
         if let Some(body) = input.findings_body {
             let dest = input.paths.review_file_for(input.review_task_id);
-            if input.findings_source_is_existing_artifact
-                && std::fs::read(&dest).ok().as_deref() == Some(body)
-            {
+            if std::fs::read(&dest).ok().as_deref() == Some(body) {
                 return Ok(AppliedRecord {
                     category: ReviewRecordCategory::LateSameBoundary,
                     findings_rel: None,

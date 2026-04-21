@@ -1,7 +1,6 @@
 BIN := codex1
 PROJECT_ROOT := $(shell pwd)
 INSTALL_DIR ?= $(HOME)/.local/bin
-INSTALL_DIR_ABS := $(abspath $(INSTALL_DIR))
 
 .PHONY: help build test fmt clippy install-local verify-installed verify-contract clean
 
@@ -29,16 +28,17 @@ clippy:
 	cargo clippy -- -D warnings
 
 install-local: build
-	@mkdir -p "$(INSTALL_DIR_ABS)"
-	install -m 0755 "target/release/$(BIN)" "$(INSTALL_DIR_ABS)/$(BIN)"
-	@echo "Installed $(BIN) to $(INSTALL_DIR_ABS)/$(BIN)"
+	@install_dir="$$(mkdir -p "$(INSTALL_DIR)" && cd "$(INSTALL_DIR)" && pwd -P)"; \
+	  install -m 0755 "target/release/$(BIN)" "$$install_dir/$(BIN)"; \
+	  echo "Installed $(BIN) to $$install_dir/$(BIN)"
 
 verify-installed:
-	@installed="$(INSTALL_DIR_ABS)/$(BIN)"; \
+	@install_dir="$$(mkdir -p "$(INSTALL_DIR)" && cd "$(INSTALL_DIR)" && pwd -P)"; \
+	  installed="$$install_dir/$(BIN)"; \
 	  test -x "$$installed" || { echo "$$installed is not executable"; exit 1; }; \
 	  echo "$(BIN) is installed at: $$installed"; \
 	  tmp="$$(mktemp -d /tmp/codex1-verify.XXXXXX)"; \
-	  PATH="$(INSTALL_DIR_ABS):$$PATH"; export PATH; \
+	  PATH="$$install_dir:$$PATH"; export PATH; \
 	  cd "$$tmp" && \
 	  resolved="$$(command -v $(BIN))" && \
 	  test "$$resolved" = "$$installed" && \

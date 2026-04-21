@@ -110,6 +110,12 @@ fn derive_blockers_with_paths(state: &MissionState, paths: Option<&MissionPaths>
             .unwrap_or_else(|| "replan triggered".to_string());
         blockers.push(Blocker::new("REPLAN_REQUIRED", detail));
     }
+    if crate::state::readiness::has_orphan_nonterminal_task(state) {
+        blockers.push(Blocker::new(
+            "TASK_NOT_READY",
+            "state contains non-superseded task records outside the locked DAG",
+        ));
+    }
     // Enumerate every DAG node that is not yet Complete/Superseded.
     // Walk `state.plan.task_ids` (the authoritative DAG snapshot) so
     // tasks that were never started still show up as `TASK_NOT_READY`,
@@ -152,6 +158,13 @@ fn derive_blockers_with_paths(state: &MissionState, paths: Option<&MissionPaths>
     for (review_id, record) in &state.reviews {
         if matches!(record.verdict, ReviewVerdict::Dirty) {
             if !matches!(record.category, ReviewRecordCategory::AcceptedCurrent) {
+                continue;
+            }
+            if !crate::state::readiness::dirty_review_record_blocks(
+                state,
+                review_id,
+                record.recorded_at.as_str(),
+            ) {
                 continue;
             }
             blockers.push(Blocker::new(

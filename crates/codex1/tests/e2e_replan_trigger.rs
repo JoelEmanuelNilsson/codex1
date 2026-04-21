@@ -168,10 +168,6 @@ fn e2e_six_dirty_reviews_trigger_replan_and_record_clears_counters() {
     let mission_dir = init_mission(&tmp);
     seed_plan_locked(&mission_dir);
 
-    // Write findings file once; every round reuses it.
-    let findings = tmp.path().join("findings.md");
-    fs::write(&findings, "# Findings\n- P0: regression\n").unwrap();
-
     // Initial replan check: nothing yet.
     let before = run_ok(tmp.path(), &["replan", "check", "--mission", MISSION]);
     assert_eq!(before["data"]["required"], false);
@@ -183,6 +179,12 @@ fn e2e_six_dirty_reviews_trigger_replan_and_record_clears_counters() {
     for i in 0..6 {
         reset_target(&mission_dir, "T2");
         run_ok(tmp.path(), &["review", "start", "T3", "--mission", MISSION]);
+        let findings = tmp.path().join(format!("findings-{i}.md"));
+        fs::write(
+            &findings,
+            format!("# Findings\n- P0: regression round {i}\n"),
+        )
+        .unwrap();
         let ok = run_ok(
             tmp.path(),
             &[

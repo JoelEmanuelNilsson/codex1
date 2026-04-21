@@ -115,6 +115,9 @@ fn proof_path_string(paths: &MissionPaths, state: &MissionState, task_id: &str) 
         .and_then(|r| r.proof_path.as_deref())
     {
         if let Ok(abs) = resolve_existing_proof_file(paths, Path::new(raw)) {
+            if Path::new(raw).is_absolute() && !abs.starts_with(&paths.mission_dir) {
+                return Some(raw.to_string());
+            }
             return Some(relative_from_repo(paths, &abs));
         }
     }

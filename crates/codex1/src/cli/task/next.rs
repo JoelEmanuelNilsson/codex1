@@ -178,11 +178,13 @@ fn dirty_repair_target(
             continue;
         };
         for task_id in &target.tasks {
-            if state
-                .tasks
-                .get(task_id)
-                .is_some_and(|task| matches!(task.status, TaskStatus::AwaitingReview))
-            {
+            if state.tasks.get(task_id).is_some_and(|task| {
+                matches!(task.status, TaskStatus::AwaitingReview)
+                    && task
+                        .finished_at
+                        .as_deref()
+                        .is_none_or(|finished_at| finished_at <= record.recorded_at.as_str())
+            }) {
                 return Some(task_id.clone());
             }
         }

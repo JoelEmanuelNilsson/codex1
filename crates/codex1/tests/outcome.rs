@@ -670,6 +670,30 @@ fn check_and_ratify_accept_pure_yaml_outcome() {
 }
 
 #[test]
+fn check_rejects_status_key_spellings_ratify_cannot_rewrite() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    seed_valid_outcome(&mission_dir, "demo");
+    let raw = fs::read_to_string(mission_dir.join("OUTCOME.md"))
+        .unwrap()
+        .replace("status: draft", "\"status\": draft");
+    fs::write(mission_dir.join("OUTCOME.md"), raw).unwrap();
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "check", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_json(&output);
+    let missing = json["context"]["missing_fields"].as_array().unwrap();
+    assert!(missing.iter().any(|v| v
+        .as_str()
+        .unwrap_or_default()
+        .contains("rewritable `status:`")));
+}
+
+#[test]
 fn ratify_on_invalid_outcome_does_not_mutate_state() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = init_demo(&tmp, "demo");

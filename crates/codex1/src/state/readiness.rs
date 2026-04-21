@@ -52,6 +52,9 @@ pub fn derive_verdict(state: &MissionState) -> Verdict {
     if state.replan.triggered {
         return Verdict::Blocked;
     }
+    if has_orphan_nonterminal_task(state) {
+        return Verdict::Blocked;
+    }
     if has_current_dirty_review(state) {
         return Verdict::Blocked;
     }
@@ -95,11 +98,47 @@ pub fn tasks_complete(state: &MissionState) -> bool {
 }
 
 #[must_use]
+pub fn has_orphan_nonterminal_task(state: &MissionState) -> bool {
+    state.tasks.iter().any(|(id, task)| {
+        !state.plan.task_ids.iter().any(|plan_id| plan_id == id)
+            && !matches!(task.status, TaskStatus::Complete | TaskStatus::Superseded)
+    })
+}
+
+#[must_use]
 pub fn has_current_dirty_review(state: &MissionState) -> bool {
-    state.reviews.values().any(|r| {
+    state.reviews.iter().any(|(review_id, r)| {
         matches!(r.verdict, ReviewVerdict::Dirty)
             && matches!(r.category, ReviewRecordCategory::AcceptedCurrent)
+            && dirty_review_record_blocks(state, review_id, r.recorded_at.as_str())
     })
+}
+
+#[must_use]
+pub fn dirty_review_still_needs_repair(state: &MissionState, recorded_at: &str) -> bool {
+    state.tasks.values().any(|task| {
+        matches!(task.status, TaskStatus::AwaitingReview)
+            && task
+                .finished_at
+                .as_deref()
+                .is_none_or(|finished_at| finished_at <= recorded_at)
+    })
+}
+
+#[must_use]
+pub fn dirty_review_record_blocks(
+    state: &MissionState,
+    review_id: &str,
+    recorded_at: &str,
+) -> bool {
+    if dirty_review_still_needs_repair(state, recorded_at) {
+        return true;
+    }
+    let review_is_live = state.plan.task_ids.iter().any(|id| id == review_id)
+        && state.tasks.get(review_id).is_none_or(|task| {
+            !matches!(task.status, TaskStatus::Superseded) && task.superseded_by.is_none()
+        });
+    review_is_live
 }
 
 /// Whether a Stop request from Ralph should be allowed.
@@ -184,6 +223,7 @@ mod tests {
     #[test]
     fn derive_verdict_dirty_review_is_blocked() {
         let mut s = base();
+        insert_task(&mut s, "T1", TaskStatus::AwaitingReview);
         s.reviews.insert(
             "T2".to_string(),
             ReviewRecord {

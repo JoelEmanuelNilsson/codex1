@@ -46,7 +46,11 @@ impl Fixture {
 
     fn write_state(&self, state: &MissionState) {
         let path = self.mission_dir().join("STATE.json");
-        let raw = serde_json::to_vec_pretty(state).unwrap();
+        let mut state = state.clone();
+        if state.plan.locked && state.plan.task_ids.is_empty() {
+            state.plan.task_ids = state.tasks.keys().cloned().collect();
+        }
+        let raw = serde_json::to_vec_pretty(&state).unwrap();
         write_atomic(&path, &raw);
     }
 

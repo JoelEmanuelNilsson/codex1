@@ -183,6 +183,7 @@ fn graph_and_waves_suppress_ready_work_under_dirty_review_blocker() {
             "boundary_revision": 1
         }
     });
+    state["plan"]["task_ids"] = serde_json::json!(["T1", "T2", "T3", "T4", "T5"]);
     fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
 
     let waves = run_waves(&tmp, "demo");

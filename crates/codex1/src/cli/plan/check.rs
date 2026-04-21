@@ -383,6 +383,12 @@ fn validate(plan: &ParsedPlan, paths: &MissionPaths, state: &state::MissionState
                 .is_some_and(|k| HARD_EVIDENCE_KINDS.contains(&k))
         })
         .count();
+    for (idx, evidence) in process.evidence.iter().enumerate() {
+        require_string(
+            &format!("planning_process.evidence[{idx}].summary"),
+            evidence.summary.as_deref(),
+        );
+    }
     if matches!(effective_level, PlanLevel::Hard) {
         if process.evidence.is_empty() {
             exit_with_validation_error(

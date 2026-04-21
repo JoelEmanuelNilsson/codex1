@@ -80,6 +80,7 @@ pub fn validate_outcome(
     }
     check_scalar(&mapping, "status", &mut missing_fields, &mut placeholders);
     check_status_value(&mapping, &mut missing_fields);
+    check_status_rewritable(&frontmatter_raw, &mapping, &mut missing_fields);
     reject_forbidden_fields(&mapping, &mut missing_fields);
     check_scalar(&mapping, "title", &mut missing_fields, &mut placeholders);
     check_scalar(
@@ -258,6 +259,43 @@ fn check_status_value(m: &Mapping, missing: &mut Vec<String>) {
         missing.push(format!(
             "status (expected `draft` or `ratified`, found `{trimmed}`)"
         ));
+    }
+}
+
+fn check_status_rewritable(frontmatter: &str, m: &Mapping, missing: &mut Vec<String>) {
+    if !m.contains_key(Value::String("status".to_string())) {
+        return;
+    }
+    let top_level_indent = frontmatter
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                return None;
+            }
+            let indent = line.len().saturating_sub(line.trim_start().len());
+            let trimmed_start = line.trim_start();
+            let is_key = trimmed_start
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+                && trimmed_start.contains(':');
+            is_key.then_some(indent)
+        })
+        .min()
+        .unwrap_or(0);
+    let rewritable = frontmatter.lines().any(|line| {
+        let actual_indent = line.chars().take_while(char::is_ascii_whitespace).count();
+        actual_indent == top_level_indent
+            && line
+                .trim_start()
+                .strip_prefix("status:")
+                .is_some_and(|rest| {
+                    rest.is_empty() || rest.starts_with(' ') || rest.starts_with('\t')
+                })
+    });
+    if !rewritable {
+        missing.push("status (must use rewritable `status:` key spelling)".to_string());
     }
 }
 

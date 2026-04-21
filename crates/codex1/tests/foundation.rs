@@ -108,6 +108,31 @@ fn init_creates_mission_scaffold() {
 }
 
 #[test]
+fn mismatched_same_seq_event_does_not_attach_to_new_state() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    fs::write(
+        mission_dir.join("EVENTS.jsonl"),
+        r#"{"seq":1,"at":"2026-04-21T00:00:00Z","kind":"fake.previous","payload":{"x":1}}"#,
+    )
+    .unwrap();
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["loop", "activate", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "STATE_CORRUPT");
+    let state: Value =
+        serde_json::from_str(&fs::read_to_string(mission_dir.join("STATE.json")).unwrap()).unwrap();
+    assert_eq!(state["revision"], 0);
+    assert_eq!(state["events_cursor"], 0);
+    assert_eq!(state["loop"]["active"], false);
+}
+
+#[test]
 fn init_refuses_to_overwrite() {
     let tmp = TempDir::new().unwrap();
     init_demo(&tmp, "demo");

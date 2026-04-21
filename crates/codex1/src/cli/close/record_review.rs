@@ -14,7 +14,7 @@ use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::{CliError, CliResult};
 use crate::core::mission::resolve_mission;
-use crate::core::paths::{ensure_artifact_parent_write_safe, MissionPaths};
+use crate::core::paths::{ensure_artifact_file_write_safe, MissionPaths};
 use crate::state::readiness::Verdict;
 use crate::state::schema::MissionCloseReviewState;
 use crate::state::{self};
@@ -81,6 +81,9 @@ pub fn run(
     // review is sensible. We allow both `ready_for_mission_close_review`
     // (the first attempt, which transitions review_state to Open before
     // recording) and `mission_close_review_open` (subsequent attempts).
+    if current.outcome.ratified && current.plan.locked {
+        state::require_locked_plan_snapshot(&paths, &current)?;
+    }
     let report = ReadinessReport::from_state_and_paths(&current, &paths);
     if !matches!(
         report.verdict,
@@ -134,11 +137,11 @@ fn record_clean(
         "close.review.clean",
         payload,
         |state| {
+            if state.outcome.ratified && state.plan.locked {
+                state::require_locked_plan_snapshot(paths, state)?;
+            }
             let report = ReadinessReport::from_state_and_paths(state, paths);
-            if !matches!(
-                report.verdict,
-                Verdict::ReadyForMissionCloseReview | Verdict::MissionCloseReviewOpen
-            ) {
+            if !matches!(report.verdict, Verdict::ReadyForMissionCloseReview) {
                 return Err(CliError::CloseNotReady {
                     message: format!(
                         "cannot record mission-close review while verdict is `{}` ({})",
@@ -183,13 +186,14 @@ fn record_dirty(
         });
     }
     let findings_body = std::fs::read_to_string(findings_source)?;
+    let predicted_revision = current.revision.saturating_add(1);
+    let findings_target = mission_close_review_path(paths, predicted_revision);
+    ensure_artifact_file_write_safe(paths, &findings_target, "mission-close review findings")?;
 
     if ctx.dry_run {
         // Preview the post-mutation values off the loaded snapshot. Under
         // contention with another writer the preview may drift, but a
         // dry-run is advisory by definition.
-        let predicted_revision = current.revision.saturating_add(1);
-        let findings_target = mission_close_review_path(paths, predicted_revision);
         let predicted_counter = current_counter(current).saturating_add(1);
         let predicted_trigger =
             current.replan.triggered || predicted_counter >= DIRTY_REPLAN_THRESHOLD;
@@ -216,11 +220,11 @@ fn record_dirty(
             "reviewers": reviewers,
         }),
         |state| {
+            if state.outcome.ratified && state.plan.locked {
+                state::require_locked_plan_snapshot(paths, state)?;
+            }
             let report = ReadinessReport::from_state_and_paths(state, paths);
-            if !matches!(
-                report.verdict,
-                Verdict::ReadyForMissionCloseReview | Verdict::MissionCloseReviewOpen
-            ) {
+            if !matches!(report.verdict, Verdict::ReadyForMissionCloseReview) {
                 return Err(CliError::CloseNotReady {
                     message: format!(
                         "cannot record mission-close review while verdict is `{}` ({})",
@@ -229,10 +233,6 @@ fn record_dirty(
                     ),
                 });
             }
-            let findings_target =
-                mission_close_review_path(paths, state.revision.saturating_add(1));
-            ensure_artifact_parent_write_safe(paths, &findings_target)?;
-            crate::state::fs_atomic::atomic_write(&findings_target, findings_body.as_bytes())?;
             let counter = state
                 .replan
                 .consecutive_dirty_by_target
@@ -250,6 +250,7 @@ fn record_dirty(
             Ok(())
         },
     )?;
+    crate::state::fs_atomic::atomic_write(&findings_target, findings_body.as_bytes())?;
 
     emit_success(
         &mutation.state.mission_id,

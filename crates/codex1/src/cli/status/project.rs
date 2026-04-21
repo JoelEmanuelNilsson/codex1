@@ -105,7 +105,10 @@ pub fn build_invalid_state(state: &MissionState, reason: &str) -> Value {
 /// but the verdict already allows stop (NeedsUser, MissionCloseReviewPassed),
 /// we surface `idle` so the message does not contradict `allow=true`.
 fn stop_projection(state: &MissionState, verdict: Verdict, _close_ready: bool) -> Value {
-    let allow = readiness::stop_allowed(state);
+    let allow = match verdict {
+        Verdict::InvalidState => !state.loop_.active || state.loop_.paused,
+        _ => readiness::stop_allowed(state),
+    };
     let (reason, message) = if matches!(verdict, Verdict::TerminalComplete) {
         ("terminal", "Mission is terminal; stop is allowed.")
     } else if !state.loop_.active {

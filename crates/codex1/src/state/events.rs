@@ -39,11 +39,31 @@ impl Event {
 
 /// Append an event to `EVENTS.jsonl`. Assumes caller holds the state lock.
 pub fn append_event(path: &Path, event: &Event) -> Result<(), CliError> {
-    if let Some(last_seq) = last_event_seq(path)? {
+    ensure_append_matches_tail(path, event)?;
+    if last_event(path)?.is_some_and(|last| last.seq == event.seq) {
+        return Ok(());
+    }
+    let mut f = OpenOptions::new().create(true).append(true).open(path)?;
+    let line = serde_json::to_string(event)?;
+    writeln!(f, "{line}")?;
+    f.sync_data()?;
+    Ok(())
+}
+
+/// Validate the existing tail before any precommit artifact writes.
+/// Assumes caller holds the state lock.
+pub fn ensure_append_matches_tail(path: &Path, event: &Event) -> Result<(), CliError> {
+    if let Some(last) = last_event(path)? {
+        let last_seq = last.seq;
         if last_seq == event.seq {
-            // Previous attempt appended the event but failed before
-            // STATE.json was persisted. Do not duplicate the sequence on
-            // retry; the caller can finish writing state for this seq.
+            if last.kind != event.kind || last.payload != event.payload {
+                return Err(CliError::StateCorrupt {
+                    message: format!(
+                        "EVENTS.jsonl seq {} already belongs to `{}`; refusing to attach `{}` state to it",
+                        event.seq, last.kind, event.kind
+                    ),
+                });
+            }
             return Ok(());
         }
         if last_seq > event.seq {
@@ -55,14 +75,10 @@ pub fn append_event(path: &Path, event: &Event) -> Result<(), CliError> {
             });
         }
     }
-    let mut f = OpenOptions::new().create(true).append(true).open(path)?;
-    let line = serde_json::to_string(event)?;
-    writeln!(f, "{line}")?;
-    f.sync_data()?;
     Ok(())
 }
 
-fn last_event_seq(path: &Path) -> Result<Option<u64>, CliError> {
+fn last_event(path: &Path) -> Result<Option<Event>, CliError> {
     let Ok(raw) = fs::read_to_string(path) else {
         return Ok(None);
     };
@@ -70,5 +86,5 @@ fn last_event_seq(path: &Path) -> Result<Option<u64>, CliError> {
         return Ok(None);
     };
     let event: Event = serde_json::from_str(line)?;
-    Ok(Some(event.seq))
+    Ok(Some(event))
 }

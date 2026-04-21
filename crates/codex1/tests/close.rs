@@ -347,6 +347,7 @@ fn check_review_dirty_reports_review_findings_block() {
         .ratified()
         .plan_locked()
         .phase("review_loop")
+        .dag_task_ids(&["T1", "T5"])
         .task("T1", "complete")
         .review("T5", "dirty")
         .build();
@@ -474,35 +475,32 @@ fn record_review_findings_writes_review_file_and_bumps_counter() {
 }
 
 #[test]
-fn record_review_six_consecutive_dirty_triggers_replan() {
+fn duplicate_mission_close_dirty_does_not_count_as_new_round() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = init_demo(&tmp, "demo");
     seed_ready_for_mission_close_review(&mission_dir);
     let findings = write_findings(&mission_dir, "r.md", "# P0 fail\n");
 
-    for _ in 0..6 {
-        cmd()
-            .current_dir(tmp.path())
-            .args([
-                "close",
-                "record-review",
-                "--findings-file",
-                findings.to_str().unwrap(),
-                "--mission",
-                "demo",
-            ])
-            .assert()
-            .success();
-    }
+    cmd()
+        .current_dir(tmp.path())
+        .args([
+            "close",
+            "record-review",
+            "--findings-file",
+            findings.to_str().unwrap(),
+            "--mission",
+            "demo",
+        ])
+        .assert()
+        .success();
 
     let state = read_state(&mission_dir);
-    assert_eq!(state["replan"]["triggered"], true);
+    assert_eq!(state["replan"]["triggered"], false);
     assert_eq!(
         state["replan"]["consecutive_dirty_by_target"]["__mission_close__"],
-        6
+        1
     );
 
-    // The 7th attempt should fail closed because the verdict is now `blocked`.
     let output = cmd()
         .current_dir(tmp.path())
         .args([
@@ -652,13 +650,8 @@ fn record_review_expect_revision_mismatch_returns_conflict() {
     assert_eq!(json["context"]["actual"], 5);
 }
 
-/// Regression for test-adequacy round-1 P2-4: the mission-close review
-/// must support `NotStarted → Open → Passed` (dirty then clean) as a
-/// legitimate lifecycle. Existing tests only exercise
-/// `NotStarted → Passed` (clean first record) or `NotStarted → Open`
-/// (dirty first record); the Open → Passed transition is untested.
 #[test]
-fn record_review_open_then_clean_transitions_to_passed() {
+fn record_review_open_then_clean_is_rejected_until_repaired() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = init_demo(&tmp, "demo");
     seed_ready_for_mission_close_review(&mission_dir);
@@ -680,20 +673,18 @@ fn record_review_open_then_clean_transitions_to_passed() {
     let mid = read_state(&mission_dir);
     assert_eq!(mid["close"]["review_state"], "open");
 
-    // Second record clean — review_state → Passed.
-    cmd()
+    // A clean record for the same open dirty boundary is not enough:
+    // mission-close findings need a repair/replan/new-review boundary.
+    let output = cmd()
         .current_dir(tmp.path())
         .args(["close", "record-review", "--clean", "--mission", "demo"])
-        .assert()
-        .success();
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let json = parse_stdout(&output);
+    assert_eq!(json["code"], "CLOSE_NOT_READY");
     let after = read_state(&mission_dir);
-    assert_eq!(after["close"]["review_state"], "passed");
-    // Clean breaks the consecutive dirty streak for the mission-close
-    // target, matching the planned-review dirty-counter semantics.
-    assert_eq!(
-        after["replan"]["consecutive_dirty_by_target"]["__mission_close__"],
-        0
-    );
+    assert_eq!(after["close"]["review_state"], "open");
 }
 
 #[test]
@@ -791,24 +782,10 @@ fn terminal_close_record_review_is_audited_as_contaminated() {
 }
 
 #[test]
-fn closeout_history_reports_dirty_then_clean_truthfully() {
+fn closeout_history_reports_clean_first_round_truthfully() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = init_demo(&tmp, "demo");
     seed_ready_for_mission_close_review(&mission_dir);
-    let findings = write_findings(&mission_dir, "round1.md", "# P1 finding\n");
-
-    cmd()
-        .current_dir(tmp.path())
-        .args([
-            "close",
-            "record-review",
-            "--findings-file",
-            findings.to_str().unwrap(),
-            "--mission",
-            "demo",
-        ])
-        .assert()
-        .success();
     cmd()
         .current_dir(tmp.path())
         .args(["close", "record-review", "--clean", "--mission", "demo"])
@@ -822,8 +799,8 @@ fn closeout_history_reports_dirty_then_clean_truthfully() {
 
     let closeout = fs::read_to_string(mission_dir.join("CLOSEOUT.md")).unwrap();
     assert!(
-        closeout.contains("Clean after 1 dirty round along the way."),
-        "closeout must reflect dirty-then-clean history: {closeout}"
+        closeout.contains("Clean on the first round."),
+        "closeout must reflect clean mission-close history: {closeout}"
     );
 }
 
@@ -1043,6 +1020,38 @@ fn complete_twice_returns_terminal_already_complete() {
     let json = parse_stdout(&output);
     assert_eq!(json["code"], "TERMINAL_ALREADY_COMPLETE");
     assert_eq!(json["context"]["closed_at"], "2026-04-01T00:00:00Z");
+}
+
+#[test]
+fn complete_with_pure_yaml_outcome_includes_destination() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    fs::write(
+        mission_dir.join("OUTCOME.md"),
+        "mission_id: demo\nstatus: ratified\ninterpreted_destination: |\n  Pure YAML missions render in closeout.\n",
+    )
+    .unwrap();
+    let state = StateBuilder::fresh("demo")
+        .ratified()
+        .plan_locked()
+        .phase("mission_close")
+        .task("T1", "complete")
+        .mission_close_review("passed")
+        .revision(7)
+        .build();
+    write_state(&mission_dir, &state);
+
+    cmd()
+        .current_dir(tmp.path())
+        .args(["close", "complete", "--mission", "demo"])
+        .assert()
+        .success();
+
+    let closeout = fs::read_to_string(mission_dir.join("CLOSEOUT.md")).unwrap();
+    assert!(
+        closeout.contains("Pure YAML missions render in closeout."),
+        "{closeout}"
+    );
 }
 
 #[test]

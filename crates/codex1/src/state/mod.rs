@@ -31,7 +31,7 @@ use crate::core::paths::{
     ensure_artifact_parent_write_safe, ensure_mission_write_safe, MissionPaths,
 };
 
-use self::events::{append_event, Event};
+use self::events::{append_event, ensure_append_matches_tail, Event};
 use self::fs_atomic::atomic_write;
 pub use self::schema::*;
 
@@ -283,6 +283,7 @@ where
     state.revision = state.revision.saturating_add(1);
     state.events_cursor = state.events_cursor.saturating_add(1);
     let event = Event::new(state.events_cursor, event_kind, event_payload);
+    ensure_append_matches_tail(&paths.events(), &event)?;
     precommit(&state, &event)?;
     append_event(&paths.events(), &event)?;
     let serialized = serde_json::to_vec_pretty(&state)?;
