@@ -13,8 +13,14 @@ description: >
 ## Preconditions
 
 - A ratified `OUTCOME.md` exists.
-- `PLAN.yaml` is locked. `codex1 --json status` must show `plan_locked: true` and `verdict: continue_required`.
-- The loop is active (`loop.active: true`). If paused, resume via `$close` discussion flow first.
+- `PLAN.yaml` is locked. `codex1 --json status` must show `plan_locked: true`.
+- `codex1 --json status` must show an executable next action: `run_task`, `run_wave`, or `repair`. `repair` normally has `verdict: blocked`; that is a valid `$execute` handoff.
+- If `loop.paused: true`, resume via `$close` discussion flow first. If `loop.active: false`, activate it before doing work:
+
+```bash
+codex1 --json loop activate --mode execute
+```
+
 - Working directory is at repo root, or `--mission <id>` / `--repo-root <path>` resolve the mission.
 
 If any precondition fails, stop and surface the missing condition to the user; do not attempt work.

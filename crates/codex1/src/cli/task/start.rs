@@ -28,6 +28,13 @@ pub fn run(task_id: &str, ctx: &Ctx) -> CliResult<()> {
             message: format!("Task `{task_id}` not found in PLAN.yaml"),
         });
     };
+    if plan_task.kind == "review" {
+        return Err(CliError::TaskNotReady {
+            message: format!(
+                "Task `{task_id}` is a review task; use `codex1 review start {task_id}`"
+            ),
+        });
+    }
 
     if !deps_satisfied(plan_task, &state) {
         return Err(CliError::TaskNotReady {

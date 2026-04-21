@@ -51,6 +51,8 @@ non_goals:
   - Shipping real product from a test.
 constraints:
   - Runs offline.
+definitions:
+  plan: The locked route and task DAG.
 quality_bar:
   - Deterministic.
 proof_expectations:

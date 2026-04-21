@@ -96,6 +96,11 @@ impl MissionPaths {
     pub fn review_file_for(&self, task_id: &str) -> PathBuf {
         self.reviews_dir().join(format!("{task_id}.md"))
     }
+
+    #[must_use]
+    pub fn plans_dir(&self) -> PathBuf {
+        self.repo_root.join("PLANS")
+    }
 }
 
 pub fn validate_mission_id(id: &str) -> Result<(), CliError> {
@@ -168,6 +173,78 @@ pub fn resolve_existing_mission_file(
         });
     }
     Ok(file)
+}
+
+/// Validate that CLI-owned mission writes cannot be redirected outside
+/// `PLANS/<mission-id>` by symlinked mission roots or artifact parents.
+pub fn ensure_mission_write_safe(paths: &MissionPaths) -> Result<(), CliError> {
+    let plans_dir = paths.plans_dir();
+    reject_symlink(&plans_dir, "PLANS directory")?;
+    reject_symlink(&paths.mission_dir, "mission directory")?;
+    if paths.mission_dir.exists() {
+        if !paths.mission_dir.is_dir() {
+            return Err(containment_error(format!(
+                "mission path is not a directory: {}",
+                paths.mission_dir.display()
+            )));
+        }
+        let plans = plans_dir.canonicalize()?;
+        let mission = paths.mission_dir.canonicalize()?;
+        if !mission.starts_with(&plans) {
+            return Err(containment_error(format!(
+                "mission directory escapes PLANS: {}",
+                paths.mission_dir.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Create and validate the parent directory for a mission-owned artifact.
+pub fn ensure_artifact_parent_write_safe(
+    paths: &MissionPaths,
+    target: &Path,
+) -> Result<(), CliError> {
+    ensure_mission_write_safe(paths)?;
+    let parent = target.parent().ok_or_else(|| {
+        containment_error(format!("artifact path has no parent: {}", target.display()))
+    })?;
+    if parent.exists() {
+        reject_symlink(parent, "artifact parent")?;
+    }
+    std::fs::create_dir_all(parent)?;
+    reject_symlink(parent, "artifact parent")?;
+    let mission = paths.mission_dir.canonicalize()?;
+    let parent = parent.canonicalize()?;
+    if !parent.starts_with(&mission) {
+        return Err(containment_error(format!(
+            "artifact parent escapes mission directory: {}",
+            parent.display()
+        )));
+    }
+    Ok(())
+}
+
+fn reject_symlink(path: &Path, label: &str) -> Result<(), CliError> {
+    if let Ok(meta) = std::fs::symlink_metadata(path) {
+        if meta.file_type().is_symlink() {
+            return Err(containment_error(format!(
+                "{label} must not be a symlink: {}",
+                path.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn containment_error(message: String) -> CliError {
+    CliError::PlanInvalid {
+        message,
+        hint: Some(
+            "Use real directories under PLANS/<mission-id>; symlinked mission artifact paths are refused for writes."
+                .to_string(),
+        ),
+    }
 }
 
 /// True if the given path has a `PLANS` directory with at least one

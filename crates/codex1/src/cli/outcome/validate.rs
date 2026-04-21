@@ -103,6 +103,12 @@ pub fn validate_outcome(path: &Path) -> Result<ValidationReport, CliError> {
         &mut missing_fields,
         &mut placeholders,
     );
+    check_mapping_present(
+        &mapping,
+        "definitions",
+        &mut missing_fields,
+        &mut placeholders,
+    );
     check_list_present(
         &mapping,
         "quality_bar",
@@ -127,6 +133,7 @@ pub fn validate_outcome(path: &Path) -> Result<ValidationReport, CliError> {
         &mut missing_fields,
         &mut placeholders,
     );
+    check_resolved_questions(&mapping, &mut missing_fields, &mut placeholders);
 
     // Stricter rejection: success_criteria entries must not be pure
     // outcome-grade boilerplate ("works well", "reliable", …).
@@ -216,6 +223,86 @@ fn check_non_empty_list(
         }
         Some(Value::Null) => missing.push(field.to_string()),
         Some(_) => missing.push(format!("{field} (not a list)")),
+    }
+}
+
+fn check_mapping_present(
+    m: &Mapping,
+    field: &str,
+    missing: &mut Vec<String>,
+    placeholders: &mut Vec<String>,
+) {
+    match m.get(Value::String(field.to_string())) {
+        None | Some(Value::Null) => missing.push(field.to_string()),
+        Some(Value::Mapping(map)) => {
+            for (k, v) in map {
+                if let Some(s) = k.as_str() {
+                    if let Some(marker) = find_fill_marker(s) {
+                        placeholders.push(format!("{field}: {marker}"));
+                    }
+                }
+                scan_value_for_placeholders(field, v, placeholders);
+            }
+        }
+        Some(_) => missing.push(format!("{field} (not a mapping)")),
+    }
+}
+
+fn check_resolved_questions(
+    m: &Mapping,
+    missing: &mut Vec<String>,
+    placeholders: &mut Vec<String>,
+) {
+    let field = "resolved_questions";
+    match m.get(Value::String(field.to_string())) {
+        None | Some(Value::Null) => missing.push(field.to_string()),
+        Some(Value::Sequence(seq)) => {
+            for (idx, entry) in seq.iter().enumerate() {
+                match entry {
+                    Value::Mapping(map) => {
+                        let q = map.get(Value::String("question".to_string()));
+                        let a = map.get(Value::String("answer".to_string()));
+                        if !is_non_empty_string(q) {
+                            missing.push(format!("{field}[{idx}].question"));
+                        }
+                        if !is_non_empty_string(a) {
+                            missing.push(format!("{field}[{idx}].answer"));
+                        }
+                        scan_value_for_placeholders(field, entry, placeholders);
+                    }
+                    _ => missing.push(format!("{field}[{idx}] (not a question/answer mapping)")),
+                }
+            }
+        }
+        Some(_) => missing.push(format!("{field} (not a list)")),
+    }
+}
+
+fn is_non_empty_string(value: Option<&Value>) -> bool {
+    matches!(value, Some(Value::String(s)) if !s.trim().is_empty())
+}
+
+fn scan_value_for_placeholders(field: &str, value: &Value, placeholders: &mut Vec<String>) {
+    match value {
+        Value::String(s) => {
+            let trimmed = s.trim();
+            if is_placeholder_value(trimmed) {
+                placeholders.push(format!("{field}: {}", summarize(trimmed)));
+            } else if let Some(marker) = find_fill_marker(trimmed) {
+                placeholders.push(format!("{field}: {marker}"));
+            }
+        }
+        Value::Sequence(seq) => {
+            for v in seq {
+                scan_value_for_placeholders(field, v, placeholders);
+            }
+        }
+        Value::Mapping(map) => {
+            for v in map.values() {
+                scan_value_for_placeholders(field, v, placeholders);
+            }
+        }
+        _ => {}
     }
 }
 

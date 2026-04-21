@@ -14,6 +14,13 @@ set -euo pipefail
 if [ -t 0 ]; then : ; else cat > /dev/null || true; fi
 
 CODEX1=${CODEX1_BIN:-codex1}
+STATUS_ARGS=(status --json)
+if [ -n "${CODEX1_REPO_ROOT:-}" ]; then
+  STATUS_ARGS+=(--repo-root "$CODEX1_REPO_ROOT")
+fi
+if [ -n "${CODEX1_MISSION:-}" ]; then
+  STATUS_ARGS+=(--mission "$CODEX1_MISSION")
+fi
 
 if ! command -v "$CODEX1" >/dev/null 2>&1; then
   echo "ralph-stop-hook: codex1 not on PATH; allowing Stop" >&2
@@ -22,7 +29,7 @@ fi
 
 # Ask status in the current repo. If no mission resolves, status returns
 # stop.allow=true; exit 0 so Stop is allowed.
-status_json="$("$CODEX1" status --json 2>/dev/null || true)"
+status_json="$("$CODEX1" "${STATUS_ARGS[@]}" 2>/dev/null || true)"
 if [ -z "$status_json" ]; then
   echo "ralph-stop-hook: empty status output; allowing Stop" >&2
   exit 0
@@ -34,6 +41,13 @@ fi
 # alternative-operator treats literal `false` as "missing" and would flip a
 # real block into an allow. We handle the null/missing case explicitly below.
 if command -v jq >/dev/null 2>&1; then
+  ok="$(printf '%s' "$status_json" | jq -r '.ok // empty' 2>/dev/null || true)"
+  code="$(printf '%s' "$status_json" | jq -r '.code // empty' 2>/dev/null || true)"
+  ambiguous="$(printf '%s' "$status_json" | jq -r '.context.ambiguous // false' 2>/dev/null || echo false)"
+  if [ "$ok" = "false" ] && [ "$code" = "MISSION_NOT_FOUND" ] && [ "$ambiguous" = "true" ]; then
+    echo "ralph-stop-hook: ambiguous Codex1 mission; set CODEX1_MISSION or CODEX1_REPO_ROOT" >&2
+    exit 2
+  fi
   allow="$(printf '%s' "$status_json" | jq -r '.data.stop.allow' 2>/dev/null || true)"
   reason="$(printf '%s' "$status_json" | jq -r '.data.stop.reason // "idle"' 2>/dev/null || echo idle)"
   message="$(printf '%s' "$status_json" | jq -r '.data.stop.message // ""' 2>/dev/null || echo "")"

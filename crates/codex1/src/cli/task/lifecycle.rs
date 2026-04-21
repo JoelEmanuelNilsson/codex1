@@ -194,7 +194,7 @@ pub fn status_str(status: &TaskStatus) -> &'static str {
 pub fn ready_wave(effective: &[EffectiveTask]) -> Vec<EffectiveTask> {
     effective
         .iter()
-        .filter(|t| matches!(t.status, TaskStatus::Ready))
+        .filter(|t| t.kind != "review" && matches!(t.status, TaskStatus::Ready))
         .cloned()
         .collect()
 }

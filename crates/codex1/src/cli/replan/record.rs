@@ -20,7 +20,7 @@ use crate::core::error::{CliError, CliResult};
 use crate::core::mission::resolve_mission;
 use crate::state::{
     self,
-    schema::{MissionState, Phase, TaskStatus},
+    schema::{MissionState, Phase, TaskRecord, TaskStatus},
 };
 
 pub fn run(ctx: &Ctx, reason: &str, supersedes: &[String]) -> CliResult<()> {
@@ -94,15 +94,24 @@ fn emit_result(
     println!("{}", env.to_pretty());
 }
 
-/// Verify every superseded id is present in `state.tasks` and is
+/// Verify every superseded id is present in the locked plan and is
 /// currently replaceable (not already `Superseded` or `Complete`).
 fn validate_supersedes(state: &MissionState, ids: &[String]) -> CliResult<()> {
     let mut unknown: Vec<String> = Vec::new();
     let mut not_supersedable: BTreeMap<String, String> = BTreeMap::new();
 
     for id in ids {
+        let known_in_plan = if state.plan.task_ids.is_empty() {
+            state.tasks.contains_key(id)
+        } else {
+            state.plan.task_ids.iter().any(|plan_id| plan_id == id)
+        };
+        if !known_in_plan {
+            unknown.push(id.clone());
+            continue;
+        }
         match state.tasks.get(id) {
-            None => unknown.push(id.clone()),
+            None => {}
             Some(record) => match record.status {
                 TaskStatus::Complete | TaskStatus::Superseded => {
                     not_supersedable.insert(id.clone(), status_label(&record.status));
@@ -115,10 +124,7 @@ fn validate_supersedes(state: &MissionState, ids: &[String]) -> CliResult<()> {
     if !unknown.is_empty() {
         return Err(CliError::PlanInvalid {
             message: format!("Unknown --supersedes task ids: {}", unknown.join(", ")),
-            hint: Some(
-                "Pass only task ids present in PLAN.yaml (and reflected in STATE.json)."
-                    .to_string(),
-            ),
+            hint: Some("Pass only task ids present in the locked PLAN.yaml.".to_string()),
         });
     }
 
@@ -142,10 +148,16 @@ fn validate_supersedes(state: &MissionState, ids: &[String]) -> CliResult<()> {
 fn apply_replan(state: &mut MissionState, reason: &str, supersedes: &[String]) {
     let marker = format!("replan-{}", state.revision);
     for id in supersedes {
-        if let Some(record) = state.tasks.get_mut(id) {
-            record.status = TaskStatus::Superseded;
-            record.superseded_by = Some(marker.clone());
-        }
+        let record = state.tasks.entry(id.clone()).or_insert_with(|| TaskRecord {
+            id: id.clone(),
+            status: TaskStatus::Pending,
+            started_at: None,
+            finished_at: None,
+            proof_path: None,
+            superseded_by: None,
+        });
+        record.status = TaskStatus::Superseded;
+        record.superseded_by = Some(marker.clone());
     }
     state.replan.consecutive_dirty_by_target.clear();
     state.replan.triggered = true;

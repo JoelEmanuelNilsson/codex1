@@ -20,7 +20,7 @@ use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::{CliError, CliResult};
 use crate::core::mission::resolve_mission;
-use crate::core::paths::MissionPaths;
+use crate::core::paths::{ensure_artifact_parent_write_safe, MissionPaths};
 use crate::state::fs_atomic::atomic_write;
 use crate::state::schema::{LoopMode, LoopState, Phase};
 use crate::state::{self};
@@ -36,6 +36,7 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
     if let Some(closed_at) = &current.close.terminal_at {
         if !paths.closeout().is_file() && !ctx.dry_run {
             let closeout_body = closeout::render(&current, &paths);
+            ensure_artifact_parent_write_safe(&paths, &paths.closeout())?;
             atomic_write(&paths.closeout(), closeout_body.as_bytes())?;
             emit_success(
                 &current.mission_id,
@@ -51,7 +52,7 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
         });
     }
 
-    let report = ReadinessReport::from_state(&current);
+    let report = ReadinessReport::from_state_and_paths(&current, &paths);
     if !report.ready {
         return Err(CliError::CloseNotReady {
             message: report.blocker_summary(),
@@ -91,6 +92,7 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
     )?;
 
     let closeout_body = closeout::render(&mutation.state, &paths);
+    ensure_artifact_parent_write_safe(&paths, &paths.closeout())?;
     atomic_write(&paths.closeout(), closeout_body.as_bytes())?;
 
     emit_success(

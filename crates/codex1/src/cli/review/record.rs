@@ -18,7 +18,7 @@ use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::{CliError, CliResult};
 use crate::core::mission::resolve_mission;
-use crate::core::paths::MissionPaths;
+use crate::core::paths::{ensure_artifact_parent_write_safe, MissionPaths};
 use crate::state::fs_atomic::atomic_write;
 use crate::state::schema::{
     MissionState, ReviewRecord, ReviewRecordCategory, ReviewVerdict, TaskStatus,
@@ -165,7 +165,7 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
     // state update. Idempotent: skip copy if source == destination.
     let stored_findings_rel = if let Some(src) = findings_path {
         let dest = paths.review_file_for(inputs.task_id);
-        copy_if_different(src, &dest)?;
+        copy_if_different(&paths, src, &dest)?;
         relative_from_repo(&paths, &dest)
     } else {
         None
@@ -191,6 +191,7 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
             "verdict": verdict_str(&verdict),
             "reviewers": reviewers_for_closure,
             "targets": targets_for_closure,
+            "category": category_str(peek_category.clone()),
         }),
         |state| {
             // Re-check `plan.locked` under the exclusive lock (skipped
@@ -212,13 +213,7 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
         },
     )?;
 
-    let category = mutation
-        .state
-        .reviews
-        .get(inputs.task_id)
-        .map_or(ReviewRecordCategory::AcceptedCurrent, |r| {
-            r.category.clone()
-        });
+    let category = peek_category;
     let replan_triggered = mutation.state.replan.triggered;
     let warnings = match category {
         ReviewRecordCategory::LateSameBoundary => {
@@ -300,12 +295,12 @@ fn apply_record(
         recorded_at,
         boundary_revision,
     };
-    state.reviews.insert(review_task_id.to_string(), record);
 
     // Only accepted_current records affect the dirty counter / target
-    // status. late_same_boundary is still accepted per spec (same active
-    // review, same boundary) but does not mutate truth beyond recording.
+    // status. Non-current categories are audit-only and must not replace
+    // current review truth in STATE.json.
     if matches!(category, ReviewRecordCategory::AcceptedCurrent) {
+        state.reviews.insert(review_task_id.to_string(), record);
         match *verdict {
             ReviewVerdict::Clean => apply_clean(state, review_task_id, targets),
             ReviewVerdict::Dirty => apply_dirty(state, review_task_id, targets),
@@ -384,10 +379,11 @@ fn parse_reviewers(csv: Option<&str>) -> Vec<String> {
         .collect()
 }
 
-fn copy_if_different(src: &Path, dest: &Path) -> Result<(), CliError> {
+fn copy_if_different(paths: &MissionPaths, src: &Path, dest: &Path) -> Result<(), CliError> {
     if paths_equal(src, dest) {
         return Ok(());
     }
+    ensure_artifact_parent_write_safe(paths, dest)?;
     let data = std::fs::read(src)?;
     atomic_write(dest, &data)?;
     Ok(())

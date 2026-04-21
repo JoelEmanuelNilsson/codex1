@@ -26,12 +26,11 @@ use crate::state::{self};
 
 pub fn run(ctx: &Ctx, task_id: &str) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
+    let state = state::load(&paths)?;
+    state::check_expected_revision(ctx.expect_revision, &state)?;
     let plan_tasks = load_tasks(&paths.plan())?;
     let review_task = fetch_review_task(&plan_tasks, task_id)?;
     let targets = review_targets(&review_task)?;
-
-    let state = state::load(&paths)?;
-    state::check_expected_revision(ctx.expect_revision, &state)?;
     if let Some(closed_at) = state.close.terminal_at.as_ref() {
         return Err(CliError::TerminalAlreadyComplete {
             closed_at: closed_at.clone(),
@@ -40,6 +39,11 @@ pub fn run(ctx: &Ctx, task_id: &str) -> CliResult<()> {
     // Refuse to start a review while the plan is unlocked (e.g. during
     // a pending replan). See `state::require_plan_locked` for rationale.
     state::require_plan_locked(&state)?;
+    if let Some(existing) = state.reviews.get(task_id) {
+        if !matches!(existing.verdict, ReviewVerdict::Pending) {
+            ensure_dirty_review_repaired(&state, task_id, &targets)?;
+        }
+    }
     for tid in &targets {
         let Some(task) = state.tasks.get(tid) else {
             return Err(CliError::TaskNotReady {
@@ -89,6 +93,11 @@ pub fn run(ctx: &Ctx, task_id: &str) -> CliResult<()> {
             // the TOCTOU between the pre-mutate shared-lock load and
             // this closure. See round-2 correctness P1-1.
             state::require_plan_locked(state)?;
+            if let Some(existing) = state.reviews.get(&review_task_id) {
+                if !matches!(existing.verdict, ReviewVerdict::Pending) {
+                    ensure_dirty_review_repaired(state, &review_task_id, &targets_for_event)?;
+                }
+            }
             // boundary_revision is the revision the state will take AFTER
             // this mutation is persisted (closure runs pre-bump, so +1).
             let boundary_revision = state.revision.saturating_add(1);
@@ -123,4 +132,38 @@ pub fn run(ctx: &Ctx, task_id: &str) -> CliResult<()> {
     );
     println!("{}", env.to_pretty());
     Ok(())
+}
+
+fn ensure_dirty_review_repaired(
+    state: &state::MissionState,
+    review_task_id: &str,
+    targets: &[String],
+) -> Result<(), CliError> {
+    let Some(existing) = state.reviews.get(review_task_id) else {
+        return Ok(());
+    };
+    if !matches!(existing.verdict, ReviewVerdict::Dirty) {
+        return Err(CliError::ReviewFindingsBlock {
+            message: format!(
+                "review {review_task_id} already has `{}` verdict",
+                crate::cli::review::classify::verdict_str(&existing.verdict)
+            ),
+        });
+    }
+    let repaired = targets.iter().all(|tid| {
+        state
+            .tasks
+            .get(tid)
+            .and_then(|task| task.finished_at.as_deref())
+            .is_some_and(|finished_at| finished_at > existing.recorded_at.as_str())
+    });
+    if repaired {
+        Ok(())
+    } else {
+        Err(CliError::ReviewFindingsBlock {
+            message: format!(
+                "review {review_task_id} has dirty findings; finish a repair for every target before restarting"
+            ),
+        })
+    }
 }

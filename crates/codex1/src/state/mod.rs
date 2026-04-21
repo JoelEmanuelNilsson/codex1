@@ -25,7 +25,9 @@ use std::fs::{self, File, OpenOptions};
 use fs2::FileExt;
 
 use crate::core::error::CliError;
-use crate::core::paths::MissionPaths;
+use crate::core::paths::{
+    ensure_artifact_parent_write_safe, ensure_mission_write_safe, MissionPaths,
+};
 
 use self::events::{append_event, Event};
 use self::fs_atomic::atomic_write;
@@ -98,6 +100,7 @@ pub fn mutate<F>(
 where
     F: FnOnce(&mut MissionState) -> Result<(), CliError>,
 {
+    ensure_mission_write_safe(paths)?;
     let lock = acquire_exclusive_lock(paths)?;
     let state_path = paths.state();
     if !state_path.is_file() {
@@ -155,6 +158,7 @@ where
 /// to exist. Fails if STATE.json already exists (init is idempotent but
 /// refuses to clobber a live mission).
 pub fn init_write(paths: &MissionPaths, state: &MissionState) -> Result<(), CliError> {
+    ensure_mission_write_safe(paths)?;
     if paths.state().is_file() {
         return Err(CliError::StateCorrupt {
             message: format!(
@@ -166,6 +170,9 @@ pub fn init_write(paths: &MissionPaths, state: &MissionState) -> Result<(), CliE
     std::fs::create_dir_all(&paths.mission_dir)?;
     std::fs::create_dir_all(paths.specs_dir())?;
     std::fs::create_dir_all(paths.reviews_dir())?;
+    ensure_mission_write_safe(paths)?;
+    ensure_artifact_parent_write_safe(paths, &paths.state())?;
+    ensure_artifact_parent_write_safe(paths, &paths.events())?;
     // Touch the lock file so future acquires do not race on creation.
     OpenOptions::new()
         .create(true)

@@ -23,7 +23,7 @@ use crate::core::envelope::{JsonErr, JsonOk};
 use crate::core::error::{CliError, CliResult};
 use crate::core::mission::resolve_mission;
 use crate::core::paths::{resolve_existing_mission_file, MissionPaths};
-use crate::state::{self, Phase, PlanLevel};
+use crate::state::{self, Phase, PlanLevel, TaskStatus};
 
 use super::dag::{topo_sort, TopoOutcome};
 use super::parsed::{ParsedPlan, TaskSpec, HARD_EVIDENCE_KINDS, PLAN_LEVELS, TASK_KINDS};
@@ -56,7 +56,7 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
         hint: Some("Re-run `codex1 plan scaffold` to restore the template.".to_string()),
     })?;
 
-    let summary = validate(&parsed, &paths);
+    let summary = validate(&parsed, &paths, &current);
 
     let hash = plan_hash(raw.as_bytes());
 
@@ -161,7 +161,7 @@ struct Summary {
 /// Validate the parsed plan. On first failure this exits the process with
 /// a structured error envelope on stdout — never returns the error up the
 /// call stack, so callers never have to worry about context round-tripping.
-fn validate(plan: &ParsedPlan, paths: &MissionPaths) -> Summary {
+fn validate(plan: &ParsedPlan, paths: &MissionPaths, state: &state::MissionState) -> Summary {
     // Top-level sections.
     require_string("mission_id", plan.mission_id.as_deref());
 
@@ -256,7 +256,7 @@ fn validate(plan: &ParsedPlan, paths: &MissionPaths) -> Summary {
     }
 
     // Task-level validation.
-    let task_ids = validate_tasks(&plan.tasks, paths);
+    let task_ids = validate_tasks(&plan.tasks, paths, state);
 
     // Review-loop deadlock: a non-review task `Tx` depends on a task
     // `Td` that is the review target of some review `Tr`, AND `Tr`
@@ -432,7 +432,11 @@ fn ancestors(
     out
 }
 
-fn validate_tasks(tasks: &[TaskSpec], paths: &MissionPaths) -> Vec<String> {
+fn validate_tasks(
+    tasks: &[TaskSpec],
+    paths: &MissionPaths,
+    state: &state::MissionState,
+) -> Vec<String> {
     let mut ids: Vec<String> = Vec::with_capacity(tasks.len());
     let mut seen = BTreeSet::new();
     let mut duplicates = BTreeSet::new();
@@ -480,6 +484,10 @@ fn validate_tasks(tasks: &[TaskSpec], paths: &MissionPaths) -> Vec<String> {
 
     for task in tasks {
         let id = task.id.clone().unwrap_or_default();
+        let task_is_superseded = state
+            .tasks
+            .get(&id)
+            .is_some_and(|record| matches!(record.status, TaskStatus::Superseded));
         require_string(&format!("tasks[{id}].title"), task.title.as_deref());
 
         let kind = task.kind.as_deref().unwrap_or_else(|| {
@@ -581,6 +589,38 @@ fn validate_tasks(tasks: &[TaskSpec], paths: &MissionPaths) -> Vec<String> {
                         json!({
                             "task_id": id,
                             "invalid_target": t,
+                        }),
+                    );
+                }
+                if !task_is_superseded
+                    && state
+                        .tasks
+                        .get(t)
+                        .is_some_and(|record| matches!(record.status, TaskStatus::Superseded))
+                {
+                    exit_with_validation_error(
+                        "PLAN_INVALID",
+                        &format!("review task {id} targets superseded task `{t}`"),
+                        Some(
+                            "Remove obsolete review tasks or retarget them to live replacement task ids.",
+                        ),
+                        json!({
+                            "task_id": id,
+                            "superseded_target": t,
+                        }),
+                    );
+                }
+                if !deps.iter().any(|dep| dep == t) {
+                    exit_with_validation_error(
+                        "PLAN_INVALID",
+                        &format!("review task {id} targets `{t}` but does not depend on it"),
+                        Some(
+                            "Add every review_target task id to the review task's depends_on list.",
+                        ),
+                        json!({
+                            "task_id": id,
+                            "missing_dep": t,
+                            "review_target": target.tasks,
                         }),
                     );
                 }

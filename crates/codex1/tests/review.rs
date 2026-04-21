@@ -217,7 +217,139 @@ fn set_task_status(mission_dir: &Path, task_id: &str, status: &str) {
             })
         });
     task["status"] = Value::String(status.into());
+    if status == "awaiting_review" {
+        task["finished_at"] = Value::String("2999-01-01T00:00:00Z".into());
+    }
     fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
+}
+
+#[test]
+fn review_start_does_not_clear_dirty_review() {
+    let seeded = Seeded::new();
+    run_ok(
+        seeded.path(),
+        &["review", "start", "T5", "--mission", MISSION],
+    );
+    let findings = seeded.mission_dir.join("findings.md");
+    fs::write(&findings, "# Findings\nP1: still broken\n").unwrap();
+    run_ok(
+        seeded.path(),
+        &[
+            "review",
+            "record",
+            "T5",
+            "--findings-file",
+            findings.to_str().unwrap(),
+            "--mission",
+            MISSION,
+        ],
+    );
+
+    let err = run_err(
+        seeded.path(),
+        &["review", "start", "T5", "--mission", MISSION],
+    );
+    assert_eq!(err["code"], "REVIEW_FINDINGS_BLOCK");
+    let state: Value =
+        serde_json::from_str(&fs::read_to_string(seeded.mission_dir.join("STATE.json")).unwrap())
+            .unwrap();
+    assert_eq!(state["reviews"]["T5"]["verdict"], "dirty");
+    assert_eq!(state["reviews"]["T5"]["category"], "accepted_current");
+}
+
+#[test]
+fn late_dirty_review_is_audit_only_and_does_not_block() {
+    let seeded = Seeded::new();
+    run_ok(
+        seeded.path(),
+        &["review", "start", "T5", "--mission", MISSION],
+    );
+    let state_path = seeded.mission_dir.join("STATE.json");
+    let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["revision"] = Value::Number(99.into());
+    fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
+
+    let findings = seeded.mission_dir.join("late-findings.md");
+    fs::write(&findings, "# Late\nP1: late\n").unwrap();
+    let out = run_ok(
+        seeded.path(),
+        &[
+            "review",
+            "record",
+            "T5",
+            "--findings-file",
+            findings.to_str().unwrap(),
+            "--mission",
+            MISSION,
+        ],
+    );
+    assert_eq!(out["data"]["category"], "late_same_boundary");
+
+    let state: Value =
+        serde_json::from_str(&fs::read_to_string(seeded.mission_dir.join("STATE.json")).unwrap())
+            .unwrap();
+    assert_eq!(state["reviews"]["T5"]["verdict"], "pending");
+    let status = run_ok(seeded.path(), &["status", "--mission", MISSION]);
+    assert_ne!(status["data"]["next_action"]["kind"], "repair");
+}
+
+#[cfg(unix)]
+#[test]
+fn review_record_refuses_symlinked_reviews_directory() {
+    use std::os::unix::fs::symlink;
+
+    let seeded = Seeded::new();
+    run_ok(
+        seeded.path(),
+        &["review", "start", "T5", "--mission", MISSION],
+    );
+    let outside = seeded.tmp.path().join("outside-reviews");
+    fs::create_dir_all(&outside).unwrap();
+    fs::remove_dir_all(seeded.mission_dir.join("reviews")).unwrap();
+    symlink(&outside, seeded.mission_dir.join("reviews")).unwrap();
+    let findings = seeded.mission_dir.join("findings.md");
+    fs::write(&findings, "# Findings\nP1: escape\n").unwrap();
+
+    let err = run_err(
+        seeded.path(),
+        &[
+            "review",
+            "record",
+            "T5",
+            "--findings-file",
+            findings.to_str().unwrap(),
+            "--mission",
+            MISSION,
+        ],
+    );
+    assert_eq!(err["code"], "PLAN_INVALID");
+    assert!(
+        !outside.join("T5.md").exists(),
+        "review record must not write through reviews symlink"
+    );
+}
+
+#[test]
+fn review_packet_uses_recorded_absolute_proof_path() {
+    let seeded = Seeded::with_targets(&["T2"]);
+    let proof = seeded.tmp.path().join("external-proof.md");
+    fs::write(&proof, "# external proof\n").unwrap();
+    let state_path = seeded.mission_dir.join("STATE.json");
+    let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["tasks"]["T2"]["proof_path"] = Value::String(proof.to_string_lossy().to_string());
+    fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
+
+    let packet = run_ok(
+        seeded.path(),
+        &["review", "packet", "T5", "--mission", MISSION],
+    );
+    let proofs = packet["data"]["proofs"].as_array().unwrap();
+    assert!(
+        proofs
+            .iter()
+            .any(|p| p.as_str() == Some(proof.to_str().unwrap())),
+        "proofs should include recorded absolute proof: {proofs:?}"
+    );
 }
 
 fn bump_revision_without_mutation(mission_dir: &Path) {

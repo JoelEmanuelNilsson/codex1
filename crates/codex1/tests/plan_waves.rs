@@ -153,6 +153,18 @@ fn current_ready_wave_advances_when_t1_complete() {
 }
 
 #[test]
+fn current_ready_wave_does_not_skip_in_progress_dependency() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_mission(&tmp, "demo");
+    seed_plan(&mission_dir, FIVE_TASK_PLAN);
+    set_task_status(&mission_dir, "T1", "in_progress");
+
+    let json = run_waves(&tmp, "demo");
+    assert_eq!(json["ok"], Value::Bool(true), "{json}");
+    assert_eq!(json["data"]["current_ready_wave"], Value::Null);
+}
+
+#[test]
 fn exclusive_resource_collision_marks_wave_unsafe() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = init_mission(&tmp, "demo");

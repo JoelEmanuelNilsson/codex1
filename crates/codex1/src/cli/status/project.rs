@@ -186,6 +186,14 @@ fn derive_next_action(
         }
         _ => {}
     }
+    if let Some((review_id, targets)) = reviews_ready.first() {
+        return json!({
+            "kind": "run_review",
+            "review_task_id": review_id,
+            "targets": targets,
+            "command": "$review-loop",
+        });
+    }
     if let Some(w) = wave {
         let review_in_wave = reviews_ready
             .iter()

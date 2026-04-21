@@ -15,7 +15,7 @@ use crate::core::envelope::JsonOk;
 use crate::core::error::CliResult;
 use crate::core::mission::resolve_mission;
 use crate::core::paths::{resolve_existing_mission_file, MissionPaths};
-use crate::state;
+use crate::state::{self, schema::MissionState};
 
 /// Standing reviewer instructions. See `04-roles-models-prompts.md`.
 pub const REVIEWER_INSTRUCTIONS: &str = "You are a Codex1 reviewer. Do not edit files. Do not invoke Codex1 skills. Do not record mission truth. Do not run commands that mutate mission state. Do not perform repairs.
@@ -40,7 +40,7 @@ pub fn run(ctx: &Ctx, task_id: &str) -> CliResult<()> {
     for tid in &targets {
         let target = plan_tasks.get(tid).cloned();
         target_specs.push(target_spec_value(&paths, tid, target.as_ref())?);
-        if let Some(p) = proof_path_string(&paths, tid) {
+        if let Some(p) = proof_path_string(&paths, &state, tid) {
             proofs.push(p);
         }
         if let Some(t) = target.as_ref() {
@@ -104,7 +104,22 @@ fn resolve_spec_path(paths: &MissionPaths, spec_str: &str) -> CliResult<PathBuf>
     resolve_existing_mission_file(paths, spec_str, "review_target.spec")
 }
 
-fn proof_path_string(paths: &MissionPaths, task_id: &str) -> Option<String> {
+fn proof_path_string(paths: &MissionPaths, state: &MissionState, task_id: &str) -> Option<String> {
+    if let Some(raw) = state
+        .tasks
+        .get(task_id)
+        .and_then(|r| r.proof_path.as_deref())
+    {
+        let path = Path::new(raw);
+        let abs = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            paths.mission_dir.join(path)
+        };
+        if abs.is_file() {
+            return Some(relative_from_repo(paths, &abs));
+        }
+    }
     let abs = paths.proof_file_for(task_id);
     if abs.is_file() {
         Some(relative_from_repo(paths, &abs))

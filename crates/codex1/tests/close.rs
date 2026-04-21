@@ -8,6 +8,8 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Barrier};
+use std::thread;
 
 use assert_cmd::Command;
 use serde_json::{json, Value};
@@ -27,6 +29,23 @@ fn init_demo(tmp: &TempDir, mission: &str) -> PathBuf {
 }
 
 fn write_state(mission_dir: &Path, state: &Value) {
+    if let Some(tasks) = state["tasks"].as_object() {
+        for task in tasks.values() {
+            if task["status"] == "complete" {
+                if let Some(proof) = task["proof_path"].as_str() {
+                    let path = if Path::new(proof).is_absolute() {
+                        PathBuf::from(proof)
+                    } else {
+                        mission_dir.join(proof)
+                    };
+                    if let Some(parent) = path.parent() {
+                        fs::create_dir_all(parent).expect("create proof parent");
+                    }
+                    fs::write(&path, "# proof\n").expect("write proof");
+                }
+            }
+        }
+    }
     let bytes = serde_json::to_vec_pretty(state).expect("serialize state");
     fs::write(mission_dir.join("STATE.json"), bytes).expect("write STATE.json");
 }
@@ -813,6 +832,107 @@ fn complete_dry_run_does_not_mutate() {
     assert!(
         read_events(&mission_dir).is_empty(),
         "dry-run must not append events"
+    );
+}
+
+#[test]
+fn close_refuses_when_completed_task_proof_file_is_missing() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    let state = StateBuilder::fresh("demo")
+        .ratified()
+        .plan_locked()
+        .task("T1", "complete")
+        .mission_close_review("passed")
+        .revision(6)
+        .build();
+    write_state(&mission_dir, &state);
+    fs::remove_file(mission_dir.join("specs/T1/PROOF.md")).unwrap();
+
+    let check = cmd()
+        .current_dir(tmp.path())
+        .args(["close", "check", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(check.status.success());
+    let json = parse_stdout(&check);
+    assert_eq!(json["data"]["ready"], false);
+    assert!(json["data"]["blockers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|b| b["code"] == "PROOF_MISSING"));
+
+    let complete = cmd()
+        .current_dir(tmp.path())
+        .args(["close", "complete", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!complete.status.success());
+    let json = parse_stdout(&complete);
+    assert_eq!(json["code"], "CLOSE_NOT_READY");
+}
+
+#[test]
+fn concurrent_dirty_with_expect_revision_keeps_successful_artifact() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    seed_ready_for_mission_close_review(&mission_dir);
+    let state = StateBuilder::fresh("demo")
+        .ratified()
+        .plan_locked()
+        .phase("mission_close")
+        .task("T1", "complete")
+        .mission_close_review("not_started")
+        .revision(5)
+        .build();
+    write_state(&mission_dir, &state);
+
+    let workers = 8usize;
+    let barrier = Arc::new(Barrier::new(workers));
+    let mut handles = Vec::new();
+    for i in 0..workers {
+        let path = tmp.path().to_path_buf();
+        let findings = tmp.path().join(format!("findings-{i}.md"));
+        fs::write(&findings, format!("# writer-{i}\n")).unwrap();
+        let barrier = Arc::clone(&barrier);
+        handles.push(thread::spawn(move || {
+            barrier.wait();
+            let output = cmd()
+                .current_dir(path)
+                .args([
+                    "close",
+                    "record-review",
+                    "--findings-file",
+                    findings.to_str().unwrap(),
+                    "--mission",
+                    "demo",
+                    "--expect-revision",
+                    "5",
+                ])
+                .output()
+                .expect("runs");
+            (i, parse_stdout(&output))
+        }));
+    }
+    let results: Vec<(usize, Value)> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+    let successes: Vec<&(usize, Value)> = results.iter().filter(|(_, v)| v["ok"] == true).collect();
+    assert_eq!(successes.len(), 1, "results: {results:?}");
+    let success_idx = successes[0].0;
+    let success_path = successes[0].1["data"]["findings_file"]
+        .as_str()
+        .expect("findings path");
+    let artifact = fs::read_to_string(success_path).unwrap();
+    assert!(
+        artifact.contains(&format!("writer-{success_idx}")),
+        "artifact must belong to successful writer {success_idx}, got {artifact:?}"
+    );
+    assert!(
+        results
+            .iter()
+            .filter(|(_, v)| v["ok"] == false)
+            .all(|(_, v)| v["code"] == "REVISION_CONFLICT"),
+        "failed writers should be revision conflicts: {results:?}"
     );
 }
 

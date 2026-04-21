@@ -11,11 +11,13 @@ use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::{CliError, CliResult};
 use crate::core::mission::resolve_mission;
+use crate::core::paths::ensure_artifact_parent_write_safe;
 use crate::state::{self, fs_atomic::atomic_write, Phase};
 
 pub fn run(ctx: &Ctx) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let state = state::load(&paths)?;
+    state::check_expected_revision(ctx.expect_revision, &state)?;
     let report = validate_outcome(&paths.outcome())?;
 
     if !report.ratifiable {
@@ -31,7 +33,6 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string());
 
     if ctx.dry_run {
-        state::check_expected_revision(ctx.expect_revision, &state)?;
         let would_phase = advance_phase(&state.phase);
         let env = JsonOk::new(
             Some(state.mission_id.clone()),
@@ -72,6 +73,7 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
             Ok(())
         },
     )?;
+    ensure_artifact_parent_write_safe(&paths, &outcome_path)?;
     atomic_write(&outcome_path, rewritten_outcome.as_bytes())?;
 
     let env = JsonOk::new(

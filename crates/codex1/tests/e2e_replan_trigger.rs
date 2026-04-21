@@ -131,6 +131,7 @@ mission_close:
     state["plan"]["locked"] = Value::Bool(true);
     state["plan"]["requested_level"] = Value::String("light".into());
     state["plan"]["effective_level"] = Value::String("light".into());
+    state["plan"]["task_ids"] = json!(["T1", "T2", "T3"]);
     state["phase"] = Value::String("execute".into());
     state["tasks"] = json!({
         "T1": {
@@ -157,6 +158,7 @@ mission_close:
 fn reset_target(mission_dir: &Path, task_id: &str) {
     let mut state = read_state(mission_dir);
     state["tasks"][task_id]["status"] = Value::String("awaiting_review".into());
+    state["tasks"][task_id]["finished_at"] = Value::String("2999-01-01T00:00:00Z".into());
     write_state(mission_dir, &state);
 }
 
@@ -224,10 +226,12 @@ fn e2e_six_dirty_reviews_trigger_replan_and_record_clears_counters() {
             "six_dirty",
             "--supersedes",
             "T2",
+            "--supersedes",
+            "T3",
         ],
     );
     assert_eq!(recorded["data"]["reason"], "six_dirty");
-    assert_eq!(recorded["data"]["supersedes"], json!(["T2"]));
+    assert_eq!(recorded["data"]["supersedes"], json!(["T2", "T3"]));
     assert_eq!(recorded["data"]["phase_after"], "plan");
     assert_eq!(recorded["data"]["plan_locked"], false);
 
@@ -328,6 +332,7 @@ fn plan_check_after_replan_record_clears_triggered() {
     let mut state = read_state(&mission_dir);
     state["outcome"] = json!({ "ratified": true, "ratified_at": "2026-04-20T00:00:00Z" });
     state["plan"]["locked"] = Value::Bool(true);
+    state["plan"]["task_ids"] = json!(["T1", "T2", "T3"]);
     state["phase"] = Value::String("execute".into());
     state["tasks"] = json!({
         "T1": {
@@ -359,6 +364,8 @@ fn plan_check_after_replan_record_clears_triggered() {
             "scope_change",
             "--supersedes",
             "T2",
+            "--supersedes",
+            "T3",
         ],
     );
 
@@ -459,6 +466,9 @@ mission_close:
         let dir = mission_dir.join("specs").join(tid);
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("SPEC.md"), format!("# {tid}\n")).unwrap();
+        if matches!(tid, "T1" | "T2") {
+            fs::write(dir.join("PROOF.md"), format!("# proof {tid}\n")).unwrap();
+        }
     }
     // Pre-seed T1 complete and T2 awaiting_review (bypassing the usual
     // `plan check` + `task start`/`finish` path since we only care
@@ -504,6 +514,8 @@ mission_close:
             "scope_change",
             "--supersedes",
             "T2",
+            "--supersedes",
+            "T3",
         ],
     );
 

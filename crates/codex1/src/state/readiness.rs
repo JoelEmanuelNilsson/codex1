@@ -3,7 +3,9 @@
 //! Keeping the derivation in Foundation guarantees both commands can
 //! never disagree about whether a mission is terminal-ready.
 
-use crate::state::schema::{MissionCloseReviewState, MissionState, ReviewVerdict, TaskStatus};
+use crate::state::schema::{
+    MissionCloseReviewState, MissionState, ReviewRecordCategory, ReviewVerdict, TaskStatus,
+};
 
 /// Derived verdict (stable string values).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,10 +95,10 @@ pub fn tasks_complete(state: &MissionState) -> bool {
 }
 
 fn has_blocking_dirty(state: &MissionState) -> bool {
-    state
-        .reviews
-        .values()
-        .any(|r| matches!(r.verdict, ReviewVerdict::Dirty))
+    state.reviews.values().any(|r| {
+        matches!(r.verdict, ReviewVerdict::Dirty)
+            && matches!(r.category, ReviewRecordCategory::AcceptedCurrent)
+    })
 }
 
 /// Whether a Stop request from Ralph should be allowed.

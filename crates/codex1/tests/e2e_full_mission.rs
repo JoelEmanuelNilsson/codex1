@@ -102,6 +102,9 @@ constraints:
   - Use tempfile-backed mission directories.
   - No direct writes to STATE.json.
 
+definitions:
+  terminal_complete: Mission has passed mission-close review and close complete.
+
 quality_bar:
   - Tests fail closed on any non-zero exit from a CLI step.
 

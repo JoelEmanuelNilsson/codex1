@@ -28,20 +28,21 @@ clippy:
 	cargo clippy -- -D warnings
 
 install-local: build
-	@mkdir -p $(INSTALL_DIR)
-	cp target/release/$(BIN) $(INSTALL_DIR)/$(BIN)
+	@mkdir -p "$(INSTALL_DIR)"
+	install -m 0755 "target/release/$(BIN)" "$(INSTALL_DIR)/$(BIN)"
 	@echo "Installed $(BIN) to $(INSTALL_DIR)/$(BIN)"
 
 verify-installed:
-	@command -v $(BIN) > /dev/null || { echo "$(BIN) not on PATH"; exit 1; }
-	@echo "$(BIN) is installed at: $$(command -v $(BIN))"
-	$(BIN) --help > /dev/null
-	$(BIN) doctor
-	@tmp="$$(mktemp -d /tmp/codex1-verify.XXXXXX)"; \
+	@installed="$(INSTALL_DIR)/$(BIN)"; \
+	  test -x "$$installed" || { echo "$$installed is not executable"; exit 1; }; \
+	  echo "$(BIN) is installed at: $$installed"; \
+	  "$$installed" --help > /dev/null; \
+	  tmp="$$(mktemp -d /tmp/codex1-verify.XXXXXX)"; \
 	  cd "$$tmp" && \
-	  $(BIN) init --mission verify-smoke > /dev/null && \
+	  "$$installed" doctor > /dev/null && \
+	  "$$installed" init --mission verify-smoke > /dev/null && \
 	  test -f PLANS/verify-smoke/STATE.json && \
-	  $(BIN) status --mission verify-smoke > /dev/null; \
+	  "$$installed" status --mission verify-smoke > /dev/null; \
 	  rc=$$?; rm -rf "$$tmp"; exit $$rc
 
 verify-contract: fmt clippy test install-local verify-installed

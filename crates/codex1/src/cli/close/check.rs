@@ -13,8 +13,11 @@ use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::CliResult;
 use crate::core::mission::resolve_mission;
+use crate::core::paths::MissionPaths;
 use crate::state::readiness::{self, Verdict};
-use crate::state::schema::{MissionCloseReviewState, MissionState, ReviewVerdict, TaskStatus};
+use crate::state::schema::{
+    MissionCloseReviewState, MissionState, ReviewRecordCategory, ReviewVerdict, TaskStatus,
+};
 use crate::state::{self};
 
 use super::serde_variant;
@@ -54,6 +57,17 @@ impl ReadinessReport {
         }
     }
 
+    pub fn from_state_and_paths(state: &MissionState, paths: &MissionPaths) -> Self {
+        let verdict = readiness::derive_verdict(state);
+        let blockers = derive_blockers_with_paths(state, Some(paths));
+        let ready = matches!(verdict, Verdict::MissionCloseReviewPassed) && blockers.is_empty();
+        Self {
+            verdict,
+            blockers,
+            ready,
+        }
+    }
+
     /// Concatenated blocker message for error envelopes.
     pub fn blocker_summary(&self) -> String {
         if self.blockers.is_empty() {
@@ -73,6 +87,10 @@ impl ReadinessReport {
 /// not hide parallel issues from the caller.
 #[must_use]
 pub fn derive_blockers(state: &MissionState) -> Vec<Blocker> {
+    derive_blockers_with_paths(state, None)
+}
+
+fn derive_blockers_with_paths(state: &MissionState, paths: Option<&MissionPaths>) -> Vec<Blocker> {
     let mut blockers = Vec::new();
 
     if !state.outcome.ratified {
@@ -109,7 +127,17 @@ pub fn derive_blockers(state: &MissionState) -> Vec<Blocker> {
     } else {
         for id in &state.plan.task_ids {
             match state.tasks.get(id) {
-                Some(t) if matches!(t.status, TaskStatus::Complete | TaskStatus::Superseded) => {}
+                Some(t) if matches!(t.status, TaskStatus::Complete | TaskStatus::Superseded) => {
+                    if matches!(t.status, TaskStatus::Complete) {
+                        if let Some(paths) = paths {
+                            match proof_exists(paths, t.proof_path.as_deref()) {
+                                Ok(()) => {}
+                                Err(detail) => blockers
+                                    .push(Blocker::new("PROOF_MISSING", format!("{id}: {detail}"))),
+                            }
+                        }
+                    }
+                }
                 Some(t) => blockers.push(Blocker::new(
                     "TASK_NOT_READY",
                     format!("{id} is {}", serde_variant(&t.status)),
@@ -123,6 +151,9 @@ pub fn derive_blockers(state: &MissionState) -> Vec<Blocker> {
     }
     for (review_id, record) in &state.reviews {
         if matches!(record.verdict, ReviewVerdict::Dirty) {
+            if !matches!(record.category, ReviewRecordCategory::AcceptedCurrent) {
+                continue;
+            }
             blockers.push(Blocker::new(
                 "REVIEW_FINDINGS_BLOCK",
                 format!("{review_id} has dirty review"),
@@ -150,10 +181,27 @@ pub fn derive_blockers(state: &MissionState) -> Vec<Blocker> {
     blockers
 }
 
+fn proof_exists(paths: &MissionPaths, proof_path: Option<&str>) -> Result<(), String> {
+    let Some(raw) = proof_path else {
+        return Ok(());
+    };
+    let path = std::path::Path::new(raw);
+    let abs = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        paths.mission_dir.join(path)
+    };
+    if abs.is_file() {
+        Ok(())
+    } else {
+        Err(format!("proof file not found at {}", abs.display()))
+    }
+}
+
 pub fn run(ctx: &Ctx) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let state = state::load(&paths)?;
-    let report = ReadinessReport::from_state(&state);
+    let report = ReadinessReport::from_state_and_paths(&state, &paths);
     let env = JsonOk::new(
         Some(state.mission_id.clone()),
         Some(state.revision),

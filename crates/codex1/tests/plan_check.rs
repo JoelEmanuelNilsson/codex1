@@ -178,6 +178,65 @@ fn valid_plan_locks_state_and_advances_phase() {
 }
 
 #[test]
+fn review_task_must_depend_on_its_targets() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    for task in ["T1", "T2"] {
+        write_spec(&mission_dir, task, &format!("# {task} SPEC\n"));
+    }
+    write_plan(
+        &mission_dir,
+        r#"mission_id: demo
+
+planning_level:
+  requested: light
+  effective: light
+
+outcome_interpretation:
+  summary: "Review dependency regression."
+
+architecture:
+  summary: "One task and one review."
+  key_decisions:
+    - "Keep the repro minimal."
+
+planning_process:
+  evidence:
+    - kind: direct_reasoning
+      summary: "Regression."
+
+tasks:
+  - id: T1
+    title: "Work"
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+  - id: T2
+    title: "Review"
+    kind: review
+    depends_on: []
+    spec: specs/T2/SPEC.md
+    review_target:
+      tasks: [T1]
+
+risks:
+  - risk: "Review could run too early."
+    mitigation: "Plan validation should reject it."
+
+mission_close:
+  criteria:
+    - "All work reviewed."
+"#,
+    );
+    let output = run_check(&tmp, "demo", &[]);
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    let message = json["message"].as_str().unwrap();
+    assert!(message.contains("does not depend on"), "{message}");
+}
+
+#[test]
 fn missing_depends_on_returns_plan_invalid() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = init_demo(&tmp, "demo");

@@ -71,6 +71,9 @@ constraints:
   - Tests must use tempfile-backed mission directories only.
   - OUTCOME.md rewrite must preserve the markdown body byte-for-byte.
 
+definitions:
+  mission: A visible Codex1 mission under PLANS/<mission-id>.
+
 quality_bar:
   - The check command is idempotent and side-effect free.
 
@@ -160,6 +163,41 @@ fn check_on_valid_outcome_is_ratifiable() {
 }
 
 #[test]
+fn check_requires_definitions_and_resolved_questions() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    seed_valid_outcome(&mission_dir, "demo");
+    let mut raw = fs::read_to_string(mission_dir.join("OUTCOME.md")).unwrap();
+    raw = raw
+        .replace(
+            "\ndefinitions:\n  mission: A visible Codex1 mission under PLANS/<mission-id>.\n",
+            "\n",
+        )
+        .replace("\nresolved_questions:\n  - question: Should status ratification rewrite the file?\n    answer: Yes, atomically, only the status line inside the frontmatter.\n", "\n");
+    fs::write(mission_dir.join("OUTCOME.md"), raw).unwrap();
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "check", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_json(&output);
+    let missing = json["context"]["missing_fields"].as_array().unwrap();
+    assert!(missing.iter().any(|v| v == "definitions"));
+    assert!(missing.iter().any(|v| v == "resolved_questions"));
+
+    let before = read_state(&mission_dir);
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "ratify", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    assert_eq!(read_state(&mission_dir), before);
+}
+
+#[test]
 fn check_flags_boilerplate_placeholders() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = init_demo(&tmp, "demo");
@@ -185,6 +223,8 @@ success_criteria:
 non_goals: []
 
 constraints: []
+
+definitions: {}
 
 quality_bar:
   - TBD
@@ -411,6 +451,7 @@ non_goals:
   - Do not reformat the body.
 constraints:
   - Preserve bytes outside the frontmatter status line.
+definitions: {}
 quality_bar:
   - Ratify remains idempotent at the file level.
 proof_expectations:

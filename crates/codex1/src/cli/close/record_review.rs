@@ -14,7 +14,7 @@ use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::{CliError, CliResult};
 use crate::core::mission::resolve_mission;
-use crate::core::paths::MissionPaths;
+use crate::core::paths::{ensure_artifact_parent_write_safe, MissionPaths};
 use crate::state::readiness::Verdict;
 use crate::state::schema::MissionCloseReviewState;
 use crate::state::{self};
@@ -64,7 +64,7 @@ pub fn run(
     // review is sensible. We allow both `ready_for_mission_close_review`
     // (the first attempt, which transitions review_state to Open before
     // recording) and `mission_close_review_open` (subsequent attempts).
-    let report = ReadinessReport::from_state(&current);
+    let report = ReadinessReport::from_state_and_paths(&current, &paths);
     if !matches!(
         report.verdict,
         Verdict::ReadyForMissionCloseReview | Verdict::MissionCloseReviewOpen
@@ -117,6 +117,19 @@ fn record_clean(
         "close.review.clean",
         payload,
         |state| {
+            let report = ReadinessReport::from_state_and_paths(state, paths);
+            if !matches!(
+                report.verdict,
+                Verdict::ReadyForMissionCloseReview | Verdict::MissionCloseReviewOpen
+            ) {
+                return Err(CliError::CloseNotReady {
+                    message: format!(
+                        "cannot record mission-close review while verdict is `{}` ({})",
+                        report.verdict.as_str(),
+                        report.blocker_summary()
+                    ),
+                });
+            }
             state.close.review_state = MissionCloseReviewState::Passed;
             state
                 .replan
@@ -177,11 +190,6 @@ fn record_dirty(
         return Ok(());
     }
 
-    std::fs::create_dir_all(paths.reviews_dir())?;
-    let predicted_revision = current.revision.saturating_add(1);
-    let findings_target = mission_close_review_path(paths, predicted_revision);
-    crate::state::fs_atomic::atomic_write(&findings_target, findings_body.as_bytes())?;
-
     let mutation = state::mutate(
         paths,
         ctx.expect_revision,
@@ -191,6 +199,23 @@ fn record_dirty(
             "reviewers": reviewers,
         }),
         |state| {
+            let report = ReadinessReport::from_state_and_paths(state, paths);
+            if !matches!(
+                report.verdict,
+                Verdict::ReadyForMissionCloseReview | Verdict::MissionCloseReviewOpen
+            ) {
+                return Err(CliError::CloseNotReady {
+                    message: format!(
+                        "cannot record mission-close review while verdict is `{}` ({})",
+                        report.verdict.as_str(),
+                        report.blocker_summary()
+                    ),
+                });
+            }
+            let findings_target =
+                mission_close_review_path(paths, state.revision.saturating_add(1));
+            ensure_artifact_parent_write_safe(paths, &findings_target)?;
+            crate::state::fs_atomic::atomic_write(&findings_target, findings_body.as_bytes())?;
             let counter = state
                 .replan
                 .consecutive_dirty_by_target
@@ -213,7 +238,7 @@ fn record_dirty(
         &mutation.state.mission_id,
         Some(mutation.new_revision),
         "dirty",
-        Some(&findings_target),
+        Some(&mission_close_review_path(paths, mutation.new_revision)),
         reviewers,
         /*dry_run=*/ false,
         MissionCloseReviewState::Open,

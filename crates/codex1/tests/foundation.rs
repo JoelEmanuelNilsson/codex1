@@ -125,6 +125,32 @@ fn init_rejects_absolute_mission_id() {
     assert_eq!(json["code"], "MISSION_NOT_FOUND");
 }
 
+#[cfg(unix)]
+#[test]
+fn init_rejects_symlinked_mission_directory() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = TempDir::new().unwrap();
+    let outside = tmp.path().join("outside");
+    let plans = tmp.path().join("PLANS");
+    fs::create_dir_all(&outside).unwrap();
+    fs::create_dir_all(&plans).unwrap();
+    symlink(&outside, plans.join("demo")).unwrap();
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["init", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    assert!(
+        !outside.join("STATE.json").exists(),
+        "init must not write through a symlinked mission dir"
+    );
+}
+
 #[test]
 fn status_resolves_existing_mission_and_reports_stop_allowed() {
     let tmp = TempDir::new().unwrap();

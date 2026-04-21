@@ -90,7 +90,7 @@ pub fn next_ready_wave(tasks: &[PlanTask], state: &MissionState) -> Option<Ready
     for (idx, (_, tasks_in_wave)) in waves.iter().enumerate() {
         let ready: Vec<PlanTask> = tasks_in_wave
             .iter()
-            .filter(|t| task_is_ready(t, state))
+            .filter(|t| !is_review_kind(t) && task_is_ready(t, state))
             .cloned()
             .collect();
         if !ready.is_empty() {
@@ -192,6 +192,9 @@ pub fn dirty_repair_targets(tasks: &[PlanTask], state: &MissionState) -> Vec<Str
         if !matches!(
             review_record.verdict,
             crate::state::schema::ReviewVerdict::Dirty
+        ) || !matches!(
+            review_record.category,
+            crate::state::schema::ReviewRecordCategory::AcceptedCurrent
         ) {
             continue;
         }

@@ -83,7 +83,7 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
 
     let current_ready_wave = waves
         .iter()
-        .find(|w| wave_is_current_ready(w, &state.tasks))
+        .find(|w| wave_is_current_ready(w, &tasks, &state.tasks))
         .map(|w| w.wave_id.clone());
 
     let all_tasks_complete = !tasks.is_empty()
@@ -157,9 +157,18 @@ pub fn derive_waves(
     // are a PLAN.yaml integrity failure — Unit 4's `plan check` catches
     // them too, but we surface a clear error here in case a user runs
     // `plan waves` directly.
+    let all_ids: BTreeSet<&str> = tasks.iter().map(|t| t.id.as_str()).collect();
     for t in &live {
         for dep in &t.depends_on {
             if !ids.contains(dep.as_str()) {
+                if all_ids.contains(dep.as_str())
+                    && matches!(
+                        state_tasks.get(dep).map(|r| r.status.clone()),
+                        Some(TaskStatus::Superseded)
+                    )
+                {
+                    continue;
+                }
                 return Err(CliError::DagMissingDep {
                     message: format!("Task {} depends on unknown task {dep}", t.id),
                 });
@@ -219,6 +228,9 @@ fn compute_depth(
     })?;
     let mut d = 0usize;
     for dep in &task.depends_on {
+        if !by_id.contains_key(dep.as_str()) {
+            continue;
+        }
         let parent = compute_depth(dep, by_id, depth, visiting)?;
         if parent + 1 > d {
             d = parent + 1;
@@ -271,14 +283,36 @@ fn compute_parallel_safety(bucket: &[&ParsedTask]) -> (bool, Vec<String>) {
 /// match; the "current ready" wave is the next *untouched* one.
 fn wave_is_current_ready(
     wave: &Wave,
+    plan_tasks: &[ParsedTask],
     state_tasks: &BTreeMap<String, crate::state::TaskRecord>,
 ) -> bool {
-    wave.tasks.iter().all(|id| {
-        matches!(
-            state_tasks
-                .get(id)
-                .map_or(TaskStatus::Pending, |r| r.status.clone()),
-            TaskStatus::Pending | TaskStatus::Ready
-        )
+    let by_id: BTreeMap<&str, &ParsedTask> =
+        plan_tasks.iter().map(|t| (t.id.as_str(), t)).collect();
+    wave.tasks.iter().any(|id| {
+        by_id
+            .get(id.as_str())
+            .is_some_and(|task| task_is_actionable(task, state_tasks))
     })
+}
+
+fn task_is_actionable(
+    task: &ParsedTask,
+    state_tasks: &BTreeMap<String, crate::state::TaskRecord>,
+) -> bool {
+    let is_review = matches!(task.kind.as_deref(), Some("review"));
+    let deps_ok = task.depends_on.iter().all(|dep| {
+        state_tasks.get(dep).is_some_and(|r| {
+            matches!(r.status, TaskStatus::Complete)
+                || (is_review && matches!(r.status, TaskStatus::AwaitingReview))
+        })
+    });
+    if !deps_ok {
+        return false;
+    }
+    matches!(
+        state_tasks
+            .get(&task.id)
+            .map_or(TaskStatus::Pending, |r| r.status.clone()),
+        TaskStatus::Pending | TaskStatus::Ready
+    )
 }
