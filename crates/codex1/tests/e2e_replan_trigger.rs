@@ -315,6 +315,56 @@ mission_close:
     }
 }
 
+fn write_valid_replan_plan(mission_dir: &Path) {
+    let plan = r"mission_id: demo
+
+planning_level:
+  requested: light
+  effective: light
+
+outcome_interpretation:
+  summary: replan replacement plan
+
+architecture:
+  summary: replacement-only plan
+  key_decisions:
+    - one
+
+planning_process:
+  evidence:
+    - kind: direct_reasoning
+      summary: x
+
+tasks:
+  - id: T4
+    title: Replacement work
+    kind: code
+    depends_on: []
+    spec: specs/T4/SPEC.md
+  - id: T5
+    title: Review of T4
+    kind: review
+    depends_on: [T4]
+    spec: specs/T5/SPEC.md
+    review_target:
+      tasks: [T4]
+
+risks:
+  - risk: x
+    mitigation: y
+
+mission_close:
+  criteria:
+    - ok
+";
+    fs::write(mission_dir.join("PLAN.yaml"), plan).unwrap();
+    for tid in ["T4", "T5"] {
+        let dir = mission_dir.join("specs").join(tid);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("SPEC.md"), format!("# {tid}\n")).unwrap();
+    }
+}
+
 /// Regression for round-2 e2e P0-1: `replan record` unlocks the plan and
 /// sets `state.replan.triggered = true`; a successful `plan check` that
 /// relocks the plan must ALSO clear `state.replan.triggered` and
@@ -373,6 +423,8 @@ fn plan_check_after_replan_record_clears_triggered() {
     assert_eq!(before["plan"]["locked"], false);
     assert_eq!(before["replan"]["triggered"], true);
     assert_eq!(before["replan"]["triggered_reason"], "scope_change");
+
+    write_valid_replan_plan(&mission_dir);
 
     // Relock via `plan check`. The closure must clear `replan.triggered`.
     run_ok(tmp.path(), &["plan", "check", "--mission", MISSION]);
@@ -519,7 +571,10 @@ mission_close:
         ],
     );
 
-    // Re-lock the plan; the P0 fix must clear replan.triggered here.
+    write_valid_replan_plan(&mission_dir);
+
+    // Re-lock the replacement plan; the P0 fix must clear
+    // replan.triggered here.
     run_ok(tmp.path(), &["plan", "check", "--mission", MISSION]);
     let relocked = read_state(&mission_dir);
     assert_eq!(

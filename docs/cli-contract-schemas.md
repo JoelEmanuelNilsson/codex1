@@ -80,6 +80,8 @@ missing `hint`/`context` as equivalent to the empty value. `ok`, `code`,
 3. Neither → walk up from CWD to the nearest single-mission `PLANS/` directory. Error if 0 or >1 candidates.
 4. Paths resolve to absolute; symlinks are followed by the filesystem.
 
+For `codex1 status` specifically, the graceful `foundation_only` fallback applies only to the true bare “no mission anywhere” case. Ambiguous multi-mission discovery or an explicit bad `--repo-root` / `--mission` still return `MISSION_NOT_FOUND`.
+
 ### Per-command relative path resolution
 
 Some commands take path arguments that reference artifacts inside the
@@ -260,7 +262,7 @@ Alternate shapes for review/close/replan ready states.
     "targets": ["T2"],
     "target_specs": [{"task_id":"T2","spec_path":"specs/T2/SPEC.md","spec_excerpt":"…"}],
     "diffs": [{"path":"crates/codex1/src/cli/task/**"}],
-    "proofs": ["specs/T2/PROOF.md"],
+    "proofs": ["PLANS/demo/specs/T2/PROOF.md"],
     "mission_summary": "…",
     "mission_id": "demo",
     "reviewer_instructions": "You are a Codex1 reviewer. …"
@@ -269,7 +271,10 @@ Alternate shapes for review/close/replan ready states.
 `target_specs`, `profiles`, `mission_id`, and `reviewer_instructions`
 are additive convenience fields. `proofs` is the canonical name for the
 list of target proof paths (the binary historically emitted
-`target_proofs`; it now emits `proofs`).
+`target_proofs`; it now emits `proofs`). For in-repo proof files the
+paths are reported relative to the repo root, e.g.
+`PLANS/<mission>/specs/T2/PROOF.md`; externally recorded absolute proof
+paths remain absolute.
 
 ### `review record --clean|--findings-file`
 Success:

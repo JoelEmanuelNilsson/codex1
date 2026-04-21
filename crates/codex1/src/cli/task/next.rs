@@ -17,12 +17,27 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let state = state::load(&paths)?;
 
-    // Short-circuit on unlocked plan and pending replan so `task next`
+    // Short-circuit on missing clarified outcome, unlocked plan, and
+    // pending replan so `task next`
     // agrees with `status.next_action`. Without these, a skill calling
     // `task next` directly would be handed a wave while `status` is
     // telling it to `$plan` or `$plan replan` — two canonical readiness
     // endpoints disagreeing. See round-2 e2e P2-1 and the round-1 P2-2
     // fix at `cli/status/project.rs::build`.
+    if !state.outcome.ratified {
+        let env = JsonOk::new(
+            Some(state.mission_id.clone()),
+            Some(state.revision),
+            json!({
+                "next": {
+                    "kind": "clarify",
+                    "hint": "Ratify OUTCOME.md before planning.",
+                }
+            }),
+        );
+        println!("{}", env.to_pretty());
+        return Ok(());
+    }
     if !state.plan.locked {
         let env = JsonOk::new(
             Some(state.mission_id.clone()),
@@ -56,10 +71,25 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
     let effective = effective_tasks(&plan, &state);
 
     let next = if all_tasks_terminal(&plan, &state) {
-        json!({
-            "kind": "mission_close_review",
-            "reason": "all tasks complete or superseded",
-        })
+        if state.close.terminal_at.is_some() {
+            json!({
+                "kind": "closed",
+                "hint": "Mission is terminal.",
+            })
+        } else if matches!(
+            state.close.review_state,
+            crate::state::schema::MissionCloseReviewState::Passed
+        ) {
+            json!({
+                "kind": "close",
+                "hint": "Mission-close review passed; finalize close.",
+            })
+        } else {
+            json!({
+                "kind": "mission_close_review",
+                "reason": "all tasks complete or superseded",
+            })
+        }
     } else {
         let awaiting = awaiting_review_targets(&effective);
         if let Some((review_task, covered)) = next_ready_review(&plan, &effective, &awaiting) {

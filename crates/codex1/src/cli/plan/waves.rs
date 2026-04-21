@@ -6,16 +6,15 @@
 //! `current_ready_wave` and `all_tasks_complete`. The wave *list* itself
 //! is structural (depth-driven), not state-filtered.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
-
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::{CliError, CliResult};
 use crate::core::mission::resolve_mission;
+use crate::core::paths::{ensure_artifact_file_read_safe, MissionPaths};
 use crate::state::{self, TaskStatus};
 
 /// Minimal task shape needed for wave derivation and graph emission. Kept
@@ -42,7 +41,9 @@ struct ParsedPlan {
 }
 
 /// Load and parse PLAN.yaml into the minimal task shape used by waves/graph.
-pub fn load_plan_tasks(plan_path: &Path) -> CliResult<Vec<ParsedTask>> {
+pub fn load_plan_tasks(paths: &MissionPaths) -> CliResult<Vec<ParsedTask>> {
+    let plan_path = paths.plan();
+    ensure_artifact_file_read_safe(paths, &plan_path, "PLAN.yaml")?;
     if !plan_path.is_file() {
         return Err(CliError::PlanInvalid {
             message: format!("PLAN.yaml not found at {}", plan_path.display()),
@@ -78,7 +79,7 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
         return Ok(());
     }
 
-    let tasks = load_plan_tasks(&paths.plan())?;
+    let tasks = load_plan_tasks(&paths)?;
     let waves = derive_waves(&tasks, &state.tasks)?;
 
     let current_ready_wave = waves

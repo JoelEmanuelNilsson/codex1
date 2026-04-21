@@ -45,7 +45,7 @@ impl NodeStatus {
 pub fn run(ctx: &Ctx, format: GraphFormat, out: Option<PathBuf>) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let state = state::load(&paths)?;
-    let tasks = load_plan_tasks(&paths.plan())?;
+    let tasks = load_plan_tasks(&paths)?;
     let statuses = derive_node_statuses(&tasks, &state.tasks);
 
     let (inline_key, body) = match format {

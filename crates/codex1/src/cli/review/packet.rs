@@ -14,7 +14,9 @@ use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::CliResult;
 use crate::core::mission::resolve_mission;
-use crate::core::paths::{resolve_existing_mission_file, MissionPaths};
+use crate::core::paths::{
+    ensure_artifact_file_read_safe, resolve_existing_mission_file, MissionPaths,
+};
 use crate::state::{self, schema::MissionState};
 
 /// Standing reviewer instructions. See `04-roles-models-prompts.md`.
@@ -55,7 +57,8 @@ pub fn run(ctx: &Ctx, task_id: &str) -> CliResult<()> {
         .first()
         .cloned()
         .unwrap_or_else(|| "code_bug_correctness".to_string());
-    let mission_summary = read_interpreted_destination(&paths.outcome()).unwrap_or_default();
+    let mission_summary =
+        read_interpreted_destination(&paths, &paths.outcome()).unwrap_or_default();
 
     // `proofs` is the canonical field name from `docs/cli-contract-schemas.md`.
     // `target_specs`, `profiles`, `mission_id`, and `reviewer_instructions`
@@ -160,7 +163,8 @@ fn read_excerpt(path: &Path) -> Option<String> {
 /// whenever whitespace between the key and the indicator defeated the
 /// naive equality check. `serde_yaml::from_str` on the frontmatter
 /// yields the parsed string body directly — no indicator leakage.
-fn read_interpreted_destination(outcome: &Path) -> Option<String> {
+fn read_interpreted_destination(paths: &MissionPaths, outcome: &Path) -> Option<String> {
+    ensure_artifact_file_read_safe(paths, outcome, "OUTCOME.md").ok()?;
     let raw = std::fs::read_to_string(outcome).ok()?;
     let frontmatter = extract_frontmatter(&raw)?;
     let doc: serde_yaml::Value = serde_yaml::from_str(frontmatter).ok()?;

@@ -6,7 +6,7 @@
 use std::fmt::Write as _;
 use std::path::Path;
 
-use crate::core::paths::MissionPaths;
+use crate::core::paths::{ensure_artifact_file_read_safe, MissionPaths};
 use crate::state::schema::{MissionCloseReviewState, MissionState};
 
 use super::{serde_variant, MISSION_CLOSE_TARGET};
@@ -134,6 +134,15 @@ pub fn render(state: &MissionState, paths: &MissionPaths) -> String {
 /// frontmatter, or the key is absent. Failure to parse is tolerated —
 /// CLOSEOUT.md is an auditor artifact, not a gate.
 fn read_interpreted_destination(path: &Path) -> Option<String> {
+    let mission_dir = path.parent()?;
+    let repo_root = mission_dir.parent()?.parent()?.to_path_buf();
+    let mission_id = mission_dir.file_name()?.to_string_lossy().to_string();
+    let paths = MissionPaths {
+        repo_root,
+        mission_id,
+        mission_dir: mission_dir.to_path_buf(),
+    };
+    ensure_artifact_file_read_safe(&paths, path, "OUTCOME.md").ok()?;
     let raw = std::fs::read_to_string(path).ok()?;
     let frontmatter = extract_frontmatter(&raw)?;
     let value: serde_yaml::Value = serde_yaml::from_str(frontmatter).ok()?;

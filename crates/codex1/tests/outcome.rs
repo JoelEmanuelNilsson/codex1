@@ -227,6 +227,98 @@ fn check_rejects_empty_definitions_and_resolved_questions() {
         .any(|v| v.as_str().unwrap_or("").contains("resolved_questions")));
 }
 
+#[test]
+fn check_rejects_empty_required_list_sections() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    seed_valid_outcome(&mission_dir, "demo");
+    let mut raw = fs::read_to_string(mission_dir.join("OUTCOME.md")).unwrap();
+    for (before, after) in [
+        (
+            "\nnon_goals:\n  - Do not implement planning logic in this unit.\n  - Do not change Foundation files.\n",
+            "\nnon_goals: []\n",
+        ),
+        (
+            "\nconstraints:\n  - Tests must use tempfile-backed mission directories only.\n  - OUTCOME.md rewrite must preserve the markdown body byte-for-byte.\n",
+            "\nconstraints: []\n",
+        ),
+        (
+            "\nquality_bar:\n  - The check command is idempotent and side-effect free.\n",
+            "\nquality_bar: []\n",
+        ),
+        (
+            "\nproof_expectations:\n  - cargo test outcome passes for this unit.\n",
+            "\nproof_expectations: []\n",
+        ),
+        (
+            "\nreview_expectations:\n  - The main thread reviews outcome validation before plan scaffolding.\n",
+            "\nreview_expectations: []\n",
+        ),
+        (
+            "\nknown_risks:\n  - YAML frontmatter reordering on rewrite could silently corrupt missions.\n",
+            "\nknown_risks: []\n",
+        ),
+    ] {
+        raw = raw.replace(before, after);
+    }
+    fs::write(mission_dir.join("OUTCOME.md"), raw).unwrap();
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "check", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_json(&output);
+    let missing = json["context"]["missing_fields"].as_array().unwrap();
+    for field in [
+        "non_goals (empty list)",
+        "constraints (empty list)",
+        "quality_bar (empty list)",
+        "proof_expectations (empty list)",
+        "review_expectations (empty list)",
+        "known_risks (empty list)",
+    ] {
+        assert!(
+            missing.iter().any(|v| v == field),
+            "missing expected field {field}; got {missing:?}"
+        );
+    }
+}
+
+#[test]
+fn check_and_ratify_reject_mission_id_mismatch() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    seed_valid_outcome(&mission_dir, "demo");
+    let raw = fs::read_to_string(mission_dir.join("OUTCOME.md"))
+        .unwrap()
+        .replace("mission_id: demo", "mission_id: other-mission");
+    fs::write(mission_dir.join("OUTCOME.md"), raw).unwrap();
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "check", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_json(&output);
+    let missing = json["context"]["missing_fields"].as_array().unwrap();
+    assert!(missing.iter().any(|v| v
+        .as_str()
+        .unwrap_or("")
+        .contains("expected `demo`, found `other-mission`")));
+
+    let before = read_state(&mission_dir);
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "ratify", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    assert_eq!(read_state(&mission_dir), before);
+}
+
 #[cfg(unix)]
 #[test]
 fn ratify_rejects_symlinked_outcome_without_mutating_state() {

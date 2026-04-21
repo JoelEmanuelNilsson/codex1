@@ -36,13 +36,16 @@ verify-installed:
 	@installed="$(INSTALL_DIR)/$(BIN)"; \
 	  test -x "$$installed" || { echo "$$installed is not executable"; exit 1; }; \
 	  echo "$(BIN) is installed at: $$installed"; \
-	  "$$installed" --help > /dev/null; \
 	  tmp="$$(mktemp -d /tmp/codex1-verify.XXXXXX)"; \
+	  PATH="$(INSTALL_DIR):$$PATH"; export PATH; \
 	  cd "$$tmp" && \
-	  "$$installed" doctor > /dev/null && \
-	  "$$installed" init --mission verify-smoke > /dev/null && \
+	  resolved="$$(command -v $(BIN))" && \
+	  test "$$resolved" = "$$installed" && \
+	  $(BIN) --help > /dev/null && \
+	  $(BIN) doctor > /dev/null && \
+	  $(BIN) init --mission verify-smoke > /dev/null && \
 	  test -f PLANS/verify-smoke/STATE.json && \
-	  "$$installed" status --mission verify-smoke > /dev/null; \
+	  $(BIN) status --mission verify-smoke > /dev/null; \
 	  rc=$$?; rm -rf "$$tmp"; exit $$rc
 
 verify-contract: fmt clippy test install-local verify-installed

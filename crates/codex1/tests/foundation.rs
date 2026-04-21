@@ -58,6 +58,33 @@ fn doctor_runs_without_auth() {
     assert_eq!(json["data"]["auth"]["required"], Value::Bool(false));
 }
 
+#[cfg(unix)]
+#[test]
+fn doctor_ignores_non_executable_path_shadow() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = TempDir::new().unwrap();
+    let shadow_dir = tmp.path().join("shadow");
+    fs::create_dir_all(&shadow_dir).unwrap();
+    let shadow = shadow_dir.join("codex1");
+    fs::write(&shadow, "#!/bin/sh\necho nope\n").unwrap();
+    let mut perms = fs::metadata(&shadow).unwrap().permissions();
+    perms.set_mode(0o644);
+    fs::set_permissions(&shadow, perms).unwrap();
+
+    let output = cmd()
+        .env("PATH", format!("{}:/usr/bin:/bin", shadow_dir.display()))
+        .arg("doctor")
+        .output()
+        .expect("runs");
+    assert!(output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_ne!(
+        json["data"]["install"]["codex1_on_path"],
+        shadow.display().to_string()
+    );
+}
+
 #[test]
 fn init_creates_mission_scaffold() {
     let tmp = TempDir::new().unwrap();
@@ -288,6 +315,36 @@ fn bare_status_reports_ambiguous_missions() {
     let json = parse_stdout_json(&output);
     assert_eq!(json["code"], "MISSION_NOT_FOUND");
     assert_eq!(json["context"]["ambiguous"], true);
+}
+
+#[test]
+fn status_with_explicit_empty_repo_root_errors() {
+    let tmp = TempDir::new().unwrap();
+    let empty_root = tmp.path().join("empty-root");
+    fs::create_dir_all(&empty_root).unwrap();
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["status", "--repo-root", empty_root.to_str().unwrap()])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "MISSION_NOT_FOUND");
+}
+
+#[test]
+fn fresh_mission_task_next_reports_clarify() {
+    let tmp = TempDir::new().unwrap();
+    init_demo(&tmp, "demo");
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["task", "next", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["data"]["next"]["kind"], "clarify");
 }
 
 #[test]

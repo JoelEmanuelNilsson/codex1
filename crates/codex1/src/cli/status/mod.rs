@@ -34,7 +34,7 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
             // Explicit --mission <id> that doesn't resolve → error.
             // Bare `codex1 status` with nothing found → graceful "no
             // mission" projection so Ralph never blocks the shell.
-            if ctx.mission.is_some() || ambiguous {
+            if ctx.mission.is_some() || ctx.repo_root.is_some() || ambiguous {
                 return Err(err);
             }
             let env = JsonOk::global(json!({

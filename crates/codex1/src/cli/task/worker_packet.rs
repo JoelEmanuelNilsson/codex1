@@ -5,7 +5,9 @@ use std::fs;
 use serde_json::{json, Value as JsonValue};
 
 use crate::core::error::CliError;
-use crate::core::paths::{resolve_existing_mission_file, MissionPaths};
+use crate::core::paths::{
+    ensure_artifact_file_read_safe, resolve_existing_mission_file, MissionPaths,
+};
 
 use super::lifecycle::PlanTask;
 
@@ -58,6 +60,7 @@ pub fn build_packet(paths: &MissionPaths, plan_task: &PlanTask) -> Result<JsonVa
 /// Parse OUTCOME.md, return `interpreted_destination` from the YAML
 /// frontmatter (block delimited by leading `---` / trailing `---`).
 fn read_interpreted_destination(paths: &MissionPaths) -> Option<String> {
+    ensure_artifact_file_read_safe(paths, &paths.outcome(), "OUTCOME.md").ok()?;
     let raw = fs::read_to_string(paths.outcome()).ok()?;
     let frontmatter = extract_frontmatter(&raw)?;
     let doc: serde_yaml::Value = serde_yaml::from_str(frontmatter).ok()?;

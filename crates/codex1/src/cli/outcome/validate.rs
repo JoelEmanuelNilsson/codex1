@@ -22,7 +22,10 @@ pub struct ValidationReport {
 
 /// Load and validate OUTCOME.md at `path`. Returns a structured report
 /// even when invalid — the caller decides whether to error.
-pub fn validate_outcome(path: &Path) -> Result<ValidationReport, CliError> {
+pub fn validate_outcome(
+    path: &Path,
+    expected_mission_id: &str,
+) -> Result<ValidationReport, CliError> {
     if !path.is_file() {
         return Err(CliError::OutcomeIncomplete {
             message: format!("OUTCOME.md not found at {}", path.display()),
@@ -63,6 +66,17 @@ pub fn validate_outcome(path: &Path) -> Result<ValidationReport, CliError> {
         &mut missing_fields,
         &mut placeholders,
     );
+    if let Some(actual) = mapping
+        .get(Value::String("mission_id".to_string()))
+        .and_then(Value::as_str)
+        .map(str::trim)
+    {
+        if !actual.is_empty() && actual != expected_mission_id {
+            missing_fields.push(format!(
+                "mission_id (expected `{expected_mission_id}`, found `{actual}`)"
+            ));
+        }
+    }
     check_scalar(&mapping, "status", &mut missing_fields, &mut placeholders);
     check_scalar(&mapping, "title", &mut missing_fields, &mut placeholders);
     check_scalar(
@@ -91,13 +105,13 @@ pub fn validate_outcome(path: &Path) -> Result<ValidationReport, CliError> {
         &mut placeholders,
     );
 
-    check_list_present(
+    check_non_empty_list(
         &mapping,
         "non_goals",
         &mut missing_fields,
         &mut placeholders,
     );
-    check_list_present(
+    check_non_empty_list(
         &mapping,
         "constraints",
         &mut missing_fields,
@@ -109,25 +123,25 @@ pub fn validate_outcome(path: &Path) -> Result<ValidationReport, CliError> {
         &mut missing_fields,
         &mut placeholders,
     );
-    check_list_present(
+    check_non_empty_list(
         &mapping,
         "quality_bar",
         &mut missing_fields,
         &mut placeholders,
     );
-    check_list_present(
+    check_non_empty_list(
         &mapping,
         "proof_expectations",
         &mut missing_fields,
         &mut placeholders,
     );
-    check_list_present(
+    check_non_empty_list(
         &mapping,
         "review_expectations",
         &mut missing_fields,
         &mut placeholders,
     );
-    check_list_present(
+    check_non_empty_list(
         &mapping,
         "known_risks",
         &mut missing_fields,
@@ -325,20 +339,6 @@ fn scan_value_for_placeholders(field: &str, value: &Value, placeholders: &mut Ve
             }
         }
         _ => {}
-    }
-}
-
-fn check_list_present(
-    m: &Mapping,
-    field: &str,
-    missing: &mut Vec<String>,
-    placeholders: &mut Vec<String>,
-) {
-    match m.get(Value::String(field.to_string())) {
-        None => missing.push(format!("{field} (missing; use [] if truly empty)")),
-        Some(Value::Sequence(seq)) => scan_list_entries(field, seq, placeholders),
-        Some(Value::Null) => missing.push(format!("{field} (null; use [] if truly empty)")),
-        Some(_) => missing.push(format!("{field} (not a list)")),
     }
 }
 

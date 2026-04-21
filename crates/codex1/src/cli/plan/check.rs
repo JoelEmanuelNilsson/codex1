@@ -57,10 +57,25 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
         );
     }
 
-    let parsed: ParsedPlan = serde_yaml::from_str(&raw).map_err(|err| CliError::PlanInvalid {
-        message: format!("PLAN.yaml is not valid YAML: {err}"),
-        hint: Some("Re-run `codex1 plan scaffold` to restore the template.".to_string()),
-    })?;
+    let raw_doc: serde_yaml::Value =
+        serde_yaml::from_str(&raw).map_err(|err| CliError::PlanInvalid {
+            message: format!("PLAN.yaml is not valid YAML: {err}"),
+            hint: Some("Re-run `codex1 plan scaffold` to restore the template.".to_string()),
+        })?;
+    if raw_doc.get("waves").is_some() {
+        exit_with_validation_error(
+            "PLAN_INVALID",
+            "PLAN.yaml must not store `waves`; waves are derived from the DAG",
+            Some("Remove the top-level `waves:` block and use `codex1 plan waves` for derived waves."),
+            json!({ "forbidden_key": "waves" }),
+        );
+    }
+
+    let parsed: ParsedPlan =
+        serde_yaml::from_value(raw_doc).map_err(|err| CliError::PlanInvalid {
+            message: format!("PLAN.yaml is not valid YAML: {err}"),
+            hint: Some("Re-run `codex1 plan scaffold` to restore the template.".to_string()),
+        })?;
 
     let summary = validate(&parsed, &paths, &current);
 
@@ -470,6 +485,14 @@ fn validate_tasks(
         }
         if !seen.insert(id.clone()) {
             duplicates.insert(id.clone());
+        }
+        if !state.plan.locked && state.tasks.contains_key(&id) {
+            exit_with_validation_error(
+                "PLAN_INVALID",
+                &format!("task id `{id}` reuses historical task truth from STATE.json"),
+                Some("Replans must append fresh task ids rather than reusing historical ids."),
+                json!({ "task_id": id }),
+            );
         }
         ids.push(id);
     }

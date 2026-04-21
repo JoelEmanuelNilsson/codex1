@@ -21,7 +21,7 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
     let outcome_path = paths.outcome();
     ensure_artifact_file_read_safe(&paths, &outcome_path, "OUTCOME.md")?;
     ensure_artifact_file_write_safe(&paths, &outcome_path, "OUTCOME.md")?;
-    let report = validate_outcome(&outcome_path)?;
+    let report = validate_outcome(&outcome_path, &state.mission_id)?;
 
     if !report.ratifiable {
         emit_outcome_incomplete(

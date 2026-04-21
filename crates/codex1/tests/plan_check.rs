@@ -244,6 +244,136 @@ mission_close:
 }
 
 #[test]
+fn plan_check_rejects_replan_task_id_reuse() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = seed_valid_mission(&tmp, "demo");
+
+    let state_path = mission_dir.join("STATE.json");
+    let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["phase"] = Value::String("execute".to_string());
+    state["plan"] = serde_json::json!({
+        "locked": false,
+        "requested_level": "medium",
+        "effective_level": "medium",
+        "hash": "sha256:old",
+        "task_ids": ["T1", "T2", "T3", "T4"]
+    });
+    state["tasks"] = serde_json::json!({
+        "T1": {
+            "id": "T1",
+            "status": "complete",
+            "finished_at": "2026-04-21T00:00:00Z"
+        }
+    });
+    fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
+
+    let task = "T1";
+    write_spec(&mission_dir, task, &format!("# {task} SPEC\n"));
+    write_plan(
+        &mission_dir,
+        r#"mission_id: demo
+
+planning_level:
+  requested: medium
+  effective: medium
+
+outcome_interpretation:
+  summary: "Replan reuse regression."
+
+architecture:
+  summary: "One replacement task, wrongly reusing T1."
+  key_decisions:
+    - "Reject historical task ids."
+
+planning_process:
+  evidence:
+    - kind: direct_reasoning
+      summary: "Regression."
+
+tasks:
+  - id: T1
+    title: "Replacement work"
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+
+risks:
+  - risk: "Replacement work could inherit stale state."
+    mitigation: "Reject task-id reuse."
+
+mission_close:
+  criteria:
+    - "Replacement work must not alias prior truth."
+"#,
+    );
+
+    let output = run_check(&tmp, "demo", &[]);
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    assert!(json["message"]
+        .as_str()
+        .unwrap()
+        .contains("historical task truth"));
+}
+
+#[test]
+fn plan_check_rejects_stored_waves_truth() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    write_spec(&mission_dir, "T1", "# T1\n");
+    write_plan(
+        &mission_dir,
+        r#"mission_id: demo
+
+planning_level:
+  requested: light
+  effective: light
+
+outcome_interpretation:
+  summary: "Stored waves regression."
+
+architecture:
+  summary: "Single-task plan."
+  key_decisions:
+    - "Waves must be derived."
+
+planning_process:
+  evidence:
+    - kind: direct_reasoning
+      summary: "Regression."
+
+waves:
+  - wave_id: W999
+    tasks: [T1]
+
+tasks:
+  - id: T1
+    title: "Work"
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+
+risks:
+  - risk: "Users could author stored wave truth."
+    mitigation: "Reject top-level waves."
+
+mission_close:
+  criteria:
+    - "Waves are derived only."
+"#,
+    );
+    let output = run_check(&tmp, "demo", &[]);
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    assert!(json["message"]
+        .as_str()
+        .unwrap()
+        .contains("must not store `waves`"));
+}
+
+#[test]
 fn plan_check_requires_ratified_outcome() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = init_demo(&tmp, "demo");
@@ -315,6 +445,13 @@ mission_close:
     );
     let state_path = mission_dir.join("STATE.json");
     let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["plan"] = serde_json::json!({
+        "locked": true,
+        "requested_level": "light",
+        "effective_level": "light",
+        "hash": "sha256:existing",
+        "task_ids": ["T1", "T2"]
+    });
     state["tasks"] = serde_json::json!({
         "T1": {
             "id": "T1",
@@ -337,7 +474,7 @@ mission_close:
         json["message"]
     );
     let state = read_state(&mission_dir);
-    assert_ne!(state["plan"]["locked"], true);
+    assert_eq!(state["plan"]["locked"], true);
 }
 
 #[test]

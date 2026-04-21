@@ -19,7 +19,7 @@ and `next_action.kind`. Trust the envelope; do not cache.
 | blocked                         | replan                   | `$plan replan`                                 |
 | ready_for_mission_close_review  | mission_close_review     | `$review-loop` (mission-close mode)            |
 | mission_close_review_open       | mission_close_review     | `$review-loop` (mission-close mode)            |
-| mission_close_review_passed     | close                    | Confirm with user, then `codex1 close complete`|
+| mission_close_review_passed     | close                    | `codex1 close complete`                        |
 | terminal_complete               | closed                   | Stop; report terminal                          |
 | invalid_state                   | fix_state                | Escalate to user; do not auto-fix              |
 
@@ -65,12 +65,11 @@ autopilot(mission_id):
             report_terminal(status)
             return
 
-        # Explicit close step: confirm with user, then complete
+        # Explicit close step: finish terminal close
         if kind == "close":
             if status.data.close_ready is False:
                 escalate(status)   # status disagrees with itself -> user input
                 return
-            confirm_with_user("About to run `codex1 close complete`. Proceed?")
             run("codex1 close complete --mission " + mission_id)
             continue               # next iteration should observe terminal_complete
 

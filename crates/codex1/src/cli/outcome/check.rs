@@ -18,7 +18,7 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let state = state::load(&paths)?;
     ensure_artifact_file_read_safe(&paths, &paths.outcome(), "OUTCOME.md")?;
-    let report = validate_outcome(&paths.outcome())?;
+    let report = validate_outcome(&paths.outcome(), &state.mission_id)?;
 
     if !report.ratifiable {
         // Print the OUTCOME_INCOMPLETE envelope (with context) and exit(1).

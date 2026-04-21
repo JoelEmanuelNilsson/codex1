@@ -252,11 +252,11 @@ codex1 --json task packet T3 --mission demo
 
 ## codex1 review start
 
-**Purpose:** Begin a planned review task. Transitions the review record to `Open`.
+**Purpose:** Begin a planned review task. Transitions the review boundary to `pending` and records the target task ids plus boundary revision.
 **Mutates state:** yes.
 **Arguments:**
 - `<TASK_ID>` (positional, required) — the review task id.
-**Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"review_task_id":"T4","state":"Open"}}`
+**Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"review_task_id":"T4","verdict":"pending","targets":["T2"],"boundary_revision":N}}`
 **Errors:** `TASK_NOT_READY`, `REVISION_CONFLICT`, `MISSION_NOT_FOUND`.
 **Phase status:** Implemented.
 **Example:**
@@ -272,7 +272,7 @@ codex1 --json review start T4 --mission demo
 **Mutates state:** no.
 **Arguments:**
 - `<TASK_ID>` (positional, required).
-**Success:** `{"ok":true,"data":{"task_id":"T4","review_profile":"code_bug_correctness","targets":["T2"],"diffs":[{"path":"…","lines":[…]}],"proofs":["specs/T2/PROOF.md"],"mission_summary":"…"}}`
+**Success:** `{"ok":true,"data":{"task_id":"T4","review_profile":"code_bug_correctness","targets":["T2"],"diffs":[{"path":"…","lines":[…]}],"proofs":["PLANS/demo/specs/T2/PROOF.md"],"mission_summary":"…"}}`
 **Errors:** `TASK_NOT_READY`, `MISSION_NOT_FOUND`.
 **Phase status:** Implemented.
 **Example:**
@@ -308,7 +308,7 @@ codex1 --json review record T4 --findings-file /tmp/T4-findings.md --mission dem
 **Mutates state:** no.
 **Arguments:**
 - `<TASK_ID>` (positional, required).
-**Success:** `{"ok":true,"data":{"review_task_id":"T4","state":"Passed","last_verdict":"clean","consecutive_dirty":0}}`
+**Success:** `{"ok":true,"data":{"review_task_id":"T4","record":{"task_id":"T4","verdict":"clean","reviewers":["code-reviewer"],"findings_file":null,"category":"accepted_current","recorded_at":"2026-04-21T…Z","boundary_revision":7},"targets":["T2"],"replan_triggered":false}}`
 **Errors:** `TASK_NOT_READY`, `MISSION_NOT_FOUND`.
 **Phase status:** Implemented.
 **Example:**
@@ -462,7 +462,7 @@ codex1 --json close complete --mission demo
 
 **Purpose:** Unified mission status. Consumed by skills, the main thread, Ralph, and humans debugging mission state. Shares `verdict` / `close_ready` derivation with `codex1 close check` via `state::readiness`.
 **Mutates state:** no.
-**Arguments:** none beyond globals. Omitting `--mission` causes the command to walk up from CWD; if no single mission resolves, it emits a graceful `stop.allow: true` envelope so Ralph never blocks the shell on a stray CWD.
+**Arguments:** none beyond globals. Omitting `--mission` causes the command to walk up from CWD. If no mission resolves at all, it emits a graceful `stop.allow: true` envelope so Ralph never blocks a stray shell; if multiple missions resolve ambiguously, it returns `MISSION_NOT_FOUND` and requires explicit disambiguation.
 **Success (Phase B target shape):**
 ```json
 {
@@ -488,7 +488,7 @@ codex1 --json close complete --mission demo
   }
 }
 ```
-**Errors:** `MISSION_NOT_FOUND` (only when `--mission` is given explicitly and cannot be resolved), `STATE_CORRUPT`, `PARSE_ERROR`.
+**Errors:** `MISSION_NOT_FOUND` (explicit `--mission`, explicit bad `--repo-root`, or ambiguous multi-mission discovery), `STATE_CORRUPT`, `PARSE_ERROR`.
 **Phase status:** Implemented. The projection emits `phase`, `verdict`, `loop`, `next_action`, `ready_tasks`, `parallel_safe`, `parallel_blockers`, `review_required`, `replan_required`, `close_ready`, and `stop`. The `stop.allow` and `verdict` fields come from the shared readiness helper, so the Ralph contract is honored.
 **Example:**
 ```bash

@@ -916,6 +916,47 @@ fn next_all_complete_reports_mission_close_review() {
 }
 
 #[test]
+fn next_after_mission_close_review_passed_reports_close() {
+    let (tmp, dir) = seed_mission(PLAN_LINEAR_NO_REVIEW, &[]);
+    let mut state = read_state(&dir);
+    state["tasks"] = json!({
+        "T1": {"id":"T1","status":"complete"},
+        "T2": {"id":"T2","status":"complete"}
+    });
+    state["close"] = json!({
+        "review_state": "passed"
+    });
+    write(
+        &dir.join("STATE.json"),
+        &serde_json::to_string_pretty(&state).unwrap(),
+    );
+    let out = run(tmp.path(), &["task", "next", "--mission", "demo"]);
+    let json = parse_json(&out);
+    assert_eq!(json["data"]["next"]["kind"], "close");
+}
+
+#[test]
+fn next_after_terminal_reports_closed() {
+    let (tmp, dir) = seed_mission(PLAN_LINEAR_NO_REVIEW, &[]);
+    let mut state = read_state(&dir);
+    state["tasks"] = json!({
+        "T1": {"id":"T1","status":"complete"},
+        "T2": {"id":"T2","status":"complete"}
+    });
+    state["close"] = json!({
+        "review_state": "passed",
+        "terminal_at": "2026-04-21T00:00:00Z"
+    });
+    write(
+        &dir.join("STATE.json"),
+        &serde_json::to_string_pretty(&state).unwrap(),
+    );
+    let out = run(tmp.path(), &["task", "next", "--mission", "demo"]);
+    let json = parse_json(&out);
+    assert_eq!(json["data"]["next"]["kind"], "closed");
+}
+
+#[test]
 fn start_dry_run_does_not_mutate() {
     let (tmp, dir) = seed_mission(PLAN_LINEAR_NO_REVIEW, &[]);
     let out = run(

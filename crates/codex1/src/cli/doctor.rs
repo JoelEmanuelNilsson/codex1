@@ -64,11 +64,26 @@ fn which_codex1() -> Option<std::path::PathBuf> {
     let path = std::env::var_os("PATH")?;
     for dir in std::env::split_paths(&path) {
         let candidate = dir.join("codex1");
-        if candidate.is_file() {
+        if is_executable(&candidate) {
             return Some(candidate);
         }
     }
     None
+}
+
+fn is_executable(path: &std::path::Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let Ok(meta) = std::fs::metadata(path) else {
+            return false;
+        };
+        meta.is_file() && (meta.permissions().mode() & 0o111 != 0)
+    }
+    #[cfg(not(unix))]
+    {
+        path.is_file()
+    }
 }
 
 fn writable(path: &std::path::Path) -> bool {
