@@ -34,6 +34,10 @@ pub struct PlanTask {
     #[serde(default)]
     pub write_paths: Vec<String>,
     #[serde(default)]
+    pub exclusive_resources: Vec<String>,
+    #[serde(default)]
+    pub unknown_side_effects: bool,
+    #[serde(default)]
     pub proof: Vec<String>,
     #[serde(default)]
     pub review_target: Option<ReviewTarget>,
@@ -111,6 +115,8 @@ pub struct EffectiveTask {
     pub kind: String,
     pub status: TaskStatus,
     pub depends_on: Vec<TaskId>,
+    pub exclusive_resources: Vec<String>,
+    pub unknown_side_effects: bool,
 }
 
 /// Project a unified view of PLAN.yaml tasks joined against STATE.json.
@@ -132,6 +138,8 @@ pub fn effective_tasks(plan: &ParsedPlan, state: &MissionState) -> Vec<Effective
                 kind: t.kind.clone(),
                 status,
                 depends_on: t.depends_on.clone(),
+                exclusive_resources: t.exclusive_resources.clone(),
+                unknown_side_effects: t.unknown_side_effects,
             }
         })
         .collect()
@@ -139,8 +147,8 @@ pub fn effective_tasks(plan: &ParsedPlan, state: &MissionState) -> Vec<Effective
 
 /// True iff every dep of `task` is "satisfied enough" for `task` to be
 /// ready. A `review` task's deps are satisfied when the dep is in
-/// `AwaitingReview`, `Complete`, or `Superseded` (so the review can run
-/// against fresh work). All other kinds require `Complete`/`Superseded`.
+/// `AwaitingReview` or `Complete` (so the review can run against fresh
+/// work). Superseded deps are history after a replan, not live readiness.
 pub fn deps_satisfied(task: &PlanTask, state: &MissionState) -> bool {
     let is_review = task.kind == "review";
     task.depends_on.iter().all(|dep| {
@@ -148,7 +156,7 @@ pub fn deps_satisfied(task: &PlanTask, state: &MissionState) -> bool {
             return false;
         };
         match &r.status {
-            TaskStatus::Complete | TaskStatus::Superseded => true,
+            TaskStatus::Complete => true,
             TaskStatus::AwaitingReview if is_review => true,
             _ => false,
         }

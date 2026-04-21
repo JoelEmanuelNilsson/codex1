@@ -44,6 +44,9 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
         });
     }
     let paths = resolve_mission(&ctx.selector(), true)?;
+    let peek = state::load(&paths)?;
+    state::check_expected_revision(ctx.expect_revision, &peek)?;
+
     let plan_tasks = load_tasks(&paths.plan())?;
     let review_task = fetch_review_task(&plan_tasks, inputs.task_id)?;
     let targets = review_targets(&review_task)?;
@@ -66,9 +69,8 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
         ReviewVerdict::Dirty
     };
 
-    // Peek at state for dry-run (and to surface terminal/stale errors before
-    // we enter the mutation closure in the wet path).
-    let peek = state::load(&paths)?;
+    // Use a preflight state snapshot for dry-run (and to surface terminal/stale
+    // errors before we enter the mutation closure in the wet path).
     // Refuse to record a review while the plan is unlocked. We allow
     // the terminal-contamination path above to still return its
     // specific error code (it runs after classification); the
@@ -89,6 +91,21 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
         peek_category,
         ReviewRecordCategory::ContaminatedAfterTerminal
     ) {
+        if !ctx.dry_run {
+            state::mutate(
+                &paths,
+                ctx.expect_revision,
+                "review.contaminated_after_terminal",
+                json!({
+                    "review_task_id": inputs.task_id,
+                    "verdict": verdict_str(&verdict),
+                    "reviewers": reviewers,
+                    "targets": targets,
+                    "category": "contaminated_after_terminal",
+                }),
+                |_state| Ok(()),
+            )?;
+        }
         let closed_at = peek
             .close
             .terminal_at
@@ -98,7 +115,6 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
     }
 
     if ctx.dry_run {
-        state::check_expected_revision(ctx.expect_revision, &peek)?;
         let stored_findings = findings_path.map(|p| {
             relative_from_repo(&paths, &paths.review_file_for(inputs.task_id))
                 .or_else(|| Some(p.display().to_string()))

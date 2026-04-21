@@ -11,7 +11,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::core::error::CliError;
-use crate::core::paths::MissionPaths;
+use crate::core::paths::{validate_mission_id, MissionPaths};
 
 /// CLI arguments that influence mission discovery. Every command wires
 /// these through `clap` and hands the struct to `resolve_mission`.
@@ -30,6 +30,9 @@ pub fn resolve_mission(
     require_exists: bool,
 ) -> Result<MissionPaths, CliError> {
     let cwd = std::env::current_dir().map_err(CliError::Io)?;
+    if let Some(mission) = &selector.mission {
+        validate_mission_id(mission)?;
+    }
     let paths = match (&selector.mission, &selector.repo_root) {
         (Some(mission), Some(root)) => MissionPaths::new(absolutize(root, &cwd), mission.clone()),
         (Some(mission), None) => MissionPaths::new(cwd.clone(), mission.clone()),
@@ -44,6 +47,7 @@ pub fn resolve_mission(
                 "Run `codex1 init --mission <id>` first, or pass --mission/--repo-root."
                     .to_string(),
             ),
+            ambiguous: false,
         });
     }
 
@@ -55,12 +59,19 @@ pub fn resolve_mission(
 pub fn resolve_mission_for_init(selector: &MissionSelector) -> Result<MissionPaths, CliError> {
     let cwd = std::env::current_dir().map_err(CliError::Io)?;
     let (root, mission) = match (&selector.mission, &selector.repo_root) {
-        (Some(m), Some(r)) => (absolutize(r, &cwd), m.clone()),
-        (Some(m), None) => (cwd, m.clone()),
+        (Some(m), Some(r)) => {
+            validate_mission_id(m)?;
+            (absolutize(r, &cwd), m.clone())
+        }
+        (Some(m), None) => {
+            validate_mission_id(m)?;
+            (cwd, m.clone())
+        }
         (None, _) => {
             return Err(CliError::MissionNotFound {
                 message: "`--mission <id>` is required for `init`".to_string(),
                 hint: Some("Example: `codex1 init --mission demo`.".to_string()),
+                ambiguous: false,
             });
         }
     };
@@ -68,6 +79,7 @@ pub fn resolve_mission_for_init(selector: &MissionSelector) -> Result<MissionPat
         return Err(CliError::MissionNotFound {
             message: format!("Repo root does not exist: {}", root.display()),
             hint: None,
+            ambiguous: false,
         });
     }
     Ok(MissionPaths::new(root, mission))
@@ -90,6 +102,7 @@ fn discover_single_mission(root: &Path) -> Result<MissionPaths, CliError> {
                 "Run `codex1 init --mission <id>` to create one, or point --repo-root elsewhere."
                     .to_string(),
             ),
+            ambiguous: false,
         });
     }
     let mut candidates = Vec::new();
@@ -105,6 +118,7 @@ fn discover_single_mission(root: &Path) -> Result<MissionPaths, CliError> {
         0 => Err(CliError::MissionNotFound {
             message: format!("No missions with STATE.json under {}", plans.display()),
             hint: None,
+            ambiguous: false,
         }),
         1 => Ok(MissionPaths::new(root.to_path_buf(), candidates.remove(0))),
         n => Err(CliError::MissionNotFound {
@@ -113,6 +127,7 @@ fn discover_single_mission(root: &Path) -> Result<MissionPaths, CliError> {
                 plans.display()
             ),
             hint: None,
+            ambiguous: true,
         }),
     }
 }
@@ -131,5 +146,6 @@ fn walk_up_for_mission(cwd: &Path) -> Result<MissionPaths, CliError> {
         hint: Some(
             "Pass --mission <id> --repo-root <path>, or run `codex1 init` first.".to_string(),
         ),
+        ambiguous: false,
     })
 }

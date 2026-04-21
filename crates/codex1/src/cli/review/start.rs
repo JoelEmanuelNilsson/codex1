@@ -31,6 +31,7 @@ pub fn run(ctx: &Ctx, task_id: &str) -> CliResult<()> {
     let targets = review_targets(&review_task)?;
 
     let state = state::load(&paths)?;
+    state::check_expected_revision(ctx.expect_revision, &state)?;
     if let Some(closed_at) = state.close.terminal_at.as_ref() {
         return Err(CliError::TerminalAlreadyComplete {
             closed_at: closed_at.clone(),
@@ -59,11 +60,6 @@ pub fn run(ctx: &Ctx, task_id: &str) -> CliResult<()> {
     }
 
     if ctx.dry_run {
-        // Stale-writer protection applies to dry-run too so every path
-        // that honors `--expect-revision` does strict equality. Mirrors
-        // the round-1 short-circuit fixes; round-2 correctness P2-1
-        // noted this branch was missed in the initial sweep.
-        state::check_expected_revision(ctx.expect_revision, &state)?;
         let env = JsonOk::new(
             Some(state.mission_id.clone()),
             Some(state.revision),

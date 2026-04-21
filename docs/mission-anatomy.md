@@ -51,8 +51,8 @@ Current operational state. Owned by the CLI; never edited by hand. Mutated only 
 3. Enforces `--expect-revision <N>` when provided.
 4. Runs the handler closure.
 5. Bumps `revision` and `events_cursor` by 1.
-6. Atomically writes `STATE.json` (temp-in-same-dir + rename).
-7. Appends one line to `EVENTS.jsonl`.
+6. Appends one line to `EVENTS.jsonl`.
+7. Atomically writes `STATE.json` (temp-in-same-dir + rename).
 8. Releases the lock.
 
 Fields (see `crates/codex1/src/state/schema.rs` for the authoritative definition): `mission_id`, `revision`, `schema_version`, `phase`, `loop`, `outcome`, `plan`, `tasks`, `reviews`, `replan`, `close`, `events_cursor`.

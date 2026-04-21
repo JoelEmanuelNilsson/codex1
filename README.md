@@ -2,7 +2,7 @@
 
 Codex1 is a skills-first native Codex workflow. You invoke one of six public skills — `$clarify`, `$plan`, `$execute`, `$review-loop`, `$close`, `$autopilot` — and the skill drives a small deterministic `codex1` CLI on rails: the CLI validates artifacts, records mission state, derives execution waves, and emits stable JSON for Ralph, a tiny Stop hook that only reads `codex1 status --json`. All mission truth lives in visible files under `PLANS/<mission-id>/`. There is no hidden `.ralph/` state, no caller-identity enforcement, and no stored waves.
 
-> **Build state.** Phase B features land as their PRs merge. Foundation (`init`, `doctor`, `hook snippet`, `status`) is already wired. Phase B commands (`outcome`, `plan`, `task`, `review`, `replan`, `loop`, `close`) currently return `NOT_IMPLEMENTED`; the clap tree is complete, so `codex1 --help` shows the full surface today.
+> **Build state.** The CLI surface is implemented end to end: `init`, `doctor`, `hook snippet`, `status`, `outcome`, `plan`, `task`, `review`, `replan`, `loop`, and `close` all emit stable JSON envelopes. `codex1 --help` shows the full command tree.
 
 ## Quick start
 

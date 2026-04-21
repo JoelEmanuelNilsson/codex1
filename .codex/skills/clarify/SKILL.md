@@ -1,7 +1,7 @@
 ---
 name: clarify
 description: >
-  Ratify OUTCOME.md for a Codex1 mission. Use when the user describes a mission goal but OUTCOME.md is draft, missing fields, or contains fill markers. Interview just enough to fill every required field (mission_id, title, original_user_goal, interpreted_destination, must_be_true, success_criteria, non_goals, constraints, quality_bar, proof_expectations, review_expectations, known_risks, resolved_questions), then run `codex1 outcome check` and `codex1 outcome ratify`. Do not start planning or execution from this skill — hand off to $plan after ratification.
+  Ratify OUTCOME.md for a Codex1 mission. Use when the user describes a mission goal but OUTCOME.md is draft, missing fields, or contains fill markers. Interview just enough to fill every required field documented in references/outcome-shape.md, then run `codex1 outcome check` and `codex1 outcome ratify`. Do not start planning or execution from this skill — hand off to $plan after ratification.
 ---
 
 # Clarify

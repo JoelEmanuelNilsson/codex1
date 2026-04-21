@@ -29,7 +29,7 @@ Run the loop below until `task next` returns a kind outside `run_task` / `run_wa
 codex1 --json status
 ```
 
-`codex1 --json status` is the single source of truth (per `docs/codex1-rebuild-handoff/01-product-flow.md:151`); `task next` narrows to work-only kinds and cannot surface `repair` or `replan`. Inspect `data.next_action.kind`:
+`codex1 --json status` is the single source of truth (per `docs/codex1-rebuild-handoff/01-product-flow.md:151`). `task next` narrows the work view, but it can still surface a `replan` handoff when the replan trigger is already set; `repair` remains a status-level next action. Inspect `data.next_action.kind`:
 
 - `run_task` — run this single task. The main thread may run it serially (for small/local edits) or spawn one worker.
 - `run_wave` with `parallel_safe: true` — spawn one worker per task in `tasks`.

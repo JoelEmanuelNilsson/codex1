@@ -5,7 +5,7 @@ use std::fs;
 use serde_json::{json, Value as JsonValue};
 
 use crate::core::error::CliError;
-use crate::core::paths::MissionPaths;
+use crate::core::paths::{resolve_existing_mission_file, MissionPaths};
 
 use super::lifecycle::PlanTask;
 
@@ -27,7 +27,7 @@ pub fn build_packet(paths: &MissionPaths, plan_task: &PlanTask) -> Result<JsonVa
         .spec
         .clone()
         .unwrap_or_else(|| format!("specs/{}/SPEC.md", plan_task.id));
-    let spec_abs = paths.mission_dir.join(&spec_rel);
+    let spec_abs = resolve_existing_mission_file(paths, &spec_rel, "task.spec")?;
     let spec_body = fs::read_to_string(&spec_abs).unwrap_or_default();
     let spec_excerpt = truncate_chars(&spec_body, SPEC_EXCERPT_MAX);
 

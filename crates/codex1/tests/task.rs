@@ -283,6 +283,252 @@ mission_close: { criteria: [] }
 }
 
 #[test]
+fn next_multi_ready_reports_parallel_blockers() {
+    let plan = r"mission_id: demo
+
+planning_level: { requested: medium, effective: medium }
+outcome_interpretation: { summary: demo }
+architecture: { summary: demo, key_decisions: [] }
+planning_process: { evidence: [] }
+
+tasks:
+  - id: T1
+    title: Root
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+  - id: T2
+    title: Two
+    kind: code
+    depends_on: [T1]
+    spec: specs/T2/SPEC.md
+    exclusive_resources: [shared-db]
+  - id: T3
+    title: Three
+    kind: code
+    depends_on: [T1]
+    spec: specs/T3/SPEC.md
+    exclusive_resources: [shared-db]
+
+risks: []
+mission_close: { criteria: [] }
+";
+    let (tmp, dir) = seed_mission(plan, &[]);
+    let mut state = read_state(&dir);
+    state["tasks"] = json!({
+        "T1": {
+            "id": "T1",
+            "status": "complete",
+            "finished_at": "2026-04-20T00:00:00Z",
+            "proof_path": "specs/T1/PROOF.md"
+        }
+    });
+    write(
+        &dir.join("STATE.json"),
+        &serde_json::to_string_pretty(&state).unwrap(),
+    );
+
+    let out = run(tmp.path(), &["task", "next", "--mission", "demo"]);
+    let json = parse_json(&out);
+    assert_eq!(json["data"]["next"]["kind"], "run_wave");
+    assert_eq!(json["data"]["next"]["parallel_safe"], json!(false));
+    assert_eq!(
+        json["data"]["next"]["parallel_blockers"],
+        json!(["exclusive_resource:shared-db"])
+    );
+}
+
+#[test]
+fn next_multi_ready_reports_unknown_side_effects_blocker() {
+    let plan = r"mission_id: demo
+
+planning_level: { requested: medium, effective: medium }
+outcome_interpretation: { summary: demo }
+architecture: { summary: demo, key_decisions: [] }
+planning_process: { evidence: [] }
+
+tasks:
+  - id: T1
+    title: Root
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+  - id: T2
+    title: Two
+    kind: code
+    depends_on: [T1]
+    spec: specs/T2/SPEC.md
+    unknown_side_effects: true
+  - id: T3
+    title: Three
+    kind: code
+    depends_on: [T1]
+    spec: specs/T3/SPEC.md
+
+risks: []
+mission_close: { criteria: [] }
+";
+    let (tmp, dir) = seed_mission(plan, &[]);
+    let mut state = read_state(&dir);
+    state["tasks"] = json!({
+        "T1": {
+            "id": "T1",
+            "status": "complete",
+            "finished_at": "2026-04-20T00:00:00Z",
+            "proof_path": "specs/T1/PROOF.md"
+        }
+    });
+    write(
+        &dir.join("STATE.json"),
+        &serde_json::to_string_pretty(&state).unwrap(),
+    );
+
+    let out = run(tmp.path(), &["task", "next", "--mission", "demo"]);
+    let json = parse_json(&out);
+    assert_eq!(json["data"]["next"]["kind"], "run_wave");
+    assert_eq!(json["data"]["next"]["parallel_safe"], json!(false));
+    assert_eq!(
+        json["data"]["next"]["parallel_blockers"],
+        json!(["unknown_side_effects:T2"])
+    );
+}
+
+#[test]
+fn next_does_not_surface_review_when_target_superseded() {
+    let plan = r"mission_id: demo
+
+planning_level: { requested: medium, effective: medium }
+outcome_interpretation: { summary: demo }
+architecture: { summary: demo, key_decisions: [] }
+planning_process: { evidence: [] }
+
+tasks:
+  - id: T1
+    title: Root
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+  - id: T2
+    title: Review
+    kind: review
+    depends_on: [T1]
+    spec: specs/T2/SPEC.md
+    review_target:
+      tasks: [T1]
+
+risks: []
+mission_close: { criteria: [] }
+";
+    let (tmp, dir) = seed_mission(plan, &[]);
+    let mut state = read_state(&dir);
+    state["tasks"] = json!({
+        "T1": {
+            "id": "T1",
+            "status": "superseded",
+            "superseded_by": "replan-1"
+        }
+    });
+    write(
+        &dir.join("STATE.json"),
+        &serde_json::to_string_pretty(&state).unwrap(),
+    );
+
+    let out = run(tmp.path(), &["task", "next", "--mission", "demo"]);
+    let json = parse_json(&out);
+    assert_ne!(json["data"]["next"]["kind"], "run_review");
+}
+
+#[test]
+fn next_wave_id_uses_topological_depth_not_plan_order() {
+    let plan = r"mission_id: demo
+
+planning_level: { requested: medium, effective: medium }
+outcome_interpretation: { summary: demo }
+architecture: { summary: demo, key_decisions: [] }
+planning_process: { evidence: [] }
+
+tasks:
+  - id: T4
+    title: Four
+    kind: code
+    depends_on: [T2]
+    spec: specs/T4/SPEC.md
+  - id: T5
+    title: Five
+    kind: code
+    depends_on: [T2]
+    spec: specs/T5/SPEC.md
+  - id: T2
+    title: Two
+    kind: code
+    depends_on: [T1]
+    spec: specs/T2/SPEC.md
+  - id: T1
+    title: Root
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+
+risks: []
+mission_close: { criteria: [] }
+";
+    let (tmp, dir) = seed_mission(plan, &[]);
+    let mut state = read_state(&dir);
+    state["tasks"] = json!({
+        "T1": {
+            "id": "T1",
+            "status": "complete",
+            "finished_at": "2026-04-20T00:00:00Z",
+            "proof_path": "specs/T1/PROOF.md"
+        },
+        "T2": {
+            "id": "T2",
+            "status": "complete",
+            "finished_at": "2026-04-20T00:00:00Z",
+            "proof_path": "specs/T2/PROOF.md"
+        }
+    });
+    write(
+        &dir.join("STATE.json"),
+        &serde_json::to_string_pretty(&state).unwrap(),
+    );
+
+    let out = run(tmp.path(), &["task", "next", "--mission", "demo"]);
+    let json = parse_json(&out);
+    assert_eq!(json["data"]["next"]["kind"], "run_wave");
+    assert_eq!(json["data"]["next"]["wave_id"], "W3");
+    assert_eq!(json["data"]["next"]["tasks"], json!(["T4", "T5"]));
+}
+
+#[test]
+fn packet_rejects_escaping_spec_even_if_bad_plan_is_locked() {
+    let plan = r"mission_id: demo
+
+planning_level: { requested: medium, effective: medium }
+outcome_interpretation: { summary: demo }
+architecture: { summary: demo, key_decisions: [] }
+planning_process: { evidence: [] }
+
+tasks:
+  - id: T1
+    title: Root task
+    kind: code
+    depends_on: []
+    spec: ../../secret.md
+
+risks: []
+mission_close: { criteria: [] }
+";
+    let (tmp, _dir) = seed_mission(plan, &[]);
+    fs::write(tmp.path().join("secret.md"), "# secret\n").unwrap();
+
+    let out = run(tmp.path(), &["task", "packet", "T1", "--mission", "demo"]);
+    assert!(!out.status.success());
+    let json = parse_json(&out);
+    assert_eq!(json["code"], "PLAN_INVALID");
+}
+
+#[test]
 fn start_ready_task_transitions_to_in_progress() {
     let (tmp, dir) = seed_mission(PLAN_LINEAR_NO_REVIEW, &[]);
     let out = run(tmp.path(), &["task", "start", "T1", "--mission", "demo"]);
@@ -312,6 +558,26 @@ fn start_with_incomplete_deps_returns_task_not_ready() {
     let json = parse_json(&out);
     assert_eq!(json["ok"], json!(false));
     assert_eq!(json["code"], "TASK_NOT_READY");
+}
+
+#[test]
+fn start_stale_revision_wins_over_unlocked_plan() {
+    let (tmp, _dir) = seed_mission(PLAN_LINEAR_NO_REVIEW, &[]);
+    let out = run(
+        tmp.path(),
+        &[
+            "task",
+            "start",
+            "T1",
+            "--mission",
+            "demo",
+            "--expect-revision",
+            "999",
+        ],
+    );
+    assert!(!out.status.success());
+    let json = parse_json(&out);
+    assert_eq!(json["code"], "REVISION_CONFLICT");
 }
 
 #[test]
@@ -421,6 +687,28 @@ fn finish_with_missing_proof_file_errors() {
     let json = parse_json(&out);
     assert_eq!(json["code"], "PROOF_MISSING");
     assert!(json["context"]["path"].is_string());
+}
+
+#[test]
+fn finish_stale_revision_wins_over_missing_proof() {
+    let (tmp, _dir) = seed_mission(PLAN_LINEAR_NO_REVIEW, &[]);
+    let out = run(
+        tmp.path(),
+        &[
+            "task",
+            "finish",
+            "T1",
+            "--proof",
+            "specs/T1/PROOF.md",
+            "--mission",
+            "demo",
+            "--expect-revision",
+            "999",
+        ],
+    );
+    assert!(!out.status.success());
+    let json = parse_json(&out);
+    assert_eq!(json["code"], "REVISION_CONFLICT");
 }
 
 #[test]

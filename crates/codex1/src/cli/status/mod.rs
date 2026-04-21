@@ -28,11 +28,11 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
             println!("{}", env.to_pretty());
             Ok(())
         }
-        Err(err @ CliError::MissionNotFound { .. }) => {
+        Err(err @ CliError::MissionNotFound { ambiguous, .. }) => {
             // Explicit --mission <id> that doesn't resolve → error.
             // Bare `codex1 status` with nothing found → graceful "no
             // mission" projection so Ralph never blocks the shell.
-            if ctx.mission.is_some() {
+            if ctx.mission.is_some() || ambiguous {
                 return Err(err);
             }
             let env = JsonOk::global(json!({
@@ -42,7 +42,7 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
                     "reason": "no_mission",
                     "message": "No mission resolved; stop is allowed.",
                 },
-                "foundation_only": false,
+                "foundation_only": true,
             }));
             println!("{}", env.to_pretty());
             Ok(())

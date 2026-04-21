@@ -6,7 +6,7 @@ Unless noted, every command:
 
 - Prints a JSON envelope on stdout.
 - Accepts the global flags `--mission <id>`, `--repo-root <path>`, `--json`, `--dry-run`, `--expect-revision <N>`.
-- Returns `NOT_IMPLEMENTED` today if it belongs to a Phase B unit that has not merged yet. The clap tree is complete from Foundation, so `codex1 <cmd> --help` works for every command below.
+- Implements the command behavior described here. `codex1 <cmd> --help` works for every command below.
 
 Phase B ownership is tracked in the handoff package: see [`codex1-rebuild-handoff/02-cli-contract.md`](codex1-rebuild-handoff/02-cli-contract.md) for the minimal command surface and [`codex1-rebuild-handoff/03-planning-artifacts.md`](codex1-rebuild-handoff/03-planning-artifacts.md) for the file layout these commands read and write.
 
@@ -64,7 +64,7 @@ The shell script itself lives at `scripts/ralph-stop-hook.sh` and is owned by Ph
 **Arguments:** none beyond globals. Requires `--mission <id>`.
 **Success:** `{"ok":true,"data":{"ratifiable":true,"missing_fields":[],"placeholders":[]}}`
 **Errors:** `OUTCOME_INCOMPLETE` (with `context.missing_fields` and `context.placeholders`), `MISSION_NOT_FOUND`, `PARSE_ERROR`.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 2 (`cli-outcome`) implements this.
+**Phase status:** Implemented.
 **Example:**
 ```bash
 codex1 --json outcome check --mission demo
@@ -79,7 +79,7 @@ codex1 --json outcome check --mission demo
 **Arguments:** none beyond globals. Requires `--mission <id>`.
 **Success:** `{"ok":true,"mission_id":"demo","revision":1,"data":{"ratified_at":"2026-04-20T…Z"}}`
 **Errors:** `OUTCOME_INCOMPLETE`, `MISSION_NOT_FOUND`, `REVISION_CONFLICT` (if `--expect-revision` mismatches).
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 2 implements this.
+**Phase status:** Implemented.
 **Example:**
 ```bash
 codex1 --json outcome ratify --mission demo --expect-revision 0
@@ -114,7 +114,7 @@ Use the product verbs `light` / `medium` / `hard` in docs and skill prompts. Num
 - `--level <LEVEL>` (required) — `light` / `medium` / `hard` or `1` / `2` / `3`.
 **Success:** `{"ok":true,"data":{"wrote":"PLANS/demo/PLAN.yaml","specs_created":[]}}`
 **Errors:** `OUTCOME_NOT_RATIFIED`, `MISSION_NOT_FOUND`, `PARSE_ERROR`.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 4 (`cli-plan-scaffold`) implements this.
+**Phase status:** Implemented.
 **Example:**
 ```bash
 codex1 --json plan scaffold --level hard --mission demo
@@ -129,7 +129,7 @@ codex1 --json plan scaffold --level hard --mission demo
 **Arguments:** none beyond globals.
 **Success:** `{"ok":true,"data":{"tasks":4,"review_tasks":1,"hard_evidence":3}}`
 **Errors:** `PLAN_INVALID`, `DAG_CYCLE`, `DAG_MISSING_DEP`, `OUTCOME_NOT_RATIFIED`, `MISSION_NOT_FOUND`.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 5 (`cli-plan-check`) implements this.
+**Phase status:** Implemented.
 **Example:**
 ```bash
 codex1 --json plan check --mission demo
@@ -146,7 +146,7 @@ codex1 --json plan check --mission demo
 - `--out <FILE>` — optional; writes the rendering to this path in addition to echoing it in the envelope.
 **Success:** `{"ok":true,"data":{"mermaid":"flowchart TD …"}}` (field name matches the chosen format).
 **Errors:** `PLAN_INVALID`, `MISSION_NOT_FOUND`.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 5 implements this.
+**Phase status:** Implemented.
 **Example:**
 ```bash
 codex1 --json plan graph --format mermaid --mission demo
@@ -162,7 +162,7 @@ codex1 --json plan graph --format dot --out /tmp/plan.dot --mission demo
 **Arguments:** none beyond globals.
 **Success:** `{"ok":true,"data":{"waves":[{"wave_id":"W1","tasks":["T1"],"parallel_safe":true,"blockers":[]}],"current_ready_wave":"W1","all_tasks_complete":false}}`
 **Errors:** `PLAN_INVALID`, `MISSION_NOT_FOUND`.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 5 implements this.
+**Phase status:** Implemented.
 **Example:**
 ```bash
 codex1 --json plan waves --mission demo
@@ -177,7 +177,7 @@ codex1 --json plan waves --mission demo
 **Arguments:** none beyond globals.
 **Success:** `{"ok":true,"data":{"next":{"kind":"run_wave","wave_id":"W1","tasks":["T1"],"parallel_safe":true}}}` (alternate shapes for review / close / replan kinds).
 **Errors:** `PLAN_INVALID`, `REPLAN_REQUIRED`, `MISSION_NOT_FOUND`.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 6 (`cli-task`) implements this.
+**Phase status:** Implemented.
 **Example:**
 ```bash
 codex1 --json task next --mission demo
@@ -193,7 +193,7 @@ codex1 --json task next --mission demo
 - `<TASK_ID>` (positional, required).
 **Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"task_id":"T2","status":"InProgress"}}`
 **Errors:** `TASK_NOT_READY`, `REVISION_CONFLICT`, `MISSION_NOT_FOUND`.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 6 implements this.
+**Phase status:** Implemented.
 **Example:**
 ```bash
 codex1 --json task start T2 --mission demo --expect-revision 5
@@ -210,7 +210,7 @@ codex1 --json task start T2 --mission demo --expect-revision 5
 - `--proof <PATH>` (required) — path to the proof file (usually `specs/T<id>/PROOF.md`).
 **Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"task_id":"T2","status":"Complete","proof_path":"specs/T2/PROOF.md"}}`
 **Errors:** `PROOF_MISSING`, `TASK_NOT_READY`, `REVISION_CONFLICT`, `MISSION_NOT_FOUND`.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 6 implements this.
+**Phase status:** Implemented.
 **Example:**
 ```bash
 codex1 --json task finish T2 --proof PLANS/demo/specs/T2/PROOF.md --mission demo
@@ -226,7 +226,7 @@ codex1 --json task finish T2 --proof PLANS/demo/specs/T2/PROOF.md --mission demo
 - `<TASK_ID>` (positional, required).
 **Success:** `{"ok":true,"data":{"task_id":"T2","status":"Complete","depends_on":["T1"],"proof_path":"…"}}`
 **Errors:** `TASK_NOT_READY` (unknown task id), `MISSION_NOT_FOUND`.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 6 implements this.
+**Phase status:** Implemented.
 **Example:**
 ```bash
 codex1 --json task status T2 --mission demo
@@ -242,7 +242,7 @@ codex1 --json task status T2 --mission demo
 - `<TASK_ID>` (positional, required).
 **Success:** `{"ok":true,"data":{"task_id":"T3","title":"…","spec_excerpt":"…","write_paths":["src/cli/outcome/**"],"proof_commands":["cargo test outcome"],"mission_summary":"…"}}`
 **Errors:** `TASK_NOT_READY`, `MISSION_NOT_FOUND`.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 6 implements this.
+**Phase status:** Implemented.
 **Example:**
 ```bash
 codex1 --json task packet T3 --mission demo
@@ -258,7 +258,7 @@ codex1 --json task packet T3 --mission demo
 - `<TASK_ID>` (positional, required) — the review task id.
 **Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"review_task_id":"T4","state":"Open"}}`
 **Errors:** `TASK_NOT_READY`, `REVISION_CONFLICT`, `MISSION_NOT_FOUND`.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 7 (`cli-review`) implements this.
+**Phase status:** Implemented.
 **Example:**
 ```bash
 codex1 --json review start T4 --mission demo
@@ -274,7 +274,7 @@ codex1 --json review start T4 --mission demo
 - `<TASK_ID>` (positional, required).
 **Success:** `{"ok":true,"data":{"task_id":"T4","review_profile":"code_bug_correctness","targets":["T2"],"diffs":[{"path":"…","lines":[…]}],"proofs":["specs/T2/PROOF.md"],"mission_summary":"…"}}`
 **Errors:** `TASK_NOT_READY`, `MISSION_NOT_FOUND`.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 7 implements this.
+**Phase status:** Implemented.
 **Example:**
 ```bash
 codex1 --json review packet T4 --mission demo
@@ -293,7 +293,7 @@ codex1 --json review packet T4 --mission demo
 - `--reviewers <LIST>` — comma-separated reviewer actor ids (e.g. `code-reviewer,intent-reviewer`).
 **Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"review_task_id":"T4","verdict":"clean","category":"accepted_current","reviewers":["code-reviewer","intent-reviewer"]}}`
 **Errors:** `STALE_REVIEW_RECORD`, `REVIEW_FINDINGS_BLOCK` (if the call would push the consecutive-dirty counter over the threshold with no active repair path), `REPLAN_REQUIRED`, `REVISION_CONFLICT`, `MISSION_NOT_FOUND`.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 7 implements this.
+**Phase status:** Implemented.
 **Examples:**
 ```bash
 codex1 --json review record T4 --clean --reviewers code-reviewer,intent-reviewer --mission demo
@@ -310,7 +310,7 @@ codex1 --json review record T4 --findings-file /tmp/T4-findings.md --mission dem
 - `<TASK_ID>` (positional, required).
 **Success:** `{"ok":true,"data":{"review_task_id":"T4","state":"Passed","last_verdict":"clean","consecutive_dirty":0}}`
 **Errors:** `TASK_NOT_READY`, `MISSION_NOT_FOUND`.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 7 implements this.
+**Phase status:** Implemented.
 **Example:**
 ```bash
 codex1 --json review status T4 --mission demo
@@ -325,7 +325,7 @@ codex1 --json review status T4 --mission demo
 **Arguments:** none beyond globals.
 **Success:** `{"ok":true,"data":{"required":false,"reason":null,"consecutive_dirty_by_target":{"T4":2}}}`
 **Errors:** `MISSION_NOT_FOUND`.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 8 (`cli-replan`) implements this.
+**Phase status:** Implemented.
 **Example:**
 ```bash
 codex1 --json replan check --mission demo
@@ -338,14 +338,14 @@ codex1 --json replan check --mission demo
 **Purpose:** Record a replan decision and reset the consecutive-dirty counter. New task rows are added by editing `PLAN.yaml` and running `plan check` — this command does not generate tasks.
 **Mutates state:** yes (updates `replan`, resets `consecutive_dirty_by_target`).
 **Arguments:**
-- `--reason <CODE>` (required) — e.g. `six_consecutive_dirty`, `architecture_shift`.
+- `--reason <CODE>` (required) — e.g. `six_dirty`, `architecture_shift`.
 - `--supersedes <TASK_ID>` — optional; the task id whose boundary is superseded.
-**Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"reason":"six_consecutive_dirty","supersedes":"T4","triggered":true}}`
+**Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"reason":"six_dirty","supersedes":"T4","phase_after":"plan","plan_locked":false}}`
 **Errors:** `REVISION_CONFLICT`, `MISSION_NOT_FOUND`.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 8 implements this.
+**Phase status:** Implemented.
 **Example:**
 ```bash
-codex1 --json replan record --reason six_consecutive_dirty --supersedes T4 --mission demo
+codex1 --json replan record --reason six_dirty --supersedes T4 --mission demo
 ```
 
 ---
@@ -357,7 +357,7 @@ codex1 --json replan record --reason six_consecutive_dirty --supersedes T4 --mis
 **Arguments:** none beyond globals.
 **Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"active":true,"paused":true,"mode":"execute"}}`
 **Errors:** `REVISION_CONFLICT`, `MISSION_NOT_FOUND`.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 9 (`cli-loop`) implements this.
+**Phase status:** Implemented.
 **Example:**
 ```bash
 codex1 --json loop pause --mission demo
@@ -372,7 +372,7 @@ codex1 --json loop pause --mission demo
 **Arguments:** none beyond globals.
 **Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"active":true,"paused":false,"mode":"execute"}}`
 **Errors:** `REVISION_CONFLICT`, `MISSION_NOT_FOUND`.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 9 implements this.
+**Phase status:** Implemented.
 **Example:**
 ```bash
 codex1 --json loop resume --mission demo
@@ -387,7 +387,7 @@ codex1 --json loop resume --mission demo
 **Arguments:** none beyond globals.
 **Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"active":false,"paused":false,"mode":"none"}}`
 **Errors:** `REVISION_CONFLICT`, `MISSION_NOT_FOUND`.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 9 implements this.
+**Phase status:** Implemented.
 **Example:**
 ```bash
 codex1 --json loop deactivate --mission demo
@@ -402,7 +402,7 @@ codex1 --json loop deactivate --mission demo
 **Arguments:** none beyond globals.
 **Success:** `{"ok":true,"data":{"ready":false,"verdict":"continue_required","blockers":[{"code":"TASK_NOT_READY","detail":"T7 is pending"}]}}`
 **Errors:** `MISSION_NOT_FOUND`. Blockers are reported inside `data.blockers`, not as top-level errors.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 10 (`cli-close`) implements this.
+**Phase status:** Implemented.
 **Example:**
 ```bash
 codex1 --json close check --mission demo
@@ -417,7 +417,7 @@ codex1 --json close check --mission demo
 **Arguments:** none beyond globals.
 **Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"closeout_path":"PLANS/demo/CLOSEOUT.md","terminal_at":"2026-04-20T…Z","mission_id":"demo"}}`
 **Errors:** `CLOSE_NOT_READY`, `TERMINAL_ALREADY_COMPLETE` (idempotent re-invocation), `REVISION_CONFLICT`, `MISSION_NOT_FOUND`.
-**Phase status:** Currently returns `NOT_IMPLEMENTED`; Phase B Unit 10 implements this.
+**Phase status:** Implemented.
 **Example:**
 ```bash
 codex1 --json close complete --mission demo
@@ -456,7 +456,7 @@ codex1 --json close complete --mission demo
 }
 ```
 **Errors:** `MISSION_NOT_FOUND` (only when `--mission` is given explicitly and cannot be resolved), `STATE_CORRUPT`, `PARSE_ERROR`.
-**Foundation status:** already wired. The Foundation projection emits `phase`, `verdict`, `loop`, `close_ready`, `stop`, a `"foundation_only": true` flag, and a note that Phase B Unit 11 broadens the payload to include `next_action`, `ready_tasks`, `parallel_safe`, `parallel_blockers`, `review_required`, and `replan_required`. The `stop.allow` and `verdict` fields already come from the shared readiness helper, so the Ralph contract is honored.
+**Phase status:** Implemented. The projection emits `phase`, `verdict`, `loop`, `next_action`, `ready_tasks`, `parallel_safe`, `parallel_blockers`, `review_required`, `replan_required`, `close_ready`, and `stop`. The `stop.allow` and `verdict` fields come from the shared readiness helper, so the Ralph contract is honored.
 **Example:**
 ```bash
 codex1 --json status --mission demo

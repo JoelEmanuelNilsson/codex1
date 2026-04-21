@@ -22,7 +22,7 @@ use crate::cli::Ctx;
 use crate::core::envelope::{JsonErr, JsonOk};
 use crate::core::error::{CliError, CliResult};
 use crate::core::mission::resolve_mission;
-use crate::core::paths::MissionPaths;
+use crate::core::paths::{resolve_existing_mission_file, MissionPaths};
 use crate::state::{self, Phase, PlanLevel};
 
 use super::dag::{topo_sort, TopoOutcome};
@@ -30,6 +30,8 @@ use super::parsed::{ParsedPlan, TaskSpec, HARD_EVIDENCE_KINDS, PLAN_LEVELS, TASK
 
 pub fn run(ctx: &Ctx) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
+    let current = state::load(&paths)?;
+    state::check_expected_revision(ctx.expect_revision, &current)?;
     let plan_path = paths.plan();
     if !plan_path.is_file() {
         return Err(CliError::PlanInvalid {
@@ -66,16 +68,11 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
     // guard, an upgraded binary would perpetually re-enter the
     // short-circuit and `status` / `close check` would be stuck with
     // `verdict=continue_required` and no actionable blockers.
-    let current = state::load(&paths)?;
     let hash_matches = current.plan.locked && current.plan.hash.as_deref() == Some(hash.as_str());
     let task_ids_missing = current.plan.task_ids.is_empty();
     let already_locked_same = hash_matches && !task_ids_missing;
 
     if ctx.dry_run || already_locked_same {
-        // Enforce `--expect-revision` on short-circuits too, matching
-        // the strict-equality invariant in
-        // `docs/cli-contract-schemas.md:74`.
-        state::check_expected_revision(ctx.expect_revision, &current)?;
         // Dry-run reports `locked: false` regardless of current state
         // (the invariant is "this call did not mutate"). Idempotent
         // re-runs report `locked: true` to confirm the plan is locked.
@@ -539,15 +536,17 @@ fn validate_tasks(tasks: &[TaskSpec], paths: &MissionPaths) -> Vec<String> {
 
         require_string(&format!("tasks[{id}].spec"), task.spec.as_deref());
         let spec_rel = task.spec.as_deref().unwrap_or("");
-        let spec_abs = paths.mission_dir.join(spec_rel);
-        if !spec_abs.is_file() {
+        if let Err(err) =
+            resolve_existing_mission_file(paths, spec_rel, &format!("tasks[{id}].spec"))
+        {
+            let hint = err.hint();
             exit_with_validation_error(
-                "PLAN_INVALID",
-                &format!("tasks[{id}].spec file not found at {}", spec_abs.display()),
-                Some(&format!("Create `{spec_rel}` under the mission directory.")),
+                err.code(),
+                &err.to_string(),
+                hint.as_deref(),
                 json!({
                     "task_id": id,
-                    "missing_spec": spec_rel,
+                    "spec": spec_rel,
                 }),
             );
         }

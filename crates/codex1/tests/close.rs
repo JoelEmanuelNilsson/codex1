@@ -513,6 +513,60 @@ fn record_review_dry_run_does_not_mutate() {
 }
 
 #[test]
+fn record_review_clean_dry_run_predicts_counter_reset() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    seed_ready_for_mission_close_review(&mission_dir);
+    let mut state = read_state(&mission_dir);
+    state["close"]["review_state"] = json!("open");
+    state["replan"]["consecutive_dirty_by_target"]["__mission_close__"] = json!(5);
+    write_state(&mission_dir, &state);
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args([
+            "close",
+            "record-review",
+            "--clean",
+            "--mission",
+            "demo",
+            "--dry-run",
+        ])
+        .output()
+        .expect("runs");
+    assert!(output.status.success());
+    let json = parse_stdout(&output);
+    assert_eq!(json["data"]["consecutive_dirty"], 0);
+}
+
+#[test]
+fn record_review_dirty_staging_failure_does_not_mutate_state() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    seed_ready_for_mission_close_review(&mission_dir);
+    let findings = write_findings(&mission_dir, "round1.md", "# P1 finding\n");
+    fs::remove_dir_all(mission_dir.join("reviews")).unwrap();
+    fs::write(mission_dir.join("reviews"), "not a directory").unwrap();
+    let before = read_state(&mission_dir);
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args([
+            "close",
+            "record-review",
+            "--findings-file",
+            findings.to_str().unwrap(),
+            "--mission",
+            "demo",
+        ])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let after = read_state(&mission_dir);
+    assert_eq!(after, before, "state must not mutate when staging fails");
+}
+
+#[test]
 fn record_review_expect_revision_mismatch_returns_conflict() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = init_demo(&tmp, "demo");
@@ -574,14 +628,43 @@ fn record_review_open_then_clean_transitions_to_passed() {
         .success();
     let after = read_state(&mission_dir);
     assert_eq!(after["close"]["review_state"], "passed");
-    // And the mission-close dirty counter stays where the dirty record
-    // left it (1), because clean does not reset the mission-close target
-    // — only the corresponding `apply_clean` path in review/record.rs
-    // resets per-task counters.
+    // Clean breaks the consecutive dirty streak for the mission-close
+    // target, matching the planned-review dirty-counter semantics.
     assert_eq!(
         after["replan"]["consecutive_dirty_by_target"]["__mission_close__"],
-        1
+        0
     );
+}
+
+#[test]
+fn record_review_stale_expect_revision_wins_over_not_ready() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    let state = StateBuilder::fresh("demo")
+        .ratified()
+        .plan_locked()
+        .task("T1", "pending")
+        .revision(5)
+        .build();
+    write_state(&mission_dir, &state);
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args([
+            "close",
+            "record-review",
+            "--clean",
+            "--mission",
+            "demo",
+            "--expect-revision",
+            "99",
+        ])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_stdout(&output);
+    assert_eq!(json["code"], "REVISION_CONFLICT");
+    assert_eq!(json["context"]["actual"], 5);
 }
 
 // ---------------------------------------------------------------------------
@@ -658,6 +741,7 @@ fn complete_twice_returns_terminal_already_complete() {
         .revision(9)
         .build();
     write_state(&mission_dir, &state);
+    fs::write(mission_dir.join("CLOSEOUT.md"), "# already closed\n").unwrap();
 
     let output = cmd()
         .current_dir(tmp.path())
@@ -762,6 +846,63 @@ fn complete_expect_revision_mismatch_returns_conflict() {
     assert_eq!(json["code"], "REVISION_CONFLICT");
     assert_eq!(json["context"]["expected"], 1);
     assert_eq!(json["context"]["actual"], 6);
+}
+
+#[test]
+fn complete_stale_expect_revision_wins_over_not_ready() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    let state = StateBuilder::fresh("demo")
+        .ratified()
+        .plan_locked()
+        .task("T1", "pending")
+        .revision(5)
+        .build();
+    write_state(&mission_dir, &state);
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args([
+            "close",
+            "complete",
+            "--mission",
+            "demo",
+            "--expect-revision",
+            "99",
+        ])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_stdout(&output);
+    assert_eq!(json["code"], "REVISION_CONFLICT");
+    assert_eq!(json["context"]["actual"], 5);
+}
+
+#[test]
+fn complete_repairs_missing_closeout_for_terminal_state() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    let state = StateBuilder::fresh("demo")
+        .ratified()
+        .plan_locked()
+        .task("T1", "complete")
+        .mission_close_review("passed")
+        .revision(6)
+        .build();
+    let mut state = state;
+    state["close"]["terminal_at"] = json!("2026-04-21T00:00:00Z");
+    state["phase"] = json!("terminal");
+    write_state(&mission_dir, &state);
+    assert!(!mission_dir.join("CLOSEOUT.md").exists());
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["close", "complete", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(output.status.success());
+    assert!(mission_dir.join("CLOSEOUT.md").is_file());
+    assert_eq!(read_state(&mission_dir)["revision"], 6);
 }
 
 // ---------------------------------------------------------------------------

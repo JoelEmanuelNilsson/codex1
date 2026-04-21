@@ -16,6 +16,7 @@ use super::lifecycle::{ensure_task_record, load_plan, now_rfc3339, status_str};
 pub fn run(task_id: &str, proof: &Path, ctx: &Ctx) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let state = state::load(&paths)?;
+    state::check_expected_revision(ctx.expect_revision, &state)?;
     // Refuse to finish tasks while the plan is unlocked (e.g. during a
     // pending replan). See `state::require_plan_locked` for rationale.
     state::require_plan_locked(&state)?;
@@ -71,7 +72,6 @@ pub fn run(task_id: &str, proof: &Path, ctx: &Ctx) -> CliResult<()> {
     };
 
     if ctx.dry_run {
-        state::check_expected_revision(ctx.expect_revision, &state)?;
         let env = JsonOk::new(
             Some(state.mission_id.clone()),
             Some(state.revision),

@@ -85,11 +85,13 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
                 }
                 _ => {
                     let ids: Vec<String> = ready.iter().map(|t| t.id.clone()).collect();
+                    let (parallel_safe, blockers) = parallel_safety(&ready);
                     json!({
                         "kind": "run_wave",
                         "wave_id": wave_id_for(&effective, &ready),
                         "tasks": ids,
-                        "parallel_safe": true,
+                        "parallel_safe": parallel_safe,
+                        "parallel_blockers": blockers,
                     })
                 }
             }
@@ -112,27 +114,92 @@ fn wave_id_for(
     effective: &[super::lifecycle::EffectiveTask],
     ready: &[super::lifecycle::EffectiveTask],
 ) -> String {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
+    let ids: BTreeSet<&str> = effective.iter().map(|t| t.id.as_str()).collect();
     let mut depth_of: BTreeMap<String, usize> = BTreeMap::new();
-    for t in effective {
-        let d = if t.depends_on.is_empty() {
-            1
-        } else {
-            t.depends_on
-                .iter()
-                .map(|d| depth_of.get(d).copied().unwrap_or(1))
-                .max()
-                .unwrap_or(0)
-                + 1
-        };
-        depth_of.insert(t.id.clone(), d);
+    for root in effective.iter().filter(|t| t.depends_on.is_empty()) {
+        depth_of.insert(root.id.clone(), 1);
     }
+    let max_iters = effective
+        .len()
+        .saturating_mul(effective.len())
+        .saturating_add(1);
+    for _ in 0..max_iters {
+        let mut changed = false;
+        for t in effective {
+            if t.depends_on.is_empty() || !t.depends_on.iter().all(|d| ids.contains(d.as_str())) {
+                continue;
+            }
+            let Some(parent_depth) = t
+                .depends_on
+                .iter()
+                .map(|d| depth_of.get(d).copied())
+                .collect::<Option<Vec<_>>>()
+                .and_then(|ds| ds.into_iter().max())
+            else {
+                continue;
+            };
+            let next_depth = parent_depth.saturating_add(1);
+            if depth_of.get(&t.id).copied().unwrap_or(0) < next_depth {
+                depth_of.insert(t.id.clone(), next_depth);
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    if depth_of.len() != effective.len() {
+        return "W1".to_string();
+    }
+    let mut depths: Vec<usize> = effective
+        .iter()
+        .filter_map(|t| depth_of.get(&t.id).copied())
+        .collect();
+    depths.sort_unstable();
+    depths.dedup();
     let ready_depth = ready
         .iter()
-        .map(|t| depth_of.get(&t.id).copied().unwrap_or(1))
+        .filter_map(|t| depth_of.get(&t.id).copied())
         .min()
         .unwrap_or(1);
-    format!("W{ready_depth}")
+    let wave_index = depths
+        .iter()
+        .position(|d| *d == ready_depth)
+        .map_or(ready_depth, |idx| idx + 1);
+    format!("W{wave_index}")
+}
+
+fn parallel_safety(ready: &[super::lifecycle::EffectiveTask]) -> (bool, Vec<String>) {
+    use std::collections::{BTreeMap, BTreeSet};
+    let mut blockers = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut owners: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for task in ready {
+        for resource in &task.exclusive_resources {
+            owners
+                .entry(resource.as_str())
+                .or_default()
+                .push(task.id.as_str());
+        }
+    }
+    for (resource, task_ids) in owners {
+        if task_ids.len() > 1 {
+            let key = format!("exclusive_resource:{resource}");
+            if seen.insert(key.clone()) {
+                blockers.push(key);
+            }
+        }
+    }
+    for task in ready {
+        if task.unknown_side_effects {
+            let key = format!("unknown_side_effects:{}", task.id);
+            if seen.insert(key.clone()) {
+                blockers.push(key);
+            }
+        }
+    }
+    (blockers.is_empty(), blockers)
 }
 
 /// Human-readable reason when no ready wave and no ready review.

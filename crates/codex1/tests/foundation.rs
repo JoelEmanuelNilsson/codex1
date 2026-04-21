@@ -96,6 +96,36 @@ fn init_refuses_to_overwrite() {
 }
 
 #[test]
+fn init_rejects_mission_id_path_traversal() {
+    let tmp = TempDir::new().unwrap();
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["init", "--mission", "../escape"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "MISSION_NOT_FOUND");
+    assert!(
+        !tmp.path().join("escape").exists(),
+        "invalid mission id must not create files outside PLANS/"
+    );
+}
+
+#[test]
+fn init_rejects_absolute_mission_id() {
+    let tmp = TempDir::new().unwrap();
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["init", "--mission", "/tmp/codex1-escape"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "MISSION_NOT_FOUND");
+}
+
+#[test]
 fn status_resolves_existing_mission_and_reports_stop_allowed() {
     let tmp = TempDir::new().unwrap();
     init_demo(&tmp, "demo");
@@ -123,6 +153,7 @@ fn status_without_mission_reports_needs_user() {
     let json = parse_stdout_json(&output);
     assert_eq!(json["data"]["verdict"], "needs_user");
     assert_eq!(json["data"]["stop"]["allow"], true);
+    assert_eq!(json["data"]["foundation_only"], true);
 }
 
 // `outcome_stubs_return_not_implemented` removed: Phase B Unit 2
@@ -145,6 +176,22 @@ fn mission_not_found_has_helpful_hint() {
     let json = parse_stdout_json(&output);
     assert_eq!(json["code"], "MISSION_NOT_FOUND");
     assert!(json["hint"].is_string());
+}
+
+#[test]
+fn bare_status_reports_ambiguous_missions() {
+    let tmp = TempDir::new().unwrap();
+    init_demo(&tmp, "one");
+    init_demo(&tmp, "two");
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["status"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "MISSION_NOT_FOUND");
+    assert_eq!(json["context"]["ambiguous"], true);
 }
 
 #[test]

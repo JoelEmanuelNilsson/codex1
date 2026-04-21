@@ -48,11 +48,11 @@ pub fn build(state: &MissionState, tasks: &[PlanTask]) -> Value {
         .as_ref()
         .map(|w| w.tasks.iter().map(|t| t.id.clone()).collect::<Vec<_>>())
         .unwrap_or_default();
-    // A wave with any ready tasks is considered parallel-safe until a
-    // future unit adds resource-conflict analysis (exclusive_resources,
-    // unknown_side_effects). `parallel_blockers` will carry any
-    // detected conflicts once that logic lands.
-    let parallel_safe = wave.as_ref().is_some_and(|w| !w.tasks.is_empty());
+    let parallel_safe = wave.as_ref().is_some_and(|w| w.parallel_safe);
+    let parallel_blockers = wave
+        .as_ref()
+        .map(|w| w.blockers.clone())
+        .unwrap_or_default();
     let review_required: Vec<Value> = reviews_ready
         .iter()
         .map(|(id, targets)| json!({ "task_id": id, "targets": targets }))
@@ -65,7 +65,7 @@ pub fn build(state: &MissionState, tasks: &[PlanTask]) -> Value {
         "next_action": next_action,
         "ready_tasks": ready_tasks,
         "parallel_safe": parallel_safe,
-        "parallel_blockers": Vec::<String>::new(),
+        "parallel_blockers": parallel_blockers,
         "review_required": review_required,
         "replan_required": state.replan.triggered,
         "close_ready": close_ready,
@@ -212,7 +212,8 @@ fn derive_next_action(
             "kind": "run_wave",
             "wave_id": w.wave_id.clone(),
             "tasks": ids,
-            "parallel_safe": true,
+            "parallel_safe": w.parallel_safe,
+            "parallel_blockers": w.blockers.clone(),
             "hint": format!("Run wave {} with $execute.", w.wave_id),
         });
     }

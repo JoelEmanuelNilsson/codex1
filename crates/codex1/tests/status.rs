@@ -259,6 +259,137 @@ fn plan_locked_wave_with_two_ready_reports_run_wave() {
 }
 
 #[test]
+fn status_reports_parallel_blockers_for_unsafe_wave() {
+    let fx = Fixture::new("demo");
+    let mut state = base_state("demo");
+    state.outcome.ratified = true;
+    state.plan.locked = true;
+    state.phase = Phase::Execute;
+    state.tasks.insert(
+        task("T1", TaskStatus::Complete).0,
+        task("T1", TaskStatus::Complete).1,
+    );
+    state.tasks.insert(
+        task("T2", TaskStatus::Ready).0,
+        task("T2", TaskStatus::Ready).1,
+    );
+    state.tasks.insert(
+        task("T3", TaskStatus::Ready).0,
+        task("T3", TaskStatus::Ready).1,
+    );
+    fx.write_state(&state);
+    fx.write_plan(
+        r"mission_id: demo
+tasks:
+  - id: T1
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+  - id: T2
+    kind: code
+    depends_on: [T1]
+    spec: specs/T2/SPEC.md
+    exclusive_resources: [shared-db]
+  - id: T3
+    kind: code
+    depends_on: [T1]
+    spec: specs/T3/SPEC.md
+    exclusive_resources: [shared-db]
+",
+    );
+
+    let json = fx.status();
+    assert_eq!(json["data"]["next_action"]["kind"], "run_wave");
+    assert_eq!(json["data"]["parallel_safe"], false);
+    assert_eq!(
+        json["data"]["parallel_blockers"],
+        serde_json::json!(["exclusive_resource:shared-db"])
+    );
+    assert_eq!(json["data"]["next_action"]["parallel_safe"], false);
+}
+
+#[test]
+fn status_reports_unknown_side_effects_blocker() {
+    let fx = Fixture::new("demo");
+    let mut state = base_state("demo");
+    state.outcome.ratified = true;
+    state.plan.locked = true;
+    state.phase = Phase::Execute;
+    state.tasks.insert(
+        task("T1", TaskStatus::Complete).0,
+        task("T1", TaskStatus::Complete).1,
+    );
+    state.tasks.insert(
+        task("T2", TaskStatus::Ready).0,
+        task("T2", TaskStatus::Ready).1,
+    );
+    state.tasks.insert(
+        task("T3", TaskStatus::Ready).0,
+        task("T3", TaskStatus::Ready).1,
+    );
+    fx.write_state(&state);
+    fx.write_plan(
+        r"mission_id: demo
+tasks:
+  - id: T1
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+  - id: T2
+    kind: code
+    depends_on: [T1]
+    spec: specs/T2/SPEC.md
+    unknown_side_effects: true
+  - id: T3
+    kind: code
+    depends_on: [T1]
+    spec: specs/T3/SPEC.md
+",
+    );
+
+    let json = fx.status();
+    assert_eq!(json["data"]["next_action"]["kind"], "run_wave");
+    assert_eq!(json["data"]["parallel_safe"], false);
+    assert_eq!(
+        json["data"]["parallel_blockers"],
+        serde_json::json!(["unknown_side_effects:T2"])
+    );
+}
+
+#[test]
+fn status_does_not_surface_review_when_target_superseded() {
+    let fx = Fixture::new("demo");
+    let mut state = base_state("demo");
+    state.outcome.ratified = true;
+    state.plan.locked = true;
+    state.phase = Phase::Execute;
+    state.tasks.insert(
+        task("T1", TaskStatus::Superseded).0,
+        task("T1", TaskStatus::Superseded).1,
+    );
+    fx.write_state(&state);
+    fx.write_plan(
+        r"mission_id: demo
+tasks:
+  - id: T1
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+  - id: T2
+    kind: review
+    depends_on: [T1]
+    spec: specs/T2/SPEC.md
+    review_target:
+      tasks: [T1]
+",
+    );
+
+    let json = fx.status();
+    assert_ne!(json["data"]["next_action"]["kind"], "run_review");
+    assert_eq!(json["data"]["review_required"].as_array().unwrap().len(), 0);
+}
+
+#[test]
 fn active_loop_not_paused_sets_stop_active_loop() {
     let fx = Fixture::new("demo");
     let mut state = base_state("demo");
@@ -468,12 +599,12 @@ fn ready_review_task_sets_review_required() {
         task("T1", TaskStatus::Complete).1,
     );
     state.tasks.insert(
-        task("T2", TaskStatus::Complete).0,
-        task("T2", TaskStatus::Complete).1,
+        task("T2", TaskStatus::AwaitingReview).0,
+        task("T2", TaskStatus::AwaitingReview).1,
     );
     state.tasks.insert(
-        task("T3", TaskStatus::Complete).0,
-        task("T3", TaskStatus::Complete).1,
+        task("T3", TaskStatus::AwaitingReview).0,
+        task("T3", TaskStatus::AwaitingReview).1,
     );
     state.tasks.insert(
         task("T4", TaskStatus::Ready).0,

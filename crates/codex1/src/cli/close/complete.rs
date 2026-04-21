@@ -31,8 +31,21 @@ use super::closeout;
 pub fn run(ctx: &Ctx) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let current = state::load(&paths)?;
+    state::check_expected_revision(ctx.expect_revision, &current)?;
 
     if let Some(closed_at) = &current.close.terminal_at {
+        if !paths.closeout().is_file() && !ctx.dry_run {
+            let closeout_body = closeout::render(&current, &paths);
+            atomic_write(&paths.closeout(), closeout_body.as_bytes())?;
+            emit_success(
+                &current.mission_id,
+                Some(current.revision),
+                &paths,
+                closed_at,
+                /*dry_run=*/ false,
+            );
+            return Ok(());
+        }
         return Err(CliError::TerminalAlreadyComplete {
             closed_at: closed_at.clone(),
         });
@@ -50,7 +63,6 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string());
 
     if ctx.dry_run {
-        state::check_expected_revision(ctx.expect_revision, &current)?;
         emit_success(
             &current.mission_id,
             Some(current.revision),

@@ -37,6 +37,12 @@ verify-installed:
 	@echo "$(BIN) is installed at: $$(command -v $(BIN))"
 	$(BIN) --help > /dev/null
 	$(BIN) doctor
+	@tmp="$$(mktemp -d /tmp/codex1-verify.XXXXXX)"; \
+	  cd "$$tmp" && \
+	  $(BIN) init --mission verify-smoke > /dev/null && \
+	  test -f PLANS/verify-smoke/STATE.json && \
+	  $(BIN) status --mission verify-smoke > /dev/null; \
+	  rc=$$?; rm -rf "$$tmp"; exit $$rc
 
 verify-contract: fmt clippy test install-local verify-installed
 	@echo "Contract suite passed."

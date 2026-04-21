@@ -62,6 +62,7 @@ pub enum CliError {
     MissionNotFound {
         message: String,
         hint: Option<String>,
+        ambiguous: bool,
     },
     #[error("Parse error: {message}")]
     ParseError { message: String },
@@ -152,6 +153,9 @@ impl CliError {
             Self::ProofMissing { path } => json!({ "path": path.display().to_string() }),
             Self::TerminalAlreadyComplete { closed_at } => json!({ "closed_at": closed_at }),
             Self::NotImplemented { command } => json!({ "command": command }),
+            Self::MissionNotFound {
+                ambiguous: true, ..
+            } => json!({ "ambiguous": true }),
             _ => Value::Null,
         }
     }

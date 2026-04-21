@@ -57,6 +57,7 @@ pub fn run(
     let outcome = Outcome::from_flags(clean, findings_file)?;
     let paths = resolve_mission(&ctx.selector(), true)?;
     let current = state::load(&paths)?;
+    state::check_expected_revision(ctx.expect_revision, &current)?;
     let reviewers = parse_reviewers(reviewers_csv);
 
     // Gate: the mission must be in a state where recording a mission-close
@@ -92,7 +93,6 @@ fn record_clean(
     reviewers: &[String],
 ) -> CliResult<()> {
     if ctx.dry_run {
-        state::check_expected_revision(ctx.expect_revision, current)?;
         emit_success(
             &current.mission_id,
             Some(current.revision),
@@ -102,7 +102,7 @@ fn record_clean(
             /*dry_run=*/ true,
             MissionCloseReviewState::Passed,
             /*replan_triggered=*/ current.replan.triggered,
-            /*dirty_counter=*/ current_counter(current),
+            /*dirty_counter=*/ 0,
         );
         return Ok(());
     }
@@ -118,6 +118,10 @@ fn record_clean(
         payload,
         |state| {
             state.close.review_state = MissionCloseReviewState::Passed;
+            state
+                .replan
+                .consecutive_dirty_by_target
+                .insert(MISSION_CLOSE_TARGET.to_string(), 0);
             Ok(())
         },
     )?;
@@ -151,7 +155,6 @@ fn record_dirty(
     let findings_body = std::fs::read_to_string(findings_source)?;
 
     if ctx.dry_run {
-        state::check_expected_revision(ctx.expect_revision, current)?;
         // Preview the post-mutation values off the loaded snapshot. Under
         // contention with another writer the preview may drift, but a
         // dry-run is advisory by definition.
@@ -174,12 +177,11 @@ fn record_dirty(
         return Ok(());
     }
 
-    // Mutate the state first — it is the authoritative record. If the
-    // findings-file write fails afterwards, a subsequent run will observe
-    // the bumped counter and can prompt the reviewer to resubmit. The
-    // reverse ordering would allow a stale filename to land on disk when
-    // another writer mutated between our load and mutate.
     std::fs::create_dir_all(paths.reviews_dir())?;
+    let predicted_revision = current.revision.saturating_add(1);
+    let findings_target = mission_close_review_path(paths, predicted_revision);
+    crate::state::fs_atomic::atomic_write(&findings_target, findings_body.as_bytes())?;
+
     let mutation = state::mutate(
         paths,
         ctx.expect_revision,
@@ -206,9 +208,6 @@ fn record_dirty(
             Ok(())
         },
     )?;
-
-    let findings_target = mission_close_review_path(paths, mutation.new_revision);
-    crate::state::fs_atomic::atomic_write(&findings_target, findings_body.as_bytes())?;
 
     emit_success(
         &mutation.state.mission_id,

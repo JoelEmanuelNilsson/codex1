@@ -29,6 +29,10 @@ pub struct PlanTask {
     pub depends_on: Vec<String>,
     #[serde(default)]
     pub review_target: Option<ReviewTarget>,
+    #[serde(default)]
+    pub exclusive_resources: Vec<String>,
+    #[serde(default)]
+    pub unknown_side_effects: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -62,6 +66,8 @@ fn read_plan(path: &Path) -> Option<Vec<PlanTask>> {
 pub struct ReadyWave {
     pub wave_id: String,
     pub tasks: Vec<PlanTask>,
+    pub parallel_safe: bool,
+    pub blockers: Vec<String>,
 }
 
 /// Derive the next ready wave. A task is "ready" when:
@@ -90,6 +96,8 @@ pub fn next_ready_wave(tasks: &[PlanTask], state: &MissionState) -> Option<Ready
         if !ready.is_empty() {
             return Some(ReadyWave {
                 wave_id: format!("W{}", idx + 1),
+                parallel_safe: parallel_safety(&ready).0,
+                blockers: parallel_safety(&ready).1,
                 tasks: ready,
             });
         }
@@ -97,14 +105,65 @@ pub fn next_ready_wave(tasks: &[PlanTask], state: &MissionState) -> Option<Ready
     None
 }
 
+fn parallel_safety(tasks: &[PlanTask]) -> (bool, Vec<String>) {
+    let mut blockers = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut owners: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for task in tasks {
+        for resource in &task.exclusive_resources {
+            owners
+                .entry(resource.as_str())
+                .or_default()
+                .push(task.id.as_str());
+        }
+    }
+    for (resource, task_ids) in owners {
+        if task_ids.len() > 1 {
+            let key = format!("exclusive_resource:{resource}");
+            if seen.insert(key.clone()) {
+                blockers.push(key);
+            }
+        }
+    }
+    for task in tasks {
+        if task.unknown_side_effects {
+            let key = format!("unknown_side_effects:{}", task.id);
+            if seen.insert(key.clone()) {
+                blockers.push(key);
+            }
+        }
+    }
+    (blockers.is_empty(), blockers)
+}
+
 /// Review-kind tasks whose dependencies are satisfied AND that do not
 /// already have a `clean` record in `state.reviews`. Returns
 /// `(review_task_id, target_task_ids)` tuples.
 pub fn ready_reviews(tasks: &[PlanTask], state: &MissionState) -> Vec<(String, Vec<String>)> {
+    let awaiting: BTreeSet<String> = tasks
+        .iter()
+        .filter(|t| {
+            state
+                .tasks
+                .get(&t.id)
+                .is_some_and(|r| matches!(r.status, TaskStatus::AwaitingReview))
+        })
+        .map(|t| t.id.clone())
+        .collect();
     tasks
         .iter()
         .filter(|t| is_review_kind(t) && task_is_ready(t, state) && !review_is_clean(&t.id, state))
-        .map(|t| (t.id.clone(), review_targets(t)))
+        .filter_map(|t| {
+            let targets: Vec<String> = review_targets(t)
+                .into_iter()
+                .filter(|target| awaiting.contains(target))
+                .collect();
+            if targets.is_empty() {
+                None
+            } else {
+                Some((t.id.clone(), targets))
+            }
+        })
         .collect()
 }
 
@@ -163,7 +222,8 @@ fn is_review_kind(t: &PlanTask) -> bool {
     matches!(t.kind.as_deref(), Some("review"))
 }
 
-/// True when all `depends_on` entries are complete/superseded AND the
+/// True when all `depends_on` entries are complete (or, for review tasks,
+/// awaiting review) AND the
 /// task itself is not already finished or actively being worked.
 ///
 /// For non-review kinds, `AwaitingReview` counts as done (handed off to
@@ -173,7 +233,7 @@ fn task_is_ready(task: &PlanTask, state: &MissionState) -> bool {
     let is_review = is_review_kind(task);
     let deps_ok = task.depends_on.iter().all(|dep| {
         state.tasks.get(dep).is_some_and(|r| {
-            matches!(r.status, TaskStatus::Complete | TaskStatus::Superseded)
+            matches!(r.status, TaskStatus::Complete)
                 || (is_review && matches!(r.status, TaskStatus::AwaitingReview))
         })
     });

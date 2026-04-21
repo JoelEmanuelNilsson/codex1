@@ -500,11 +500,18 @@ fn t10_terminal_already_complete_refused() {
     let s = Seeded::new();
     run_ok(s.path(), &["review", "start", "T5", "--mission", MISSION]);
     set_terminal(&s.mission_dir);
+    let events_before = fs::read_to_string(s.mission_dir.join("EVENTS.jsonl")).unwrap();
     let err = run_err(
         s.path(),
         &["review", "record", "T5", "--clean", "--mission", MISSION],
     );
     assert_eq!(err["code"], "TERMINAL_ALREADY_COMPLETE");
+    let events_after = fs::read_to_string(s.mission_dir.join("EVENTS.jsonl")).unwrap();
+    assert!(
+        events_after.len() > events_before.len()
+            && events_after.contains("review.contaminated_after_terminal"),
+        "terminal-contaminated review must be audited: {events_after}"
+    );
 }
 
 #[test]
@@ -557,6 +564,50 @@ fn review_start_dry_run_enforces_expect_revision() {
     );
     assert_eq!(err["code"], "REVISION_CONFLICT");
     assert_eq!(err["retryable"], true);
+}
+
+#[test]
+fn review_start_stale_revision_wins_over_unlocked_plan() {
+    let s = Seeded::new();
+    let state_path = s.mission_dir.join("STATE.json");
+    let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["plan"]["locked"] = Value::Bool(false);
+    fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
+
+    let err = run_err(
+        s.path(),
+        &[
+            "review",
+            "start",
+            "T5",
+            "--expect-revision",
+            "999",
+            "--mission",
+            MISSION,
+        ],
+    );
+    assert_eq!(err["code"], "REVISION_CONFLICT");
+}
+
+#[test]
+fn review_record_stale_revision_wins_over_missing_findings() {
+    let s = Seeded::new();
+    run_ok(s.path(), &["review", "start", "T5", "--mission", MISSION]);
+    let err = run_err(
+        s.path(),
+        &[
+            "review",
+            "record",
+            "T5",
+            "--findings-file",
+            "missing-findings.md",
+            "--expect-revision",
+            "999",
+            "--mission",
+            MISSION,
+        ],
+    );
+    assert_eq!(err["code"], "REVISION_CONFLICT");
 }
 
 #[test]
@@ -624,6 +675,19 @@ fn t14_packet_includes_reviewer_instructions() {
     assert_eq!(diffs.len(), 2);
     let targets = ok["data"]["targets"].as_array().unwrap();
     assert_eq!(targets.len(), 2);
+}
+
+#[test]
+fn review_packet_rejects_escaping_target_spec_even_if_bad_plan_is_locked() {
+    let s = Seeded::new();
+    fs::write(s.path().join("secret.md"), "# secret\n").unwrap();
+    let plan = fs::read_to_string(s.mission_dir.join("PLAN.yaml"))
+        .unwrap()
+        .replace("spec: specs/T2/SPEC.md", "spec: ../../secret.md");
+    fs::write(s.mission_dir.join("PLAN.yaml"), plan).unwrap();
+
+    let err = run_err(s.path(), &["review", "packet", "T5", "--mission", MISSION]);
+    assert_eq!(err["code"], "PLAN_INVALID");
 }
 
 #[test]

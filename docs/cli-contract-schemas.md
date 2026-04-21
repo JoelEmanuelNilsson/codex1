@@ -60,7 +60,7 @@ missing `hint`/`context` as equivalent to the empty value. `ok`, `code`,
 | `CONFIG_MISSING` | Required config file absent. | No |
 | `MISSION_NOT_FOUND` | Could not resolve a mission directory. | No |
 | `PARSE_ERROR` | IO, JSON, or YAML parsing failure. | No |
-| `NOT_IMPLEMENTED` | Foundation stub; Phase B unit not yet merged. | No |
+| `NOT_IMPLEMENTED` | Reserved legacy code for unavailable command implementations. | No |
 
 ## Global flags (all commands)
 
@@ -146,8 +146,8 @@ The helper:
 3. If `expected_revision` is `Some(n)`, returns `REVISION_CONFLICT` on mismatch.
 4. Calls the closure.
 5. Bumps `revision` and `events_cursor` by 1.
-6. Atomically writes `STATE.json` (temp-in-same-dir + rename).
-7. Appends one line to `EVENTS.jsonl`.
+6. Appends one line to `EVENTS.jsonl`.
+7. Atomically writes `STATE.json` (temp-in-same-dir + rename).
 8. Releases the lock.
 
 Do not write `STATE.json` directly from a handler. Always go through `state::mutate` (or `state::init_write` for `codex1 init`).

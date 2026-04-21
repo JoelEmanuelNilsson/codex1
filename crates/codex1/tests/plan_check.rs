@@ -281,6 +281,167 @@ mission_close:
 }
 
 #[test]
+fn spec_path_must_stay_inside_mission_dir() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    fs::write(tmp.path().join("secret.md"), "# secret\n").unwrap();
+    let yaml = r#"mission_id: demo
+
+planning_level:
+  requested: light
+  effective: light
+
+outcome_interpretation:
+  summary: "x"
+
+architecture:
+  summary: "x"
+  key_decisions: ["x"]
+
+planning_process:
+  evidence:
+    - kind: direct_reasoning
+      summary: "x"
+
+tasks:
+  - id: T1
+    title: "t1"
+    kind: code
+    depends_on: []
+    spec: ../../secret.md
+
+risks:
+  - risk: "r"
+    mitigation: "m"
+
+mission_close:
+  criteria: ["c"]
+"#;
+    write_plan(&mission_dir, yaml);
+
+    let output = run_check(&tmp, "demo", &[]);
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    assert!(
+        json["message"]
+            .as_str()
+            .unwrap()
+            .contains("must not escape"),
+        "unexpected message: {}",
+        json["message"]
+    );
+}
+
+#[test]
+fn absolute_spec_path_is_rejected() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    let secret = tmp.path().join("secret.md");
+    fs::write(&secret, "# secret\n").unwrap();
+    let yaml = format!(
+        r#"mission_id: demo
+
+planning_level:
+  requested: light
+  effective: light
+
+outcome_interpretation:
+  summary: "x"
+
+architecture:
+  summary: "x"
+  key_decisions: ["x"]
+
+planning_process:
+  evidence:
+    - kind: direct_reasoning
+      summary: "x"
+
+tasks:
+  - id: T1
+    title: "t1"
+    kind: code
+    depends_on: []
+    spec: {}
+
+risks:
+  - risk: "r"
+    mitigation: "m"
+
+mission_close:
+  criteria: ["c"]
+"#,
+        secret.display()
+    );
+    write_plan(&mission_dir, &yaml);
+
+    let output = run_check(&tmp, "demo", &[]);
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    assert!(json["message"]
+        .as_str()
+        .unwrap()
+        .contains("must be relative"));
+}
+
+#[cfg(unix)]
+#[test]
+fn symlink_spec_escape_is_rejected() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    fs::write(tmp.path().join("secret.md"), "# secret\n").unwrap();
+    fs::create_dir_all(mission_dir.join("specs/T1")).unwrap();
+    symlink(
+        tmp.path().join("secret.md"),
+        mission_dir.join("specs/T1/SPEC.md"),
+    )
+    .unwrap();
+    let yaml = r#"mission_id: demo
+
+planning_level:
+  requested: light
+  effective: light
+
+outcome_interpretation:
+  summary: "x"
+
+architecture:
+  summary: "x"
+  key_decisions: ["x"]
+
+planning_process:
+  evidence:
+    - kind: direct_reasoning
+      summary: "x"
+
+tasks:
+  - id: T1
+    title: "t1"
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+
+risks:
+  - risk: "r"
+    mitigation: "m"
+
+mission_close:
+  criteria: ["c"]
+"#;
+    write_plan(&mission_dir, yaml);
+
+    let output = run_check(&tmp, "demo", &[]);
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    assert!(json["message"].as_str().unwrap().contains("escapes"));
+}
+
+#[test]
 fn task_id_pattern_violation_returns_plan_invalid() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = init_demo(&tmp, "demo");
@@ -610,6 +771,17 @@ fn expect_revision_mismatch_returns_revision_conflict() {
     let json = parse_stdout_json(&output);
     assert_eq!(json["code"], "REVISION_CONFLICT");
     assert_eq!(json["context"]["expected"], 999);
+}
+
+#[test]
+fn stale_revision_wins_over_plan_parse_error() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    fs::write(mission_dir.join("PLAN.yaml"), "not: [valid\n").unwrap();
+    let output = run_check(&tmp, "demo", &["--expect-revision", "99"]);
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "REVISION_CONFLICT");
 }
 
 #[test]

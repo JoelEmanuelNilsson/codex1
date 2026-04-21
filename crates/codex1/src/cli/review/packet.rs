@@ -14,7 +14,7 @@ use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::CliResult;
 use crate::core::mission::resolve_mission;
-use crate::core::paths::MissionPaths;
+use crate::core::paths::{resolve_existing_mission_file, MissionPaths};
 use crate::state;
 
 /// Standing reviewer instructions. See `04-roles-models-prompts.md`.
@@ -39,7 +39,7 @@ pub fn run(ctx: &Ctx, task_id: &str) -> CliResult<()> {
     let mut diffs: Vec<Value> = Vec::new();
     for tid in &targets {
         let target = plan_tasks.get(tid).cloned();
-        target_specs.push(target_spec_value(&paths, tid, target.as_ref()));
+        target_specs.push(target_spec_value(&paths, tid, target.as_ref())?);
         if let Some(p) = proof_path_string(&paths, tid) {
             proofs.push(p);
         }
@@ -80,28 +80,28 @@ pub fn run(ctx: &Ctx, task_id: &str) -> CliResult<()> {
     Ok(())
 }
 
-fn target_spec_value(paths: &MissionPaths, task_id: &str, task: Option<&PlanTask>) -> Value {
+fn target_spec_value(
+    paths: &MissionPaths,
+    task_id: &str,
+    task: Option<&PlanTask>,
+) -> CliResult<Value> {
     let spec_path = task
         .and_then(|t| t.spec.clone())
-        .unwrap_or_else(|| relative_from_repo(paths, &paths.spec_file_for(task_id)));
+        .unwrap_or_else(|| format!("specs/{task_id}/SPEC.md"));
     // `spec_path` in PLAN.yaml is a string relative to the mission dir,
     // e.g. `specs/T2/SPEC.md`. Resolve it against the mission dir for
     // the file read, but report the original string to the caller.
-    let spec_absolute = resolve_spec_path(paths, &spec_path);
+    let spec_absolute = resolve_spec_path(paths, &spec_path)?;
     let excerpt = read_excerpt(&spec_absolute).unwrap_or_default();
-    json!({
+    Ok(json!({
         "task_id": task_id,
         "spec_path": spec_path,
         "spec_excerpt": excerpt,
-    })
+    }))
 }
 
-fn resolve_spec_path(paths: &MissionPaths, spec_str: &str) -> PathBuf {
-    let p = Path::new(spec_str);
-    if p.is_absolute() {
-        return p.to_path_buf();
-    }
-    paths.mission_dir.join(p)
+fn resolve_spec_path(paths: &MissionPaths, spec_str: &str) -> CliResult<PathBuf> {
+    resolve_existing_mission_file(paths, spec_str, "review_target.spec")
 }
 
 fn proof_path_string(paths: &MissionPaths, task_id: &str) -> Option<String> {
