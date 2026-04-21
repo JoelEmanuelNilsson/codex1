@@ -166,6 +166,35 @@ fn current_ready_wave_does_not_skip_in_progress_dependency() {
 }
 
 #[test]
+fn graph_and_waves_suppress_ready_work_under_dirty_review_blocker() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_mission(&tmp, "demo");
+    seed_plan(&mission_dir, FIVE_TASK_PLAN);
+    let state_path = mission_dir.join("STATE.json");
+    let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["reviews"] = serde_json::json!({
+        "T5": {
+            "task_id": "T5",
+            "verdict": "dirty",
+            "reviewers": ["r1"],
+            "findings_file": "PLANS/demo/reviews/T5.md",
+            "category": "accepted_current",
+            "recorded_at": "2026-04-20T00:00:00Z",
+            "boundary_revision": 1
+        }
+    });
+    fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
+
+    let waves = run_waves(&tmp, "demo");
+    assert_eq!(waves["data"]["current_ready_wave"], Value::Null);
+
+    let graph = run_graph(&tmp, "demo", &["--format", "json"]);
+    let nodes = graph["data"]["graph"]["nodes"].as_array().unwrap();
+    let t1 = nodes.iter().find(|n| n["id"] == "T1").unwrap();
+    assert_eq!(t1["status"], "blocked");
+}
+
+#[test]
 fn exclusive_resource_collision_marks_wave_unsafe() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = init_mission(&tmp, "demo");

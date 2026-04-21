@@ -336,18 +336,18 @@ planning_process:
       summary: x
 
 tasks:
-  - id: T4
+  - id: T6
     title: Replacement work
     kind: code
     depends_on: []
-    spec: specs/T4/SPEC.md
-  - id: T5
-    title: Review of T4
+    spec: specs/T6/SPEC.md
+  - id: T7
+    title: Review of T6
     kind: review
-    depends_on: [T4]
-    spec: specs/T5/SPEC.md
+    depends_on: [T6]
+    spec: specs/T7/SPEC.md
     review_target:
-      tasks: [T4]
+      tasks: [T6]
     review_profiles:
       - code_bug_correctness
 
@@ -360,7 +360,7 @@ mission_close:
     - ok
 ";
     fs::write(mission_dir.join("PLAN.yaml"), plan).unwrap();
-    for tid in ["T4", "T5"] {
+    for tid in ["T6", "T7"] {
         let dir = mission_dir.join("specs").join(tid);
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("SPEC.md"), format!("# {tid}\n")).unwrap();
@@ -456,7 +456,7 @@ fn full_mission_close_after_replan_reaches_terminal() {
     // Plan with T1 (root, complete), T2 (awaiting_review),
     // T3 (review of T2), T4 (work), T5 (review of T4). Replan will
     // supersede T2 (and its review T3 is no longer actionable), then
-    // execute T4 + T5 and mission-close review.
+    // execute fresh replacement IDs T6 + T7 and mission-close review.
     let plan = r"mission_id: demo
 
 planning_level:
@@ -601,29 +601,29 @@ mission_close:
     });
     write_state(&mission_dir, &state);
 
-    // Execute T4 + T5 (the replacement work + its review).
-    run_ok(tmp.path(), &["task", "start", "T4", "--mission", MISSION]);
-    let proof = mission_dir.join("specs/T4/PROOF.md");
-    fs::write(&proof, "# T4 proof\n").unwrap();
+    // Execute T6 + T7 (the replacement work + its review).
+    run_ok(tmp.path(), &["task", "start", "T6", "--mission", MISSION]);
+    let proof = mission_dir.join("specs/T6/PROOF.md");
+    fs::write(&proof, "# T6 proof\n").unwrap();
     run_ok(
         tmp.path(),
         &[
             "task",
             "finish",
-            "T4",
+            "T6",
             "--proof",
-            "specs/T4/PROOF.md",
+            "specs/T6/PROOF.md",
             "--mission",
             MISSION,
         ],
     );
-    run_ok(tmp.path(), &["review", "start", "T5", "--mission", MISSION]);
+    run_ok(tmp.path(), &["review", "start", "T7", "--mission", MISSION]);
     run_ok(
         tmp.path(),
         &[
             "review",
             "record",
-            "T5",
+            "T7",
             "--clean",
             "--reviewers",
             "r1",
@@ -673,9 +673,9 @@ mission_close:
         "CLOSEOUT.md missing mission id `{MISSION}`: {closeout}"
     );
     // The tasks completed through the post-replan path must both appear
-    // in the tasks table: T1 (pre-replan complete) and T4 (replacement
+    // in the tasks table: T1 (pre-replan complete) and T6 (replacement
     // work driven through task start/finish after the relock).
-    for tid in ["T1", "T4"] {
+    for tid in ["T1", "T6"] {
         assert!(
             closeout.contains(tid),
             "CLOSEOUT.md missing {tid}: {closeout}"

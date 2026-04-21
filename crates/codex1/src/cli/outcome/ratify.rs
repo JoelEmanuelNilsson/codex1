@@ -60,7 +60,8 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
         return Ok(());
     }
 
-    let rewritten_outcome = rewrite_status_to_ratified(&report.frontmatter_raw, &report.body)?;
+    let rewritten_outcome =
+        rewrite_status_to_ratified(&report.frontmatter_raw, &report.body, report.pure_yaml)?;
 
     // Mutate STATE.json first. OUTCOME.md is the auxiliary artifact; if
     // the state bump fails the file must not already read `ratified`,
@@ -69,22 +70,26 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
     // an atomicity bug: a crash between the two writes would leave
     // OUTCOME.md `ratified` on disk while `state.outcome.ratified`
     // remained `false`, breaking the file-vs-state consistency invariant.
-    let mutation = state::mutate(
+    let mutation = state::mutate_dynamic_with_precommit(
         &paths,
         ctx.expect_revision,
-        "outcome.ratified",
-        json!({
-            "mission_id": state.mission_id,
-            "ratified_at": ratified_at,
-        }),
         |state_mut| {
             state_mut.outcome.ratified = true;
             state_mut.outcome.ratified_at = Some(ratified_at.clone());
             state_mut.phase = advance_phase(&state_mut.phase);
+            Ok((
+                "outcome.ratified".to_string(),
+                json!({
+                    "mission_id": state_mut.mission_id,
+                    "ratified_at": ratified_at,
+                }),
+            ))
+        },
+        |_state, _event| {
+            atomic_write(&outcome_path, rewritten_outcome.as_bytes())?;
             Ok(())
         },
     )?;
-    atomic_write(&outcome_path, rewritten_outcome.as_bytes())?;
 
     let env = JsonOk::new(
         Some(state.mission_id.clone()),
@@ -114,7 +119,11 @@ fn advance_phase(current: &Phase) -> Phase {
 ///
 /// We avoid a `serde_yaml` round-trip to preserve field order, comments,
 /// quoting style, and whitespace authored by `$clarify`.
-fn rewrite_status_to_ratified(frontmatter: &str, body: &str) -> Result<String, CliError> {
+fn rewrite_status_to_ratified(
+    frontmatter: &str,
+    body: &str,
+    pure_yaml: bool,
+) -> Result<String, CliError> {
     let mut new_front = String::with_capacity(frontmatter.len() + 16);
     let mut rewrote = false;
     let top_level_indent = detect_top_level_key_indent(frontmatter);
@@ -145,6 +154,10 @@ fn rewrite_status_to_ratified(frontmatter: &str, body: &str) -> Result<String, C
             hint: Some("Add a `status:` field at the top level of the YAML block.".to_string()),
         });
     }
+    if pure_yaml {
+        return Ok(new_front);
+    }
+
     let mut out = String::with_capacity(frontmatter.len() + body.len() + 8);
     out.push_str("---\n");
     out.push_str(&new_front);
@@ -210,7 +223,7 @@ mod tests {
     fn rewrites_status_line_preserving_body() {
         let front = "mission_id: demo\nstatus: draft\ntitle: Thing\n";
         let body = "\n# OUTCOME\nsome text with status: in prose\n";
-        let got = rewrite_status_to_ratified(front, body).unwrap();
+        let got = rewrite_status_to_ratified(front, body, false).unwrap();
         assert!(got.contains("status: ratified"));
         assert!(got.contains("status: in prose"));
         assert!(!got.contains("status: draft"));
@@ -219,7 +232,7 @@ mod tests {
     #[test]
     fn rewrites_only_first_status_line() {
         let front = "status: draft\nstatus: stale\n";
-        let got = rewrite_status_to_ratified(front, "").unwrap();
+        let got = rewrite_status_to_ratified(front, "", false).unwrap();
         // Only the first `status:` is rewritten; the second survives as
         // documentation of the original YAML shape.
         assert!(got.contains("status: ratified\nstatus: stale"));
@@ -227,14 +240,14 @@ mod tests {
 
     #[test]
     fn errors_when_status_missing() {
-        let err = rewrite_status_to_ratified("mission_id: demo\n", "").unwrap_err();
+        let err = rewrite_status_to_ratified("mission_id: demo\n", "", false).unwrap_err();
         assert!(matches!(err, CliError::OutcomeIncomplete { .. }));
     }
 
     #[test]
     fn rewrites_indented_top_level_status_line() {
         let front = "  mission_id: demo\n  status: draft\n  title: Thing\n";
-        let got = rewrite_status_to_ratified(front, "").unwrap();
+        let got = rewrite_status_to_ratified(front, "", false).unwrap();
         assert!(got.contains("  status: ratified\n"));
     }
 }

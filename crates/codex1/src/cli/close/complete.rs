@@ -51,6 +51,10 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
         });
     }
 
+    if current.outcome.ratified && current.plan.locked {
+        state::require_locked_plan_snapshot(&paths, &current)?;
+    }
+
     let report = ReadinessReport::from_state_and_paths(&current, &paths);
     if !report.ready {
         return Err(CliError::CloseNotReady {
@@ -83,6 +87,9 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
                 return Err(CliError::TerminalAlreadyComplete {
                     closed_at: closed_at.clone(),
                 });
+            }
+            if state.outcome.ratified && state.plan.locked {
+                state::require_locked_plan_snapshot(&paths, state)?;
             }
             let report = ReadinessReport::from_state_and_paths(state, &paths);
             if !report.ready {

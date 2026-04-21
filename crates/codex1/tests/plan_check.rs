@@ -318,6 +318,73 @@ mission_close:
 }
 
 #[test]
+fn plan_check_rejects_replan_reuse_of_prior_dag_id_without_state_row() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = seed_valid_mission(&tmp, "demo");
+
+    let state_path = mission_dir.join("STATE.json");
+    let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["phase"] = Value::String("execute".to_string());
+    state["plan"] = serde_json::json!({
+        "locked": false,
+        "requested_level": "medium",
+        "effective_level": "medium",
+        "hash": "sha256:old",
+        "task_ids": ["T1", "T2"]
+    });
+    state["tasks"] = serde_json::json!({});
+    state["reviews"] = serde_json::json!({});
+    fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
+
+    write_spec(&mission_dir, "T2", "# T2 SPEC\n");
+    write_plan(
+        &mission_dir,
+        r#"mission_id: demo
+
+planning_level:
+  requested: medium
+  effective: medium
+
+outcome_interpretation:
+  summary: "Replan reuse regression."
+
+architecture:
+  summary: "One replacement task, wrongly reusing untouched T2."
+  key_decisions:
+    - "Reject untouched historical IDs."
+
+planning_process:
+  evidence:
+    - kind: direct_reasoning
+      summary: "Regression."
+
+tasks:
+  - id: T2
+    title: "Replacement work"
+    kind: code
+    depends_on: []
+    spec: specs/T2/SPEC.md
+
+risks:
+  - risk: "Replacement work could alias prior truth."
+    mitigation: "Reject task-id reuse."
+mission_close:
+  criteria:
+    - "Replacement work must not alias prior truth."
+"#,
+    );
+
+    let output = run_check(&tmp, "demo", &[]);
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    assert!(json["message"]
+        .as_str()
+        .unwrap()
+        .contains("historical task truth"));
+}
+
+#[test]
 fn plan_check_rejects_plan_mission_id_mismatch() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = seed_valid_mission(&tmp, "demo");

@@ -3,7 +3,7 @@
 //! One event per mutation. `seq` is monotonically increasing and matches
 //! the `events_cursor` field on the post-mutation state.
 
-use std::fs::OpenOptions;
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 
@@ -39,9 +39,36 @@ impl Event {
 
 /// Append an event to `EVENTS.jsonl`. Assumes caller holds the state lock.
 pub fn append_event(path: &Path, event: &Event) -> Result<(), CliError> {
+    if let Some(last_seq) = last_event_seq(path)? {
+        if last_seq == event.seq {
+            // Previous attempt appended the event but failed before
+            // STATE.json was persisted. Do not duplicate the sequence on
+            // retry; the caller can finish writing state for this seq.
+            return Ok(());
+        }
+        if last_seq > event.seq {
+            return Err(CliError::StateCorrupt {
+                message: format!(
+                    "EVENTS.jsonl already advanced to seq {last_seq}; refusing to append stale seq {}",
+                    event.seq
+                ),
+            });
+        }
+    }
     let mut f = OpenOptions::new().create(true).append(true).open(path)?;
     let line = serde_json::to_string(event)?;
     writeln!(f, "{line}")?;
     f.sync_data()?;
     Ok(())
+}
+
+fn last_event_seq(path: &Path) -> Result<Option<u64>, CliError> {
+    let Ok(raw) = fs::read_to_string(path) else {
+        return Ok(None);
+    };
+    let Some(line) = raw.lines().rev().find(|line| !line.trim().is_empty()) else {
+        return Ok(None);
+    };
+    let event: Event = serde_json::from_str(line)?;
+    Ok(Some(event.seq))
 }

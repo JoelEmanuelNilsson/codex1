@@ -119,7 +119,17 @@ pub fn require_locked_plan_snapshot(
     })
 }
 
+pub fn require_not_terminal(state: &MissionState) -> Result<(), CliError> {
+    if let Some(closed_at) = state.close.terminal_at.as_ref() {
+        return Err(CliError::TerminalAlreadyComplete {
+            closed_at: closed_at.clone(),
+        });
+    }
+    Ok(())
+}
+
 pub fn require_executable_plan(paths: &MissionPaths, state: &MissionState) -> Result<(), CliError> {
+    require_not_terminal(state)?;
     require_locked_plan_snapshot(paths, state)?;
     if state.replan.triggered {
         return Err(CliError::PlanInvalid {

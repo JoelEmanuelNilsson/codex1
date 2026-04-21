@@ -254,6 +254,103 @@ fn locked_plan_drift_blocks_task_next_and_start() {
     assert_eq!(start_json["code"], "PLAN_INVALID");
 }
 
+#[cfg(unix)]
+#[test]
+fn absolute_mission_local_proof_symlink_is_rejected() {
+    use std::os::unix::fs::symlink;
+
+    let (tmp, mission_dir) = seed_mission(PLAN_LINEAR_NO_REVIEW, &[("T1", "# spec\n")]);
+    let start = run(tmp.path(), &["task", "start", "T1", "--mission", "demo"]);
+    assert!(start.status.success(), "{:?}", start);
+    let external = tmp.path().join("external-proof.md");
+    fs::write(&external, "# external proof\n").unwrap();
+    let proof = mission_dir.join("specs").join("T1").join("PROOF.md");
+    symlink(&external, &proof).unwrap();
+
+    let out = run(
+        tmp.path(),
+        &[
+            "task",
+            "finish",
+            "T1",
+            "--proof",
+            proof.to_str().unwrap(),
+            "--mission",
+            "demo",
+        ],
+    );
+    assert!(!out.status.success());
+    let json = parse_json(&out);
+    assert_eq!(json["code"], "PROOF_MISSING");
+    assert_eq!(
+        events(&mission_dir).len(),
+        1,
+        "only task.started should exist"
+    );
+}
+
+#[test]
+fn next_dirty_review_reports_repair_before_rerun_review() {
+    let (tmp, mission_dir) = seed_mission(
+        PLAN_WITH_REVIEW,
+        &[("T1", "# spec\n"), ("T2", "# spec\n"), ("T3", "# spec\n")],
+    );
+    let state_path = mission_dir.join("STATE.json");
+    let mut state = read_state(&mission_dir);
+    state["tasks"] = json!({
+        "T1": {
+            "id": "T1",
+            "status": "complete",
+            "started_at": "2026-04-20T00:00:00Z",
+            "finished_at": "2026-04-20T00:00:01Z",
+            "proof_path": "specs/T1/PROOF.md",
+            "superseded_by": null
+        },
+        "T2": {
+            "id": "T2",
+            "status": "awaiting_review",
+            "started_at": "2026-04-20T00:00:00Z",
+            "finished_at": "2026-04-20T00:00:01Z",
+            "proof_path": "specs/T2/PROOF.md",
+            "superseded_by": null
+        }
+    });
+    state["reviews"] = json!({
+        "T3": {
+            "task_id": "T3",
+            "verdict": "dirty",
+            "reviewers": ["r1"],
+            "findings_file": "PLANS/demo/reviews/T3.md",
+            "category": "accepted_current",
+            "recorded_at": "2026-04-20T00:00:02Z",
+            "boundary_revision": 0
+        }
+    });
+    fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
+
+    let out = run(tmp.path(), &["task", "next", "--mission", "demo"]);
+    assert!(out.status.success(), "stderr: {:?}", out.stderr);
+    let json = parse_json(&out);
+    assert_eq!(json["data"]["next"]["kind"], "repair");
+    assert_eq!(json["data"]["next"]["task_id"], "T2");
+}
+
+#[test]
+fn terminal_mission_rejects_task_start() {
+    let (tmp, mission_dir) = seed_mission(PLAN_LINEAR_NO_REVIEW, &[("T1", "# spec\n")]);
+    let state_path = mission_dir.join("STATE.json");
+    let mut state = read_state(&mission_dir);
+    state["phase"] = json!("terminal");
+    state["close"]["terminal_at"] = json!("2026-04-21T00:00:00Z");
+    fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
+
+    let out = run(tmp.path(), &["task", "start", "T1", "--mission", "demo"]);
+    assert!(!out.status.success());
+    let json = parse_json(&out);
+    assert_eq!(json["code"], "TERMINAL_ALREADY_COMPLETE");
+    assert!(events(&mission_dir).is_empty());
+}
+
 #[test]
 fn next_multi_ready_reports_wave() {
     // T2 and T3 both depend only on T1; complete T1 to make them ready.
@@ -868,10 +965,13 @@ fn finish_without_proof_arg_is_clap_error() {
     let (tmp, _dir) = seed_mission(PLAN_LINEAR_NO_REVIEW, &[]);
     let out = run(tmp.path(), &["task", "finish", "T1", "--mission", "demo"]);
     assert!(!out.status.success());
-    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.stderr.is_empty());
+    let json = parse_json(&out);
+    let message = json["message"].as_str().unwrap_or_default();
+    assert_eq!(json["code"], "PARSE_ERROR");
     assert!(
-        stderr.contains("--proof") || stderr.contains("required"),
-        "expected clap error about --proof, got: {stderr}"
+        message.contains("--proof") || message.contains("required"),
+        "expected clap error about --proof, got: {message}"
     );
 }
 

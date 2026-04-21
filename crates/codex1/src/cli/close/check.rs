@@ -225,6 +225,9 @@ fn closeout_ready(paths: &MissionPaths) -> Result<(), String> {
 pub fn run(ctx: &Ctx) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let state = state::load(&paths)?;
+    if state.outcome.ratified && state.plan.locked {
+        state::require_locked_plan_snapshot(&paths, &state)?;
+    }
     let report = ReadinessReport::from_state_and_paths(&state, &paths);
     let env = JsonOk::new(
         Some(state.mission_id.clone()),

@@ -602,6 +602,74 @@ resolved_questions:
 }
 
 #[test]
+fn check_flags_longer_placeholder_and_vague_success_phrases() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    seed_valid_outcome(&mission_dir, "demo");
+    let raw = fs::read_to_string(mission_dir.join("OUTCOME.md"))
+        .unwrap()
+        .replace(
+            "title: Demo mission for outcome tests",
+            "title: \"TODO: fill this in\"",
+        )
+        .replace(
+            "  - codex1 outcome check returns ratifiable true for this fixture.",
+            "  - Workflow is reliable.",
+        );
+    fs::write(mission_dir.join("OUTCOME.md"), raw).unwrap();
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "check", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_json(&output);
+    let joined = json["context"]["placeholders"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap_or(""))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .to_lowercase();
+    assert!(joined.contains("todo: fill this in"), "{joined}");
+    assert!(joined.contains("workflow is reliable"), "{joined}");
+}
+
+#[test]
+fn check_and_ratify_accept_pure_yaml_outcome() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    seed_valid_outcome(&mission_dir, "demo");
+    let raw = fs::read_to_string(mission_dir.join("OUTCOME.md")).unwrap();
+    let frontmatter = raw
+        .strip_prefix("---\n")
+        .unwrap()
+        .split("\n---\n")
+        .next()
+        .unwrap();
+    fs::write(mission_dir.join("OUTCOME.md"), frontmatter).unwrap();
+
+    let check = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "check", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(check.status.success(), "{check:?}");
+
+    let ratify = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "ratify", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(ratify.status.success(), "{ratify:?}");
+    let rewritten = fs::read_to_string(mission_dir.join("OUTCOME.md")).unwrap();
+    assert!(rewritten.contains("status: ratified"));
+    assert!(!rewritten.starts_with("---"));
+}
+
+#[test]
 fn ratify_on_invalid_outcome_does_not_mutate_state() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = init_demo(&tmp, "demo");

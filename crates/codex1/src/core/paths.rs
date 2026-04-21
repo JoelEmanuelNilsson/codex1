@@ -180,12 +180,24 @@ pub fn resolve_existing_proof_file(
     proof: &Path,
 ) -> Result<PathBuf, CliError> {
     if proof.is_absolute() {
-        if proof.is_file() {
-            return Ok(proof.to_path_buf());
+        if !proof.is_file() {
+            return Err(CliError::ProofMissing {
+                path: proof.to_path_buf(),
+            });
         }
-        return Err(CliError::ProofMissing {
-            path: proof.to_path_buf(),
-        });
+        let parent_inside_mission = proof
+            .parent()
+            .and_then(|parent| parent.canonicalize().ok())
+            .zip(paths.mission_dir.canonicalize().ok())
+            .is_some_and(|(parent, mission)| parent.starts_with(mission));
+        if proof.starts_with(&paths.mission_dir) || parent_inside_mission {
+            ensure_artifact_file_read_safe(paths, proof, "proof file").map_err(|_| {
+                CliError::ProofMissing {
+                    path: proof.to_path_buf(),
+                }
+            })?;
+        }
+        return Ok(proof.to_path_buf());
     }
 
     let abs = paths.mission_dir.join(proof);

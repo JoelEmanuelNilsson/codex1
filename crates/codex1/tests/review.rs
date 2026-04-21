@@ -878,10 +878,13 @@ fn t7_clap_rejects_conflicting_clean_and_findings() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.stderr.is_empty());
+    let json = parse_stdout(&output);
+    let message = json["message"].as_str().unwrap_or_default();
+    assert_eq!(json["code"], "PARSE_ERROR");
     assert!(
-        stderr.contains("cannot be used with") || stderr.contains("conflict"),
-        "stderr: {stderr}"
+        message.contains("cannot be used with") || message.contains("conflict"),
+        "message: {message}"
     );
 }
 
@@ -894,10 +897,13 @@ fn t8_clap_rejects_neither_clean_nor_findings() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.stderr.is_empty());
+    let json = parse_stdout(&output);
+    let message = json["message"].as_str().unwrap_or_default();
+    assert_eq!(json["code"], "PARSE_ERROR");
     assert!(
-        stderr.contains("required") || stderr.contains("error:"),
-        "stderr: {stderr}"
+        message.contains("required") || message.contains("error:"),
+        "message: {message}"
     );
 }
 

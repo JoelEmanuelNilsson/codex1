@@ -571,6 +571,28 @@ fn expect_revision_matches_allow_mutation() {
 }
 
 #[test]
+fn terminal_mission_rejects_loop_activation() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    let mut state = MissionState::fresh("demo");
+    state.close.terminal_at = Some("2026-04-21T00:00:00Z".to_string());
+    state.phase = codex1::state::schema::Phase::Terminal;
+    let raw = serde_json::to_vec_pretty(&state).unwrap();
+    state::fs_atomic::atomic_write(&mission_dir.join("STATE.json"), &raw).unwrap();
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["loop", "activate", "--mission", "demo"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "TERMINAL_ALREADY_COMPLETE");
+    let after = read_state(&mission_dir);
+    assert_eq!(after["loop"]["active"], false);
+}
+
+#[test]
 fn paused_loop_allows_stop_in_status() {
     // Build a mission by hand that sits in `continue_required`:
     // ratified outcome, locked plan, one pending task. With the loop

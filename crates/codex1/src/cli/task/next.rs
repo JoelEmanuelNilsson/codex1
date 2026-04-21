@@ -7,7 +7,7 @@ use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::CliResult;
 use crate::core::mission::resolve_mission;
-use crate::state;
+use crate::state::{self, schema::ReviewRecordCategory, schema::ReviewVerdict, schema::TaskStatus};
 
 use super::lifecycle::{
     all_tasks_terminal, awaiting_review_targets, effective_tasks, load_plan, next_ready_review,
@@ -100,6 +100,21 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
             })
         }
     } else {
+        if let Some(task_id) = dirty_repair_target(&plan, &state) {
+            let env = JsonOk::new(
+                Some(state.mission_id.clone()),
+                Some(state.revision),
+                json!({
+                    "next": {
+                        "kind": "repair",
+                        "task_id": task_id,
+                        "reason": "accepted-current review findings must be repaired before rerunning review",
+                    }
+                }),
+            );
+            println!("{}", env.to_pretty());
+            return Ok(());
+        }
         let awaiting = awaiting_review_targets(&effective);
         if let Some((review_task, covered)) = next_ready_review(&plan, &effective, &awaiting) {
             json!({
@@ -144,6 +159,35 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
     );
     println!("{}", env.to_pretty());
     Ok(())
+}
+
+fn dirty_repair_target(
+    plan: &super::lifecycle::ParsedPlan,
+    state: &crate::state::schema::MissionState,
+) -> Option<String> {
+    for (review_id, record) in &state.reviews {
+        if !matches!(record.verdict, ReviewVerdict::Dirty)
+            || !matches!(record.category, ReviewRecordCategory::AcceptedCurrent)
+        {
+            continue;
+        }
+        let Some(target) = plan
+            .get(review_id)
+            .and_then(|task| task.review_target.as_ref())
+        else {
+            continue;
+        };
+        for task_id in &target.tasks {
+            if state
+                .tasks
+                .get(task_id)
+                .is_some_and(|task| matches!(task.status, TaskStatus::AwaitingReview))
+            {
+                return Some(task_id.clone());
+            }
+        }
+    }
+    None
 }
 
 /// Assign a deterministic id to the current ready wave.

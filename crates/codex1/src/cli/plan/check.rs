@@ -568,7 +568,10 @@ fn validate_tasks(
         if !seen.insert(id.clone()) {
             duplicates.insert(id.clone());
         }
-        if !state.plan.locked && (state.tasks.contains_key(&id) || state.reviews.contains_key(&id))
+        if !state.plan.locked
+            && (state.tasks.contains_key(&id)
+                || state.reviews.contains_key(&id)
+                || state.plan.task_ids.iter().any(|old| old == &id))
         {
             exit_with_validation_error(
                 "PLAN_INVALID",

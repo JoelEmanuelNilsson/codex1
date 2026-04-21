@@ -46,7 +46,9 @@ pub fn run(ctx: &Ctx, format: GraphFormat, out: Option<PathBuf>) -> CliResult<()
     let paths = resolve_mission(&ctx.selector(), true)?;
     let state = state::load(&paths)?;
     let tasks = load_plan_tasks(&paths, &state)?;
-    let statuses = derive_node_statuses(&tasks, &state.tasks);
+    let globally_blocked =
+        state.replan.triggered || state::readiness::has_current_dirty_review(&state);
+    let statuses = derive_node_statuses(&tasks, &state.tasks, globally_blocked);
 
     let (inline_key, body) = match format {
         GraphFormat::Mermaid => ("mermaid", render_mermaid(&tasks, &statuses)),
@@ -83,6 +85,7 @@ fn write_to(path: &Path, body: &str) -> CliResult<()> {
 fn derive_node_statuses(
     tasks: &[ParsedTask],
     state_tasks: &BTreeMap<String, crate::state::TaskRecord>,
+    globally_blocked: bool,
 ) -> BTreeMap<String, NodeStatus> {
     let mut out = BTreeMap::new();
     for t in tasks {
@@ -93,7 +96,7 @@ fn derive_node_statuses(
             Some(TaskStatus::Superseded) => NodeStatus::Superseded,
             Some(TaskStatus::Ready) => NodeStatus::Ready,
             Some(TaskStatus::Pending) | None => {
-                if deps_are_done(t, state_tasks) {
+                if !globally_blocked && deps_are_done(t, state_tasks) {
                     NodeStatus::Ready
                 } else {
                     NodeStatus::Blocked

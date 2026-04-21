@@ -18,6 +18,7 @@ pub struct ValidationReport {
     pub placeholders: Vec<String>,
     pub frontmatter_raw: String,
     pub body: String,
+    pub pure_yaml: bool,
 }
 
 /// Load and validate OUTCOME.md at `path`. Returns a structured report
@@ -33,7 +34,7 @@ pub fn validate_outcome(
         });
     }
     let raw = std::fs::read_to_string(path)?;
-    let (frontmatter_raw, body) =
+    let (frontmatter_raw, body, pure_yaml) =
         split_frontmatter(&raw).ok_or_else(|| CliError::OutcomeIncomplete {
             message: "OUTCOME.md is missing YAML frontmatter (expected `---` fences)".to_string(),
             hint: Some("Start the file with `---`, a YAML block, and a closing `---`.".to_string()),
@@ -169,14 +170,17 @@ pub fn validate_outcome(
         placeholders,
         frontmatter_raw,
         body,
+        pure_yaml,
     })
 }
 
 /// Split OUTCOME.md into `(frontmatter_body, markdown_body)`. Returns
-/// `None` if the file lacks the standard `---…---` fences.
-pub fn split_frontmatter(raw: &str) -> Option<(String, String)> {
+/// the whole file as pure YAML when it lacks standard `---…---` fences.
+pub fn split_frontmatter(raw: &str) -> Option<(String, String, bool)> {
     let trimmed = raw.trim_start_matches('\u{feff}');
-    let rest = trimmed.strip_prefix("---")?;
+    let Some(rest) = trimmed.strip_prefix("---") else {
+        return Some((trimmed.to_string(), String::new(), true));
+    };
     let rest = rest
         .strip_prefix('\n')
         .or_else(|| rest.strip_prefix("\r\n"))?;
@@ -189,7 +193,7 @@ pub fn split_frontmatter(raw: &str) -> Option<(String, String)> {
             let frontmatter = rest[..offset].to_string();
             let body_start = line_end;
             let body = rest.get(body_start..).unwrap_or("").to_string();
-            return Some((frontmatter, body));
+            return Some((frontmatter, body, false));
         }
         offset = line_end;
     }
@@ -399,8 +403,15 @@ fn reject_success_criteria_boilerplate(m: &Mapping, placeholders: &mut Vec<Strin
 }
 
 fn is_success_boilerplate(lower: &str) -> bool {
+    let normalized = lower.trim().trim_matches(['.', '!', '?', '"', '\'']);
+    if normalized.contains("works well")
+        || normalized.contains("is reliable")
+        || normalized.contains("workflow is reliable")
+    {
+        return true;
+    }
     matches!(
-        lower,
+        normalized,
         "works well"
             | "is reliable"
             | "reliable"
@@ -417,8 +428,19 @@ fn is_success_boilerplate(lower: &str) -> bool {
 /// Return true for generic placeholder scalars that should block ratification.
 fn is_placeholder_value(value: &str) -> bool {
     let lower = value.to_lowercase();
+    if lower.trim() == "..." {
+        return true;
+    }
+    let normalized = lower.trim().trim_matches(['.', '!', '?', '"', '\'']);
+    if normalized.starts_with("todo:")
+        || normalized.starts_with("todo ")
+        || normalized.starts_with("tbd:")
+        || normalized.starts_with("tbd ")
+    {
+        return true;
+    }
     matches!(
-        lower.as_str(),
+        normalized,
         "todo"
             | "tbd"
             | "..."
@@ -477,15 +499,19 @@ mod tests {
     #[test]
     fn split_frontmatter_basic() {
         let raw = "---\nmission_id: demo\n---\n\n# Body\n";
-        let (front, body) = split_frontmatter(raw).unwrap();
+        let (front, body, pure_yaml) = split_frontmatter(raw).unwrap();
         assert_eq!(front, "mission_id: demo\n");
         assert_eq!(body, "\n# Body\n");
+        assert!(!pure_yaml);
     }
 
     #[test]
-    fn split_frontmatter_missing_fences_returns_none() {
-        let raw = "# just markdown\n";
-        assert!(split_frontmatter(raw).is_none());
+    fn split_frontmatter_missing_fences_returns_pure_yaml() {
+        let raw = "mission_id: demo\nstatus: draft\n";
+        let (front, body, pure_yaml) = split_frontmatter(raw).unwrap();
+        assert_eq!(front, raw);
+        assert_eq!(body, "");
+        assert!(pure_yaml);
     }
 
     #[test]

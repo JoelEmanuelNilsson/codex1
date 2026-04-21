@@ -52,7 +52,7 @@ pub fn derive_verdict(state: &MissionState) -> Verdict {
     if state.replan.triggered {
         return Verdict::Blocked;
     }
-    if has_blocking_dirty(state) {
+    if has_current_dirty_review(state) {
         return Verdict::Blocked;
     }
 
@@ -94,7 +94,8 @@ pub fn tasks_complete(state: &MissionState) -> bool {
     })
 }
 
-fn has_blocking_dirty(state: &MissionState) -> bool {
+#[must_use]
+pub fn has_current_dirty_review(state: &MissionState) -> bool {
     state.reviews.values().any(|r| {
         matches!(r.verdict, ReviewVerdict::Dirty)
             && matches!(r.category, ReviewRecordCategory::AcceptedCurrent)

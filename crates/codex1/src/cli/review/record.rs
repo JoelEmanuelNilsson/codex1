@@ -48,10 +48,6 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
     let peek = state::load(&paths)?;
     state::check_expected_revision(ctx.expect_revision, &peek)?;
 
-    let plan_tasks = load_tasks(&paths, &peek)?;
-    let review_task = fetch_review_task(&plan_tasks, inputs.task_id)?;
-    let targets = review_targets(&review_task)?;
-
     // Parse reviewers early so dry-run + wet run share the same vec.
     let reviewers = parse_reviewers(inputs.reviewers_csv.as_deref());
 
@@ -69,6 +65,33 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
     } else {
         ReviewVerdict::Dirty
     };
+
+    if !peek.plan.locked && peek.close.terminal_at.is_none() {
+        if !ctx.dry_run {
+            state::mutate(
+                &paths,
+                ctx.expect_revision,
+                "review.stale",
+                json!({
+                    "review_task_id": inputs.task_id,
+                    "verdict": verdict_str(&verdict),
+                    "reviewers": reviewers,
+                    "targets": [],
+                }),
+                |_state| Ok(()),
+            )?;
+        }
+        return Err(CliError::StaleReviewRecord {
+            message: format!(
+                "Review {} arrived while PLAN.yaml is unlocked for replan; record not applied",
+                inputs.task_id
+            ),
+        });
+    }
+
+    let plan_tasks = load_tasks(&paths, &peek)?;
+    let review_task = fetch_review_task(&plan_tasks, inputs.task_id)?;
+    let targets = review_targets(&review_task)?;
 
     // Use a preflight state snapshot for dry-run (and to surface terminal/stale
     // errors before we enter the mutation closure in the wet path).
@@ -167,6 +190,10 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
     } else {
         None
     };
+    let findings_source_is_existing_artifact = findings_path.is_some_and(|src| {
+        let dest = paths.review_file_for(inputs.task_id);
+        src.canonicalize().ok() == dest.canonicalize().ok()
+    });
 
     let review_task_id = inputs.task_id.to_string();
     let review_task_for_closure = review_task.clone();
@@ -191,6 +218,7 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
                 reviewers: &reviewers_for_closure,
                 paths: &paths,
                 findings_body: findings_body_for_closure.as_deref(),
+                findings_source_is_existing_artifact,
             },
         )?;
         let event_kind = if matches!(applied.category, ReviewRecordCategory::StaleSuperseded) {
@@ -240,6 +268,14 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
         });
     }
 
+    if matches!(category, ReviewRecordCategory::AcceptedCurrent) {
+        if let (Some(body), Some(_rel)) = (findings_body.as_deref(), stored_findings_rel.as_ref()) {
+            let dest = paths.review_file_for(inputs.task_id);
+            ensure_artifact_parent_write_safe(&paths, &dest)?;
+            atomic_write(&dest, body)?;
+        }
+    }
+
     let env = JsonOk::new(
         Some(mutation.state.mission_id.clone()),
         Some(mutation.new_revision),
@@ -276,6 +312,7 @@ struct ApplyRecordInput<'a> {
     reviewers: &'a [String],
     paths: &'a MissionPaths,
     findings_body: Option<&'a [u8]>,
+    findings_source_is_existing_artifact: bool,
 }
 
 fn apply_record(
@@ -327,8 +364,14 @@ fn apply_record(
     let findings_rel = if matches!(category, ReviewRecordCategory::AcceptedCurrent) {
         if let Some(body) = input.findings_body {
             let dest = input.paths.review_file_for(input.review_task_id);
-            ensure_artifact_parent_write_safe(input.paths, &dest)?;
-            atomic_write(&dest, body)?;
+            if input.findings_source_is_existing_artifact
+                && std::fs::read(&dest).ok().as_deref() == Some(body)
+            {
+                return Ok(AppliedRecord {
+                    category: ReviewRecordCategory::LateSameBoundary,
+                    findings_rel: None,
+                });
+            }
             relative_from_repo(input.paths, &dest)
         } else {
             None

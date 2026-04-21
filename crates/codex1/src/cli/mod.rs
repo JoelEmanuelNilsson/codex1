@@ -22,7 +22,7 @@ pub mod task;
 
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 
 use crate::core::error::{CliError, CliResult};
 use crate::core::mission::MissionSelector;
@@ -146,7 +146,26 @@ impl Ctx {
 /// Run the CLI. Prints JSON envelopes to stdout; returns errors for the
 /// binary entry point to map into an exit code.
 pub fn dispatch() -> CliResult<()> {
-    let cli = Cli::parse();
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(err)
+            if matches!(
+                err.kind(),
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
+            ) =>
+        {
+            let mut cmd = Cli::command();
+            err.format(&mut cmd).print()?;
+            return Ok(());
+        }
+        Err(err) => {
+            let err = CliError::ParseError {
+                message: err.to_string(),
+            };
+            print_error(&err);
+            return Err(err);
+        }
+    };
     let ctx = Ctx {
         mission: cli.mission,
         repo_root: cli.repo_root,

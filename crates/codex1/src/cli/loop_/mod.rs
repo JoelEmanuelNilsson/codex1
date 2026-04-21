@@ -66,6 +66,7 @@ pub(crate) fn run_transition(
 ) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let current = state::load(&paths)?;
+    state::require_not_terminal(&current)?;
 
     match classify(&current.loop_) {
         Transition::Reject(err) => {
@@ -101,6 +102,7 @@ pub(crate) fn run_transition(
                 return Ok(());
             }
             let mutation = state::mutate_dynamic_maybe(&paths, ctx.expect_revision, |s| {
+                state::require_not_terminal(s)?;
                 match classify(&s.loop_) {
                     Transition::Reject(err) => Err(err),
                     Transition::NoOp => Ok(None),

@@ -83,10 +83,16 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
     let tasks = load_plan_tasks(&paths, &state)?;
     let waves = derive_waves(&tasks, &state.tasks)?;
 
-    let current_ready_wave = waves
-        .iter()
-        .find(|w| wave_is_current_ready(w, &tasks, &state.tasks))
-        .map(|w| w.wave_id.clone());
+    let globally_blocked =
+        state.replan.triggered || state::readiness::has_current_dirty_review(&state);
+    let current_ready_wave = if globally_blocked {
+        None
+    } else {
+        waves
+            .iter()
+            .find(|w| wave_is_current_ready(w, &tasks, &state.tasks))
+            .map(|w| w.wave_id.clone())
+    };
 
     let all_tasks_complete = !tasks.is_empty()
         && tasks.iter().all(|t| {

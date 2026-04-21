@@ -247,6 +247,47 @@ fn check_fresh_mission_reports_outcome_not_ratified() {
 }
 
 #[test]
+fn close_check_and_complete_reject_locked_plan_drift() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    fs::write(
+        mission_dir.join("PLAN.yaml"),
+        "mission_id: demo\ntasks:\n  - id: T1\n    depends_on: []\n",
+    )
+    .unwrap();
+    let mut state = StateBuilder::fresh("demo")
+        .ratified()
+        .plan_locked()
+        .phase("mission_close")
+        .task("T1", "complete")
+        .mission_close_review("passed")
+        .revision(4)
+        .build();
+    state["plan"]["hash"] = json!("sha256:not-the-current-plan-hash");
+    write_state(&mission_dir, &state);
+
+    let check = cmd()
+        .current_dir(tmp.path())
+        .args(["close", "check", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!check.status.success());
+    let json = parse_stdout(&check);
+    assert_eq!(json["code"], "PLAN_INVALID");
+
+    let complete = cmd()
+        .current_dir(tmp.path())
+        .args(["close", "complete", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!complete.status.success());
+    let json = parse_stdout(&complete);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    let after = read_state(&mission_dir);
+    assert!(after["close"]["terminal_at"].is_null());
+}
+
+#[test]
 fn check_mid_execute_reports_task_not_ready_and_continue_required() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = init_demo(&tmp, "demo");
