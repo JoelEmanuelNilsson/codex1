@@ -217,6 +217,15 @@ fn proof_exists(paths: &MissionPaths, proof_path: Option<&str>) -> Result<(), St
 
 fn closeout_ready(paths: &MissionPaths) -> Result<(), String> {
     ensure_mission_write_safe(paths).map_err(|err| err.to_string())?;
+    let reviews = paths.reviews_dir();
+    if let Ok(meta) = std::fs::symlink_metadata(&reviews) {
+        if meta.file_type().is_symlink() {
+            return Err(format!(
+                "reviews directory must not be a symlink: {}",
+                reviews.display()
+            ));
+        }
+    }
     let closeout = paths.closeout();
     if let Ok(meta) = std::fs::symlink_metadata(&closeout) {
         if meta.file_type().is_symlink() {

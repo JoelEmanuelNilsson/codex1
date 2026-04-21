@@ -141,7 +141,10 @@ fn record_clean(
                 state::require_locked_plan_snapshot(paths, state)?;
             }
             let report = ReadinessReport::from_state_and_paths(state, paths);
-            if !matches!(report.verdict, Verdict::ReadyForMissionCloseReview) {
+            if !matches!(
+                report.verdict,
+                Verdict::ReadyForMissionCloseReview | Verdict::MissionCloseReviewOpen
+            ) {
                 return Err(CliError::CloseNotReady {
                     message: format!(
                         "cannot record mission-close review while verdict is `{}` ({})",
@@ -211,14 +214,10 @@ fn record_dirty(
         return Ok(());
     }
 
-    let mutation = state::mutate(
+    let findings_body_for_precommit = findings_body.clone();
+    let mutation = state::mutate_dynamic_with_precommit(
         paths,
         ctx.expect_revision,
-        "close.review.dirty",
-        json!({
-            "verdict": "dirty",
-            "reviewers": reviewers,
-        }),
         |state| {
             if state.outcome.ratified && state.plan.locked {
                 state::require_locked_plan_snapshot(paths, state)?;
@@ -247,10 +246,28 @@ fn record_dirty(
                 ));
             }
             state.close.review_state = MissionCloseReviewState::Open;
+            Ok((
+                "close.review.dirty".to_string(),
+                json!({
+                    "verdict": "dirty",
+                    "reviewers": reviewers,
+                }),
+            ))
+        },
+        |state, _event| {
+            let findings_target = mission_close_review_path(paths, state.revision);
+            ensure_artifact_file_write_safe(
+                paths,
+                &findings_target,
+                "mission-close review findings",
+            )?;
+            crate::state::fs_atomic::atomic_write(
+                &findings_target,
+                findings_body_for_precommit.as_bytes(),
+            )?;
             Ok(())
         },
     )?;
-    crate::state::fs_atomic::atomic_write(&findings_target, findings_body.as_bytes())?;
 
     emit_success(
         &mutation.state.mission_id,

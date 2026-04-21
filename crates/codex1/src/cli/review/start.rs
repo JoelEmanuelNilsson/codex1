@@ -140,19 +140,24 @@ pub(crate) fn ensure_review_deps_ready(
     state: &state::MissionState,
     review_task: &crate::cli::review::plan_read::PlanTask,
 ) -> Result<(), CliError> {
+    let targets: std::collections::BTreeSet<&str> = review_task
+        .review_target
+        .as_ref()
+        .map(|target| target.tasks.iter().map(String::as_str).collect())
+        .unwrap_or_default();
     for dep in &review_task.depends_on {
         let Some(task) = state.tasks.get(dep) else {
             return Err(CliError::TaskNotReady {
                 message: format!("Review dependency {dep} is not tracked in STATE.json"),
             });
         };
-        if !matches!(
-            task.status,
-            TaskStatus::Complete | TaskStatus::AwaitingReview
-        ) {
+        let ready = matches!(task.status, TaskStatus::Complete)
+            || (targets.contains(dep.as_str())
+                && matches!(task.status, TaskStatus::AwaitingReview));
+        if !ready {
             return Err(CliError::TaskNotReady {
                 message: format!(
-                    "Review dependency {dep} is `{:?}`; review start requires Complete or AwaitingReview",
+                    "Review dependency {dep} is `{:?}`; review start requires Complete, or AwaitingReview only when it is a review target",
                     task.status
                 ),
             });

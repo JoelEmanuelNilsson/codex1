@@ -132,6 +132,12 @@ pub fn render(state: &MissionState, paths: &MissionPaths) -> String {
 }
 
 fn mission_close_dirty_rounds(paths: &MissionPaths) -> u32 {
+    if std::fs::symlink_metadata(paths.reviews_dir())
+        .ok()
+        .is_some_and(|meta| meta.file_type().is_symlink())
+    {
+        return 0;
+    }
     std::fs::read_dir(paths.reviews_dir())
         .ok()
         .into_iter()

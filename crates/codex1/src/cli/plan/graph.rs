@@ -113,10 +113,17 @@ fn deps_are_done(
     state_tasks: &BTreeMap<String, crate::state::TaskRecord>,
 ) -> bool {
     let is_review = matches!(task.kind.as_deref(), Some("review"));
+    let targets: std::collections::BTreeSet<&str> = task
+        .review_target
+        .as_ref()
+        .map(|target| target.tasks.iter().map(String::as_str).collect())
+        .unwrap_or_default();
     task.depends_on.iter().all(|dep| {
         state_tasks.get(dep).is_some_and(|r| {
             matches!(r.status, TaskStatus::Complete)
-                || (is_review && matches!(r.status, TaskStatus::AwaitingReview))
+                || (is_review
+                    && targets.contains(dep.as_str())
+                    && matches!(r.status, TaskStatus::AwaitingReview))
         })
     })
 }

@@ -29,9 +29,17 @@ pub struct ParsedTask {
     #[serde(default)]
     pub depends_on: Vec<String>,
     #[serde(default)]
+    pub review_target: Option<ReviewTarget>,
+    #[serde(default)]
     pub exclusive_resources: Vec<String>,
     #[serde(default)]
     pub unknown_side_effects: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ReviewTarget {
+    #[serde(default)]
+    pub tasks: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -308,10 +316,17 @@ fn task_is_actionable(
     state_tasks: &BTreeMap<String, crate::state::TaskRecord>,
 ) -> bool {
     let is_review = matches!(task.kind.as_deref(), Some("review"));
+    let targets: BTreeSet<&str> = task
+        .review_target
+        .as_ref()
+        .map(|target| target.tasks.iter().map(String::as_str).collect())
+        .unwrap_or_default();
     let deps_ok = task.depends_on.iter().all(|dep| {
         state_tasks.get(dep).is_some_and(|r| {
             matches!(r.status, TaskStatus::Complete)
-                || (is_review && matches!(r.status, TaskStatus::AwaitingReview))
+                || (is_review
+                    && targets.contains(dep.as_str())
+                    && matches!(r.status, TaskStatus::AwaitingReview))
         })
     });
     if !deps_ok {

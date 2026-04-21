@@ -203,6 +203,7 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
                 "verdict": verdict_str(&verdict),
                 "reviewers": reviewers,
                 "targets": targets,
+                "category": "stale_superseded",
             }),
             |_state| Ok(()),
         )?;
@@ -233,6 +234,7 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
     let targets_for_closure = targets.clone();
     let reviewers_for_closure = reviewers.clone();
     let findings_body_for_closure = findings_body.clone();
+    let findings_body_for_precommit = findings_body.clone();
 
     let event_kind = if matches!(verdict, ReviewVerdict::Clean) {
         "review.recorded.clean"
@@ -240,36 +242,60 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
         "review.recorded.dirty"
     };
 
-    let mutation = state::mutate_dynamic(&paths, ctx.expect_revision, |state| {
-        let applied = apply_record(
-            state,
-            ApplyRecordInput {
-                review_task_id: &review_task_id,
-                review_task: &review_task_for_closure,
-                targets: &targets_for_closure,
-                verdict: &verdict,
-                reviewers: &reviewers_for_closure,
-                paths: &paths,
-                findings_body: findings_body_for_closure.as_deref(),
-            },
-        )?;
-        let event_kind = if matches!(applied.category, ReviewRecordCategory::StaleSuperseded) {
-            "review.stale".to_string()
-        } else {
-            event_kind.to_string()
-        };
-        Ok((
-            event_kind,
-            json!({
-                "review_task_id": review_task_id,
-                "verdict": verdict_str(&verdict),
-                "reviewers": reviewers_for_closure,
-                "targets": targets_for_closure,
-                "category": category_str(applied.category.clone()),
-                "findings_file": applied.findings_rel,
-            }),
-        ))
-    })?;
+    let mutation = state::mutate_dynamic_with_precommit(
+        &paths,
+        ctx.expect_revision,
+        |state| {
+            let applied = apply_record(
+                state,
+                ApplyRecordInput {
+                    review_task_id: &review_task_id,
+                    review_task: &review_task_for_closure,
+                    targets: &targets_for_closure,
+                    verdict: &verdict,
+                    reviewers: &reviewers_for_closure,
+                    paths: &paths,
+                    findings_body: findings_body_for_closure.as_deref(),
+                },
+            )?;
+            let event_kind = if matches!(applied.category, ReviewRecordCategory::StaleSuperseded) {
+                "review.stale".to_string()
+            } else {
+                event_kind.to_string()
+            };
+            Ok((
+                event_kind,
+                json!({
+                    "review_task_id": review_task_id,
+                    "verdict": verdict_str(&verdict),
+                    "reviewers": reviewers_for_closure,
+                    "targets": targets_for_closure,
+                    "category": category_str(applied.category.clone()),
+                    "findings_file": applied.findings_rel,
+                }),
+            ))
+        },
+        |_state, event| {
+            let category = event
+                .payload
+                .get("category")
+                .and_then(|v| v.as_str())
+                .unwrap_or("accepted_current");
+            let has_findings_rel = event
+                .payload
+                .get("findings_file")
+                .and_then(|v| v.as_str())
+                .is_some();
+            if category == "accepted_current" && has_findings_rel {
+                if let Some(body) = findings_body_for_precommit.as_deref() {
+                    let dest = paths.review_file_for(inputs.task_id);
+                    ensure_artifact_file_write_safe(&paths, &dest, "review findings")?;
+                    atomic_write(&dest, body)?;
+                }
+            }
+            Ok(())
+        },
+    )?;
 
     let category = mutation
         .event
@@ -298,13 +324,6 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
                 inputs.task_id
             ),
         });
-    }
-
-    if matches!(category, ReviewRecordCategory::AcceptedCurrent) {
-        if let (Some(body), Some(_rel)) = (findings_body.as_deref(), stored_findings_rel.as_ref()) {
-            let dest = paths.review_file_for(inputs.task_id);
-            atomic_write(&dest, body)?;
-        }
     }
 
     let env = JsonOk::new(

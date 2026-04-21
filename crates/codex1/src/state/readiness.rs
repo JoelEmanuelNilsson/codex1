@@ -99,6 +99,9 @@ pub fn tasks_complete(state: &MissionState) -> bool {
 
 #[must_use]
 pub fn has_orphan_nonterminal_task(state: &MissionState) -> bool {
+    if state.plan.task_ids.is_empty() {
+        return false;
+    }
     state.tasks.iter().any(|(id, task)| {
         !state.plan.task_ids.iter().any(|plan_id| plan_id == id)
             && !matches!(task.status, TaskStatus::Complete | TaskStatus::Superseded)
@@ -128,17 +131,10 @@ pub fn dirty_review_still_needs_repair(state: &MissionState, recorded_at: &str) 
 #[must_use]
 pub fn dirty_review_record_blocks(
     state: &MissionState,
-    review_id: &str,
+    _review_id: &str,
     recorded_at: &str,
 ) -> bool {
-    if dirty_review_still_needs_repair(state, recorded_at) {
-        return true;
-    }
-    let review_is_live = state.plan.task_ids.iter().any(|id| id == review_id)
-        && state.tasks.get(review_id).is_none_or(|task| {
-            !matches!(task.status, TaskStatus::Superseded) && task.superseded_by.is_none()
-        });
-    review_is_live
+    dirty_review_still_needs_repair(state, recorded_at)
 }
 
 /// Whether a Stop request from Ralph should be allowed.

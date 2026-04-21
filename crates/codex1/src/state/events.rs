@@ -50,6 +50,15 @@ pub fn append_event(path: &Path, event: &Event) -> Result<(), CliError> {
     Ok(())
 }
 
+/// Prove the audit log can be opened for append before publishing any
+/// precommit artifact. This catches common permission/type failures before
+/// sibling artifacts are rewritten ahead of state/event truth.
+pub fn preflight_append(path: &Path) -> Result<(), CliError> {
+    let f = OpenOptions::new().create(true).append(true).open(path)?;
+    f.sync_data()?;
+    Ok(())
+}
+
 /// Validate the existing tail before any precommit artifact writes.
 /// Assumes caller holds the state lock.
 pub fn ensure_append_matches_tail(path: &Path, event: &Event) -> Result<(), CliError> {

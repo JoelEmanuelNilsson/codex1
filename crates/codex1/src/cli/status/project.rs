@@ -26,7 +26,10 @@ pub fn build(state: &MissionState, tasks: &[PlanTask], close_ready: bool) -> Val
     // reading `ready_tasks` nonempty + `next_action.kind: plan` never
     // gets mixed signals. Mirrors the guard at
     // `cli/plan/waves.rs:66-79`.
-    let (wave, reviews_ready, repair_targets) = if state.plan.locked && !state.replan.triggered {
+    let actionable_plan = state.plan.locked
+        && !state.replan.triggered
+        && !readiness::has_orphan_nonterminal_task(state);
+    let (wave, reviews_ready, repair_targets) = if actionable_plan {
         (
             next_ready_wave(tasks, state),
             ready_reviews(tasks, state),

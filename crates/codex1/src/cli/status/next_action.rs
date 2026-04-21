@@ -252,7 +252,9 @@ fn task_is_ready(task: &PlanTask, state: &MissionState) -> bool {
     let deps_ok = task.depends_on.iter().all(|dep| {
         state.tasks.get(dep).is_some_and(|r| {
             matches!(r.status, TaskStatus::Complete)
-                || (is_review && matches!(r.status, TaskStatus::AwaitingReview))
+                || (is_review
+                    && review_targets(task).iter().any(|target| target == dep)
+                    && matches!(r.status, TaskStatus::AwaitingReview))
         })
     });
     if !deps_ok {

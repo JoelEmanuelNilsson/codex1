@@ -574,15 +574,13 @@ fn validate_tasks(
         if !seen.insert(id.clone()) {
             duplicates.insert(id.clone());
         }
-        if !state.plan.locked
-            && (state.tasks.contains_key(&id)
-                || state.reviews.contains_key(&id)
-                || state.plan.task_ids.iter().any(|old| old == &id))
-        {
+        if !state.plan.locked && historical_reuse_is_unsafe(state, &id) {
             exit_with_validation_error(
                 "PLAN_INVALID",
                 &format!("task id `{id}` reuses historical task truth from STATE.json"),
-                Some("Replans must append fresh task ids rather than reusing historical ids."),
+                Some(
+                    "Replans may retain completed prerequisite ids, but live replacement work must use fresh task ids.",
+                ),
                 json!({ "task_id": id }),
             );
         }
@@ -598,6 +596,30 @@ fn validate_tasks(
         );
     }
     let id_set: BTreeSet<_> = ids.iter().cloned().collect();
+    if !state.plan.locked {
+        let omitted_live: Vec<String> = state
+            .tasks
+            .iter()
+            .filter(|(id, record)| {
+                !id_set.contains(*id)
+                    && !matches!(record.status, TaskStatus::Complete | TaskStatus::Superseded)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        if !omitted_live.is_empty() {
+            exit_with_validation_error(
+                "PLAN_INVALID",
+                &format!(
+                    "replacement PLAN.yaml omits non-terminal task ids: {}",
+                    omitted_live.join(", ")
+                ),
+                Some(
+                    "Record a replan that supersedes omitted live task ids before relocking, or keep them in PLAN.yaml.",
+                ),
+                json!({ "omitted_task_ids": omitted_live }),
+            );
+        }
+    }
 
     // Second pass: required fields, kind, deps, review targets, spec file.
     let non_review_ids: BTreeSet<String> = tasks
@@ -791,6 +813,13 @@ fn validate_tasks(
     }
 
     ids
+}
+
+fn historical_reuse_is_unsafe(state: &state::MissionState, id: &str) -> bool {
+    if let Some(record) = state.tasks.get(id) {
+        return !matches!(record.status, TaskStatus::Complete | TaskStatus::Superseded);
+    }
+    state.reviews.contains_key(id) || state.plan.task_ids.iter().any(|old| old == id)
 }
 
 fn parse_level(field: &str, value: Option<&str>) -> PlanLevel {

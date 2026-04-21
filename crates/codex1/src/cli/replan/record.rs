@@ -107,11 +107,8 @@ fn validate_supersedes(state: &MissionState, ids: &[String]) -> CliResult<()> {
     let mut not_supersedable: BTreeMap<String, String> = BTreeMap::new();
 
     for id in ids {
-        let known_in_plan = if state.plan.task_ids.is_empty() {
-            state.tasks.contains_key(id)
-        } else {
-            state.plan.task_ids.iter().any(|plan_id| plan_id == id)
-        };
+        let known_in_plan =
+            state.tasks.contains_key(id) || state.plan.task_ids.iter().any(|plan_id| plan_id == id);
         if !known_in_plan {
             unknown.push(id.clone());
             continue;

@@ -153,13 +153,20 @@ pub fn effective_tasks(plan: &ParsedPlan, state: &MissionState) -> Vec<Effective
 /// work). Superseded deps are history after a replan, not live readiness.
 pub fn deps_satisfied(task: &PlanTask, state: &MissionState) -> bool {
     let is_review = task.kind == "review";
+    let review_targets: BTreeSet<&str> = task
+        .review_target
+        .as_ref()
+        .map(|target| target.tasks.iter().map(String::as_str).collect())
+        .unwrap_or_default();
     task.depends_on.iter().all(|dep| {
         let Some(r) = state.tasks.get(dep) else {
             return false;
         };
         match &r.status {
             TaskStatus::Complete => true,
-            TaskStatus::AwaitingReview if is_review => true,
+            TaskStatus::AwaitingReview if is_review && review_targets.contains(dep.as_str()) => {
+                true
+            }
             _ => false,
         }
     })

@@ -244,7 +244,7 @@ mission_close:
 }
 
 #[test]
-fn plan_check_rejects_replan_task_id_reuse() {
+fn plan_check_allows_replan_to_keep_completed_prerequisite_id() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = seed_valid_mission(&tmp, "demo");
 
@@ -269,6 +269,7 @@ fn plan_check_rejects_replan_task_id_reuse() {
 
     let task = "T1";
     write_spec(&mission_dir, task, &format!("# {task} SPEC\n"));
+    write_spec(&mission_dir, "T5", "# T5 SPEC\n");
     write_plan(
         &mission_dir,
         r#"mission_id: demo
@@ -281,9 +282,9 @@ outcome_interpretation:
   summary: "Replan reuse regression."
 
 architecture:
-  summary: "One replacement task, wrongly reusing T1."
+  summary: "Keep completed T1 and append fresh replacement work."
   key_decisions:
-    - "Reject historical task ids."
+    - "Completed prerequisites may remain in the replacement DAG."
 
 planning_process:
   evidence:
@@ -292,18 +293,98 @@ planning_process:
 
 tasks:
   - id: T1
-    title: "Replacement work"
+    title: "Completed prerequisite"
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+  - id: T5
+    title: "Fresh replacement work"
+    kind: code
+    depends_on: [T1]
+    spec: specs/T5/SPEC.md
+
+risks:
+  - risk: "Replacement work could alias live state."
+    mitigation: "Only retain completed prerequisite ids."
+
+mission_close:
+  criteria:
+    - "Replacement work must finish."
+"#,
+    );
+
+    let output = run_check(&tmp, "demo", &[]);
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["ok"], true);
+    let state = read_state(&mission_dir);
+    assert_eq!(state["plan"]["task_ids"], json!(["T1", "T5"]));
+}
+
+#[test]
+fn plan_check_rejects_replan_reuse_of_live_task_id() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = seed_valid_mission(&tmp, "demo");
+
+    let state_path = mission_dir.join("STATE.json");
+    let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["phase"] = Value::String("execute".to_string());
+    state["plan"] = serde_json::json!({
+        "locked": false,
+        "requested_level": "medium",
+        "effective_level": "medium",
+        "hash": "sha256:old",
+        "task_ids": ["T1"]
+    });
+    state["tasks"] = serde_json::json!({
+        "T1": {
+            "id": "T1",
+            "status": "in_progress"
+        }
+    });
+    fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
+
+    write_spec(&mission_dir, "T1", "# T1 SPEC\n");
+    write_plan(
+        &mission_dir,
+        r#"mission_id: demo
+
+planning_level:
+  requested: medium
+  effective: medium
+
+outcome_interpretation:
+  summary: "Replan live reuse regression."
+
+architecture:
+  summary: "One live task is wrongly reused."
+  key_decisions:
+    - "Reject live historical task ids."
+
+planning_process:
+  evidence:
+    - kind: direct_reasoning
+      summary: "Regression."
+
+tasks:
+  - id: T1
+    title: "Live task reused"
     kind: code
     depends_on: []
     spec: specs/T1/SPEC.md
 
 risks:
-  - risk: "Replacement work could inherit stale state."
-    mitigation: "Reject task-id reuse."
+  - risk: "Replacement work could inherit stale in-progress state."
+    mitigation: "Reject live task-id reuse."
 
 mission_close:
   criteria:
-    - "Replacement work must not alias prior truth."
+    - "Replacement work must not alias live truth."
 "#,
     );
 
@@ -315,6 +396,78 @@ mission_close:
         .as_str()
         .unwrap()
         .contains("historical task truth"));
+}
+
+#[test]
+fn plan_check_rejects_replan_that_omits_live_task_record() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = seed_valid_mission(&tmp, "demo");
+
+    let state_path = mission_dir.join("STATE.json");
+    let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["phase"] = Value::String("execute".to_string());
+    state["plan"] = serde_json::json!({
+        "locked": false,
+        "requested_level": "medium",
+        "effective_level": "medium",
+        "hash": "sha256:old",
+        "task_ids": ["T1", "T2"]
+    });
+    state["tasks"] = serde_json::json!({
+        "T2": {
+            "id": "T2",
+            "status": "in_progress"
+        }
+    });
+    fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
+
+    write_spec(&mission_dir, "T5", "# T5 SPEC\n");
+    write_plan(
+        &mission_dir,
+        r#"mission_id: demo
+
+planning_level:
+  requested: medium
+  effective: medium
+
+outcome_interpretation:
+  summary: "Omitted live task regression."
+
+architecture:
+  summary: "Replacement plan drops an in-progress task."
+  key_decisions:
+    - "Do not strand live task records outside the DAG."
+
+planning_process:
+  evidence:
+    - kind: direct_reasoning
+      summary: "Regression."
+
+tasks:
+  - id: T5
+    title: "Fresh replacement work"
+    kind: code
+    depends_on: []
+    spec: specs/T5/SPEC.md
+
+risks:
+  - risk: "A live orphan task could keep readiness blocked forever."
+    mitigation: "Reject omission before relocking."
+
+mission_close:
+  criteria:
+    - "No live state is stranded outside the DAG."
+"#,
+    );
+
+    let output = run_check(&tmp, "demo", &[]);
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    assert!(json["message"]
+        .as_str()
+        .unwrap()
+        .contains("omits non-terminal task ids"));
 }
 
 #[test]

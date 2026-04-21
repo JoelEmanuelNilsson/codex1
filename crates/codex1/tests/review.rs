@@ -576,6 +576,27 @@ fn review_start_requires_all_review_task_dependencies() {
     assert_eq!(err["code"], "TASK_NOT_READY");
 }
 
+#[test]
+fn review_start_rejects_awaiting_review_dependency_that_is_not_a_target() {
+    let seeded = Seeded::with_targets(&["T2", "T3"]);
+    let plan_path = seeded.mission_dir.join("PLAN.yaml");
+    let plan = fs::read_to_string(&plan_path)
+        .unwrap()
+        .replace("tasks: [T2, T3]", "tasks: [T2]");
+    fs::write(&plan_path, plan).unwrap();
+    sync_plan_hash(&seeded.mission_dir);
+
+    let err = run_err(
+        seeded.path(),
+        &["review", "start", "T5", "--mission", MISSION],
+    );
+    assert_eq!(err["code"], "TASK_NOT_READY");
+    assert!(err["message"]
+        .as_str()
+        .unwrap()
+        .contains("AwaitingReview only when it is a review target"));
+}
+
 #[cfg(unix)]
 #[test]
 fn review_record_refuses_symlinked_reviews_directory() {

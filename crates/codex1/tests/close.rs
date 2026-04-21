@@ -348,7 +348,7 @@ fn check_review_dirty_reports_review_findings_block() {
         .plan_locked()
         .phase("review_loop")
         .dag_task_ids(&["T1", "T5"])
-        .task("T1", "complete")
+        .task("T1", "awaiting_review")
         .review("T5", "dirty")
         .build();
     write_state(&mission_dir, &state);
@@ -651,7 +651,7 @@ fn record_review_expect_revision_mismatch_returns_conflict() {
 }
 
 #[test]
-fn record_review_open_then_clean_is_rejected_until_repaired() {
+fn record_review_open_then_clean_passes_documented_close_loop() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = init_demo(&tmp, "demo");
     seed_ready_for_mission_close_review(&mission_dir);
@@ -673,18 +673,16 @@ fn record_review_open_then_clean_is_rejected_until_repaired() {
     let mid = read_state(&mission_dir);
     assert_eq!(mid["close"]["review_state"], "open");
 
-    // A clean record for the same open dirty boundary is not enough:
-    // mission-close findings need a repair/replan/new-review boundary.
-    let output = cmd()
+    // Mission-close review is a terminal gate rather than a task-targeted
+    // repair review. The documented loop is dirty/open -> rerun mission-close
+    // review -> clean/passed.
+    cmd()
         .current_dir(tmp.path())
         .args(["close", "record-review", "--clean", "--mission", "demo"])
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let json = parse_stdout(&output);
-    assert_eq!(json["code"], "CLOSE_NOT_READY");
+        .assert()
+        .success();
     let after = read_state(&mission_dir);
-    assert_eq!(after["close"]["review_state"], "open");
+    assert_eq!(after["close"]["review_state"], "passed");
 }
 
 #[test]

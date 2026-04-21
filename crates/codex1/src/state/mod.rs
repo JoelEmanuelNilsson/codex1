@@ -31,7 +31,7 @@ use crate::core::paths::{
     ensure_artifact_parent_write_safe, ensure_mission_write_safe, MissionPaths,
 };
 
-use self::events::{append_event, ensure_append_matches_tail, Event};
+use self::events::{append_event, ensure_append_matches_tail, preflight_append, Event};
 use self::fs_atomic::atomic_write;
 pub use self::schema::*;
 
@@ -136,6 +136,16 @@ pub fn require_executable_plan(paths: &MissionPaths, state: &MissionState) -> Re
             message: "replan is required before executing more task work".to_string(),
             hint: Some(
                 "Update PLAN.yaml and relock it with `codex1 plan check` before starting more tasks."
+                    .to_string(),
+            ),
+        });
+    }
+    if readiness::has_orphan_nonterminal_task(state) {
+        return Err(CliError::PlanInvalid {
+            message:
+                "state contains non-superseded task records outside the locked DAG".to_string(),
+            hint: Some(
+                "Record a replan that supersedes orphaned task ids, or restore them to PLAN.yaml before executing more work."
                     .to_string(),
             ),
         });
@@ -284,6 +294,7 @@ where
     state.events_cursor = state.events_cursor.saturating_add(1);
     let event = Event::new(state.events_cursor, event_kind, event_payload);
     ensure_append_matches_tail(&paths.events(), &event)?;
+    preflight_append(&paths.events())?;
     precommit(&state, &event)?;
     append_event(&paths.events(), &event)?;
     let serialized = serde_json::to_vec_pretty(&state)?;
