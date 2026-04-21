@@ -703,3 +703,107 @@ fn status_without_start_returns_null_record() {
     let ok = run_ok(s.path(), &["review", "status", "T5", "--mission", MISSION]);
     assert_eq!(ok["data"]["record"], Value::Null);
 }
+
+/// Regression for round-4 cli-contract/e2e-walkthrough P2-1: the old
+/// substring-based parser in `review/packet.rs::read_interpreted_destination`
+/// leaked the YAML block-scalar indicator `|` into `mission_summary`
+/// because `trim_end()` left the leading space between `:` and `|`
+/// intact, so the "skip the `|` line" guard never fired. The fix
+/// replaces the parser with `serde_yaml::from_str` on the frontmatter,
+/// matching the sibling implementations at `task/worker_packet.rs:60-67`
+/// and `close/closeout.rs:136-142`.
+#[test]
+fn review_packet_mission_summary_strips_yaml_block_scalar() {
+    let s = Seeded::new();
+    // Overwrite OUTCOME.md with a valid-frontmatter block-scalar body
+    // that would defeat the old substring parser. The space between
+    // `:` and `|` is the exact shape the scaffolded template emits at
+    // `init.rs:82`.
+    let outcome_body = "---\n\
+mission_id: demo\n\
+status: ratified\n\
+title: 'test'\n\
+original_user_goal: |\n  do a thing\n\
+interpreted_destination: |\n  Body line 1\n  Body line 2\n\
+must_be_true:\n  - thing\n\
+success_criteria:\n  - ok\n\
+out_of_scope: []\n\
+---\n\
+# OUTCOME\n\
+body\n";
+    fs::write(s.mission_dir.join("OUTCOME.md"), outcome_body).unwrap();
+
+    let ok = run_ok(s.path(), &["review", "packet", "T5", "--mission", MISSION]);
+    let summary = ok["data"]["mission_summary"]
+        .as_str()
+        .expect("mission_summary present");
+    assert!(
+        !summary.contains('|'),
+        "mission_summary must not leak the YAML block-scalar indicator: {summary:?}"
+    );
+    assert!(
+        !summary.starts_with('|'),
+        "mission_summary must not start with `|`: {summary:?}"
+    );
+    assert!(
+        summary.contains("Body line 1"),
+        "mission_summary should contain the first body line: {summary:?}"
+    );
+    assert!(
+        summary.contains("Body line 2"),
+        "mission_summary should contain the second body line: {summary:?}"
+    );
+    // serde_yaml's literal-block (`|`) parse yields `"Body line 1\nBody line 2\n"`;
+    // we trim, so the body lines should be joined by a single newline.
+    assert!(
+        summary.contains("Body line 1\nBody line 2"),
+        "mission_summary should preserve block-scalar newlines: {summary:?}"
+    );
+}
+
+/// Regression for round-4 test-adequacy P2-1: `CliError::ReviewFindingsBlock`
+/// is constructed at `src/cli/review/record.rs:57` when the
+/// `--findings-file` path does not exist, but no prior integration test
+/// asserts the error envelope produced by that specific construction
+/// site. The `REVIEW_FINDINGS_BLOCK` string match in `tests/close.rs:304`
+/// comes from a Blocker struct in `close check`, not from this CliError
+/// variant. This test triggers the variant directly and pins the
+/// envelope shape.
+#[test]
+fn review_record_findings_then_retry_returns_review_findings_block_envelope() {
+    let s = Seeded::new();
+    // `review start` is optional here — the missing-file check at
+    // `record.rs:55-60` fires before any state read — but starting
+    // first matches the real caller flow.
+    run_ok(s.path(), &["review", "start", "T5", "--mission", MISSION]);
+    let err = run_err(
+        s.path(),
+        &[
+            "review",
+            "record",
+            "T5",
+            "--findings-file",
+            "does/not/exist.md",
+            "--mission",
+            MISSION,
+        ],
+    );
+    assert_eq!(err["ok"], false);
+    assert_eq!(err["code"], "REVIEW_FINDINGS_BLOCK");
+    assert_eq!(err["retryable"], false);
+    let message = err["message"]
+        .as_str()
+        .expect("error envelope carries a message string");
+    assert!(
+        !message.is_empty(),
+        "message should be non-empty: {message:?}"
+    );
+    assert!(
+        message.contains("findings file not found"),
+        "message should identify the missing file: {message:?}"
+    );
+    assert!(
+        message.contains("does/not/exist.md"),
+        "message should include the offending path: {message:?}"
+    );
+}

@@ -133,44 +133,45 @@ fn read_excerpt(path: &Path) -> Option<String> {
     }
 }
 
+/// Extract `interpreted_destination` from the YAML frontmatter of
+/// OUTCOME.md. Returns `None` if the file is missing, has no
+/// frontmatter, the key is absent, or the YAML fails to parse. Matches
+/// the sibling implementations in `task/worker_packet.rs` and
+/// `close/closeout.rs` — both tolerate parse failures silently because
+/// the packet/closeout is an informational artifact, not a gate.
+///
+/// Prior implementations did substring scanning of the raw bytes, which
+/// leaked the YAML block-scalar indicator (`|` / `>`) into the output
+/// whenever whitespace between the key and the indicator defeated the
+/// naive equality check. `serde_yaml::from_str` on the frontmatter
+/// yields the parsed string body directly — no indicator leakage.
 fn read_interpreted_destination(outcome: &Path) -> Option<String> {
     let raw = std::fs::read_to_string(outcome).ok()?;
-    // Naive pull: the block after `interpreted_destination:` up to the
-    // next top-level YAML key. We do not want to import a full YAML
-    // walker here; a substring pick is good enough for the packet.
-    let needle = "interpreted_destination:";
-    let start = raw.find(needle)?;
-    let rest = &raw[start + needle.len()..];
-    let mut out = String::new();
-    let mut first_non_empty_seen = false;
-    for line in rest.lines() {
-        let trimmed = line.trim_end();
-        if trimmed.is_empty() {
-            if first_non_empty_seen {
-                break;
-            }
-            continue;
-        }
-        if first_non_empty_seen {
-            // Stop when we leave the indented block.
-            let leading_ws = line.len() - line.trim_start().len();
-            if leading_ws == 0 {
-                break;
-            }
-        } else {
-            first_non_empty_seen = true;
-            // Skip the `|` or `>` that follow the key — we want the body.
-            if trimmed == "|" || trimmed == ">" {
-                continue;
-            }
-        }
-        out.push_str(trimmed.trim_start());
-        out.push('\n');
-    }
-    let s = out.trim().to_string();
-    if s.is_empty() {
+    let frontmatter = extract_frontmatter(&raw)?;
+    let doc: serde_yaml::Value = serde_yaml::from_str(frontmatter).ok()?;
+    let dest = doc.get("interpreted_destination")?.as_str()?.trim();
+    if dest.is_empty() {
         None
     } else {
-        Some(s)
+        Some(dest.to_string())
     }
+}
+
+/// Pull the YAML frontmatter out of a markdown file. Returns the inner
+/// block (without the `---` fences). If the whole file is YAML (no
+/// leading `---`), returns the file verbatim. Tolerant of CRLF
+/// line endings.
+fn extract_frontmatter(raw: &str) -> Option<&str> {
+    let trimmed = raw.trim_start_matches('\u{feff}');
+    if let Some(rest) = trimmed.strip_prefix("---\n") {
+        if let Some(end) = rest.find("\n---") {
+            return Some(&rest[..end]);
+        }
+    }
+    if let Some(rest) = trimmed.strip_prefix("---\r\n") {
+        if let Some(end) = rest.find("\r\n---") {
+            return Some(&rest[..end]);
+        }
+    }
+    Some(trimmed)
 }
