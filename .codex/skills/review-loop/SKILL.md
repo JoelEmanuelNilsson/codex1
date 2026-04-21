@@ -36,7 +36,11 @@ description: >
 
 ## Required workflow (mission-close review)
 
-1. **Confirm readiness.** Run `codex1 --json close check`. Require `data.verdict == ready_for_mission_close_review`. If not, stop.
+1. **Confirm entry.** Run `codex1 --json close check`. Proceed on either of the two mission-close entry verdicts:
+   - `data.verdict == ready_for_mission_close_review` — first round (no prior mission-close record).
+   - `data.verdict == mission_close_review_open` — re-entry after a dirty mission-close record (`close.review_state` was flipped back to `Open` by the previous dirty `close record-review`). Route findings have been cleared by the repair; drive a fresh review round to transition `Open → Passed`.
+
+   Stop only if the verdict is anything else (e.g. `continue_required`, `blocked` without `replan`, `needs_user`, `terminal_complete`) — those belong to other skills or to the user.
 
 2. **Spawn mission-close reviewers.** Spawn 1-2 reviewers with profiles `mission_close` and (optionally) `integration_intent`. The packet must include `OUTCOME.md`, `PLAN.yaml`, and the final `CLOSEOUT-preview` — see `references/reviewer-profiles.md` for templates.
 

@@ -226,6 +226,44 @@ fn error_envelope_shape_is_stable_across_representative_codes() {
     assert!(json["hint"].is_string());
 }
 
+/// Regression for round-3 test-adequacy P2-1: the `STATE_CORRUPT`
+/// parse-failure branch in `state::load` must surface as a `STATE_CORRUPT`
+/// envelope end-to-end. Round-1 P1-4 covered PLAN.yaml parse (→
+/// `PLAN_INVALID`) and the `Io → PARSE_ERROR` mapping, but the
+/// `serde_json::from_str` failure branch at `src/state/mod.rs:84`
+/// (reached on bad JSON in STATE.json) had no direct integration
+/// trigger. Prior coverage only hit the `:159` refuse-to-overwrite
+/// branch via `init_refuses_to_overwrite`.
+#[test]
+fn state_corrupt_envelope_on_invalid_state_json() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    // Overwrite STATE.json with garbage bytes. The lock file is left
+    // intact so acquire_shared_lock succeeds and the failure is isolated
+    // to the JSON parser.
+    fs::write(mission_dir.join("STATE.json"), "{ this is not json").expect("write garbage");
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["status", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(
+        !output.status.success(),
+        "status on corrupt STATE.json must fail: {output:?}"
+    );
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["ok"], Value::Bool(false));
+    assert_eq!(json["code"], "STATE_CORRUPT");
+    assert!(
+        json["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("Failed to parse STATE.json")),
+        "message should reference STATE.json parse failure: {json}"
+    );
+    assert_eq!(json["retryable"], Value::Bool(false));
+}
+
 /// Regression for test-adequacy round-1 P2-2 / correctness-invariants
 /// P2-1: the fs2 exclusive lock on `STATE.json.lock` must serialize
 /// concurrent writers. Two `codex1 loop activate` processes racing on

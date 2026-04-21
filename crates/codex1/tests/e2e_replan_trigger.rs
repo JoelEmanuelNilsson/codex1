@@ -581,4 +581,37 @@ mission_close:
         "terminal_at not set: {state}"
     );
     assert_eq!(state["replan"]["triggered"], false);
+
+    // Regression for round-3 test-adequacy P2-2: the "full reproducer"
+    // label on this test claims coverage of `close complete`. Asserting
+    // `terminal_at` alone does not verify the CLOSEOUT.md write; a
+    // regression that skipped `atomic_write(CLOSEOUT.md)` while still
+    // bumping STATE would silently pass. Assert the artifact exists and
+    // carries the expected content shape.
+    let closeout = fs::read_to_string(mission_dir.join("CLOSEOUT.md"))
+        .expect("CLOSEOUT.md written after post-replan close complete");
+    assert!(
+        closeout.contains("CLOSEOUT"),
+        "CLOSEOUT.md missing CLOSEOUT header: {closeout}"
+    );
+    // Mission id should appear in the header line `# CLOSEOUT — demo`.
+    assert!(
+        closeout.contains(MISSION),
+        "CLOSEOUT.md missing mission id `{MISSION}`: {closeout}"
+    );
+    // The tasks completed through the post-replan path must both appear
+    // in the tasks table: T1 (pre-replan complete) and T4 (replacement
+    // work driven through task start/finish after the relock).
+    for tid in ["T1", "T4"] {
+        assert!(
+            closeout.contains(tid),
+            "CLOSEOUT.md missing {tid}: {closeout}"
+        );
+    }
+    // Terminal_at stamp surfaces in the body.
+    let terminal_at = state["close"]["terminal_at"].as_str().unwrap();
+    assert!(
+        closeout.contains(terminal_at),
+        "CLOSEOUT.md missing terminal_at `{terminal_at}`: {closeout}"
+    );
 }

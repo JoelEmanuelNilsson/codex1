@@ -379,6 +379,162 @@ fn ratify_rejects_stale_expect_revision() {
     assert_eq!(state_after["outcome"]["ratified"], false);
 }
 
+/// Regression for round-3 e2e P1-1: `outcome ratify` on a hand-written
+/// OUTCOME.md whose closing fence is directly followed by the first body
+/// line (no blank line) must not collapse the fence into the heading.
+/// Previously `rewrite_status_to_ratified` emitted `---` with no trailing
+/// newline on the assumption that `body` started with `\n`; when the
+/// author omitted the blank line, the resulting file contained
+/// `---# OUTCOME` on a single line and `split_frontmatter` could no
+/// longer locate the closing fence.
+#[test]
+fn ratify_preserves_closing_fence_without_blank_body_prefix() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    // Hand-written OUTCOME with no blank line between `---` and the
+    // first body heading.
+    let body = r"---
+mission_id: demo
+status: draft
+title: No blank line between fence and body
+original_user_goal: |
+  The user wants the ratify rewrite to remain safe on files that omit
+  the blank line after the closing fence.
+interpreted_destination: |
+  Codex1 rewrites the status line without collapsing the closing fence
+  into the body heading.
+must_be_true:
+  - Ratify is robust to authors who omit the fence blank line.
+success_criteria:
+  - The rewritten file round-trips through outcome check cleanly.
+non_goals:
+  - Do not reformat the body.
+constraints:
+  - Preserve bytes outside the frontmatter status line.
+quality_bar:
+  - Ratify remains idempotent at the file level.
+proof_expectations:
+  - cargo test outcome exercises the no-blank-line path.
+review_expectations:
+  - The main thread reviews outcome validation before plan scaffolding.
+known_risks:
+  - Forgetting the trailing newline on the closing fence.
+resolved_questions: []
+---
+# OUTCOME
+Body paragraph with no leading blank line.
+";
+    fs::write(mission_dir.join("OUTCOME.md"), body).unwrap();
+
+    let ratify = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "ratify", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(
+        ratify.status.success(),
+        "first ratify must succeed on a no-blank-line OUTCOME: stderr={}",
+        String::from_utf8_lossy(&ratify.stderr)
+    );
+
+    // File must still be parseable: the closing fence must remain a
+    // standalone line so that a subsequent `outcome check` succeeds.
+    let rewritten = fs::read_to_string(mission_dir.join("OUTCOME.md")).unwrap();
+    assert!(
+        !rewritten.contains("---# OUTCOME"),
+        "ratify collapsed the closing fence into the heading: {rewritten}"
+    );
+    let fence_line_exists = rewritten.lines().any(|l| l.trim_end() == "---");
+    assert!(
+        fence_line_exists,
+        "ratify removed the standalone closing fence: {rewritten}"
+    );
+    assert!(
+        rewritten.contains("status: ratified"),
+        "status line not flipped: {rewritten}"
+    );
+
+    let check = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "check", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(
+        check.status.success(),
+        "check after no-blank-line ratify must succeed: stdout={} stderr={}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr),
+    );
+    let json = parse_json(&check);
+    assert_eq!(json["ok"], Value::Bool(true));
+    assert_eq!(json["data"]["ratifiable"], true);
+}
+
+/// Regression for round-3 e2e P1-1 (idempotent replay): two successive
+/// ratifies on the same mission must not corrupt OUTCOME.md. The first
+/// ratify flips `status: draft → ratified`; the second ratify, on the
+/// scaffolded template that already includes a blank line between the
+/// fence and the body, must leave the file in a parseable shape so
+/// `outcome check`/`outcome ratify` can still read it. Previously the
+/// first ratify silently dropped the blank line and the second ratify
+/// then collapsed the fence into the heading.
+#[test]
+fn ratify_is_file_level_idempotent_across_repeated_calls() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    seed_valid_outcome(&mission_dir, "demo");
+
+    let first = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "ratify", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(
+        first.status.success(),
+        "first ratify must succeed: stderr={}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+
+    let second = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "ratify", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(
+        second.status.success(),
+        "second ratify must succeed (file still parseable): stderr={}",
+        String::from_utf8_lossy(&second.stderr)
+    );
+
+    // The closing fence must remain a standalone line.
+    let rewritten = fs::read_to_string(mission_dir.join("OUTCOME.md")).unwrap();
+    assert!(
+        !rewritten.contains("---# OUTCOME"),
+        "second ratify collapsed closing fence: {rewritten}"
+    );
+    let fence_line_exists = rewritten.lines().any(|l| l.trim_end() == "---");
+    assert!(
+        fence_line_exists,
+        "second ratify removed the standalone closing fence: {rewritten}"
+    );
+
+    // And `outcome check` must still parse the file.
+    let check = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "check", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(
+        check.status.success(),
+        "check after double ratify must succeed: stdout={} stderr={}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr),
+    );
+    let json = parse_json(&check);
+    assert_eq!(json["ok"], Value::Bool(true));
+    assert_eq!(json["data"]["ratifiable"], true);
+}
+
 #[test]
 fn check_after_ratify_still_ratifiable() {
     let tmp = TempDir::new().unwrap();

@@ -135,9 +135,20 @@ fn rewrite_status_to_ratified(frontmatter: &str, body: &str) -> Result<String, C
     let mut out = String::with_capacity(frontmatter.len() + body.len() + 8);
     out.push_str("---\n");
     out.push_str(&new_front);
-    out.push_str("---");
-    // Preserve the exact body, including any leading newline that was
-    // part of the file (split_frontmatter leaves `\n# Body…` in `body`).
+    // Always terminate the closing fence with its own newline, then paste
+    // the body verbatim. Historical behavior omitted the trailing `\n` on
+    // the assumption that `body` begins with `\n` — true when there is a
+    // blank line between the closing fence and the first body heading
+    // (`split_frontmatter` puts that blank line into `body`), but false
+    // on hand-written files of the shape `…\n---\n# Heading…`. Under the
+    // old behavior a single ratify on a no-blank-line file collapsed
+    // `---` and `# Heading` onto one line, permanently breaking
+    // `split_frontmatter`. Emitting `---\n` unconditionally is byte-stable
+    // across both shapes: when `body` already begins with `\n` the result
+    // is `...---\n\n# Heading...` (blank line preserved), and when it
+    // does not the result is `...---\n# Heading...` (closing fence
+    // remains a standalone line).
+    out.push_str("---\n");
     out.push_str(body);
     Ok(out)
 }
