@@ -686,6 +686,174 @@ fn record_review_stale_expect_revision_wins_over_not_ready() {
     assert_eq!(json["context"]["actual"], 5);
 }
 
+#[test]
+fn record_review_missing_findings_file_returns_review_findings_block() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    seed_ready_for_mission_close_review(&mission_dir);
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args([
+            "close",
+            "record-review",
+            "--findings-file",
+            "does/not/exist.md",
+            "--mission",
+            "demo",
+        ])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_stdout(&output);
+    assert_eq!(json["code"], "REVIEW_FINDINGS_BLOCK");
+    assert!(json["message"]
+        .as_str()
+        .unwrap()
+        .contains("findings file not found"));
+}
+
+#[test]
+fn terminal_close_record_review_is_audited_as_contaminated() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    let state = StateBuilder::fresh("demo")
+        .ratified()
+        .plan_locked()
+        .task("T1", "complete")
+        .mission_close_review("passed")
+        .terminal("2026-04-21T00:00:00Z")
+        .revision(6)
+        .build();
+    write_state(&mission_dir, &state);
+    let findings = write_findings(&mission_dir, "late.md", "# late\n");
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args([
+            "close",
+            "record-review",
+            "--findings-file",
+            findings.to_str().unwrap(),
+            "--mission",
+            "demo",
+        ])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_stdout(&output);
+    assert_eq!(json["code"], "TERMINAL_ALREADY_COMPLETE");
+    let events = read_events(&mission_dir);
+    assert!(events
+        .iter()
+        .any(|e| e["kind"] == "close.review.contaminated_after_terminal"));
+}
+
+#[test]
+fn closeout_history_reports_dirty_then_clean_truthfully() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    seed_ready_for_mission_close_review(&mission_dir);
+    let findings = write_findings(&mission_dir, "round1.md", "# P1 finding\n");
+
+    cmd()
+        .current_dir(tmp.path())
+        .args([
+            "close",
+            "record-review",
+            "--findings-file",
+            findings.to_str().unwrap(),
+            "--mission",
+            "demo",
+        ])
+        .assert()
+        .success();
+    cmd()
+        .current_dir(tmp.path())
+        .args(["close", "record-review", "--clean", "--mission", "demo"])
+        .assert()
+        .success();
+    cmd()
+        .current_dir(tmp.path())
+        .args(["close", "complete", "--mission", "demo"])
+        .assert()
+        .success();
+
+    let closeout = fs::read_to_string(mission_dir.join("CLOSEOUT.md")).unwrap();
+    assert!(
+        closeout.contains("Clean after 1 dirty round along the way."),
+        "closeout must reflect dirty-then-clean history: {closeout}"
+    );
+}
+
+#[test]
+fn status_and_close_check_block_when_closeout_target_is_not_a_file() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    let state = StateBuilder::fresh("demo")
+        .ratified()
+        .plan_locked()
+        .task("T1", "complete")
+        .mission_close_review("passed")
+        .revision(6)
+        .build();
+    write_state(&mission_dir, &state);
+    fs::create_dir(mission_dir.join("CLOSEOUT.md")).unwrap();
+
+    let status = cmd()
+        .current_dir(tmp.path())
+        .args(["status", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(status.status.success());
+    let status_json = parse_stdout(&status);
+    assert_eq!(status_json["data"]["close_ready"], false);
+    assert_eq!(status_json["data"]["next_action"]["kind"], "blocked");
+
+    let check = cmd()
+        .current_dir(tmp.path())
+        .args(["close", "check", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(check.status.success());
+    let check_json = parse_stdout(&check);
+    assert_eq!(check_json["data"]["ready"], false);
+    assert!(check_json["data"]["blockers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|b| b["detail"]
+            .as_str()
+            .unwrap_or("")
+            .contains("CLOSEOUT.md target is not a file")));
+}
+
+#[test]
+fn close_complete_with_events_directory_does_not_publish_closeout() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    let state = StateBuilder::fresh("demo")
+        .ratified()
+        .plan_locked()
+        .task("T1", "complete")
+        .mission_close_review("passed")
+        .revision(6)
+        .build();
+    write_state(&mission_dir, &state);
+    fs::remove_file(mission_dir.join("EVENTS.jsonl")).unwrap();
+    fs::create_dir(mission_dir.join("EVENTS.jsonl")).unwrap();
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["close", "complete", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    assert!(!mission_dir.join("CLOSEOUT.md").exists());
+    let state = read_state(&mission_dir);
+    assert!(state["close"]["terminal_at"].is_null());
+}
+
 // ---------------------------------------------------------------------------
 // complete
 // ---------------------------------------------------------------------------

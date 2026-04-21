@@ -412,6 +412,43 @@ fn scaffold_before_choose_level_rejects() {
     assert_eq!(json["code"], "PLAN_INVALID");
 }
 
+#[test]
+fn scaffold_rejects_non_file_plan_target_without_mutating_state() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    cmd()
+        .current_dir(tmp.path())
+        .args([
+            "plan",
+            "choose-level",
+            "--mission",
+            "demo",
+            "--level",
+            "light",
+        ])
+        .assert()
+        .success();
+
+    let plan_path = mission_dir.join("PLAN.yaml");
+    if plan_path.exists() {
+        fs::remove_file(&plan_path).unwrap();
+    }
+    fs::create_dir(&plan_path).unwrap();
+    let before_state = read_state(&mission_dir);
+    let before_events = read_events(&mission_dir);
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["plan", "scaffold", "--mission", "demo", "--level", "light"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    assert_eq!(read_state(&mission_dir), before_state);
+    assert_eq!(read_events(&mission_dir), before_events);
+}
+
 /// Handoff 02-cli-contract.md:325 rule: `escalation_reason` must only be
 /// emitted when effective > requested. `--escalate` on top of `--level
 /// hard` is a no-op; the payload must not carry a phantom reason.

@@ -16,7 +16,7 @@ use crate::cli::close::check::ReadinessReport;
 use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::{CliError, CliResult};
-use crate::core::mission::resolve_mission;
+use crate::core::mission::{is_true_bare_no_mission, resolve_mission};
 use crate::state;
 
 pub fn run(ctx: &Ctx) -> CliResult<()> {
@@ -34,7 +34,11 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
             // Explicit --mission <id> that doesn't resolve → error.
             // Bare `codex1 status` with nothing found → graceful "no
             // mission" projection so Ralph never blocks the shell.
-            if ctx.mission.is_some() || ctx.repo_root.is_some() || ambiguous {
+            if ctx.mission.is_some()
+                || ctx.repo_root.is_some()
+                || ambiguous
+                || !is_true_bare_no_mission(&err)
+            {
                 return Err(err);
             }
             let env = JsonOk::global(json!({

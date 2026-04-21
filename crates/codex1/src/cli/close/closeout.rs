@@ -97,6 +97,8 @@ pub fn render(state: &MissionState, paths: &MissionPaths) -> String {
         .get(MISSION_CLOSE_TARGET)
         .copied()
         .unwrap_or(0);
+    let historical_dirty_rounds = mission_close_dirty_rounds(paths);
+    let dirty_rounds = dirty_rounds.max(historical_dirty_rounds);
     let summary = match state.close.review_state {
         MissionCloseReviewState::Passed => {
             if dirty_rounds == 0 {
@@ -127,6 +129,21 @@ pub fn render(state: &MissionState, paths: &MissionPaths) -> String {
     }
 
     out
+}
+
+fn mission_close_dirty_rounds(paths: &MissionPaths) -> u32 {
+    std::fs::read_dir(paths.reviews_dir())
+        .ok()
+        .into_iter()
+        .flat_map(|iter| iter.filter_map(Result::ok))
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| {
+            name.starts_with("mission-close-")
+                && Path::new(name)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+        })
+        .count() as u32
 }
 
 /// Extract `interpreted_destination` from the YAML frontmatter of

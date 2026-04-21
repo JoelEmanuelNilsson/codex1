@@ -60,6 +60,23 @@ pub fn run(
     state::check_expected_revision(ctx.expect_revision, &current)?;
     let reviewers = parse_reviewers(reviewers_csv);
 
+    if let Some(closed_at) = current.close.terminal_at.clone() {
+        if !ctx.dry_run {
+            state::mutate(
+                &paths,
+                ctx.expect_revision,
+                "close.review.contaminated_after_terminal",
+                json!({
+                "verdict": if matches!(outcome, Outcome::Clean) { "clean" } else { "dirty" },
+                    "reviewers": reviewers.clone(),
+                    "category": "contaminated_after_terminal",
+                }),
+                |_state| Ok(()),
+            )?;
+        }
+        return Err(CliError::TerminalAlreadyComplete { closed_at });
+    }
+
     // Gate: the mission must be in a state where recording a mission-close
     // review is sensible. We allow both `ready_for_mission_close_review`
     // (the first attempt, which transitions review_state to Open before
@@ -161,8 +178,8 @@ fn record_dirty(
     reviewers: &[String],
 ) -> CliResult<()> {
     if !findings_source.is_file() {
-        return Err(CliError::ProofMissing {
-            path: findings_source.to_path_buf(),
+        return Err(CliError::ReviewFindingsBlock {
+            message: format!("findings file not found: {}", findings_source.display()),
         });
     }
     let findings_body = std::fs::read_to_string(findings_source)?;

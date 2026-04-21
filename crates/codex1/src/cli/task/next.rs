@@ -2,6 +2,7 @@
 
 use serde_json::json;
 
+use crate::cli::close::check::ReadinessReport;
 use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::CliResult;
@@ -80,10 +81,18 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
             state.close.review_state,
             crate::state::schema::MissionCloseReviewState::Passed
         ) {
-            json!({
-                "kind": "close",
-                "hint": "Mission-close review passed; finalize close.",
-            })
+            let report = ReadinessReport::from_state_and_paths(&state, &paths);
+            if report.blockers.is_empty() {
+                json!({
+                    "kind": "close",
+                    "hint": "Mission-close review passed; finalize close.",
+                })
+            } else {
+                json!({
+                    "kind": "blocked",
+                    "reason": "Mission-close review passed, but close check has blockers.",
+                })
+            }
         } else {
             json!({
                 "kind": "mission_close_review",

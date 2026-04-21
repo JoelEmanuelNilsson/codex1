@@ -78,6 +78,7 @@ pub fn validate_outcome(
         }
     }
     check_scalar(&mapping, "status", &mut missing_fields, &mut placeholders);
+    check_status_value(&mapping, &mut missing_fields);
     check_scalar(&mapping, "title", &mut missing_fields, &mut placeholders);
     check_scalar(
         &mapping,
@@ -232,11 +233,26 @@ fn check_non_empty_list(
             if seq.is_empty() {
                 missing.push(format!("{field} (empty list)"));
             } else {
-                scan_list_entries(field, seq, placeholders);
+                scan_list_entries(field, seq, missing, placeholders);
             }
         }
         Some(Value::Null) => missing.push(field.to_string()),
         Some(_) => missing.push(format!("{field} (not a list)")),
+    }
+}
+
+fn check_status_value(m: &Mapping, missing: &mut Vec<String>) {
+    let Some(Value::String(status)) = m.get(Value::String("status".to_string())) else {
+        return;
+    };
+    let trimmed = status.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    if !matches!(trimmed, "draft" | "ratified") {
+        missing.push(format!(
+            "status (expected `draft` or `ratified`, found `{trimmed}`)"
+        ));
     }
 }
 
@@ -253,18 +269,22 @@ fn check_mapping_present(
                 missing.push(format!("{field} (empty mapping)"));
             }
             for (k, v) in map {
-                if let Some(s) = k.as_str() {
-                    if s.trim().is_empty() {
-                        missing.push(format!("{field} (empty key)"));
+                match k.as_str().map(str::trim) {
+                    Some("") => missing.push(format!("{field} (empty key)")),
+                    Some(s) => {
+                        if let Some(marker) = find_fill_marker(s) {
+                            placeholders.push(format!("{field}: {marker}"));
+                        }
                     }
-                    if let Some(marker) = find_fill_marker(s) {
-                        placeholders.push(format!("{field}: {marker}"));
+                    None => missing.push(format!("{field} (key not a string)")),
+                }
+                match v {
+                    Value::String(s) if !s.trim().is_empty() => {
+                        scan_value_for_placeholders(field, v, placeholders);
                     }
+                    Value::String(_) => missing.push(format!("{field} (empty value)")),
+                    _ => missing.push(format!("{field} (value not a string)")),
                 }
-                if !is_meaningful_value(v) {
-                    missing.push(format!("{field} (empty value)"));
-                }
-                scan_value_for_placeholders(field, v, placeholders);
             }
         }
         Some(_) => missing.push(format!("{field} (not a mapping)")),
@@ -304,16 +324,6 @@ fn check_resolved_questions(
     }
 }
 
-fn is_meaningful_value(value: &Value) -> bool {
-    match value {
-        Value::String(s) => !s.trim().is_empty(),
-        Value::Null => false,
-        Value::Sequence(seq) => !seq.is_empty(),
-        Value::Mapping(map) => !map.is_empty(),
-        _ => true,
-    }
-}
-
 fn is_non_empty_string(value: Option<&Value>) -> bool {
     matches!(value, Some(Value::String(s)) if !s.trim().is_empty())
 }
@@ -342,17 +352,20 @@ fn scan_value_for_placeholders(field: &str, value: &Value, placeholders: &mut Ve
     }
 }
 
-fn scan_list_entries(field: &str, seq: &[Value], placeholders: &mut Vec<String>) {
+fn scan_list_entries(
+    field: &str,
+    seq: &[Value],
+    missing: &mut Vec<String>,
+    placeholders: &mut Vec<String>,
+) {
     for (idx, entry) in seq.iter().enumerate() {
         let Value::String(s) = entry else {
-            // Non-string entries in these fields are suspicious but we only
-            // flag placeholder text; leave structural validation to a richer
-            // downstream unit.
+            missing.push(format!("{field}[{idx}] (not a string)"));
             continue;
         };
         let trimmed = s.trim();
         if trimmed.is_empty() {
-            placeholders.push(format!("{field}[{idx}]: <empty>"));
+            missing.push(format!("{field}[{idx}] (empty string)"));
             continue;
         }
         if is_placeholder_value(trimmed) {

@@ -308,7 +308,7 @@ codex1 --json review record T4 --findings-file /tmp/T4-findings.md --mission dem
 **Mutates state:** no.
 **Arguments:**
 - `<TASK_ID>` (positional, required).
-**Success:** `{"ok":true,"data":{"review_task_id":"T4","record":{"task_id":"T4","verdict":"clean","reviewers":["code-reviewer"],"findings_file":null,"category":"accepted_current","recorded_at":"2026-04-21T…Z","boundary_revision":7},"targets":["T2"],"replan_triggered":false}}`
+**Success:** `{"ok":true,"data":{"review_task_id":"T4","record":{"verdict":"clean","reviewers":["code-reviewer"],"findings_file":null,"category":"accepted_current","recorded_at":"2026-04-21T…Z","boundary_revision":7},"targets":[{"task_id":"T2","status":"AwaitingReview","consecutive_dirty":0}],"replan_triggered":false}}`
 **Errors:** `TASK_NOT_READY`, `MISSION_NOT_FOUND`.
 **Phase status:** Implemented.
 **Example:**
@@ -433,8 +433,8 @@ codex1 --json close check --mission demo
 **Arguments:**
 - exactly one of `--clean` or `--findings-file <PATH>`.
 - `--reviewers <CSV>` optional reviewer names.
-**Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"target":"__mission_close__","verdict":"clean","review_state":"passed"}}`
-**Errors:** `CLOSE_NOT_READY`, `REVIEW_FINDINGS_BLOCK`, `REVISION_CONFLICT`, `MISSION_NOT_FOUND`.
+**Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"verdict":"clean","review_state":"passed","reviewers":["code-reviewer"],"findings_file":null,"consecutive_dirty":0,"replan_triggered":false,"dry_run":false}}`
+**Errors:** `CLOSE_NOT_READY`, `REVIEW_FINDINGS_BLOCK`, `TERMINAL_ALREADY_COMPLETE`, `REVISION_CONFLICT`, `MISSION_NOT_FOUND`.
 **Phase status:** Implemented.
 **Example:**
 ```bash

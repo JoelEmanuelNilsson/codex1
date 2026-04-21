@@ -319,6 +319,65 @@ fn check_and_ratify_reject_mission_id_mismatch() {
     assert_eq!(read_state(&mission_dir), before);
 }
 
+#[test]
+fn check_and_ratify_reject_invalid_status_and_non_string_required_entries() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    seed_valid_outcome(&mission_dir, "demo");
+    let raw = fs::read_to_string(mission_dir.join("OUTCOME.md"))
+        .unwrap()
+        .replace("status: draft", "status: stale")
+        .replace(
+            "must_be_true:\n  - The mission has a single clarified destination captured in OUTCOME.md.\n  - Every required field contains concrete content, not fill markers.\n",
+            "must_be_true:\n  - 1\n",
+        )
+        .replace(
+            "success_criteria:\n  - codex1 outcome check returns ratifiable true for this fixture.\n  - codex1 outcome ratify flips phase from clarify to plan and records ratified_at.\n",
+            "success_criteria:\n  - false\n",
+        )
+        .replace(
+            "constraints:\n  - Tests must use tempfile-backed mission directories only.\n  - OUTCOME.md rewrite must preserve the markdown body byte-for-byte.\n",
+            "constraints:\n  - []\n",
+        )
+        .replace(
+            "definitions:\n  mission: A visible Codex1 mission under PLANS/<mission-id>.\n",
+            "definitions:\n  mission: 5\n",
+        );
+    fs::write(mission_dir.join("OUTCOME.md"), raw).unwrap();
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "check", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_json(&output);
+    let missing = json["context"]["missing_fields"].as_array().unwrap();
+    assert!(missing.iter().any(|v| v
+        .as_str()
+        .unwrap_or("")
+        .contains("status (expected `draft` or `ratified`")));
+    assert!(missing
+        .iter()
+        .any(|v| v == "must_be_true[0] (not a string)"));
+    assert!(missing
+        .iter()
+        .any(|v| v == "success_criteria[0] (not a string)"));
+    assert!(missing.iter().any(|v| v == "constraints[0] (not a string)"));
+    assert!(missing
+        .iter()
+        .any(|v| v.as_str().unwrap_or("").contains("definitions")));
+
+    let before = read_state(&mission_dir);
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "ratify", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    assert_eq!(read_state(&mission_dir), before);
+}
+
 #[cfg(unix)]
 #[test]
 fn ratify_rejects_symlinked_outcome_without_mutating_state() {

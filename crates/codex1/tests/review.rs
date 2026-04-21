@@ -1275,3 +1275,31 @@ fn review_record_findings_then_retry_returns_review_findings_block_envelope() {
         "message should include the offending path: {message:?}"
     );
 }
+
+#[test]
+fn review_record_with_events_directory_does_not_publish_review_artifact() {
+    let s = Seeded::new();
+    run_ok(s.path(), &["review", "start", "T5", "--mission", MISSION]);
+    let findings = s.mission_dir.join("findings.md");
+    fs::write(&findings, "# dirty\n").unwrap();
+    fs::remove_file(s.mission_dir.join("EVENTS.jsonl")).unwrap();
+    fs::create_dir(s.mission_dir.join("EVENTS.jsonl")).unwrap();
+
+    let err = run_err(
+        s.path(),
+        &[
+            "review",
+            "record",
+            "T5",
+            "--findings-file",
+            findings.to_str().unwrap(),
+            "--mission",
+            MISSION,
+        ],
+    );
+    assert_eq!(err["code"], "PLAN_INVALID");
+    assert!(
+        !s.review_file().exists(),
+        "review artifact must not be published"
+    );
+}

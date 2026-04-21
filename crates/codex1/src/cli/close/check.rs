@@ -13,6 +13,7 @@ use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::CliResult;
 use crate::core::mission::resolve_mission;
+use crate::core::paths::ensure_mission_write_safe;
 use crate::core::paths::MissionPaths;
 use crate::state::readiness::{self, Verdict};
 use crate::state::schema::{
@@ -178,6 +179,14 @@ fn derive_blockers_with_paths(state: &MissionState, paths: Option<&MissionPaths>
         }
     }
 
+    if matches!(state.close.review_state, MissionCloseReviewState::Passed) {
+        if let Some(paths) = paths {
+            if let Err(detail) = closeout_ready(paths) {
+                blockers.push(Blocker::new("CLOSE_NOT_READY", detail));
+            }
+        }
+    }
+
     blockers
 }
 
@@ -196,6 +205,26 @@ fn proof_exists(paths: &MissionPaths, proof_path: Option<&str>) -> Result<(), St
     } else {
         Err(format!("proof file not found at {}", abs.display()))
     }
+}
+
+fn closeout_ready(paths: &MissionPaths) -> Result<(), String> {
+    ensure_mission_write_safe(paths).map_err(|err| err.to_string())?;
+    let closeout = paths.closeout();
+    if let Ok(meta) = std::fs::symlink_metadata(&closeout) {
+        if meta.file_type().is_symlink() {
+            return Err(format!(
+                "CLOSEOUT.md must not be a symlink: {}",
+                closeout.display()
+            ));
+        }
+    }
+    if closeout.exists() && !closeout.is_file() {
+        return Err(format!(
+            "CLOSEOUT.md target is not a file: {}",
+            closeout.display()
+        ));
+    }
+    Ok(())
 }
 
 pub fn run(ctx: &Ctx) -> CliResult<()> {

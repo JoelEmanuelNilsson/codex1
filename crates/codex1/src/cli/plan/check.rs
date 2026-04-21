@@ -80,6 +80,20 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
     let summary = validate(&parsed, &paths, &current);
 
     let hash = plan_hash(raw.as_bytes());
+    let locked_hash_changed = current.plan.locked
+        && current.plan.hash.is_some()
+        && current.plan.hash.as_deref() != Some(hash.as_str());
+    if locked_hash_changed {
+        exit_with_validation_error(
+            "PLAN_INVALID",
+            "PLAN.yaml changed after the plan was locked; run `codex1 replan record` before relocking a new DAG",
+            Some("Use `codex1 replan record ...`, edit PLAN.yaml, then run `codex1 plan check` again."),
+            json!({
+                "current_hash": current.plan.hash.clone(),
+                "new_hash": hash,
+            }),
+        );
+    }
 
     // Idempotent short-circuit: same hash on an already-locked plan → no mutation.
     //
@@ -188,6 +202,21 @@ struct Summary {
 fn validate(plan: &ParsedPlan, paths: &MissionPaths, state: &state::MissionState) -> Summary {
     // Top-level sections.
     require_string("mission_id", plan.mission_id.as_deref());
+    if plan.mission_id.as_deref() != Some(paths.mission_id.as_str()) {
+        exit_with_validation_error(
+            "PLAN_INVALID",
+            &format!(
+                "PLAN.yaml mission_id mismatch: expected `{}`, found `{}`",
+                paths.mission_id,
+                plan.mission_id.as_deref().unwrap_or_default()
+            ),
+            Some("Set PLAN.yaml mission_id to the active mission id before locking."),
+            json!({
+                "expected_mission_id": paths.mission_id,
+                "actual_mission_id": plan.mission_id,
+            }),
+        );
+    }
 
     let level = plan.planning_level.as_ref().unwrap_or_else(|| {
         exit_with_validation_error(
@@ -486,7 +515,8 @@ fn validate_tasks(
         if !seen.insert(id.clone()) {
             duplicates.insert(id.clone());
         }
-        if !state.plan.locked && state.tasks.contains_key(&id) {
+        if !state.plan.locked && (state.tasks.contains_key(&id) || state.reviews.contains_key(&id))
+        {
             exit_with_validation_error(
                 "PLAN_INVALID",
                 &format!("task id `{id}` reuses historical task truth from STATE.json"),

@@ -12,7 +12,7 @@ use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::{CliError, CliResult};
 use crate::core::mission::resolve_mission;
-use crate::core::paths::{ensure_artifact_parent_write_safe, MissionPaths};
+use crate::core::paths::{ensure_artifact_file_write_safe, MissionPaths};
 use crate::state::{self, fs_atomic::atomic_write, MissionState, PlanLevel};
 
 /// Handle `codex1 plan scaffold --level <level>`.
@@ -58,6 +58,7 @@ pub fn run(level_raw: String, ctx: &Ctx) -> CliResult<()> {
     });
 
     let plan_path = paths.plan();
+    ensure_artifact_file_write_safe(&paths, &plan_path, "PLAN.yaml")?;
     let mut skeleton = String::new();
     let mutation = state::mutate(
         &paths,
@@ -75,7 +76,6 @@ pub fn run(level_raw: String, ctx: &Ctx) -> CliResult<()> {
         },
     )?;
 
-    ensure_artifact_parent_write_safe(&paths, &plan_path)?;
     atomic_write(&plan_path, skeleton.as_bytes())?;
 
     let env = JsonOk::new(

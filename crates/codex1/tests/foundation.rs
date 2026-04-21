@@ -279,6 +279,20 @@ fn status_without_mission_reports_needs_user() {
     assert_eq!(json["data"]["foundation_only"], true);
 }
 
+#[test]
+fn bare_status_with_empty_plans_directory_returns_mission_not_found() {
+    let tmp = TempDir::new().unwrap();
+    fs::create_dir_all(tmp.path().join("PLANS")).unwrap();
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["status"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "MISSION_NOT_FOUND");
+}
+
 // `outcome_stubs_return_not_implemented` removed: Phase B Unit 2
 // (cli-outcome) has replaced the stub with the real implementation.
 // See `tests/outcome.rs` for the Phase B integration coverage.

@@ -13,6 +13,9 @@ use std::path::{Path, PathBuf};
 use crate::core::error::CliError;
 use crate::core::paths::{validate_mission_id, MissionPaths};
 
+const WALK_UP_NO_PLANS_MESSAGE: &str =
+    "No PLANS/ directory found walking up from the current directory";
+
 /// CLI arguments that influence mission discovery. Every command wires
 /// these through `clap` and hands the struct to `resolve_mission`.
 #[derive(Debug, Clone, Default)]
@@ -142,10 +145,22 @@ fn walk_up_for_mission(cwd: &Path) -> Result<MissionPaths, CliError> {
         current = dir.parent();
     }
     Err(CliError::MissionNotFound {
-        message: "No PLANS/ directory found walking up from the current directory".to_string(),
+        message: WALK_UP_NO_PLANS_MESSAGE.to_string(),
         hint: Some(
             "Pass --mission <id> --repo-root <path>, or run `codex1 init` first.".to_string(),
         ),
         ambiguous: false,
     })
+}
+
+#[must_use]
+pub fn is_true_bare_no_mission(err: &CliError) -> bool {
+    matches!(
+        err,
+        CliError::MissionNotFound {
+            message,
+            ambiguous: false,
+            ..
+        } if message == WALK_UP_NO_PLANS_MESSAGE
+    )
 }

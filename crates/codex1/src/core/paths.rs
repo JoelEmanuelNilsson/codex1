@@ -233,6 +233,12 @@ pub fn ensure_artifact_file_write_safe(
 ) -> Result<(), CliError> {
     ensure_artifact_parent_write_safe(paths, target)?;
     reject_symlink(target, label)?;
+    if target.exists() && !target.is_file() {
+        return Err(containment_error(format!(
+            "{label} target is not a file: {}",
+            target.display()
+        )));
+    }
     Ok(())
 }
 

@@ -318,6 +318,49 @@ mission_close:
 }
 
 #[test]
+fn plan_check_rejects_plan_mission_id_mismatch() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = seed_valid_mission(&tmp, "demo");
+    let yaml = valid_4_task_yaml().replace("mission_id: demo", "mission_id: other-mission");
+    write_plan(&mission_dir, &yaml);
+
+    let output = run_check(&tmp, "demo", &[]);
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    assert!(json["message"]
+        .as_str()
+        .unwrap()
+        .contains("mission_id mismatch"));
+}
+
+#[test]
+fn plan_check_rejects_hash_change_while_locked_without_replan() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = seed_valid_mission(&tmp, "demo");
+
+    let first = run_check(&tmp, "demo", &[]);
+    assert!(first.status.success());
+    let before_state = read_state(&mission_dir);
+    let before_events = read_events(&mission_dir);
+
+    let changed =
+        valid_4_task_yaml().replace("title: \"Write docs\"", "title: \"Write release notes\"");
+    write_plan(&mission_dir, &changed);
+
+    let output = run_check(&tmp, "demo", &[]);
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    assert!(json["message"]
+        .as_str()
+        .unwrap()
+        .contains("changed after the plan was locked"));
+    assert_eq!(read_state(&mission_dir), before_state);
+    assert_eq!(read_events(&mission_dir), before_events);
+}
+
+#[test]
 fn plan_check_rejects_stored_waves_truth() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = init_demo(&tmp, "demo");
