@@ -235,11 +235,20 @@ fn check_mapping_present(
     match m.get(Value::String(field.to_string())) {
         None | Some(Value::Null) => missing.push(field.to_string()),
         Some(Value::Mapping(map)) => {
+            if map.is_empty() {
+                missing.push(format!("{field} (empty mapping)"));
+            }
             for (k, v) in map {
                 if let Some(s) = k.as_str() {
+                    if s.trim().is_empty() {
+                        missing.push(format!("{field} (empty key)"));
+                    }
                     if let Some(marker) = find_fill_marker(s) {
                         placeholders.push(format!("{field}: {marker}"));
                     }
+                }
+                if !is_meaningful_value(v) {
+                    missing.push(format!("{field} (empty value)"));
                 }
                 scan_value_for_placeholders(field, v, placeholders);
             }
@@ -257,6 +266,9 @@ fn check_resolved_questions(
     match m.get(Value::String(field.to_string())) {
         None | Some(Value::Null) => missing.push(field.to_string()),
         Some(Value::Sequence(seq)) => {
+            if seq.is_empty() {
+                missing.push(format!("{field} (empty list)"));
+            }
             for (idx, entry) in seq.iter().enumerate() {
                 match entry {
                     Value::Mapping(map) => {
@@ -275,6 +287,16 @@ fn check_resolved_questions(
             }
         }
         Some(_) => missing.push(format!("{field} (not a list)")),
+    }
+}
+
+fn is_meaningful_value(value: &Value) -> bool {
+    match value {
+        Value::String(s) => !s.trim().is_empty(),
+        Value::Null => false,
+        Value::Sequence(seq) => !seq.is_empty(),
+        Value::Mapping(map) => !map.is_empty(),
+        _ => true,
     }
 }
 

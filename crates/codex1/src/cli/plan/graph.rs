@@ -109,11 +109,12 @@ fn deps_are_done(
     task: &ParsedTask,
     state_tasks: &BTreeMap<String, crate::state::TaskRecord>,
 ) -> bool {
+    let is_review = matches!(task.kind.as_deref(), Some("review"));
     task.depends_on.iter().all(|dep| {
-        matches!(
-            state_tasks.get(dep).map(|r| r.status.clone()),
-            Some(TaskStatus::Complete | TaskStatus::Superseded)
-        )
+        state_tasks.get(dep).is_some_and(|r| {
+            matches!(r.status, TaskStatus::Complete)
+                || (is_review && matches!(r.status, TaskStatus::AwaitingReview))
+        })
     })
 }
 

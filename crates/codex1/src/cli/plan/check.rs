@@ -32,6 +32,9 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let current = state::load(&paths)?;
     state::check_expected_revision(ctx.expect_revision, &current)?;
+    if !current.outcome.ratified {
+        return Err(CliError::OutcomeNotRatified);
+    }
     let plan_path = paths.plan();
     if !plan_path.is_file() {
         return Err(CliError::PlanInvalid {
@@ -108,6 +111,9 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
         "plan.checked",
         event_payload,
         |s| {
+            if !s.outcome.ratified {
+                return Err(CliError::OutcomeNotRatified);
+            }
             s.plan.locked = true;
             s.plan.hash = Some(hash.clone());
             s.plan.requested_level = Some(summary.requested_level.clone());
@@ -537,6 +543,23 @@ fn validate_tasks(
                     json!({
                         "task_id": id,
                         "missing_dep": dep,
+                    }),
+                );
+            }
+            if !task_is_superseded
+                && task.kind.as_deref() != Some("review")
+                && state
+                    .tasks
+                    .get(dep)
+                    .is_some_and(|record| matches!(record.status, TaskStatus::Superseded))
+            {
+                exit_with_validation_error(
+                    "PLAN_INVALID",
+                    &format!("tasks[{id}] depends on superseded task `{dep}`"),
+                    Some("Retarget live work to replacement task ids after replan."),
+                    json!({
+                        "task_id": id,
+                        "superseded_dep": dep,
                     }),
                 );
             }

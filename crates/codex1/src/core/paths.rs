@@ -206,6 +206,7 @@ pub fn ensure_artifact_parent_write_safe(
     target: &Path,
 ) -> Result<(), CliError> {
     ensure_mission_write_safe(paths)?;
+    reject_symlink(target, "artifact file")?;
     let parent = target.parent().ok_or_else(|| {
         containment_error(format!("artifact path has no parent: {}", target.display()))
     })?;
@@ -222,6 +223,16 @@ pub fn ensure_artifact_parent_write_safe(
             parent.display()
         )));
     }
+    Ok(())
+}
+
+pub fn ensure_artifact_file_write_safe(
+    paths: &MissionPaths,
+    target: &Path,
+    label: &str,
+) -> Result<(), CliError> {
+    ensure_artifact_parent_write_safe(paths, target)?;
+    reject_symlink(target, label)?;
     Ok(())
 }
 

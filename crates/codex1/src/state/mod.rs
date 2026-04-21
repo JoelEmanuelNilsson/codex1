@@ -26,7 +26,8 @@ use fs2::FileExt;
 
 use crate::core::error::CliError;
 use crate::core::paths::{
-    ensure_artifact_parent_write_safe, ensure_mission_write_safe, MissionPaths,
+    ensure_artifact_file_write_safe, ensure_artifact_parent_write_safe, ensure_mission_write_safe,
+    MissionPaths,
 };
 
 use self::events::{append_event, Event};
@@ -100,7 +101,23 @@ pub fn mutate<F>(
 where
     F: FnOnce(&mut MissionState) -> Result<(), CliError>,
 {
+    mutate_dynamic(paths, expected_revision, |state| {
+        mutator(state)?;
+        Ok((event_kind.to_string(), event_payload))
+    })
+}
+
+pub fn mutate_dynamic<F>(
+    paths: &MissionPaths,
+    expected_revision: Option<u64>,
+    mutator: F,
+) -> Result<Mutation, CliError>
+where
+    F: FnOnce(&mut MissionState) -> Result<(String, serde_json::Value), CliError>,
+{
     ensure_mission_write_safe(paths)?;
+    ensure_artifact_file_write_safe(paths, &paths.events(), "EVENTS.jsonl")?;
+    ensure_artifact_file_write_safe(paths, &paths.state_lock(), "STATE.json.lock")?;
     let lock = acquire_exclusive_lock(paths)?;
     let state_path = paths.state();
     if !state_path.is_file() {
@@ -123,7 +140,7 @@ where
             });
         }
     }
-    mutator(&mut state)?;
+    let (event_kind, event_payload) = mutator(&mut state)?;
     state.revision = state.revision.saturating_add(1);
     state.events_cursor = state.events_cursor.saturating_add(1);
     // Ordering: append EVENTS.jsonl FIRST, then persist STATE.json.
@@ -154,11 +171,68 @@ where
     })
 }
 
+pub enum MaybeMutation {
+    Mutated(Mutation),
+    Unchanged(MissionState),
+}
+
+pub fn mutate_dynamic_maybe<F>(
+    paths: &MissionPaths,
+    expected_revision: Option<u64>,
+    mutator: F,
+) -> Result<MaybeMutation, CliError>
+where
+    F: FnOnce(&mut MissionState) -> Result<Option<(String, serde_json::Value)>, CliError>,
+{
+    ensure_mission_write_safe(paths)?;
+    ensure_artifact_file_write_safe(paths, &paths.events(), "EVENTS.jsonl")?;
+    ensure_artifact_file_write_safe(paths, &paths.state_lock(), "STATE.json.lock")?;
+    let lock = acquire_exclusive_lock(paths)?;
+    let state_path = paths.state();
+    if !state_path.is_file() {
+        drop(lock);
+        return Err(CliError::StateCorrupt {
+            message: format!("STATE.json missing at {}", state_path.display()),
+        });
+    }
+    let raw = fs::read_to_string(&state_path)?;
+    let mut state: MissionState =
+        serde_json::from_str(&raw).map_err(|err| CliError::StateCorrupt {
+            message: format!("Failed to parse STATE.json: {err}"),
+        })?;
+    if let Some(expected) = expected_revision {
+        if expected != state.revision {
+            drop(lock);
+            return Err(CliError::RevisionConflict {
+                expected,
+                actual: state.revision,
+            });
+        }
+    }
+    let Some((event_kind, event_payload)) = mutator(&mut state)? else {
+        drop(lock);
+        return Ok(MaybeMutation::Unchanged(state));
+    };
+    state.revision = state.revision.saturating_add(1);
+    state.events_cursor = state.events_cursor.saturating_add(1);
+    let event = Event::new(state.events_cursor, event_kind, event_payload);
+    append_event(&paths.events(), &event)?;
+    let serialized = serde_json::to_vec_pretty(&state)?;
+    atomic_write(&state_path, &serialized)?;
+    drop(lock);
+    Ok(MaybeMutation::Mutated(Mutation {
+        new_revision: state.revision,
+        event,
+        state,
+    }))
+}
+
 /// Write a fresh state for `codex1 init`. Requires the mission directory
 /// to exist. Fails if STATE.json already exists (init is idempotent but
 /// refuses to clobber a live mission).
 pub fn init_write(paths: &MissionPaths, state: &MissionState) -> Result<(), CliError> {
     ensure_mission_write_safe(paths)?;
+    ensure_artifact_file_write_safe(paths, &paths.state_lock(), "STATE.json.lock")?;
     if paths.state().is_file() {
         return Err(CliError::StateCorrupt {
             message: format!(
@@ -194,6 +268,7 @@ pub struct Mutation {
 }
 
 fn acquire_shared_lock(paths: &MissionPaths) -> Result<File, CliError> {
+    ensure_artifact_file_write_safe(paths, &paths.state_lock(), "STATE.json.lock")?;
     let lock = OpenOptions::new()
         .create(true)
         .truncate(false)
@@ -205,6 +280,7 @@ fn acquire_shared_lock(paths: &MissionPaths) -> Result<File, CliError> {
 }
 
 fn acquire_exclusive_lock(paths: &MissionPaths) -> Result<File, CliError> {
+    ensure_artifact_file_write_safe(paths, &paths.state_lock(), "STATE.json.lock")?;
     let lock = OpenOptions::new()
         .create(true)
         .truncate(false)

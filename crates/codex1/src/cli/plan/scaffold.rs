@@ -48,6 +48,7 @@ pub fn run(level_raw: String, ctx: &Ctx) -> CliResult<()> {
     }
 
     // Idempotently ensure specs/reviews dirs exist (normally created by init).
+    crate::core::paths::ensure_mission_write_safe(&paths)?;
     std::fs::create_dir_all(paths.specs_dir())?;
     std::fs::create_dir_all(paths.reviews_dir())?;
 

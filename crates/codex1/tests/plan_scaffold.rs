@@ -61,7 +61,9 @@ review_expectations:
   - None.
 known_risks:
   - None.
-resolved_questions: []
+resolved_questions:
+  - question: Is this a planning fixture?
+    answer: Yes.
 ---
 
 # Outcome

@@ -293,6 +293,207 @@ fn late_dirty_review_is_audit_only_and_does_not_block() {
     assert_ne!(status["data"]["next_action"]["kind"], "repair");
 }
 
+#[test]
+fn late_dirty_review_does_not_overwrite_current_findings_artifact() {
+    let seeded = Seeded::with_targets(&["T2"]);
+    run_ok(
+        seeded.path(),
+        &["review", "start", "T5", "--mission", MISSION],
+    );
+    let accepted = seeded.mission_dir.join("accepted.md");
+    fs::write(&accepted, "# accepted current finding\n").unwrap();
+    run_ok(
+        seeded.path(),
+        &[
+            "review",
+            "record",
+            "T5",
+            "--findings-file",
+            accepted.to_str().unwrap(),
+            "--mission",
+            MISSION,
+        ],
+    );
+    let stored = fs::read_to_string(seeded.review_file()).unwrap();
+    assert!(stored.contains("accepted current"));
+
+    let late = seeded.mission_dir.join("late.md");
+    fs::write(&late, "# late audit-only finding\n").unwrap();
+    let out = run_ok(
+        seeded.path(),
+        &[
+            "review",
+            "record",
+            "T5",
+            "--findings-file",
+            late.to_str().unwrap(),
+            "--mission",
+            MISSION,
+        ],
+    );
+    assert_eq!(out["data"]["category"], "late_same_boundary");
+    let stored = fs::read_to_string(seeded.review_file()).unwrap();
+    assert!(stored.contains("accepted current"), "{stored}");
+    assert!(!stored.contains("late audit-only"), "{stored}");
+}
+
+#[test]
+fn racing_dirty_reviews_report_locked_category_and_keep_current_artifact() {
+    use std::sync::Arc;
+    use std::thread;
+
+    let seeded = Seeded::with_targets(&["T2"]);
+    run_ok(
+        seeded.path(),
+        &["review", "start", "T5", "--mission", MISSION],
+    );
+    let first = seeded.mission_dir.join("first.md");
+    let second = seeded.mission_dir.join("second.md");
+    fs::write(&first, "# first current candidate\n").unwrap();
+    fs::write(&second, "# second current candidate\n").unwrap();
+
+    let root = Arc::new(seeded.path().to_path_buf());
+    let first_arg = first.to_string_lossy().to_string();
+    let second_arg = second.to_string_lossy().to_string();
+    let h1_root = root.clone();
+    let h1 = thread::spawn(move || {
+        run_ok(
+            &h1_root,
+            &[
+                "review",
+                "record",
+                "T5",
+                "--findings-file",
+                &first_arg,
+                "--mission",
+                MISSION,
+            ],
+        )
+    });
+    let h2_root = root.clone();
+    let h2 = thread::spawn(move || {
+        run_ok(
+            &h2_root,
+            &[
+                "review",
+                "record",
+                "T5",
+                "--findings-file",
+                &second_arg,
+                "--mission",
+                MISSION,
+            ],
+        )
+    });
+
+    let out1 = h1.join().unwrap();
+    let out2 = h2.join().unwrap();
+    let categories = [
+        out1["data"]["category"].clone(),
+        out2["data"]["category"].clone(),
+    ];
+    assert_eq!(
+        categories
+            .iter()
+            .filter(|c| c.as_str() == Some("accepted_current"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        categories
+            .iter()
+            .filter(|c| c.as_str() == Some("late_same_boundary"))
+            .count(),
+        1
+    );
+
+    let stored = fs::read_to_string(seeded.review_file()).unwrap();
+    let stored_markers = [
+        stored.contains("first current candidate"),
+        stored.contains("second current candidate"),
+    ];
+    assert_eq!(
+        stored_markers.iter().filter(|present| **present).count(),
+        1,
+        "exactly one current artifact body should survive: {stored}"
+    );
+
+    let events = fs::read_to_string(seeded.mission_dir.join("EVENTS.jsonl")).unwrap();
+    let event_categories: Vec<String> = events
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .filter(|event| event["kind"] == "review.recorded.dirty")
+        .filter_map(|event| event["payload"]["category"].as_str().map(str::to_string))
+        .collect();
+    assert!(
+        event_categories
+            .iter()
+            .any(|category| category == "accepted_current"),
+        "events should include the accepted current record: {event_categories:?}"
+    );
+    assert!(
+        event_categories
+            .iter()
+            .any(|category| category == "late_same_boundary"),
+        "events should include the locked late category: {event_categories:?}"
+    );
+}
+
+#[test]
+fn dirty_review_repair_target_can_be_started_and_rereviewed() {
+    let seeded = Seeded::with_targets(&["T2"]);
+    run_ok(
+        seeded.path(),
+        &["review", "start", "T5", "--mission", MISSION],
+    );
+    let findings = seeded.mission_dir.join("findings.md");
+    fs::write(&findings, "# Findings\nP1: fix T2\n").unwrap();
+    run_ok(
+        seeded.path(),
+        &[
+            "review",
+            "record",
+            "T5",
+            "--findings-file",
+            findings.to_str().unwrap(),
+            "--mission",
+            MISSION,
+        ],
+    );
+    let status = run_ok(seeded.path(), &["status", "--mission", MISSION]);
+    assert_eq!(status["data"]["next_action"]["kind"], "repair");
+
+    let started = run_ok(
+        seeded.path(),
+        &["task", "start", "T2", "--mission", MISSION],
+    );
+    assert_eq!(started["data"]["status"], "in_progress");
+    let proof = seeded.mission_dir.join("specs/T2/PROOF.md");
+    fs::write(&proof, "# repaired proof\n").unwrap();
+    run_ok(
+        seeded.path(),
+        &[
+            "task",
+            "finish",
+            "T2",
+            "--proof",
+            "specs/T2/PROOF.md",
+            "--mission",
+            MISSION,
+        ],
+    );
+    run_ok(
+        seeded.path(),
+        &["review", "start", "T5", "--mission", MISSION],
+    );
+    let clean = run_ok(
+        seeded.path(),
+        &["review", "record", "T5", "--clean", "--mission", MISSION],
+    );
+    assert_eq!(clean["data"]["verdict"], "clean");
+}
+
 #[cfg(unix)]
 #[test]
 fn review_record_refuses_symlinked_reviews_directory() {

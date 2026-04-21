@@ -108,7 +108,8 @@ non_goals:
 constraints:
   - four
 
-definitions: {}
+definitions:
+  task: A planned unit of work.
 
 quality_bar:
   - five
@@ -122,7 +123,9 @@ review_expectations:
 known_risks:
   - eight
 
-resolved_questions: []
+resolved_questions:
+  - question: Is this a task fixture?
+    answer: Yes.
 ---
 
 # OUTCOME
@@ -436,6 +439,49 @@ mission_close: { criteria: [] }
     let out = run(tmp.path(), &["task", "next", "--mission", "demo"]);
     let json = parse_json(&out);
     assert_ne!(json["data"]["next"]["kind"], "run_review");
+}
+
+#[test]
+fn next_does_not_surface_work_when_dependency_is_superseded() {
+    let plan = r"mission_id: demo
+
+planning_level: { requested: medium, effective: medium }
+outcome_interpretation: { summary: demo }
+architecture: { summary: demo, key_decisions: [] }
+planning_process: { evidence: [] }
+
+tasks:
+  - id: T1
+    title: Retired root
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+  - id: T2
+    title: Live dependent
+    kind: code
+    depends_on: [T1]
+    spec: specs/T2/SPEC.md
+
+risks: []
+mission_close: { criteria: [] }
+";
+    let (tmp, dir) = seed_mission(plan, &[]);
+    let mut state = read_state(&dir);
+    state["tasks"] = json!({
+        "T1": {
+            "id": "T1",
+            "status": "superseded",
+            "superseded_by": "replan-1"
+        }
+    });
+    write(
+        &dir.join("STATE.json"),
+        &serde_json::to_string_pretty(&state).unwrap(),
+    );
+
+    let out = run(tmp.path(), &["task", "next", "--mission", "demo"]);
+    let json = parse_json(&out);
+    assert_ne!(json["data"]["next"]["task_id"], "T2");
 }
 
 #[test]
@@ -944,4 +990,46 @@ fn start_idempotent_branch_still_enforces_expect_revision() {
     assert_eq!(json["code"], "REVISION_CONFLICT");
     assert_eq!(json["context"]["expected"], 99);
     assert_eq!(json["context"]["actual"], 1);
+}
+
+#[test]
+fn concurrent_task_start_is_idempotent_under_lock() {
+    use std::sync::Arc;
+    use std::thread;
+
+    let (tmp, dir) = seed_mission(PLAN_LINEAR_NO_REVIEW, &[]);
+    let root = Arc::new(tmp.path().to_path_buf());
+
+    let h1_root = root.clone();
+    let h1 = thread::spawn(move || run(&h1_root, &["task", "start", "T1", "--mission", "demo"]));
+    let h2_root = root.clone();
+    let h2 = thread::spawn(move || run(&h2_root, &["task", "start", "T1", "--mission", "demo"]));
+
+    let o1 = h1.join().unwrap();
+    let o2 = h2.join().unwrap();
+    assert!(
+        o1.status.success() && o2.status.success(),
+        "both starts should succeed idempotently:\n{}\n---\n{}",
+        String::from_utf8_lossy(&o1.stdout),
+        String::from_utf8_lossy(&o2.stdout)
+    );
+    let j1 = parse_json(&o1);
+    let j2 = parse_json(&o2);
+    let idempotent_count = [&j1, &j2]
+        .iter()
+        .filter(|j| j["data"]["idempotent"] == json!(true))
+        .count();
+    assert_eq!(
+        idempotent_count, 1,
+        "exactly one racing start should become the idempotent no-op"
+    );
+
+    let state = read_state(&dir);
+    assert_eq!(state["revision"], 1);
+    assert_eq!(state["tasks"]["T1"]["status"], "in_progress");
+    let task_started_events = events(&dir)
+        .into_iter()
+        .filter(|event| event["kind"] == "task.started")
+        .count();
+    assert_eq!(task_started_events, 1);
 }

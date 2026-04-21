@@ -151,6 +151,50 @@ fn init_rejects_symlinked_mission_directory() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn mutation_rejects_symlinked_events_file() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    let outside = tmp.path().join("outside-events.jsonl");
+    fs::remove_file(mission_dir.join("EVENTS.jsonl")).unwrap();
+    symlink(&outside, mission_dir.join("EVENTS.jsonl")).unwrap();
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["loop", "activate", "--mode", "execute", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    assert!(!outside.exists(), "must not append through EVENTS symlink");
+}
+
+#[cfg(unix)]
+#[test]
+fn status_rejects_symlinked_state_lock() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    let outside = tmp.path().join("outside-lock");
+    fs::remove_file(mission_dir.join("STATE.json.lock")).ok();
+    symlink(&outside, mission_dir.join("STATE.json.lock")).unwrap();
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["status", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    assert!(!outside.exists(), "must not create lock through symlink");
+}
+
 #[test]
 fn status_resolves_existing_mission_and_reports_stop_allowed() {
     let tmp = TempDir::new().unwrap();
@@ -433,6 +477,13 @@ fn concurrent_loop_activate_serializes_via_fs2_lock() {
 fn corrupt_plan_yaml_returns_plan_invalid_with_hint() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = init_demo(&tmp, "demo");
+    let state_path = mission_dir.join("STATE.json");
+    let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["outcome"] = serde_json::json!({
+        "ratified": true,
+        "ratified_at": "2026-04-21T00:00:00Z"
+    });
+    fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
     // Overwrite the scaffolded PLAN.yaml with invalid YAML.
     fs::write(
         mission_dir.join("PLAN.yaml"),

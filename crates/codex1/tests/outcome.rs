@@ -198,6 +198,36 @@ fn check_requires_definitions_and_resolved_questions() {
 }
 
 #[test]
+fn check_rejects_empty_definitions_and_resolved_questions() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    seed_valid_outcome(&mission_dir, "demo");
+    let mut raw = fs::read_to_string(mission_dir.join("OUTCOME.md")).unwrap();
+    raw = raw
+        .replace(
+            "\ndefinitions:\n  mission: A visible Codex1 mission under PLANS/<mission-id>.\n",
+            "\ndefinitions: {}\n",
+        )
+        .replace("\nresolved_questions:\n  - question: Should status ratification rewrite the file?\n    answer: Yes, atomically, only the status line inside the frontmatter.\n", "\nresolved_questions: []\n");
+    fs::write(mission_dir.join("OUTCOME.md"), raw).unwrap();
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "check", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_json(&output);
+    let missing = json["context"]["missing_fields"].as_array().unwrap();
+    assert!(missing
+        .iter()
+        .any(|v| v.as_str().unwrap_or("").contains("definitions")));
+    assert!(missing
+        .iter()
+        .any(|v| v.as_str().unwrap_or("").contains("resolved_questions")));
+}
+
+#[test]
 fn check_flags_boilerplate_placeholders() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = init_demo(&tmp, "demo");
@@ -224,7 +254,8 @@ non_goals: []
 
 constraints: []
 
-definitions: {}
+definitions:
+  boilerplate: Placeholder-like text rejected by outcome validation.
 
 quality_bar:
   - TBD
@@ -235,7 +266,9 @@ review_expectations: []
 
 known_risks: []
 
-resolved_questions: []
+resolved_questions:
+  - question: Is this invalid due to placeholders?
+    answer: Yes.
 ---
 
 # OUTCOME
@@ -451,7 +484,8 @@ non_goals:
   - Do not reformat the body.
 constraints:
   - Preserve bytes outside the frontmatter status line.
-definitions: {}
+definitions:
+  fence: Closing frontmatter delimiter.
 quality_bar:
   - Ratify remains idempotent at the file level.
 proof_expectations:
@@ -460,7 +494,9 @@ review_expectations:
   - The main thread reviews outcome validation before plan scaffolding.
 known_risks:
   - Forgetting the trailing newline on the closing fence.
-resolved_questions: []
+resolved_questions:
+  - question: Does this fixture omit the blank line after the closing fence?
+    answer: Yes.
 ---
 # OUTCOME
 Body paragraph with no leading blank line.

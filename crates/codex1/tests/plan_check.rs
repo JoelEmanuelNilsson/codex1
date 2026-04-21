@@ -23,6 +23,13 @@ fn init_demo(tmp: &TempDir, mission: &str) -> PathBuf {
         .args(["init", "--mission", mission])
         .assert()
         .success();
+    let state_path = mission_dir.join("STATE.json");
+    let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["outcome"] = serde_json::json!({
+        "ratified": true,
+        "ratified_at": "2026-04-21T00:00:00Z"
+    });
+    fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
     mission_dir
 }
 
@@ -234,6 +241,103 @@ mission_close:
     assert_eq!(json["code"], "PLAN_INVALID");
     let message = json["message"].as_str().unwrap();
     assert!(message.contains("does not depend on"), "{message}");
+}
+
+#[test]
+fn plan_check_requires_ratified_outcome() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    for task in ["T1", "T2", "T3", "T4"] {
+        write_spec(&mission_dir, task, &format!("# {task} SPEC\n"));
+    }
+    write_plan(&mission_dir, &valid_4_task_yaml());
+    let state_path = mission_dir.join("STATE.json");
+    let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["outcome"] = serde_json::json!({ "ratified": false });
+    fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
+
+    let output = run_check(&tmp, "demo", &[]);
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "OUTCOME_NOT_RATIFIED");
+    let state = read_state(&mission_dir);
+    assert_ne!(state["plan"]["locked"], true);
+}
+
+#[test]
+fn plan_check_rejects_live_task_depending_on_superseded_task() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    for task in ["T1", "T2"] {
+        write_spec(&mission_dir, task, &format!("# {task} SPEC\n"));
+    }
+    write_plan(
+        &mission_dir,
+        r#"mission_id: demo
+
+planning_level:
+  requested: light
+  effective: light
+
+outcome_interpretation:
+  summary: "Superseded dependency regression."
+
+architecture:
+  summary: "One superseded task and one live dependent."
+  key_decisions:
+    - "Keep the repro minimal."
+
+planning_process:
+  evidence:
+    - kind: direct_reasoning
+      summary: "Regression."
+
+tasks:
+  - id: T1
+    title: "Old work"
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+  - id: T2
+    title: "Live dependent"
+    kind: code
+    depends_on: [T1]
+    spec: specs/T2/SPEC.md
+
+risks:
+  - risk: "Live tasks could run against retired work."
+    mitigation: "Plan validation rejects live edges from superseded tasks."
+
+mission_close:
+  criteria:
+    - "No live task depends on superseded work."
+"#,
+    );
+    let state_path = mission_dir.join("STATE.json");
+    let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["tasks"] = serde_json::json!({
+        "T1": {
+            "id": "T1",
+            "status": "superseded",
+            "superseded_by": "replan-1"
+        }
+    });
+    fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
+
+    let output = run_check(&tmp, "demo", &[]);
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    assert!(
+        json["message"]
+            .as_str()
+            .unwrap()
+            .contains("depends on superseded task"),
+        "unexpected message: {}",
+        json["message"]
+    );
+    let state = read_state(&mission_dir);
+    assert_ne!(state["plan"]["locked"], true);
 }
 
 #[test]

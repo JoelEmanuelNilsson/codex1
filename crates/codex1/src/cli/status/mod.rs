@@ -12,6 +12,7 @@ mod project;
 
 use serde_json::json;
 
+use crate::cli::close::check::ReadinessReport;
 use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::{CliError, CliResult};
@@ -23,7 +24,8 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
         Ok(paths) => {
             let state = state::load(&paths)?;
             let tasks = next_action::load_plan_tasks(&paths).unwrap_or_default();
-            let data = project::build(&state, &tasks);
+            let close_report = ReadinessReport::from_state_and_paths(&state, &paths);
+            let data = project::build(&state, &tasks, close_report.ready);
             let env = JsonOk::new(Some(state.mission_id.clone()), Some(state.revision), data);
             println!("{}", env.to_pretty());
             Ok(())

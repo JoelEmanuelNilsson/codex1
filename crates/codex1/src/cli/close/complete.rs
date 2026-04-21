@@ -20,7 +20,7 @@ use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::{CliError, CliResult};
 use crate::core::mission::resolve_mission;
-use crate::core::paths::{ensure_artifact_parent_write_safe, MissionPaths};
+use crate::core::paths::{ensure_artifact_file_write_safe, MissionPaths};
 use crate::state::fs_atomic::atomic_write;
 use crate::state::schema::{LoopMode, LoopState, Phase};
 use crate::state::{self};
@@ -36,7 +36,7 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
     if let Some(closed_at) = &current.close.terminal_at {
         if !paths.closeout().is_file() && !ctx.dry_run {
             let closeout_body = closeout::render(&current, &paths);
-            ensure_artifact_parent_write_safe(&paths, &paths.closeout())?;
+            ensure_closeout_writable(&paths)?;
             atomic_write(&paths.closeout(), closeout_body.as_bytes())?;
             emit_success(
                 &current.mission_id,
@@ -74,6 +74,18 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
         return Ok(());
     }
 
+    let mut terminal_preview = current.clone();
+    terminal_preview.close.terminal_at = Some(now.clone());
+    terminal_preview.phase = Phase::Terminal;
+    terminal_preview.loop_ = LoopState {
+        active: false,
+        paused: false,
+        mode: LoopMode::None,
+    };
+    let closeout_body = closeout::render(&terminal_preview, &paths);
+    ensure_closeout_writable(&paths)?;
+    atomic_write(&paths.closeout(), closeout_body.as_bytes())?;
+
     let mutation = state::mutate(
         &paths,
         ctx.expect_revision,
@@ -91,10 +103,6 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
         },
     )?;
 
-    let closeout_body = closeout::render(&mutation.state, &paths);
-    ensure_artifact_parent_write_safe(&paths, &paths.closeout())?;
-    atomic_write(&paths.closeout(), closeout_body.as_bytes())?;
-
     emit_success(
         &mutation.state.mission_id,
         Some(mutation.new_revision),
@@ -102,6 +110,17 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
         mutation.state.close.terminal_at.as_deref().unwrap_or(&now),
         /*dry_run=*/ false,
     );
+    Ok(())
+}
+
+fn ensure_closeout_writable(paths: &MissionPaths) -> CliResult<()> {
+    let closeout = paths.closeout();
+    if closeout.exists() && !closeout.is_file() {
+        return Err(CliError::ParseError {
+            message: format!("CLOSEOUT.md target is not a file: {}", closeout.display()),
+        });
+    }
+    ensure_artifact_file_write_safe(paths, &closeout, "CLOSEOUT.md")?;
     Ok(())
 }
 

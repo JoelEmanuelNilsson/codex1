@@ -15,10 +15,9 @@ use super::next_action::{
 };
 
 /// Build the full `data` body.
-pub fn build(state: &MissionState, tasks: &[PlanTask]) -> Value {
+pub fn build(state: &MissionState, tasks: &[PlanTask], close_ready: bool) -> Value {
     let verdict = readiness::derive_verdict(state);
-    let close_ready = readiness::close_ready(state);
-    let stop = stop_projection(state, verdict);
+    let stop = stop_projection(state, verdict, close_ready);
 
     // When the plan is not locked (fresh mission, or post-replan
     // `replan record` that cleared the lock), wave / review derivation
@@ -40,6 +39,7 @@ pub fn build(state: &MissionState, tasks: &[PlanTask]) -> Value {
     let next_action = derive_next_action(
         state,
         verdict,
+        close_ready,
         wave.as_ref(),
         &reviews_ready,
         &repair_targets,
@@ -82,8 +82,13 @@ pub fn build(state: &MissionState, tasks: &[PlanTask]) -> Value {
 /// accurate after mission close. When the loop is active-and-unpaused
 /// but the verdict already allows stop (NeedsUser, MissionCloseReviewPassed),
 /// we surface `idle` so the message does not contradict `allow=true`.
-fn stop_projection(state: &MissionState, verdict: Verdict) -> Value {
-    let allow = readiness::stop_allowed(state);
+fn stop_projection(state: &MissionState, verdict: Verdict, close_ready: bool) -> Value {
+    let base_allow = readiness::stop_allowed(state);
+    let active_close_blocked = state.loop_.active
+        && !state.loop_.paused
+        && matches!(verdict, Verdict::MissionCloseReviewPassed)
+        && !close_ready;
+    let allow = base_allow && !active_close_blocked;
     let (reason, message) = if matches!(verdict, Verdict::TerminalComplete) {
         ("terminal", "Mission is terminal; stop is allowed.")
     } else if !state.loop_.active {
@@ -118,6 +123,7 @@ fn stop_projection(state: &MissionState, verdict: Verdict) -> Value {
 fn derive_next_action(
     state: &MissionState,
     verdict: Verdict,
+    close_ready: bool,
     wave: Option<&ReadyWave>,
     reviews_ready: &[(String, Vec<String>)],
     repair_targets: &[String],
@@ -178,10 +184,16 @@ fn derive_next_action(
             });
         }
         Verdict::MissionCloseReviewPassed => {
+            if close_ready {
+                return json!({
+                    "kind": "close",
+                    "command": "codex1 close complete",
+                    "hint": "Mission-close review passed; finalize close.",
+                });
+            }
             return json!({
-                "kind": "close",
-                "command": "codex1 close complete",
-                "hint": "Mission-close review passed; finalize close.",
+                "kind": "blocked",
+                "reason": "Mission-close review passed, but close check has blockers.",
             });
         }
         _ => {}

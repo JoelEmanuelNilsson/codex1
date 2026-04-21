@@ -160,13 +160,8 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
         });
     }
 
-    // If a findings file was provided, copy it into PLANS/<mission>/reviews/<id>.md
-    // BEFORE the state mutation closure so the mutation remains a pure
-    // state update. Idempotent: skip copy if source == destination.
-    let stored_findings_rel = if let Some(src) = findings_path {
-        let dest = paths.review_file_for(inputs.task_id);
-        copy_if_different(&paths, src, &dest)?;
-        relative_from_repo(&paths, &dest)
+    let findings_body = if let Some(src) = findings_path {
+        Some(std::fs::read(src)?)
     } else {
         None
     };
@@ -174,7 +169,7 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
     let review_task_id = inputs.task_id.to_string();
     let targets_for_closure = targets.clone();
     let reviewers_for_closure = reviewers.clone();
-    let findings_for_closure = stored_findings_rel.clone();
+    let findings_body_for_closure = findings_body.clone();
 
     let event_kind = if matches!(verdict, ReviewVerdict::Clean) {
         "review.recorded.clean"
@@ -182,38 +177,44 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
         "review.recorded.dirty"
     };
 
-    let mutation = state::mutate(
-        &paths,
-        ctx.expect_revision,
-        event_kind,
-        json!({
-            "review_task_id": review_task_id,
-            "verdict": verdict_str(&verdict),
-            "reviewers": reviewers_for_closure,
-            "targets": targets_for_closure,
-            "category": category_str(peek_category.clone()),
-        }),
-        |state| {
-            // Re-check `plan.locked` under the exclusive lock (skipped
-            // on terminal states so terminal-contamination classifies
-            // through `apply_record` first). Closes the TOCTOU between
-            // the pre-mutate shared-lock load and this closure; see
-            // round-2 correctness P1-1.
-            if state.close.terminal_at.is_none() {
-                state::require_plan_locked(state)?;
-            }
-            apply_record(
-                state,
-                &review_task_id,
-                &targets_for_closure,
-                &verdict,
-                &reviewers_for_closure,
-                findings_for_closure.clone(),
-            )
-        },
-    )?;
+    let mutation = state::mutate_dynamic(&paths, ctx.expect_revision, |state| {
+        if state.close.terminal_at.is_none() {
+            state::require_plan_locked(state)?;
+        }
+        let applied = apply_record(
+            state,
+            &review_task_id,
+            &targets_for_closure,
+            &verdict,
+            &reviewers_for_closure,
+            &paths,
+            findings_body_for_closure.as_deref(),
+        )?;
+        Ok((
+            event_kind.to_string(),
+            json!({
+                "review_task_id": review_task_id,
+                "verdict": verdict_str(&verdict),
+                "reviewers": reviewers_for_closure,
+                "targets": targets_for_closure,
+                "category": category_str(applied.category.clone()),
+                "findings_file": applied.findings_rel,
+            }),
+        ))
+    })?;
 
-    let category = peek_category;
+    let category = mutation
+        .event
+        .payload
+        .get("category")
+        .and_then(|v| v.as_str())
+        .map_or(ReviewRecordCategory::AcceptedCurrent, category_from_str);
+    let stored_findings_rel = mutation
+        .event
+        .payload
+        .get("findings_file")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
     let replan_triggered = mutation.state.replan.triggered;
     let warnings = match category {
         ReviewRecordCategory::LateSameBoundary => {
@@ -239,6 +240,15 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
     Ok(())
 }
 
+fn category_from_str(raw: &str) -> ReviewRecordCategory {
+    match raw {
+        "late_same_boundary" => ReviewRecordCategory::LateSameBoundary,
+        "stale_superseded" => ReviewRecordCategory::StaleSuperseded,
+        "contaminated_after_terminal" => ReviewRecordCategory::ContaminatedAfterTerminal,
+        _ => ReviewRecordCategory::AcceptedCurrent,
+    }
+}
+
 /// Mutate the state inside `state::mutate`. Classification is re-computed
 /// against the fresh state read under the lock (not the peek).
 fn apply_record(
@@ -247,8 +257,9 @@ fn apply_record(
     targets: &[String],
     verdict: &ReviewVerdict,
     reviewers: &[String],
-    findings_rel: Option<String>,
-) -> Result<(), CliError> {
+    paths: &MissionPaths,
+    findings_body: Option<&[u8]>,
+) -> Result<AppliedRecord, CliError> {
     // Re-classify under the lock — the peek may be stale if another writer
     // mutated between peek and lock acquisition.
     let category = classify(&ClassifyInput {
@@ -286,11 +297,24 @@ fn apply_record(
         .format(&Rfc3339)
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string());
 
+    let findings_rel = if matches!(category, ReviewRecordCategory::AcceptedCurrent) {
+        if let Some(body) = findings_body {
+            let dest = paths.review_file_for(review_task_id);
+            ensure_artifact_parent_write_safe(paths, &dest)?;
+            atomic_write(&dest, body)?;
+            relative_from_repo(paths, &dest)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     let record = ReviewRecord {
         task_id: review_task_id.to_string(),
         verdict: verdict.clone(),
         reviewers: reviewers.to_vec(),
-        findings_file: findings_rel,
+        findings_file: findings_rel.clone(),
         category: category.clone(),
         recorded_at,
         boundary_revision,
@@ -307,7 +331,15 @@ fn apply_record(
             ReviewVerdict::Pending => {}
         }
     }
-    Ok(())
+    Ok(AppliedRecord {
+        category,
+        findings_rel,
+    })
+}
+
+struct AppliedRecord {
+    category: ReviewRecordCategory,
+    findings_rel: Option<String>,
 }
 
 fn apply_clean(state: &mut MissionState, review_task_id: &str, targets: &[String]) {
@@ -377,25 +409,6 @@ fn parse_reviewers(csv: Option<&str>) -> Vec<String> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect()
-}
-
-fn copy_if_different(paths: &MissionPaths, src: &Path, dest: &Path) -> Result<(), CliError> {
-    if paths_equal(src, dest) {
-        return Ok(());
-    }
-    ensure_artifact_parent_write_safe(paths, dest)?;
-    let data = std::fs::read(src)?;
-    atomic_write(dest, &data)?;
-    Ok(())
-}
-
-fn paths_equal(a: &Path, b: &Path) -> bool {
-    let ra = std::fs::canonicalize(a).ok();
-    let rb = std::fs::canonicalize(b).ok();
-    match (ra, rb) {
-        (Some(ra), Some(rb)) => ra == rb,
-        _ => a == b,
-    }
 }
 
 fn relative_from_repo(paths: &MissionPaths, abs: &Path) -> Option<String> {

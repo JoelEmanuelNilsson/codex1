@@ -41,7 +41,7 @@ fi
 # alternative-operator treats literal `false` as "missing" and would flip a
 # real block into an allow. We handle the null/missing case explicitly below.
 if command -v jq >/dev/null 2>&1; then
-  ok="$(printf '%s' "$status_json" | jq -r '.ok // empty' 2>/dev/null || true)"
+  ok="$(printf '%s' "$status_json" | jq -r '.ok' 2>/dev/null || true)"
   code="$(printf '%s' "$status_json" | jq -r '.code // empty' 2>/dev/null || true)"
   ambiguous="$(printf '%s' "$status_json" | jq -r '.context.ambiguous // false' 2>/dev/null || echo false)"
   if [ "$ok" = "false" ] && [ "$code" = "MISSION_NOT_FOUND" ] && [ "$ambiguous" = "true" ]; then
@@ -53,7 +53,12 @@ if command -v jq >/dev/null 2>&1; then
   message="$(printf '%s' "$status_json" | jq -r '.data.stop.message // ""' 2>/dev/null || echo "")"
 else
   # Rough fallback parsing; jq is strongly preferred.
-  allow="$(printf '%s' "$status_json" | grep -o '"allow"[[:space:]]*:[[:space:]]*\(true\|false\)' | head -n1 | awk -F: '{print $2}' | tr -d ' ')"
+  if printf '%s' "$status_json" | grep -q '"code"[[:space:]]*:[[:space:]]*"MISSION_NOT_FOUND"' \
+    && printf '%s' "$status_json" | grep -q '"ambiguous"[[:space:]]*:[[:space:]]*true'; then
+    echo "ralph-stop-hook: ambiguous Codex1 mission; set CODEX1_MISSION or CODEX1_REPO_ROOT" >&2
+    exit 2
+  fi
+  allow="$(printf '%s' "$status_json" | grep -o '"allow"[[:space:]]*:[[:space:]]*\(true\|false\)' | head -n1 | awk -F: '{print $2}' | tr -d ' ' || true)"
   reason="unknown"
   message="jq not installed - degraded parse"
 fi

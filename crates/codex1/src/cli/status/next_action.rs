@@ -71,7 +71,8 @@ pub struct ReadyWave {
 }
 
 /// Derive the next ready wave. A task is "ready" when:
-/// - every `depends_on` is complete or superseded in STATE.json, and
+/// - every `depends_on` is complete in STATE.json (or, for review
+///   tasks only, awaiting review), and
 /// - the task's own status is not Complete/Superseded/InProgress.
 ///
 /// Waves are numbered by topological depth from the root; the first

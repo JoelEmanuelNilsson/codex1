@@ -57,7 +57,7 @@ fn run_hook_with_path(prepend: Option<PathBuf>) -> Output {
     // case deterministically.
     let path = build_path(prepend.as_deref());
 
-    let mut cmd = Command::new("bash");
+    let mut cmd = Command::new("/bin/bash");
     cmd.arg(&hook);
     // Close stdin, capture stdout/stderr so tests can inspect them.
     cmd.stdin(std::process::Stdio::null());
@@ -66,6 +66,24 @@ fn run_hook_with_path(prepend: Option<PathBuf>) -> Output {
     cmd.env_clear();
     cmd.env("PATH", path);
     // Preserve HOME so jq/bash don't complain on some shells.
+    if let Ok(home) = std::env::var("HOME") {
+        cmd.env("HOME", home);
+    }
+
+    cmd.output().expect("run hook")
+}
+
+fn run_hook_with_exact_path(path: OsString) -> Output {
+    let hook = hook_script_path();
+    assert!(hook.is_file(), "hook script missing at {}", hook.display());
+
+    let mut cmd = Command::new("/bin/bash");
+    cmd.arg(&hook);
+    cmd.stdin(std::process::Stdio::null());
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+    cmd.env_clear();
+    cmd.env("PATH", path);
     if let Ok(home) = std::env::var("HOME") {
         cmd.env("HOME", home);
     }
@@ -187,6 +205,55 @@ fn malformed_json_defaults_to_allow() {
         Some(0),
         "missing stop.allow should default to allowing Stop; stderr: {}",
         stderr_str(&out)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn ambiguous_mission_blocks_stop_with_jq_parser() {
+    if !bash_available() {
+        eprintln!("skipping: bash not available");
+        return;
+    }
+    let out = run_hook_with_mocked_codex1(
+        r#"{"ok":false,"code":"MISSION_NOT_FOUND","message":"ambiguous","context":{"ambiguous":true}}"#,
+    );
+    assert_eq!(out.status.code(), Some(2));
+    let err = stderr_str(&out);
+    assert!(
+        err.contains("ambiguous Codex1 mission"),
+        "stderr should mention ambiguity; got: {err}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn ambiguous_mission_blocks_stop_without_jq_parser() {
+    use std::os::unix::fs::symlink;
+
+    if !bash_available() {
+        eprintln!("skipping: bash not available");
+        return;
+    }
+    let tmp = TempDir::new().expect("tempdir");
+    let escaped = r#"{"ok":false,"code":"MISSION_NOT_FOUND","context":{"ambiguous":true}}"#
+        .replace('\'', "'\"'\"'");
+    write_fake_codex1(&tmp, &format!("#!/bin/sh\nprintf '%s\\n' '{}'\n", escaped));
+    for (name, path) in [
+        ("cat", "/bin/cat"),
+        ("grep", "/usr/bin/grep"),
+        ("head", "/usr/bin/head"),
+        ("awk", "/usr/bin/awk"),
+        ("tr", "/usr/bin/tr"),
+    ] {
+        symlink(path, tmp.path().join(name)).expect("symlink fallback tool");
+    }
+    let out = run_hook_with_exact_path(tmp.path().as_os_str().to_os_string());
+    assert_eq!(out.status.code(), Some(2));
+    let err = stderr_str(&out);
+    assert!(
+        err.contains("ambiguous Codex1 mission"),
+        "stderr should mention ambiguity in fallback mode; got: {err}"
     );
 }
 

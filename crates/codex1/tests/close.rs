@@ -874,6 +874,31 @@ fn close_refuses_when_completed_task_proof_file_is_missing() {
 }
 
 #[test]
+fn status_agrees_with_close_check_when_proof_missing_after_passed_review() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    let state = StateBuilder::fresh("demo")
+        .ratified()
+        .plan_locked()
+        .task("T1", "complete")
+        .mission_close_review("passed")
+        .revision(6)
+        .build();
+    write_state(&mission_dir, &state);
+    fs::remove_file(mission_dir.join("specs/T1/PROOF.md")).unwrap();
+
+    let status = cmd()
+        .current_dir(tmp.path())
+        .args(["status", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(status.status.success());
+    let json = parse_stdout(&status);
+    assert_eq!(json["data"]["close_ready"], false);
+    assert_ne!(json["data"]["next_action"]["kind"], "close");
+}
+
+#[test]
 fn concurrent_dirty_with_expect_revision_keeps_successful_artifact() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = init_demo(&tmp, "demo");
@@ -966,6 +991,32 @@ fn complete_expect_revision_mismatch_returns_conflict() {
     assert_eq!(json["code"], "REVISION_CONFLICT");
     assert_eq!(json["context"]["expected"], 1);
     assert_eq!(json["context"]["actual"], 6);
+}
+
+#[test]
+fn complete_refuses_unwritable_closeout_without_terminal_state() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    let state = StateBuilder::fresh("demo")
+        .ratified()
+        .plan_locked()
+        .task("T1", "complete")
+        .mission_close_review("passed")
+        .revision(6)
+        .build();
+    write_state(&mission_dir, &state);
+    fs::create_dir(mission_dir.join("CLOSEOUT.md")).unwrap();
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["close", "complete", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let state = read_state(&mission_dir);
+    assert_eq!(state["phase"], "clarify");
+    assert!(state["close"]["terminal_at"].is_null());
+    assert_eq!(state["revision"], 6);
 }
 
 #[test]
