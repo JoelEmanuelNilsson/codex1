@@ -11,11 +11,13 @@ use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::CliResult;
 use crate::core::mission::resolve_mission;
+use crate::core::paths::ensure_artifact_file_read_safe;
 use crate::state;
 
 pub fn run(ctx: &Ctx) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let state = state::load(&paths)?;
+    ensure_artifact_file_read_safe(&paths, &paths.outcome(), "OUTCOME.md")?;
     let report = validate_outcome(&paths.outcome())?;
 
     if !report.ratifiable {

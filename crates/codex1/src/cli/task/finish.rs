@@ -95,33 +95,42 @@ pub fn run(task_id: &str, proof: &Path, ctx: &Ctx) -> CliResult<()> {
         let finished_at = finished_at.clone();
         let proof_display = proof_display.clone();
         let next_status = next_status.clone();
-        state::mutate(
-            &paths,
-            ctx.expect_revision,
-            "task.finished",
-            json!({
-                "task_id": task_id,
-                "finished_at": finished_at,
-                "proof_path": proof_display,
-                "next_status": next_status_str,
-            }),
-            move |state| {
-                // Re-check `plan.locked` under the exclusive lock to
-                // close the TOCTOU between the pre-mutate shared-lock
-                // load and this closure. See round-2 correctness P1-1.
-                state::require_plan_locked(state)?;
-                let rec = ensure_task_record(state, &task_id);
-                rec.status = next_status;
-                rec.finished_at = Some(finished_at);
-                rec.proof_path = Some(proof_display);
-                Ok(())
-            },
-        )?
+        state::mutate_dynamic_maybe(&paths, ctx.expect_revision, move |state| {
+            // Re-check `plan.locked` under the exclusive lock to
+            // close the TOCTOU between the pre-mutate shared-lock
+            // load and this closure. See round-2 correctness P1-1.
+            state::require_plan_locked(state)?;
+            let rec = ensure_task_record(state, &task_id);
+            if !matches!(rec.status, TaskStatus::InProgress) {
+                return Err(CliError::TaskNotReady {
+                    message: format!(
+                        "Task `{task_id}` has status `{}`; only in_progress tasks can be finished",
+                        status_str(&rec.status)
+                    ),
+                });
+            }
+            rec.status = next_status;
+            rec.finished_at = Some(finished_at.clone());
+            rec.proof_path = Some(proof_display.clone());
+            Ok(Some((
+                "task.finished".to_string(),
+                json!({
+                    "task_id": task_id,
+                    "finished_at": finished_at,
+                    "proof_path": proof_display,
+                    "next_status": next_status_str,
+                }),
+            )))
+        })?
+    };
+    let state_for_env = match mutation {
+        state::MaybeMutation::Mutated(m) => m.state,
+        state::MaybeMutation::Unchanged(s) => s,
     };
 
     let env = JsonOk::new(
-        Some(mutation.state.mission_id.clone()),
-        Some(mutation.new_revision),
+        Some(state_for_env.mission_id.clone()),
+        Some(state_for_env.revision),
         json!({
             "task_id": task_id,
             "status": next_status_str,

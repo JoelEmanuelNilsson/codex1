@@ -16,7 +16,7 @@ use crate::state::{self};
 pub fn run(ctx: &Ctx, task_id: &str) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let state = state::load(&paths)?;
-    let plan_tasks = load_tasks(&paths.plan())?;
+    let plan_tasks = load_tasks(&paths)?;
     let review_task = fetch_review_task(&plan_tasks, task_id)?;
     let targets = review_targets(&review_task)?;
 

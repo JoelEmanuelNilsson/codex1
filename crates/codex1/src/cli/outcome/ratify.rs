@@ -11,14 +11,17 @@ use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::{CliError, CliResult};
 use crate::core::mission::resolve_mission;
-use crate::core::paths::ensure_artifact_parent_write_safe;
+use crate::core::paths::{ensure_artifact_file_read_safe, ensure_artifact_file_write_safe};
 use crate::state::{self, fs_atomic::atomic_write, Phase};
 
 pub fn run(ctx: &Ctx) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let state = state::load(&paths)?;
     state::check_expected_revision(ctx.expect_revision, &state)?;
-    let report = validate_outcome(&paths.outcome())?;
+    let outcome_path = paths.outcome();
+    ensure_artifact_file_read_safe(&paths, &outcome_path, "OUTCOME.md")?;
+    ensure_artifact_file_write_safe(&paths, &outcome_path, "OUTCOME.md")?;
+    let report = validate_outcome(&outcome_path)?;
 
     if !report.ratifiable {
         emit_outcome_incomplete(
@@ -48,7 +51,6 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
         return Ok(());
     }
 
-    let outcome_path = paths.outcome();
     let rewritten_outcome = rewrite_status_to_ratified(&report.frontmatter_raw, &report.body)?;
 
     // Mutate STATE.json first. OUTCOME.md is the auxiliary artifact; if
@@ -73,7 +75,6 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
             Ok(())
         },
     )?;
-    ensure_artifact_parent_write_safe(&paths, &outcome_path)?;
     atomic_write(&outcome_path, rewritten_outcome.as_bytes())?;
 
     let env = JsonOk::new(

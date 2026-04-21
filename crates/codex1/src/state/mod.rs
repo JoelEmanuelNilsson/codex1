@@ -26,8 +26,8 @@ use fs2::FileExt;
 
 use crate::core::error::CliError;
 use crate::core::paths::{
-    ensure_artifact_file_write_safe, ensure_artifact_parent_write_safe, ensure_mission_write_safe,
-    MissionPaths,
+    ensure_artifact_file_read_safe, ensure_artifact_file_write_safe,
+    ensure_artifact_parent_write_safe, ensure_mission_write_safe, MissionPaths,
 };
 
 use self::events::{append_event, Event};
@@ -76,11 +76,12 @@ pub fn require_plan_locked(state: &MissionState) -> Result<(), CliError> {
 /// Read-only state load. Takes a shared fs2 lock during the read.
 pub fn load(paths: &MissionPaths) -> Result<MissionState, CliError> {
     let state_path = paths.state();
-    if !state_path.is_file() {
+    if !state_path.exists() {
         return Err(CliError::StateCorrupt {
             message: format!("STATE.json missing at {}", state_path.display()),
         });
     }
+    ensure_artifact_file_read_safe(paths, &state_path, "STATE.json")?;
     let lock = acquire_shared_lock(paths)?;
     let raw = fs::read_to_string(&state_path)?;
     drop(lock);
@@ -120,12 +121,13 @@ where
     ensure_artifact_file_write_safe(paths, &paths.state_lock(), "STATE.json.lock")?;
     let lock = acquire_exclusive_lock(paths)?;
     let state_path = paths.state();
-    if !state_path.is_file() {
+    if !state_path.exists() {
         drop(lock);
         return Err(CliError::StateCorrupt {
             message: format!("STATE.json missing at {}", state_path.display()),
         });
     }
+    ensure_artifact_file_read_safe(paths, &state_path, "STATE.json")?;
     let raw = fs::read_to_string(&state_path)?;
     let mut state: MissionState =
         serde_json::from_str(&raw).map_err(|err| CliError::StateCorrupt {
@@ -171,6 +173,58 @@ where
     })
 }
 
+pub fn mutate_dynamic_with_precommit<F, P>(
+    paths: &MissionPaths,
+    expected_revision: Option<u64>,
+    mutator: F,
+    precommit: P,
+) -> Result<Mutation, CliError>
+where
+    F: FnOnce(&mut MissionState) -> Result<(String, serde_json::Value), CliError>,
+    P: FnOnce(&MissionState, &Event) -> Result<(), CliError>,
+{
+    ensure_mission_write_safe(paths)?;
+    ensure_artifact_file_write_safe(paths, &paths.events(), "EVENTS.jsonl")?;
+    ensure_artifact_file_write_safe(paths, &paths.state_lock(), "STATE.json.lock")?;
+    let lock = acquire_exclusive_lock(paths)?;
+    let state_path = paths.state();
+    if !state_path.exists() {
+        drop(lock);
+        return Err(CliError::StateCorrupt {
+            message: format!("STATE.json missing at {}", state_path.display()),
+        });
+    }
+    ensure_artifact_file_read_safe(paths, &state_path, "STATE.json")?;
+    let raw = fs::read_to_string(&state_path)?;
+    let mut state: MissionState =
+        serde_json::from_str(&raw).map_err(|err| CliError::StateCorrupt {
+            message: format!("Failed to parse STATE.json: {err}"),
+        })?;
+    if let Some(expected) = expected_revision {
+        if expected != state.revision {
+            drop(lock);
+            return Err(CliError::RevisionConflict {
+                expected,
+                actual: state.revision,
+            });
+        }
+    }
+    let (event_kind, event_payload) = mutator(&mut state)?;
+    state.revision = state.revision.saturating_add(1);
+    state.events_cursor = state.events_cursor.saturating_add(1);
+    let event = Event::new(state.events_cursor, event_kind, event_payload);
+    precommit(&state, &event)?;
+    append_event(&paths.events(), &event)?;
+    let serialized = serde_json::to_vec_pretty(&state)?;
+    atomic_write(&state_path, &serialized)?;
+    drop(lock);
+    Ok(Mutation {
+        new_revision: state.revision,
+        event,
+        state,
+    })
+}
+
 pub enum MaybeMutation {
     Mutated(Mutation),
     Unchanged(MissionState),
@@ -189,12 +243,13 @@ where
     ensure_artifact_file_write_safe(paths, &paths.state_lock(), "STATE.json.lock")?;
     let lock = acquire_exclusive_lock(paths)?;
     let state_path = paths.state();
-    if !state_path.is_file() {
+    if !state_path.exists() {
         drop(lock);
         return Err(CliError::StateCorrupt {
             message: format!("STATE.json missing at {}", state_path.display()),
         });
     }
+    ensure_artifact_file_read_safe(paths, &state_path, "STATE.json")?;
     let raw = fs::read_to_string(&state_path)?;
     let mut state: MissionState =
         serde_json::from_str(&raw).map_err(|err| CliError::StateCorrupt {

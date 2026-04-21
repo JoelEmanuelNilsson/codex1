@@ -7,10 +7,9 @@
 //! 2. The mission must not already be terminal. Otherwise →
 //!    `CliError::TerminalAlreadyComplete`.
 //!
-//! The state mutation is authoritative: `terminal_at` is set through
-//! `state::mutate`, and CLOSEOUT.md is written afterwards. On a crash
-//! between the two, idempotency is preserved — the next `complete` call
-//! hits `TerminalAlreadyComplete` before doing any work.
+//! The state mutation is authoritative: `terminal_at` is set under the
+//! state lock, and CLOSEOUT.md is rendered from the same post-mutation
+//! state before the event/state are persisted.
 
 use serde_json::json;
 use time::format_description::well_known::Rfc3339;
@@ -74,24 +73,23 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
         return Ok(());
     }
 
-    let mut terminal_preview = current.clone();
-    terminal_preview.close.terminal_at = Some(now.clone());
-    terminal_preview.phase = Phase::Terminal;
-    terminal_preview.loop_ = LoopState {
-        active: false,
-        paused: false,
-        mode: LoopMode::None,
-    };
-    let closeout_body = closeout::render(&terminal_preview, &paths);
     ensure_closeout_writable(&paths)?;
-    atomic_write(&paths.closeout(), closeout_body.as_bytes())?;
 
-    let mutation = state::mutate(
+    let mutation = state::mutate_dynamic_with_precommit(
         &paths,
         ctx.expect_revision,
-        "close.complete",
-        json!({ "terminal_at": now.clone() }),
         |state| {
+            if let Some(closed_at) = state.close.terminal_at.as_ref() {
+                return Err(CliError::TerminalAlreadyComplete {
+                    closed_at: closed_at.clone(),
+                });
+            }
+            let report = ReadinessReport::from_state_and_paths(state, &paths);
+            if !report.ready {
+                return Err(CliError::CloseNotReady {
+                    message: report.blocker_summary(),
+                });
+            }
             state.close.terminal_at = Some(now.clone());
             state.phase = Phase::Terminal;
             state.loop_ = LoopState {
@@ -99,6 +97,15 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
                 paused: false,
                 mode: LoopMode::None,
             };
+            Ok((
+                "close.complete".to_string(),
+                json!({ "terminal_at": now.clone() }),
+            ))
+        },
+        |state, _event| {
+            let closeout_body = closeout::render(state, &paths);
+            ensure_closeout_writable(&paths)?;
+            atomic_write(&paths.closeout(), closeout_body.as_bytes())?;
             Ok(())
         },
     )?;

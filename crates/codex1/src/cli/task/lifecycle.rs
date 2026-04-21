@@ -12,7 +12,7 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use crate::core::error::CliError;
-use crate::core::paths::MissionPaths;
+use crate::core::paths::{ensure_artifact_file_read_safe, MissionPaths};
 use crate::state::schema::{MissionState, TaskId, TaskRecord, TaskStatus};
 
 /// Minimal view of a single task's fields we care about in the task
@@ -81,6 +81,7 @@ impl ParsedPlan {
 /// top-level shape is unreadable.
 pub fn load_plan(paths: &MissionPaths) -> Result<ParsedPlan, CliError> {
     let plan_path = paths.plan();
+    ensure_artifact_file_read_safe(paths, &plan_path, "PLAN.yaml")?;
     let raw = fs::read_to_string(&plan_path).map_err(|err| CliError::PlanInvalid {
         message: format!("Failed to read PLAN.yaml at {}: {err}", plan_path.display()),
         hint: Some("Run `codex1 plan scaffold` to create a plan skeleton.".to_string()),
@@ -190,13 +191,75 @@ pub fn status_str(status: &TaskStatus) -> &'static str {
 }
 
 /// The current ready wave: the set of tasks whose deps are all complete
-/// and whose effective status is `Ready`. Preserves PLAN.yaml order.
+/// and whose effective status is `Ready`, restricted to the first
+/// topological depth that has ready work. Preserves PLAN.yaml order.
 pub fn ready_wave(effective: &[EffectiveTask]) -> Vec<EffectiveTask> {
+    let Some(depth) = topological_depth(effective) else {
+        return Vec::new();
+    };
+    let Some(first_ready_depth) = effective
+        .iter()
+        .filter(|t| t.kind != "review" && matches!(t.status, TaskStatus::Ready))
+        .filter_map(|t| depth.get(&t.id).copied())
+        .min()
+    else {
+        return Vec::new();
+    };
     effective
         .iter()
         .filter(|t| t.kind != "review" && matches!(t.status, TaskStatus::Ready))
+        .filter(|t| depth.get(&t.id).copied() == Some(first_ready_depth))
         .cloned()
         .collect()
+}
+
+fn topological_depth(effective: &[EffectiveTask]) -> Option<BTreeMap<String, usize>> {
+    let ids: BTreeSet<&str> = effective.iter().map(|t| t.id.as_str()).collect();
+    for task in effective {
+        for dep in &task.depends_on {
+            if !ids.contains(dep.as_str()) {
+                return None;
+            }
+        }
+    }
+    let mut depth = BTreeMap::new();
+    for root in effective.iter().filter(|t| t.depends_on.is_empty()) {
+        depth.insert(root.id.clone(), 1usize);
+    }
+    let max_iters = effective
+        .len()
+        .saturating_mul(effective.len())
+        .saturating_add(1);
+    for _ in 0..max_iters {
+        let mut changed = false;
+        for task in effective {
+            if task.depends_on.is_empty() {
+                continue;
+            }
+            let Some(parent_depth) = task
+                .depends_on
+                .iter()
+                .map(|dep| depth.get(dep).copied())
+                .collect::<Option<Vec<_>>>()
+                .and_then(|depths| depths.into_iter().max())
+            else {
+                continue;
+            };
+            let next = parent_depth.saturating_add(1);
+            if depth.get(&task.id).copied().unwrap_or(0) < next {
+                depth.insert(task.id.clone(), next);
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    if depth.len() == effective.len() {
+        Some(depth)
+    } else {
+        None
+    }
 }
 
 /// Any task in `AwaitingReview` — we surface these so `task next` can

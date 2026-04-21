@@ -14,6 +14,7 @@ use time::OffsetDateTime;
 
 use crate::cli::review::classify::{category_str, classify, verdict_str, ClassifyInput};
 use crate::cli::review::plan_read::{fetch_review_task, load_tasks, review_targets};
+use crate::cli::review::start::ensure_review_deps_ready;
 use crate::cli::Ctx;
 use crate::core::envelope::JsonOk;
 use crate::core::error::{CliError, CliResult};
@@ -47,7 +48,7 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
     let peek = state::load(&paths)?;
     state::check_expected_revision(ctx.expect_revision, &peek)?;
 
-    let plan_tasks = load_tasks(&paths.plan())?;
+    let plan_tasks = load_tasks(&paths)?;
     let review_task = fetch_review_task(&plan_tasks, inputs.task_id)?;
     let targets = review_targets(&review_task)?;
 
@@ -159,6 +160,7 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
             ),
         });
     }
+    ensure_review_deps_ready(&peek, &review_task)?;
 
     let findings_body = if let Some(src) = findings_path {
         Some(std::fs::read(src)?)
@@ -167,6 +169,7 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
     };
 
     let review_task_id = inputs.task_id.to_string();
+    let review_task_for_closure = review_task.clone();
     let targets_for_closure = targets.clone();
     let reviewers_for_closure = reviewers.clone();
     let findings_body_for_closure = findings_body.clone();
@@ -178,20 +181,25 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
     };
 
     let mutation = state::mutate_dynamic(&paths, ctx.expect_revision, |state| {
-        if state.close.terminal_at.is_none() {
-            state::require_plan_locked(state)?;
-        }
         let applied = apply_record(
             state,
-            &review_task_id,
-            &targets_for_closure,
-            &verdict,
-            &reviewers_for_closure,
-            &paths,
-            findings_body_for_closure.as_deref(),
+            ApplyRecordInput {
+                review_task_id: &review_task_id,
+                review_task: &review_task_for_closure,
+                targets: &targets_for_closure,
+                verdict: &verdict,
+                reviewers: &reviewers_for_closure,
+                paths: &paths,
+                findings_body: findings_body_for_closure.as_deref(),
+            },
         )?;
+        let event_kind = if matches!(applied.category, ReviewRecordCategory::StaleSuperseded) {
+            "review.stale".to_string()
+        } else {
+            event_kind.to_string()
+        };
         Ok((
-            event_kind.to_string(),
+            event_kind,
             json!({
                 "review_task_id": review_task_id,
                 "verdict": verdict_str(&verdict),
@@ -223,6 +231,15 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
         _ => Vec::new(),
     };
 
+    if matches!(category, ReviewRecordCategory::StaleSuperseded) {
+        return Err(CliError::StaleReviewRecord {
+            message: format!(
+                "Review {} or one of its targets is superseded; record not applied",
+                inputs.task_id
+            ),
+        });
+    }
+
     let env = JsonOk::new(
         Some(mutation.state.mission_id.clone()),
         Some(mutation.new_revision),
@@ -251,21 +268,26 @@ fn category_from_str(raw: &str) -> ReviewRecordCategory {
 
 /// Mutate the state inside `state::mutate`. Classification is re-computed
 /// against the fresh state read under the lock (not the peek).
+struct ApplyRecordInput<'a> {
+    review_task_id: &'a str,
+    review_task: &'a crate::cli::review::plan_read::PlanTask,
+    targets: &'a [String],
+    verdict: &'a ReviewVerdict,
+    reviewers: &'a [String],
+    paths: &'a MissionPaths,
+    findings_body: Option<&'a [u8]>,
+}
+
 fn apply_record(
     state: &mut MissionState,
-    review_task_id: &str,
-    targets: &[String],
-    verdict: &ReviewVerdict,
-    reviewers: &[String],
-    paths: &MissionPaths,
-    findings_body: Option<&[u8]>,
+    input: ApplyRecordInput<'_>,
 ) -> Result<AppliedRecord, CliError> {
     // Re-classify under the lock — the peek may be stale if another writer
     // mutated between peek and lock acquisition.
     let category = classify(&ClassifyInput {
         state,
-        review_task_id,
-        target_task_ids: targets,
+        review_task_id: input.review_task_id,
+        target_task_ids: input.targets,
         state_revision_at_record: state.revision,
     });
 
@@ -281,28 +303,33 @@ fn apply_record(
             return Err(CliError::TerminalAlreadyComplete { closed_at });
         }
         ReviewRecordCategory::StaleSuperseded => {
-            // Likewise: stale path is handled before the mutation closure.
-            return Err(CliError::StaleReviewRecord {
-                message: format!("Review {review_task_id} or one of its targets is superseded"),
+            return Ok(AppliedRecord {
+                category,
+                findings_rel: None,
             });
         }
         _ => {}
     }
 
+    if state.close.terminal_at.is_none() {
+        state::require_plan_locked(state)?;
+    }
+    ensure_review_deps_ready(state, input.review_task)?;
+
     let boundary_revision = state
         .reviews
-        .get(review_task_id)
+        .get(input.review_task_id)
         .map_or(state.revision.saturating_add(1), |r| r.boundary_revision);
     let recorded_at = OffsetDateTime::now_utc()
         .format(&Rfc3339)
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string());
 
     let findings_rel = if matches!(category, ReviewRecordCategory::AcceptedCurrent) {
-        if let Some(body) = findings_body {
-            let dest = paths.review_file_for(review_task_id);
-            ensure_artifact_parent_write_safe(paths, &dest)?;
+        if let Some(body) = input.findings_body {
+            let dest = input.paths.review_file_for(input.review_task_id);
+            ensure_artifact_parent_write_safe(input.paths, &dest)?;
             atomic_write(&dest, body)?;
-            relative_from_repo(paths, &dest)
+            relative_from_repo(input.paths, &dest)
         } else {
             None
         }
@@ -311,9 +338,9 @@ fn apply_record(
     };
 
     let record = ReviewRecord {
-        task_id: review_task_id.to_string(),
-        verdict: verdict.clone(),
-        reviewers: reviewers.to_vec(),
+        task_id: input.review_task_id.to_string(),
+        verdict: input.verdict.clone(),
+        reviewers: input.reviewers.to_vec(),
         findings_file: findings_rel.clone(),
         category: category.clone(),
         recorded_at,
@@ -324,10 +351,12 @@ fn apply_record(
     // status. Non-current categories are audit-only and must not replace
     // current review truth in STATE.json.
     if matches!(category, ReviewRecordCategory::AcceptedCurrent) {
-        state.reviews.insert(review_task_id.to_string(), record);
-        match *verdict {
-            ReviewVerdict::Clean => apply_clean(state, review_task_id, targets),
-            ReviewVerdict::Dirty => apply_dirty(state, review_task_id, targets),
+        state
+            .reviews
+            .insert(input.review_task_id.to_string(), record);
+        match *input.verdict {
+            ReviewVerdict::Clean => apply_clean(state, input.review_task_id, input.targets),
+            ReviewVerdict::Dirty => apply_dirty(state, input.review_task_id, input.targets),
             ReviewVerdict::Pending => {}
         }
     }

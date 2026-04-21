@@ -82,13 +82,8 @@ pub fn build(state: &MissionState, tasks: &[PlanTask], close_ready: bool) -> Val
 /// accurate after mission close. When the loop is active-and-unpaused
 /// but the verdict already allows stop (NeedsUser, MissionCloseReviewPassed),
 /// we surface `idle` so the message does not contradict `allow=true`.
-fn stop_projection(state: &MissionState, verdict: Verdict, close_ready: bool) -> Value {
-    let base_allow = readiness::stop_allowed(state);
-    let active_close_blocked = state.loop_.active
-        && !state.loop_.paused
-        && matches!(verdict, Verdict::MissionCloseReviewPassed)
-        && !close_ready;
-    let allow = base_allow && !active_close_blocked;
+fn stop_projection(state: &MissionState, verdict: Verdict, _close_ready: bool) -> Value {
+    let allow = readiness::stop_allowed(state);
     let (reason, message) = if matches!(verdict, Verdict::TerminalComplete) {
         ("terminal", "Mission is terminal; stop is allowed.")
     } else if !state.loop_.active {

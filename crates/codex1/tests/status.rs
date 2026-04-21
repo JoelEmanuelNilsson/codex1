@@ -823,3 +823,46 @@ fn active_loop_with_stop_allowing_verdict_does_not_contradict_itself() {
         "stop.reason must not be active_loop when allow=true"
     );
 }
+
+#[test]
+fn close_blockers_do_not_override_stop_allow_for_passed_mission_close_review() {
+    let fx = Fixture::new("demo");
+    let mut state = base_state("demo");
+    state.outcome.ratified = true;
+    state.plan.locked = true;
+    state.plan.task_ids = vec!["T1".to_string()];
+    state.phase = Phase::MissionClose;
+    state.loop_ = LoopState {
+        active: true,
+        paused: false,
+        mode: LoopMode::MissionClose,
+    };
+    state.close.review_state = MissionCloseReviewState::Passed;
+    state.tasks.insert(
+        "T1".to_string(),
+        TaskRecord {
+            id: "T1".to_string(),
+            status: TaskStatus::Complete,
+            started_at: None,
+            finished_at: Some("2026-04-20T00:00:00Z".to_string()),
+            proof_path: Some("specs/T1/PROOF.md".to_string()),
+            superseded_by: None,
+        },
+    );
+    fx.write_state(&state);
+    fx.write_plan(
+        r"mission_id: demo
+tasks:
+  - id: T1
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+",
+    );
+
+    let json = fx.status();
+    assert_eq!(json["data"]["verdict"], "mission_close_review_passed");
+    assert_eq!(json["data"]["close_ready"], false);
+    assert_ne!(json["data"]["next_action"]["kind"], "close");
+    assert_eq!(json["data"]["stop"]["allow"], true);
+}

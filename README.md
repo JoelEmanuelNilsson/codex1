@@ -50,10 +50,13 @@ codex1 plan waves --mission m1
 codex1 task next --mission m1
 codex1 task start T1 --mission m1
 # do the work; write PLANS/m1/specs/T1/PROOF.md
-codex1 task finish T1 --proof PLANS/m1/specs/T1/PROOF.md --mission m1
+codex1 task finish T1 --proof specs/T1/PROOF.md --mission m1
 
 # repeat for each task; planned review tasks use `review packet` + `review record`.
 
+codex1 close check --mission m1
+# run the mission-close review, then record its result
+codex1 close record-review --clean --mission m1
 codex1 close check --mission m1
 codex1 close complete --mission m1
 ```

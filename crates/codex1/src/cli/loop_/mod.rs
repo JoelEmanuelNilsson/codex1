@@ -62,7 +62,7 @@ pub(crate) enum Transition {
 pub(crate) fn run_transition(
     ctx: &Ctx,
     event_kind: &'static str,
-    classify: impl FnOnce(&LoopState) -> Transition,
+    classify: impl Fn(&LoopState) -> Transition,
 ) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let current = state::load(&paths)?;
@@ -100,18 +100,27 @@ pub(crate) fn run_transition(
                 );
                 return Ok(());
             }
-            let payload = json!(&target);
-            let mutation = state::mutate(&paths, ctx.expect_revision, event_kind, payload, |s| {
-                s.loop_ = target;
-                Ok(())
+            let mutation = state::mutate_dynamic_maybe(&paths, ctx.expect_revision, |s| {
+                match classify(&s.loop_) {
+                    Transition::Reject(err) => Err(err),
+                    Transition::NoOp => Ok(None),
+                    Transition::Apply(target) => {
+                        s.loop_ = target.clone();
+                        Ok(Some((event_kind.to_string(), json!(target))))
+                    }
+                }
             })?;
+            let (state_for_env, noop) = match mutation {
+                state::MaybeMutation::Mutated(m) => (m.state, false),
+                state::MaybeMutation::Unchanged(s) => (s, true),
+            };
             emit(
                 &paths,
-                mutation.state.revision,
-                &mutation.state.loop_,
+                state_for_env.revision,
+                &state_for_env.loop_,
                 None,
                 false,
-                false,
+                noop,
             );
             Ok(())
         }

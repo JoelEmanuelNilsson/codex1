@@ -604,6 +604,25 @@ mission_close:
     assert!(json["message"].as_str().unwrap().contains("escapes"));
 }
 
+#[cfg(unix)]
+#[test]
+fn symlinked_plan_yaml_is_rejected() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = seed_valid_mission(&tmp, "demo");
+    let outside = tmp.path().join("outside-plan.yaml");
+    fs::rename(mission_dir.join("PLAN.yaml"), &outside).unwrap();
+    symlink(&outside, mission_dir.join("PLAN.yaml")).unwrap();
+
+    let output = run_check(&tmp, "demo", &[]);
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+    let state = read_state(&mission_dir);
+    assert_ne!(state["plan"]["locked"], true);
+}
+
 #[test]
 fn task_id_pattern_violation_returns_plan_invalid() {
     let tmp = TempDir::new().unwrap();

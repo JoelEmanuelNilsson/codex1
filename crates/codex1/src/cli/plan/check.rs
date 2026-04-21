@@ -22,7 +22,9 @@ use crate::cli::Ctx;
 use crate::core::envelope::{JsonErr, JsonOk};
 use crate::core::error::{CliError, CliResult};
 use crate::core::mission::resolve_mission;
-use crate::core::paths::{resolve_existing_mission_file, MissionPaths};
+use crate::core::paths::{
+    ensure_artifact_file_read_safe, resolve_existing_mission_file, MissionPaths,
+};
 use crate::state::{self, Phase, PlanLevel, TaskStatus};
 
 use super::dag::{topo_sort, TopoOutcome};
@@ -36,12 +38,13 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
         return Err(CliError::OutcomeNotRatified);
     }
     let plan_path = paths.plan();
-    if !plan_path.is_file() {
+    if !plan_path.exists() {
         return Err(CliError::PlanInvalid {
             message: format!("PLAN.yaml missing at {}", plan_path.display()),
             hint: Some("Run `codex1 plan scaffold --level <level>` first.".to_string()),
         });
     }
+    ensure_artifact_file_read_safe(&paths, &plan_path, "PLAN.yaml")?;
 
     let raw = fs::read_to_string(&plan_path)?;
     if let Some(pos) = raw.find("[codex1-fill:") {

@@ -13,7 +13,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use crate::core::paths::MissionPaths;
+use crate::core::paths::{ensure_artifact_file_read_safe, MissionPaths};
 use crate::state::schema::{MissionState, ReviewVerdict, TaskStatus};
 
 /// Light task shape extracted from PLAN.yaml. Only the fields needed
@@ -52,7 +52,9 @@ struct PlanEnvelope {
 /// those cases — downstream derivation treats missing plan data as
 /// "no wave known").
 pub fn load_plan_tasks(paths: &MissionPaths) -> Option<Vec<PlanTask>> {
-    read_plan(&paths.plan())
+    let plan = paths.plan();
+    ensure_artifact_file_read_safe(paths, &plan, "PLAN.yaml").ok()?;
+    read_plan(&plan)
 }
 
 fn read_plan(path: &Path) -> Option<Vec<PlanTask>> {
@@ -210,16 +212,28 @@ pub fn dirty_repair_targets(tasks: &[PlanTask], state: &MissionState) -> Vec<Str
                 .map_or(&[][..], |r| r.tasks.as_slice());
             if explicit.is_empty() {
                 for id in &t.depends_on {
-                    targets.insert(id.clone());
+                    if repair_still_needed(state, id, review_record.recorded_at.as_str()) {
+                        targets.insert(id.clone());
+                    }
                 }
             } else {
                 for id in explicit {
-                    targets.insert(id.clone());
+                    if repair_still_needed(state, id, review_record.recorded_at.as_str()) {
+                        targets.insert(id.clone());
+                    }
                 }
             }
         }
     }
     targets.into_iter().collect()
+}
+
+fn repair_still_needed(state: &MissionState, task_id: &str, dirty_recorded_at: &str) -> bool {
+    state
+        .tasks
+        .get(task_id)
+        .and_then(|task| task.finished_at.as_deref())
+        .is_none_or(|finished_at| finished_at <= dirty_recorded_at)
 }
 
 fn is_review_kind(t: &PlanTask) -> bool {

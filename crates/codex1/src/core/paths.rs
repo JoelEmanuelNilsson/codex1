@@ -236,6 +236,30 @@ pub fn ensure_artifact_file_write_safe(
     Ok(())
 }
 
+pub fn ensure_artifact_file_read_safe(
+    paths: &MissionPaths,
+    target: &Path,
+    label: &str,
+) -> Result<(), CliError> {
+    ensure_mission_write_safe(paths)?;
+    reject_symlink(target, label)?;
+    if !target.is_file() {
+        return Err(containment_error(format!(
+            "{label} file not found at {}",
+            target.display()
+        )));
+    }
+    let mission = paths.mission_dir.canonicalize()?;
+    let file = target.canonicalize()?;
+    if !file.starts_with(&mission) {
+        return Err(containment_error(format!(
+            "{label} escapes mission directory: {}",
+            target.display()
+        )));
+    }
+    Ok(())
+}
+
 fn reject_symlink(path: &Path, label: &str) -> Result<(), CliError> {
     if let Ok(meta) = std::fs::symlink_metadata(path) {
         if meta.file_type().is_symlink() {

@@ -4,12 +4,11 @@
 //! target task ids, review profiles, and per-target `write_paths`.
 //! Anything richer belongs to `plan check` (Phase B Unit 3).
 
-use std::collections::BTreeMap;
-use std::path::Path;
-
 use serde::Deserialize;
+use std::collections::BTreeMap;
 
 use crate::core::error::CliError;
+use crate::core::paths::{ensure_artifact_file_read_safe, MissionPaths};
 
 /// One entry in `tasks:`. Only the fields review cares about.
 #[derive(Debug, Clone, Deserialize)]
@@ -17,6 +16,8 @@ pub struct PlanTask {
     pub id: String,
     #[serde(default)]
     pub kind: Option<String>,
+    #[serde(default)]
+    pub depends_on: Vec<String>,
     #[serde(default)]
     pub spec: Option<String>,
     #[serde(default)]
@@ -41,13 +42,15 @@ struct PlanDoc {
 
 /// Load PLAN.yaml and return tasks indexed by id. Missing plan file is an
 /// error (planned reviews require a plan to exist).
-pub fn load_tasks(plan_path: &Path) -> Result<BTreeMap<String, PlanTask>, CliError> {
+pub fn load_tasks(paths: &MissionPaths) -> Result<BTreeMap<String, PlanTask>, CliError> {
+    let plan_path = paths.plan();
     if !plan_path.is_file() {
         return Err(CliError::PlanInvalid {
             message: format!("PLAN.yaml missing at {}", plan_path.display()),
             hint: Some("Run `codex1 plan scaffold --level <level>` first.".to_string()),
         });
     }
+    ensure_artifact_file_read_safe(paths, &plan_path, "PLAN.yaml")?;
     let raw = std::fs::read_to_string(plan_path)?;
     let doc: PlanDoc = serde_yaml::from_str(&raw).map_err(|err| CliError::PlanInvalid {
         message: format!("Failed to parse PLAN.yaml: {err}"),

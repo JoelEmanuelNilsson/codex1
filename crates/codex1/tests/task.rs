@@ -485,6 +485,56 @@ mission_close: { criteria: [] }
 }
 
 #[test]
+fn next_wave_only_includes_first_topological_ready_depth() {
+    let plan = r"mission_id: demo
+
+planning_level: { requested: medium, effective: medium }
+outcome_interpretation: { summary: demo }
+architecture: { summary: demo, key_decisions: [] }
+planning_process: { evidence: [] }
+
+tasks:
+  - id: T1
+    title: Root still pending
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+  - id: T2
+    title: Other root complete
+    kind: code
+    depends_on: []
+    spec: specs/T2/SPEC.md
+  - id: T3
+    title: Child of complete root
+    kind: code
+    depends_on: [T2]
+    spec: specs/T3/SPEC.md
+
+risks: []
+mission_close: { criteria: [] }
+";
+    let (tmp, dir) = seed_mission(plan, &[]);
+    let mut state = read_state(&dir);
+    state["tasks"] = json!({
+        "T2": {
+            "id": "T2",
+            "status": "complete",
+            "finished_at": "2026-04-20T00:00:00Z",
+            "proof_path": "specs/T2/PROOF.md"
+        }
+    });
+    write(
+        &dir.join("STATE.json"),
+        &serde_json::to_string_pretty(&state).unwrap(),
+    );
+
+    let out = run(tmp.path(), &["task", "next", "--mission", "demo"]);
+    let json = parse_json(&out);
+    assert_eq!(json["data"]["next"]["kind"], "run_task");
+    assert_eq!(json["data"]["next"]["task_id"], "T1");
+}
+
+#[test]
 fn next_wave_id_uses_topological_depth_not_plan_order() {
     let plan = r"mission_id: demo
 
@@ -1032,4 +1082,51 @@ fn concurrent_task_start_is_idempotent_under_lock() {
         .filter(|event| event["kind"] == "task.started")
         .count();
     assert_eq!(task_started_events, 1);
+}
+
+#[test]
+fn concurrent_task_finish_commits_once() {
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+
+    let (tmp, dir) = seed_mission(PLAN_LINEAR_NO_REVIEW, &[]);
+    let start = run(tmp.path(), &["task", "start", "T1", "--mission", "demo"]);
+    assert!(start.status.success());
+    for idx in 0..8 {
+        write(&dir.join(format!("specs/T1/PROOF-{idx}.md")), "ok");
+    }
+
+    let root = Arc::new(tmp.path().to_path_buf());
+    let barrier = Arc::new(Barrier::new(8));
+    let mut handles = Vec::new();
+    for idx in 0..8 {
+        let root = root.clone();
+        let barrier = barrier.clone();
+        handles.push(thread::spawn(move || {
+            barrier.wait();
+            run(
+                &root,
+                &[
+                    "task",
+                    "finish",
+                    "T1",
+                    "--proof",
+                    &format!("specs/T1/PROOF-{idx}.md"),
+                    "--mission",
+                    "demo",
+                ],
+            )
+        }));
+    }
+
+    let outputs: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+    let successes = outputs.iter().filter(|out| out.status.success()).count();
+    assert_eq!(successes, 1, "exactly one finish should commit");
+    let state = read_state(&dir);
+    assert_eq!(state["tasks"]["T1"]["status"], "complete");
+    let finished_events = events(&dir)
+        .into_iter()
+        .filter(|event| event["kind"] == "task.finished")
+        .count();
+    assert_eq!(finished_events, 1);
 }

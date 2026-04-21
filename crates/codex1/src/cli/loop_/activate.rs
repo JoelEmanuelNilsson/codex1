@@ -14,7 +14,7 @@ pub fn run(ctx: &Ctx, mode_raw: &str) -> CliResult<()> {
         let target = LoopState {
             active: true,
             paused: false,
-            mode,
+            mode: mode.clone(),
         };
         if *current == target {
             Transition::NoOp

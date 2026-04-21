@@ -25,7 +25,8 @@ pub struct ClassifyInput<'a> {
 /// 3. No prior `review.started` record found            -> `accepted_current`
 ///    (this is a first-time record; the boundary is "now"). Classification
 ///    fall-through handles this by returning `accepted_current`.
-/// 4. `state_revision_at_record > boundary_revision`    -> `late_same_boundary`.
+/// 4. Prior record for this review is no longer pending and
+///    `state_revision_at_record > boundary_revision`    -> `late_same_boundary`.
 /// 5. else                                              -> `accepted_current`.
 #[must_use]
 pub fn classify(input: &ClassifyInput<'_>) -> ReviewRecordCategory {
@@ -39,13 +40,14 @@ pub fn classify(input: &ClassifyInput<'_>) -> ReviewRecordCategory {
     // Pending record tells us the boundary revision the review was started
     // at. If there is no start record, classify as `accepted_current` and
     // let the record command create one.
-    let boundary = input
-        .state
-        .reviews
-        .get(input.review_task_id)
-        .map(|r| r.boundary_revision);
-    match boundary {
-        Some(b) if input.state_revision_at_record > b => ReviewRecordCategory::LateSameBoundary,
+    let prior = input.state.reviews.get(input.review_task_id);
+    match prior {
+        Some(record)
+            if !matches!(record.verdict, ReviewVerdict::Pending)
+                && input.state_revision_at_record > record.boundary_revision =>
+        {
+            ReviewRecordCategory::LateSameBoundary
+        }
         _ => ReviewRecordCategory::AcceptedCurrent,
     }
 }

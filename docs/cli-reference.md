@@ -213,7 +213,7 @@ codex1 --json task start T2 --mission demo --expect-revision 5
 **Phase status:** Implemented.
 **Example:**
 ```bash
-codex1 --json task finish T2 --proof PLANS/demo/specs/T2/PROOF.md --mission demo
+codex1 --json task finish T2 --proof specs/T2/PROOF.md --mission demo
 ```
 
 ---
@@ -350,6 +350,22 @@ codex1 --json replan record --reason six_dirty --supersedes T4 --mission demo
 
 ---
 
+## codex1 loop activate
+
+**Purpose:** Activate the loop in the requested mode.
+**Mutates state:** yes (sets `loop.active = true`, `loop.paused = false`, and `loop.mode`).
+**Arguments:**
+- `--mode <MODE>` — one of `clarify`, `plan`, `execute`, `review_loop`, `mission_close`; defaults to `execute`.
+**Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"active":true,"paused":false,"mode":"execute"}}`
+**Errors:** `PLAN_INVALID` (unknown mode), `REVISION_CONFLICT`, `MISSION_NOT_FOUND`.
+**Phase status:** Implemented.
+**Example:**
+```bash
+codex1 --json loop activate --mode execute --mission demo
+```
+
+---
+
 ## codex1 loop pause
 
 **Purpose:** Pause the active loop. Used by `$close` to let the user talk without Ralph forcing continuation.
@@ -406,6 +422,23 @@ codex1 --json loop deactivate --mission demo
 **Example:**
 ```bash
 codex1 --json close check --mission demo
+```
+
+---
+
+## codex1 close record-review
+
+**Purpose:** Record the mission-close review verdict. Use after `close check` reports `ready_for_mission_close_review`.
+**Mutates state:** yes.
+**Arguments:**
+- exactly one of `--clean` or `--findings-file <PATH>`.
+- `--reviewers <CSV>` optional reviewer names.
+**Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"target":"__mission_close__","verdict":"clean","review_state":"passed"}}`
+**Errors:** `CLOSE_NOT_READY`, `REVIEW_FINDINGS_BLOCK`, `REVISION_CONFLICT`, `MISSION_NOT_FOUND`.
+**Phase status:** Implemented.
+**Example:**
+```bash
+codex1 --json close record-review --clean --mission demo
 ```
 
 ---

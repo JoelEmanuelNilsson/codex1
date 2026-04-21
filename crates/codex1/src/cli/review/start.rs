@@ -28,7 +28,7 @@ pub fn run(ctx: &Ctx, task_id: &str) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let state = state::load(&paths)?;
     state::check_expected_revision(ctx.expect_revision, &state)?;
-    let plan_tasks = load_tasks(&paths.plan())?;
+    let plan_tasks = load_tasks(&paths)?;
     let review_task = fetch_review_task(&plan_tasks, task_id)?;
     let targets = review_targets(&review_task)?;
     if let Some(closed_at) = state.close.terminal_at.as_ref() {
@@ -39,6 +39,7 @@ pub fn run(ctx: &Ctx, task_id: &str) -> CliResult<()> {
     // Refuse to start a review while the plan is unlocked (e.g. during
     // a pending replan). See `state::require_plan_locked` for rationale.
     state::require_plan_locked(&state)?;
+    ensure_review_deps_ready(&state, &review_task)?;
     if let Some(existing) = state.reviews.get(task_id) {
         if !matches!(existing.verdict, ReviewVerdict::Pending) {
             ensure_dirty_review_repaired(&state, task_id, &targets)?;
@@ -93,6 +94,7 @@ pub fn run(ctx: &Ctx, task_id: &str) -> CliResult<()> {
             // the TOCTOU between the pre-mutate shared-lock load and
             // this closure. See round-2 correctness P1-1.
             state::require_plan_locked(state)?;
+            ensure_review_deps_ready(state, &review_task)?;
             if let Some(existing) = state.reviews.get(&review_task_id) {
                 if !matches!(existing.verdict, ReviewVerdict::Pending) {
                     ensure_dirty_review_repaired(state, &review_task_id, &targets_for_event)?;
@@ -131,6 +133,31 @@ pub fn run(ctx: &Ctx, task_id: &str) -> CliResult<()> {
         }),
     );
     println!("{}", env.to_pretty());
+    Ok(())
+}
+
+pub(crate) fn ensure_review_deps_ready(
+    state: &state::MissionState,
+    review_task: &crate::cli::review::plan_read::PlanTask,
+) -> Result<(), CliError> {
+    for dep in &review_task.depends_on {
+        let Some(task) = state.tasks.get(dep) else {
+            return Err(CliError::TaskNotReady {
+                message: format!("Review dependency {dep} is not tracked in STATE.json"),
+            });
+        };
+        if !matches!(
+            task.status,
+            TaskStatus::Complete | TaskStatus::AwaitingReview
+        ) {
+            return Err(CliError::TaskNotReady {
+                message: format!(
+                    "Review dependency {dep} is `{:?}`; review start requires Complete or AwaitingReview",
+                    task.status
+                ),
+            });
+        }
+    }
     Ok(())
 }
 

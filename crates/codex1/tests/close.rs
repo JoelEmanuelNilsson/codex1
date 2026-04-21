@@ -737,6 +737,10 @@ fn complete_on_ready_writes_closeout_and_marks_terminal() {
     assert!(closeout.contains("| MC |"));
 
     let state = read_state(&mission_dir);
+    assert!(
+        closeout.contains(&format!("**Final revision:** {}", state["revision"])),
+        "closeout must render the committed revision: {closeout}"
+    );
     assert_eq!(state["phase"], "terminal");
     assert!(state["close"]["terminal_at"].is_string());
     assert_eq!(state["loop"]["active"], false);
@@ -745,6 +749,65 @@ fn complete_on_ready_writes_closeout_and_marks_terminal() {
 
     let events = read_events(&mission_dir);
     assert!(events.iter().any(|e| e["kind"] == "close.complete"));
+}
+
+#[test]
+fn concurrent_complete_with_expect_revision_keeps_winning_closeout() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    let state = StateBuilder::fresh("demo")
+        .ratified()
+        .plan_locked()
+        .phase("mission_close")
+        .task("T1", "complete")
+        .mission_close_review("passed")
+        .revision(7)
+        .build();
+    write_state(&mission_dir, &state);
+
+    let workers = 8usize;
+    let barrier = Arc::new(Barrier::new(workers));
+    let mut handles = Vec::new();
+    for _ in 0..workers {
+        let root = tmp.path().to_path_buf();
+        let barrier = Arc::clone(&barrier);
+        handles.push(thread::spawn(move || {
+            barrier.wait();
+            let output = cmd()
+                .current_dir(root)
+                .args([
+                    "close",
+                    "complete",
+                    "--mission",
+                    "demo",
+                    "--expect-revision",
+                    "7",
+                ])
+                .output()
+                .expect("runs");
+            parse_stdout(&output)
+        }));
+    }
+    let outputs: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+    let successes = outputs.iter().filter(|json| json["ok"] == true).count();
+    assert_eq!(successes, 1, "exactly one close complete should win");
+    let conflicts = outputs
+        .iter()
+        .filter(|json| json["code"] == "REVISION_CONFLICT")
+        .count();
+    assert_eq!(conflicts, workers - 1);
+
+    let state = read_state(&mission_dir);
+    assert_eq!(state["revision"], 8);
+    let closeout = fs::read_to_string(mission_dir.join("CLOSEOUT.md")).unwrap();
+    let terminal_at = state["close"]["terminal_at"].as_str().unwrap();
+    assert!(closeout.contains(&format!("**Terminal at:** {terminal_at}")));
+    assert!(closeout.contains("**Final revision:** 8"));
+    let close_events = read_events(&mission_dir)
+        .iter()
+        .filter(|event| event["kind"] == "close.complete")
+        .count();
+    assert_eq!(close_events, 1);
 }
 
 #[test]

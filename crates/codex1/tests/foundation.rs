@@ -195,6 +195,32 @@ fn status_rejects_symlinked_state_lock() {
     assert!(!outside.exists(), "must not create lock through symlink");
 }
 
+#[cfg(unix)]
+#[test]
+fn status_rejects_symlinked_state_file() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    let outside = tmp.path().join("outside-state.json");
+    let mut state: Value =
+        serde_json::from_str(&fs::read_to_string(mission_dir.join("STATE.json")).unwrap()).unwrap();
+    state["mission_id"] = Value::String("outside".to_string());
+    state["revision"] = Value::Number(42.into());
+    fs::write(&outside, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
+    fs::remove_file(mission_dir.join("STATE.json")).unwrap();
+    symlink(&outside, mission_dir.join("STATE.json")).unwrap();
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["status", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["code"], "PLAN_INVALID");
+}
+
 #[test]
 fn status_resolves_existing_mission_and_reports_stop_allowed() {
     let tmp = TempDir::new().unwrap();

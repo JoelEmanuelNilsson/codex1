@@ -136,6 +136,51 @@ fn pause_sets_paused_and_appends_event() {
 }
 
 #[test]
+fn concurrent_pause_and_deactivate_cannot_resurrect_loop() {
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+
+    for _ in 0..8 {
+        let tmp = TempDir::new().unwrap();
+        let mission_dir = init_demo(&tmp, "demo");
+        cmd()
+            .current_dir(tmp.path())
+            .args(["loop", "activate", "--mission", "demo"])
+            .assert()
+            .success();
+        let root = Arc::new(tmp.path().to_path_buf());
+        let barrier = Arc::new(Barrier::new(2));
+        let p_root = root.clone();
+        let p_barrier = barrier.clone();
+        let pause = thread::spawn(move || {
+            p_barrier.wait();
+            cmd()
+                .current_dir(&*p_root)
+                .args(["loop", "pause", "--mission", "demo"])
+                .output()
+                .expect("pause runs")
+        });
+        let d_root = root.clone();
+        let d_barrier = barrier.clone();
+        let deactivate = thread::spawn(move || {
+            d_barrier.wait();
+            cmd()
+                .current_dir(&*d_root)
+                .args(["loop", "deactivate", "--mission", "demo"])
+                .output()
+                .expect("deactivate runs")
+        });
+        pause.join().unwrap();
+        let deactivated = deactivate.join().unwrap();
+        assert!(deactivated.status.success());
+        let state = read_state(&mission_dir);
+        assert_eq!(state["loop"]["active"], false, "{state:#}");
+        assert_eq!(state["loop"]["paused"], false, "{state:#}");
+        assert_eq!(state["loop"]["mode"], "none", "{state:#}");
+    }
+}
+
+#[test]
 fn resume_clears_paused_and_appends_event() {
     let tmp = TempDir::new().unwrap();
     let mission_dir = init_demo(&tmp, "demo");
@@ -167,6 +212,56 @@ fn resume_clears_paused_and_appends_event() {
         event_kinds(&mission_dir),
         vec!["loop.activated", "loop.paused", "loop.resumed"]
     );
+}
+
+#[test]
+fn concurrent_resume_and_deactivate_cannot_resurrect_loop() {
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+
+    for _ in 0..8 {
+        let tmp = TempDir::new().unwrap();
+        let mission_dir = init_demo(&tmp, "demo");
+        cmd()
+            .current_dir(tmp.path())
+            .args(["loop", "activate", "--mission", "demo"])
+            .assert()
+            .success();
+        cmd()
+            .current_dir(tmp.path())
+            .args(["loop", "pause", "--mission", "demo"])
+            .assert()
+            .success();
+        let root = Arc::new(tmp.path().to_path_buf());
+        let barrier = Arc::new(Barrier::new(2));
+        let r_root = root.clone();
+        let r_barrier = barrier.clone();
+        let resume = thread::spawn(move || {
+            r_barrier.wait();
+            cmd()
+                .current_dir(&*r_root)
+                .args(["loop", "resume", "--mission", "demo"])
+                .output()
+                .expect("resume runs")
+        });
+        let d_root = root.clone();
+        let d_barrier = barrier.clone();
+        let deactivate = thread::spawn(move || {
+            d_barrier.wait();
+            cmd()
+                .current_dir(&*d_root)
+                .args(["loop", "deactivate", "--mission", "demo"])
+                .output()
+                .expect("deactivate runs")
+        });
+        resume.join().unwrap();
+        let deactivated = deactivate.join().unwrap();
+        assert!(deactivated.status.success());
+        let state = read_state(&mission_dir);
+        assert_eq!(state["loop"]["active"], false, "{state:#}");
+        assert_eq!(state["loop"]["paused"], false, "{state:#}");
+        assert_eq!(state["loop"]["mode"], "none", "{state:#}");
+    }
 }
 
 #[test]

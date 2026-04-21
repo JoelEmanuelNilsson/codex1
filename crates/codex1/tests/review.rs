@@ -264,10 +264,20 @@ fn late_dirty_review_is_audit_only_and_does_not_block() {
         seeded.path(),
         &["review", "start", "T5", "--mission", MISSION],
     );
-    let state_path = seeded.mission_dir.join("STATE.json");
-    let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
-    state["revision"] = Value::Number(99.into());
-    fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
+    let current = seeded.mission_dir.join("current-findings.md");
+    fs::write(&current, "# Current\nP1: current\n").unwrap();
+    run_ok(
+        seeded.path(),
+        &[
+            "review",
+            "record",
+            "T5",
+            "--findings-file",
+            current.to_str().unwrap(),
+            "--mission",
+            MISSION,
+        ],
+    );
 
     let findings = seeded.mission_dir.join("late-findings.md");
     fs::write(&findings, "# Late\nP1: late\n").unwrap();
@@ -288,9 +298,9 @@ fn late_dirty_review_is_audit_only_and_does_not_block() {
     let state: Value =
         serde_json::from_str(&fs::read_to_string(seeded.mission_dir.join("STATE.json")).unwrap())
             .unwrap();
-    assert_eq!(state["reviews"]["T5"]["verdict"], "pending");
+    assert_eq!(state["reviews"]["T5"]["verdict"], "dirty");
     let status = run_ok(seeded.path(), &["status", "--mission", MISSION]);
-    assert_ne!(status["data"]["next_action"]["kind"], "repair");
+    assert_eq!(status["data"]["next_action"]["kind"], "repair");
 }
 
 #[test]
@@ -483,6 +493,10 @@ fn dirty_review_repair_target_can_be_started_and_rereviewed() {
             MISSION,
         ],
     );
+    let status = run_ok(seeded.path(), &["status", "--mission", MISSION]);
+    assert_ne!(status["data"]["next_action"]["kind"], "repair");
+    assert_eq!(status["data"]["next_action"]["kind"], "run_review");
+    assert_eq!(status["data"]["next_action"]["review_task_id"], "T5");
     run_ok(
         seeded.path(),
         &["review", "start", "T5", "--mission", MISSION],
@@ -492,6 +506,61 @@ fn dirty_review_repair_target_can_be_started_and_rereviewed() {
         &["review", "record", "T5", "--clean", "--mission", MISSION],
     );
     assert_eq!(clean["data"]["verdict"], "clean");
+}
+
+#[test]
+fn unrelated_state_change_does_not_make_pending_review_late() {
+    let seeded = Seeded::with_targets(&["T2"]);
+    run_ok(
+        seeded.path(),
+        &["review", "start", "T5", "--mission", MISSION],
+    );
+    run_ok(
+        seeded.path(),
+        &[
+            "loop",
+            "activate",
+            "--mode",
+            "review_loop",
+            "--mission",
+            MISSION,
+        ],
+    );
+    let findings = seeded.mission_dir.join("findings-after-loop.md");
+    fs::write(&findings, "# still current finding\n").unwrap();
+    let out = run_ok(
+        seeded.path(),
+        &[
+            "review",
+            "record",
+            "T5",
+            "--findings-file",
+            findings.to_str().unwrap(),
+            "--mission",
+            MISSION,
+        ],
+    );
+    assert_eq!(out["data"]["category"], "accepted_current");
+    let state: Value =
+        serde_json::from_str(&fs::read_to_string(seeded.mission_dir.join("STATE.json")).unwrap())
+            .unwrap();
+    assert_eq!(state["reviews"]["T5"]["verdict"], "dirty");
+}
+
+#[test]
+fn review_start_requires_all_review_task_dependencies() {
+    let seeded = Seeded::with_targets(&["T2"]);
+    let plan_path = seeded.mission_dir.join("PLAN.yaml");
+    let plan = fs::read_to_string(&plan_path)
+        .unwrap()
+        .replace("    depends_on: [T2]\n", "    depends_on: [T2, T4]\n");
+    fs::write(&plan_path, plan).unwrap();
+
+    let err = run_err(
+        seeded.path(),
+        &["review", "start", "T5", "--mission", MISSION],
+    );
+    assert_eq!(err["code"], "TASK_NOT_READY");
 }
 
 #[cfg(unix)]
@@ -551,17 +620,6 @@ fn review_packet_uses_recorded_absolute_proof_path() {
             .any(|p| p.as_str() == Some(proof.to_str().unwrap())),
         "proofs should include recorded absolute proof: {proofs:?}"
     );
-}
-
-fn bump_revision_without_mutation(mission_dir: &Path) {
-    // Simulate a concurrent mutation so the next record classifies as
-    // late_same_boundary. Incrementing the revision is the minimum that
-    // the classifier keys off.
-    let state_path = mission_dir.join("STATE.json");
-    let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
-    let rev = state["revision"].as_u64().unwrap();
-    state["revision"] = serde_json::json!(rev + 1);
-    fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
 }
 
 fn set_terminal(mission_dir: &Path) {
@@ -1027,8 +1085,10 @@ fn review_packet_rejects_escaping_target_spec_even_if_bad_plan_is_locked() {
 fn late_same_boundary_is_flagged() {
     let s = Seeded::new();
     run_ok(s.path(), &["review", "start", "T5", "--mission", MISSION]);
-    // Simulate another mutation advancing the revision.
-    bump_revision_without_mutation(&s.mission_dir);
+    run_ok(
+        s.path(),
+        &["review", "record", "T5", "--clean", "--mission", MISSION],
+    );
     let ok = run_ok(
         s.path(),
         &["review", "record", "T5", "--clean", "--mission", MISSION],
@@ -1063,7 +1123,18 @@ fn late_same_boundary_does_not_bump_or_reset_dirty_counter() {
     fs::write(&findings, "# P1 finding\n").unwrap();
 
     run_ok(s.path(), &["review", "start", "T5", "--mission", MISSION]);
-    bump_revision_without_mutation(&s.mission_dir);
+    run_ok(
+        s.path(),
+        &[
+            "review",
+            "record",
+            "T5",
+            "--findings-file",
+            findings.to_str().unwrap(),
+            "--mission",
+            MISSION,
+        ],
+    );
     let ok = run_ok(
         s.path(),
         &[
@@ -1084,11 +1155,11 @@ fn late_same_boundary_does_not_bump_or_reset_dirty_counter() {
         serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(
         state_after["replan"]["consecutive_dirty_by_target"]["T2"],
-        3
+        4
     );
     assert_eq!(
         state_after["replan"]["consecutive_dirty_by_target"]["T3"],
-        3
+        4
     );
     // replan.triggered must stay false (would only flip at 6).
     assert_eq!(state_after["replan"]["triggered"], false);

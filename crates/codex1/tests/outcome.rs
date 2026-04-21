@@ -227,6 +227,31 @@ fn check_rejects_empty_definitions_and_resolved_questions() {
         .any(|v| v.as_str().unwrap_or("").contains("resolved_questions")));
 }
 
+#[cfg(unix)]
+#[test]
+fn ratify_rejects_symlinked_outcome_without_mutating_state() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    let outside = tmp.path().join("outside-outcome.md");
+    seed_valid_outcome(tmp.path(), "demo");
+    fs::rename(tmp.path().join("OUTCOME.md"), &outside).unwrap();
+    fs::remove_file(mission_dir.join("OUTCOME.md")).unwrap();
+    symlink(&outside, mission_dir.join("OUTCOME.md")).unwrap();
+
+    let before_state = read_state(&mission_dir);
+    let before_events = read_events(&mission_dir);
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "ratify", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!output.status.success());
+    assert_eq!(read_state(&mission_dir), before_state);
+    assert_eq!(read_events(&mission_dir), before_events);
+}
+
 #[test]
 fn check_flags_boilerplate_placeholders() {
     let tmp = TempDir::new().unwrap();
