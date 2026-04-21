@@ -111,7 +111,20 @@ fn discover_single_mission(root: &Path) -> Result<MissionPaths, CliError> {
     let mut candidates = Vec::new();
     for entry in fs::read_dir(&plans).map_err(CliError::Io)?.flatten() {
         let path = entry.path();
-        if path.is_dir() && path.join("STATE.json").is_file() {
+        let Ok(meta) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if meta.file_type().is_symlink() || !meta.is_dir() {
+            continue;
+        }
+        let state_path = path.join("STATE.json");
+        let Ok(state_meta) = fs::symlink_metadata(&state_path) else {
+            continue;
+        };
+        if state_meta.file_type().is_symlink() || !state_meta.is_file() {
+            continue;
+        }
+        if path.is_dir() && state_path.is_file() {
             if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
                 candidates.push(name.to_string());
             }

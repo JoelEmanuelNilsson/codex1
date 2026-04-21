@@ -13,7 +13,7 @@ use super::lifecycle::{deps_satisfied, deps_status_map, load_plan, status_str};
 pub fn run(task_id: &str, ctx: &Ctx) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let state = state::load(&paths)?;
-    let plan = load_plan(&paths)?;
+    let plan = load_plan(&paths, &state)?;
 
     let Some(plan_task) = plan.get(task_id) else {
         return Err(CliError::TaskNotReady {

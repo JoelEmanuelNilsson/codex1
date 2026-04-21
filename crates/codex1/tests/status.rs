@@ -165,6 +165,24 @@ fn fresh_init_reports_clarify_next_action() {
 }
 
 #[test]
+fn locked_plan_drift_reports_invalid_state() {
+    let fx = Fixture::new("demo");
+    let mut state = base_state("demo");
+    state.phase = Phase::Execute;
+    state.outcome.ratified = true;
+    state.plan.locked = true;
+    state.plan.hash = Some(codex1::state::plan_hash(simple_plan().as_bytes()));
+    fx.write_state(&state);
+    fx.write_plan(&simple_plan().replace("depends_on: [T1]", "depends_on: []"));
+
+    let json = fx.status();
+    assert_eq!(json["ok"], Value::Bool(true));
+    assert_eq!(json["data"]["verdict"], "invalid_state");
+    assert_eq!(json["data"]["next_action"]["kind"], "fix_state");
+    assert_eq!(json["data"]["ready_tasks"].as_array().unwrap().len(), 0);
+}
+
+#[test]
 fn outcome_ratified_plan_unlocked_reports_plan_next_action() {
     let fx = Fixture::new("demo");
     let mut state = base_state("demo");

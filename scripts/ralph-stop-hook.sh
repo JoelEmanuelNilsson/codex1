@@ -44,8 +44,17 @@ if command -v jq >/dev/null 2>&1; then
   ok="$(printf '%s' "$status_json" | jq -r '.ok' 2>/dev/null || true)"
   code="$(printf '%s' "$status_json" | jq -r '.code // empty' 2>/dev/null || true)"
   ambiguous="$(printf '%s' "$status_json" | jq -r '.context.ambiguous // false' 2>/dev/null || echo false)"
+  status_message="$(printf '%s' "$status_json" | jq -r '.message // empty' 2>/dev/null || true)"
   if [ "$ok" = "false" ] && [ "$code" = "MISSION_NOT_FOUND" ] && [ "$ambiguous" = "true" ]; then
     echo "ralph-stop-hook: ambiguous Codex1 mission; set CODEX1_MISSION or CODEX1_REPO_ROOT" >&2
+    exit 2
+  fi
+  if [ "$ok" = "false" ]; then
+    if [ -n "$status_message" ]; then
+      echo "ralph-stop-hook: codex1 status failed: $status_message" >&2
+    else
+      echo "ralph-stop-hook: codex1 status failed with code=$code" >&2
+    fi
     exit 2
   fi
   allow="$(printf '%s' "$status_json" | jq -r '.data.stop.allow' 2>/dev/null || true)"
@@ -56,6 +65,10 @@ else
   if printf '%s' "$status_json" | grep -q '"code"[[:space:]]*:[[:space:]]*"MISSION_NOT_FOUND"' \
     && printf '%s' "$status_json" | grep -q '"ambiguous"[[:space:]]*:[[:space:]]*true'; then
     echo "ralph-stop-hook: ambiguous Codex1 mission; set CODEX1_MISSION or CODEX1_REPO_ROOT" >&2
+    exit 2
+  fi
+  if printf '%s' "$status_json" | grep -q '"ok"[[:space:]]*:[[:space:]]*false'; then
+    echo "ralph-stop-hook: codex1 status returned an error envelope; blocking Stop" >&2
     exit 2
   fi
   allow="$(printf '%s' "$status_json" | grep -o '"allow"[[:space:]]*:[[:space:]]*\(true\|false\)' | head -n1 | awk -F: '{print $2}' | tr -d ' ' || true)"

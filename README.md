@@ -29,7 +29,7 @@ The six public skills are the user-facing product. Each is invoked by its `$` na
 | `$close` | Pause the active loop so the user can discuss without Ralph forcing continuation. |
 | `$autopilot` | Compose the whole manual flow end-to-end, pausing for genuine user input. |
 
-The skills ship from Phase B under `.codex/skills/`. The workflow each skill drives is documented in [`docs/codex1-rebuild-handoff/01-product-flow.md`](docs/codex1-rebuild-handoff/01-product-flow.md).
+The six public skills live under `.codex/skills/`. The workflow each skill drives is documented in [`docs/codex1-rebuild-handoff/01-product-flow.md`](docs/codex1-rebuild-handoff/01-product-flow.md).
 
 ## Manual CLI flow
 
@@ -71,7 +71,7 @@ File-by-file ownership, mutation protocol, revision discipline, and late-output 
 
 ## Ralph stop hook
 
-Ralph is tiny. It runs `codex1 status --json` and blocks the Stop event iff the loop is active, not paused, and `stop.allow` is false. Ralph does not read plan or review files, does not manage subagents, and does not keep its own state.
+Ralph is tiny. It runs `codex1 status --json` and blocks the Stop event when the resolved mission says `stop.allow` is false. It also fails closed on mission-resolution/config errors such as ambiguous bare multi-mission discovery or explicit bad selectors. Ralph does not read plan or review files, does not manage subagents, and does not keep its own state.
 
 Print the wiring one-liner:
 
@@ -79,7 +79,7 @@ Print the wiring one-liner:
 codex1 --json hook snippet
 ```
 
-The shell script and its install guide ship from Phase B Unit 12; see [`scripts/README-hook.md`](scripts/README-hook.md) once that unit lands.
+The shell script and its install guide live in [`scripts/README-hook.md`](scripts/README-hook.md).
 
 ## Contract
 
@@ -119,8 +119,8 @@ docs/
   install-verification.md            # install + verify-from-/tmp recipe
   mission-anatomy.md                 # PLANS/<id>/ file-by-file anatomy
   codex1-rebuild-handoff/            # normative product docs (6 files)
-.codex/skills/                       # six public skills (Phase B)
-scripts/                             # Ralph stop hook (Phase B)
+  .codex/skills/                       # six public skills
+  scripts/                             # Ralph stop hook
 ```
 
 ## License

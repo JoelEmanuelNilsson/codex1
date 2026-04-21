@@ -79,6 +79,7 @@ pub fn validate_outcome(
     }
     check_scalar(&mapping, "status", &mut missing_fields, &mut placeholders);
     check_status_value(&mapping, &mut missing_fields);
+    reject_forbidden_fields(&mapping, &mut missing_fields);
     check_scalar(&mapping, "title", &mut missing_fields, &mut placeholders);
     check_scalar(
         &mapping,
@@ -253,6 +254,14 @@ fn check_status_value(m: &Mapping, missing: &mut Vec<String>) {
         missing.push(format!(
             "status (expected `draft` or `ratified`, found `{trimmed}`)"
         ));
+    }
+}
+
+fn reject_forbidden_fields(m: &Mapping, missing: &mut Vec<String>) {
+    for field in ["approval_boundaries", "autonomy"] {
+        if m.contains_key(Value::String(field.to_string())) {
+            missing.push(format!("{field} (forbidden in OUTCOME.md)"));
+        }
     }
 }
 

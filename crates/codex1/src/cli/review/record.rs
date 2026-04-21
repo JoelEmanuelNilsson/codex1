@@ -48,7 +48,7 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
     let peek = state::load(&paths)?;
     state::check_expected_revision(ctx.expect_revision, &peek)?;
 
-    let plan_tasks = load_tasks(&paths)?;
+    let plan_tasks = load_tasks(&paths, &peek)?;
     let review_task = fetch_review_task(&plan_tasks, inputs.task_id)?;
     let targets = review_targets(&review_task)?;
 

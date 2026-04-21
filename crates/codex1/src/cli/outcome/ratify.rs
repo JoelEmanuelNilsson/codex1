@@ -117,8 +117,9 @@ fn advance_phase(current: &Phase) -> Phase {
 fn rewrite_status_to_ratified(frontmatter: &str, body: &str) -> Result<String, CliError> {
     let mut new_front = String::with_capacity(frontmatter.len() + 16);
     let mut rewrote = false;
+    let top_level_indent = detect_top_level_key_indent(frontmatter);
     for line in frontmatter.split_inclusive('\n') {
-        if !rewrote && is_top_level_status_line(line) {
+        if !rewrote && is_top_level_status_line(line, top_level_indent) {
             let indent_end = line.find("status:").unwrap_or(0);
             let indent = &line[..indent_end];
             let line_ending = if line.ends_with("\r\n") {
@@ -165,12 +166,38 @@ fn rewrite_status_to_ratified(frontmatter: &str, body: &str) -> Result<String, C
     Ok(out)
 }
 
-fn is_top_level_status_line(line: &str) -> bool {
-    // Top-level keys have no leading whitespace in YAML frontmatter.
-    // We require the line to start with `status:` followed by a space,
-    // tab, newline, or end-of-string.
+fn detect_top_level_key_indent(frontmatter: &str) -> usize {
+    frontmatter
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                return None;
+            }
+            let indent = line.len().saturating_sub(line.trim_start().len());
+            let trimmed_start = line.trim_start();
+            let is_key = trimmed_start
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+                && trimmed_start.contains(':');
+            is_key.then_some(indent)
+        })
+        .min()
+        .unwrap_or(0)
+}
+
+fn is_top_level_status_line(line: &str, top_level_indent: usize) -> bool {
     let trimmed_end = line.trim_end_matches(['\r', '\n']);
+    let actual_indent = trimmed_end
+        .chars()
+        .take_while(char::is_ascii_whitespace)
+        .count();
+    if actual_indent != top_level_indent {
+        return false;
+    }
     trimmed_end
+        .trim_start()
         .strip_prefix("status:")
         .is_some_and(|rest| rest.is_empty() || rest.starts_with(' ') || rest.starts_with('\t'))
 }
@@ -202,5 +229,12 @@ mod tests {
     fn errors_when_status_missing() {
         let err = rewrite_status_to_ratified("mission_id: demo\n", "").unwrap_err();
         assert!(matches!(err, CliError::OutcomeIncomplete { .. }));
+    }
+
+    #[test]
+    fn rewrites_indented_top_level_status_line() {
+        let front = "  mission_id: demo\n  status: draft\n  title: Thing\n";
+        let got = rewrite_status_to_ratified(front, "").unwrap();
+        assert!(got.contains("  status: ratified\n"));
     }
 }

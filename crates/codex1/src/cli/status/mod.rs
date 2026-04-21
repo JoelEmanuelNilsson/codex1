@@ -23,6 +23,15 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
     match resolve_mission(&ctx.selector(), true) {
         Ok(paths) => {
             let state = state::load(&paths)?;
+            if state.outcome.ratified && state.plan.locked {
+                if let Err(err) = state::require_locked_plan_snapshot(&paths, &state) {
+                    let data = project::build_invalid_state(&state, &err.to_string());
+                    let env =
+                        JsonOk::new(Some(state.mission_id.clone()), Some(state.revision), data);
+                    println!("{}", env.to_pretty());
+                    return Ok(());
+                }
+            }
             let tasks = next_action::load_plan_tasks(&paths).unwrap_or_default();
             let close_report = ReadinessReport::from_state_and_paths(&state, &paths);
             let data = project::build(&state, &tasks, close_report.ready);

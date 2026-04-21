@@ -26,7 +26,7 @@ pub fn build(state: &MissionState, tasks: &[PlanTask], close_ready: bool) -> Val
     // reading `ready_tasks` nonempty + `next_action.kind: plan` never
     // gets mixed signals. Mirrors the guard at
     // `cli/plan/waves.rs:66-79`.
-    let (wave, reviews_ready, repair_targets) = if state.plan.locked {
+    let (wave, reviews_ready, repair_targets) = if state.plan.locked && !state.replan.triggered {
         (
             next_ready_wave(tasks, state),
             ready_reviews(tasks, state),
@@ -69,6 +69,28 @@ pub fn build(state: &MissionState, tasks: &[PlanTask], close_ready: bool) -> Val
         "review_required": review_required,
         "replan_required": state.replan.triggered,
         "close_ready": close_ready,
+        "outcome_ratified": state.outcome.ratified,
+        "plan_locked": state.plan.locked,
+        "stop": stop,
+    })
+}
+
+pub fn build_invalid_state(state: &MissionState, reason: &str) -> Value {
+    let stop = stop_projection(state, Verdict::InvalidState, false);
+    json!({
+        "phase": state.phase,
+        "verdict": Verdict::InvalidState.as_str(),
+        "loop": state.loop_,
+        "next_action": {
+            "kind": "fix_state",
+            "message": reason,
+        },
+        "ready_tasks": [],
+        "parallel_safe": false,
+        "parallel_blockers": [],
+        "review_required": [],
+        "replan_required": state.replan.triggered,
+        "close_ready": false,
         "outcome_ratified": state.outcome.ratified,
         "plan_locked": state.plan.locked,
         "stop": stop,

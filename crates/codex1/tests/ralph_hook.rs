@@ -258,6 +258,23 @@ fn ambiguous_mission_blocks_stop_without_jq_parser() {
 }
 
 #[test]
+fn explicit_status_error_blocks_stop() {
+    if !bash_available() {
+        eprintln!("skipping: bash not available");
+        return;
+    }
+    let out = run_hook_with_mocked_codex1(
+        r#"{"ok":false,"code":"MISSION_NOT_FOUND","message":"Expected STATE.json at /tmp/nope/PLANS/demo/STATE.json","retryable":false}"#,
+    );
+    assert_eq!(out.status.code(), Some(2));
+    let err = stderr_str(&out);
+    assert!(
+        err.contains("status failed"),
+        "stderr should mention status failure; got: {err}"
+    );
+}
+
+#[test]
 fn hook_script_is_executable() {
     let hook = hook_script_path();
     let meta = fs::metadata(&hook).expect("hook script exists");

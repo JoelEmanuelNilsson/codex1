@@ -58,7 +58,7 @@ assumption about state; trust only the envelope.
 | `mission_close_review`      | Invoke `$review-loop` (mission-close mode), return to Step 1.   |
 | `repair`                    | Invoke `$execute` with the repair task, return to Step 1.       |
 | `replan`                    | Invoke `$plan replan`, return to Step 1.                        |
-| `close`                     | Run `codex1 close complete`, then stop.                         |
+| `close`                     | Run `codex1 close check`, then `codex1 close complete`, then stop. |
 | `blocked`                   | Escalate to the user; do not loop.                              |
 | `fix_state`                 | Escalate to the user; do not auto-fix STATE.json.                |
 | `closed`                    | Report terminal completion and stop.                            |

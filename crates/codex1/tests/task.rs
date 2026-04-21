@@ -37,23 +37,26 @@ fn seed_mission(plan_yaml: &str, specs: &[(&str, &str)]) -> (TempDir, PathBuf) {
 
     write(&mission_dir.join("OUTCOME.md"), OUTCOME_FIXTURE);
     write(&mission_dir.join("PLAN.yaml"), plan_yaml);
+    let plan_hash = codex1::state::plan_hash(plan_yaml.as_bytes());
     write(
         &mission_dir.join("STATE.json"),
-        r#"{
+        &format!(
+            r#"{{
   "mission_id": "demo",
   "revision": 0,
   "schema_version": 1,
   "phase": "execute",
-  "loop": { "active": false, "paused": false, "mode": "none" },
-  "outcome": { "ratified": true, "ratified_at": "2026-04-20T00:00:00Z" },
-  "plan": { "locked": true, "requested_level": "medium", "effective_level": "medium", "hash": "abc" },
-  "tasks": {},
-  "reviews": {},
-  "replan": { "consecutive_dirty_by_target": {}, "triggered": false },
-  "close": { "review_state": "not_started" },
+  "loop": {{ "active": false, "paused": false, "mode": "none" }},
+  "outcome": {{ "ratified": true, "ratified_at": "2026-04-20T00:00:00Z" }},
+  "plan": {{ "locked": true, "requested_level": "medium", "effective_level": "medium", "hash": "{plan_hash}" }},
+  "tasks": {{}},
+  "reviews": {{}},
+  "replan": {{ "consecutive_dirty_by_target": {{}}, "triggered": false }},
+  "close": {{ "review_state": "not_started" }},
   "events_cursor": 0
-}
+}}
 "#,
+        ),
     );
     write(&mission_dir.join("EVENTS.jsonl"), "");
 
@@ -229,6 +232,26 @@ fn next_fresh_ratified_reports_single_ready_task() {
     assert_eq!(json["data"]["next"]["kind"], "run_task");
     assert_eq!(json["data"]["next"]["task_id"], "T1");
     assert_eq!(json["data"]["next"]["task_kind"], "code");
+}
+
+#[test]
+fn locked_plan_drift_blocks_task_next_and_start() {
+    let (tmp, mission_dir) = seed_mission(PLAN_LINEAR_NO_REVIEW, &[("T1", "# spec\n")]);
+    let drifted = PLAN_LINEAR_NO_REVIEW.replace(
+        "  - id: T2\n    title: \"Dependent task\"\n    kind: code\n    depends_on: [T1]\n",
+        "  - id: T2\n    title: \"Dependent task\"\n    kind: code\n    depends_on: []\n",
+    );
+    fs::write(mission_dir.join("PLAN.yaml"), drifted).unwrap();
+
+    let next = run(tmp.path(), &["task", "next", "--mission", "demo"]);
+    assert!(!next.status.success());
+    let next_json = parse_json(&next);
+    assert_eq!(next_json["code"], "PLAN_INVALID");
+
+    let start = run(tmp.path(), &["task", "start", "T2", "--mission", "demo"]);
+    assert!(!start.status.success());
+    let start_json = parse_json(&start);
+    assert_eq!(start_json["code"], "PLAN_INVALID");
 }
 
 #[test]

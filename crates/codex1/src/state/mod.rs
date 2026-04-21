@@ -23,6 +23,7 @@ pub mod schema;
 use std::fs::{self, File, OpenOptions};
 
 use fs2::FileExt;
+use sha2::{Digest, Sha256};
 
 use crate::core::error::CliError;
 use crate::core::paths::{
@@ -71,6 +72,65 @@ pub fn require_plan_locked(state: &MissionState) -> Result<(), CliError> {
         message: "plan is not locked; cannot mutate tasks or reviews until it is".to_string(),
         hint: Some("Run `codex1 plan check` to lock PLAN.yaml first.".to_string()),
     })
+}
+
+pub fn plan_hash(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    let digest = hasher.finalize();
+    let mut out = String::with_capacity(7 + digest.len() * 2);
+    out.push_str("sha256:");
+    for b in digest {
+        let _ = write!(out, "{b:02x}");
+    }
+    out
+}
+
+pub fn require_locked_plan_snapshot(
+    paths: &MissionPaths,
+    state: &MissionState,
+) -> Result<(), CliError> {
+    require_plan_locked(state)?;
+    let Some(expected_hash) = state.plan.hash.as_deref() else {
+        return Ok(());
+    };
+
+    let plan_path = paths.plan();
+    ensure_artifact_file_read_safe(paths, &plan_path, "PLAN.yaml")?;
+    let raw = fs::read(&plan_path).map_err(|err| CliError::PlanInvalid {
+        message: format!("Failed to read PLAN.yaml at {}: {err}", plan_path.display()),
+        hint: Some("Run `codex1 plan check` after restoring PLAN.yaml.".to_string()),
+    })?;
+    let current_hash = plan_hash(&raw);
+    if current_hash == expected_hash {
+        return Ok(());
+    }
+
+    Err(CliError::PlanInvalid {
+        message:
+            "PLAN.yaml changed after the plan was locked; run `codex1 replan record` before using the updated DAG"
+                .to_string(),
+        hint: Some(
+            "Use `codex1 replan record ...`, edit PLAN.yaml, then `codex1 plan check` to relock the new DAG."
+                .to_string(),
+        ),
+    })
+}
+
+pub fn require_executable_plan(paths: &MissionPaths, state: &MissionState) -> Result<(), CliError> {
+    require_locked_plan_snapshot(paths, state)?;
+    if state.replan.triggered {
+        return Err(CliError::PlanInvalid {
+            message: "replan is required before executing more task work".to_string(),
+            hint: Some(
+                "Update PLAN.yaml and relock it with `codex1 plan check` before starting more tasks."
+                    .to_string(),
+            ),
+        });
+    }
+    Ok(())
 }
 
 /// Read-only state load. Takes a shared fs2 lock during the read.

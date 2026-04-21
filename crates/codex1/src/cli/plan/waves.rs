@@ -15,7 +15,7 @@ use crate::core::envelope::JsonOk;
 use crate::core::error::{CliError, CliResult};
 use crate::core::mission::resolve_mission;
 use crate::core::paths::{ensure_artifact_file_read_safe, MissionPaths};
-use crate::state::{self, TaskStatus};
+use crate::state::{self, MissionState, TaskStatus};
 
 /// Minimal task shape needed for wave derivation and graph emission. Kept
 /// local so this module does not depend on Unit 4's parser.
@@ -41,7 +41,8 @@ struct ParsedPlan {
 }
 
 /// Load and parse PLAN.yaml into the minimal task shape used by waves/graph.
-pub fn load_plan_tasks(paths: &MissionPaths) -> CliResult<Vec<ParsedTask>> {
+pub fn load_plan_tasks(paths: &MissionPaths, state: &MissionState) -> CliResult<Vec<ParsedTask>> {
+    state::require_locked_plan_snapshot(paths, state)?;
     let plan_path = paths.plan();
     ensure_artifact_file_read_safe(paths, &plan_path, "PLAN.yaml")?;
     if !plan_path.is_file() {
@@ -79,7 +80,7 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
         return Ok(());
     }
 
-    let tasks = load_plan_tasks(&paths)?;
+    let tasks = load_plan_tasks(&paths, &state)?;
     let waves = derive_waves(&tasks, &state.tasks)?;
 
     let current_ready_wave = waves

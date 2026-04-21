@@ -79,7 +79,8 @@ impl ParsedPlan {
 
 /// Load and parse PLAN.yaml from disk. Returns `PlanInvalid` if the
 /// top-level shape is unreadable.
-pub fn load_plan(paths: &MissionPaths) -> Result<ParsedPlan, CliError> {
+pub fn load_plan(paths: &MissionPaths, state: &MissionState) -> Result<ParsedPlan, CliError> {
+    crate::state::require_locked_plan_snapshot(paths, state)?;
     let plan_path = paths.plan();
     ensure_artifact_file_read_safe(paths, &plan_path, "PLAN.yaml")?;
     let raw = fs::read_to_string(&plan_path).map_err(|err| CliError::PlanInvalid {

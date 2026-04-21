@@ -42,7 +42,7 @@ description: >
 
    Stop only if the verdict is anything else (e.g. `continue_required`, `blocked` without `replan`, `needs_user`, `terminal_complete`) — those belong to other skills or to the user.
 
-2. **Spawn mission-close reviewers.** Spawn 1-2 reviewers with profiles `mission_close` and (optionally) `integration_intent`. The packet must include `OUTCOME.md`, `PLAN.yaml`, and the final `CLOSEOUT-preview` — see `references/reviewer-profiles.md` for templates.
+2. **Spawn mission-close reviewers.** Spawn 1-2 reviewers with profiles `mission_close` and (optionally) `integration_intent`. The packet must include `OUTCOME.md`, `PLAN.yaml`, the latest `codex1 close check --json` output, the relevant `specs/**/PROOF.md` artifacts, and any review records already under `PLANS/<mission-id>/reviews/` — see `references/reviewer-profiles.md` for templates.
 
 3. **Record outcome on main thread.**
    - Clean: `codex1 --json close record-review --clean`

@@ -68,7 +68,7 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
         return Ok(());
     }
 
-    let plan = load_plan(&paths)?;
+    let plan = load_plan(&paths, &state)?;
     let effective = effective_tasks(&plan, &state);
 
     let next = if all_tasks_terminal(&plan, &state) {

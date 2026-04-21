@@ -419,6 +419,80 @@ fn check_and_ratify_reject_invalid_status_and_non_string_required_entries() {
     assert_eq!(read_state(&mission_dir), before);
 }
 
+#[test]
+fn check_and_ratify_accept_indented_frontmatter() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    seed_valid_outcome(&mission_dir, "demo");
+    let raw = fs::read_to_string(mission_dir.join("OUTCOME.md")).unwrap();
+    let indented = raw
+        .lines()
+        .map(|line| {
+            if line == "---" || line.is_empty() || line.starts_with('#') {
+                line.to_string()
+            } else {
+                format!("  {line}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(mission_dir.join("OUTCOME.md"), format!("{indented}\n")).unwrap();
+
+    let check = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "check", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(check.status.success());
+
+    let ratify = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "ratify", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(ratify.status.success(), "{:?}", ratify);
+    let rewritten = fs::read_to_string(mission_dir.join("OUTCOME.md")).unwrap();
+    assert!(rewritten.contains("  status: ratified"));
+}
+
+#[test]
+fn check_and_ratify_reject_forbidden_workflow_policy_fields() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    seed_valid_outcome(&mission_dir, "demo");
+    let raw = fs::read_to_string(mission_dir.join("OUTCOME.md"))
+        .unwrap()
+        .replace(
+            "quality_bar:\n  - The check command is idempotent and side-effect free.\n",
+            "approval_boundaries:\n  - Ask before pushing\n\nautonomy:\n  mode: high\n\nquality_bar:\n  - The check command is idempotent and side-effect free.\n",
+        );
+    fs::write(mission_dir.join("OUTCOME.md"), raw).unwrap();
+
+    let check = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "check", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!check.status.success());
+    let check_json = parse_json(&check);
+    let missing = check_json["context"]["missing_fields"].as_array().unwrap();
+    assert!(missing
+        .iter()
+        .any(|v| v == "approval_boundaries (forbidden in OUTCOME.md)"));
+    assert!(missing
+        .iter()
+        .any(|v| v == "autonomy (forbidden in OUTCOME.md)"));
+
+    let before = read_state(&mission_dir);
+    let ratify = cmd()
+        .current_dir(tmp.path())
+        .args(["outcome", "ratify", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!ratify.status.success());
+    assert_eq!(read_state(&mission_dir), before);
+}
+
 #[cfg(unix)]
 #[test]
 fn ratify_rejects_symlinked_outcome_without_mutating_state() {

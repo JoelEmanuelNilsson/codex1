@@ -41,6 +41,7 @@ fn seed_plan(mission_dir: &Path, plan_yaml: &str) {
     let state_path = mission_dir.join("STATE.json");
     let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     state["plan"]["locked"] = Value::Bool(true);
+    state["plan"]["hash"] = Value::String(codex1::state::plan_hash(plan_yaml.as_bytes()));
     fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
 }
 
@@ -297,4 +298,34 @@ fn graph_out_flag_writes_file_and_reports_path() {
     let content = fs::read_to_string(&out).unwrap();
     assert!(content.starts_with("flowchart TD\n"));
     assert!(content.contains("T1 --> T2"));
+}
+
+#[test]
+fn graph_and_waves_reject_locked_plan_hash_drift() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_mission(&tmp, "demo");
+    seed_plan(&mission_dir, FIVE_TASK_PLAN);
+    fs::write(
+        mission_dir.join("PLAN.yaml"),
+        FIVE_TASK_PLAN.replace("depends_on: [T2, T3]", "depends_on: [T2]"),
+    )
+    .unwrap();
+
+    let waves = cmd()
+        .current_dir(tmp.path())
+        .args(["plan", "waves", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!waves.status.success());
+    let waves_json = parse_stdout_json(&waves);
+    assert_eq!(waves_json["code"], "PLAN_INVALID");
+
+    let graph = cmd()
+        .current_dir(tmp.path())
+        .args(["plan", "graph", "--mission", "demo"])
+        .output()
+        .expect("runs");
+    assert!(!graph.status.success());
+    let graph_json = parse_stdout_json(&graph);
+    assert_eq!(graph_json["code"], "PLAN_INVALID");
 }

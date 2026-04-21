@@ -55,7 +55,7 @@ The Makefile target chains `fmt clippy test install-local verify-installed`; `ve
 
 ## Skill auto-discovery
 
-Phase B Units deliver six public skills under `.codex/skills/{clarify,plan,execute,review-loop,close,autopilot}`. Once merged, these are auto-discovered by Codex when the repo is on the current working path. You can also symlink a shared copy from `~/.codex/skills/` if you maintain them outside this repo:
+Codex1 ships six public skills under `.codex/skills/{clarify,plan,execute,review-loop,close,autopilot}`. They are auto-discovered by Codex when the repo is on the current working path. You can also symlink a shared copy from `~/.codex/skills/` if you maintain them outside this repo:
 
 ```bash
 ln -s /path/to/codex1/.codex/skills/clarify ~/.codex/skills/clarify
@@ -66,20 +66,19 @@ See the handoff package at [`codex1-rebuild-handoff/01-product-flow.md`](codex1-
 
 ## Ralph stop hook
 
-The Ralph Stop hook is a short shell script that runs `codex1 status --json` and blocks the Stop event iff the loop is active, not paused, and `stop.allow` is false. Wire it via your Codex `hooks.json` as described by:
+The Ralph Stop hook is a short shell script that runs `codex1 status --json`, blocks when the resolved mission says `stop.allow == false`, and fails closed on mission-resolution/config errors such as ambiguous bare multi-mission discovery or explicit bad selectors. Wire it via your Codex `hooks.json` as described by:
 
 ```bash
 codex1 --json hook snippet
 ```
 
-The shell script itself and its install README ship from Phase B Unit 12; see [`../scripts/README-hook.md`](../scripts/README-hook.md) once that unit lands.
+The shell script itself and its install README live at [`../scripts/README-hook.md`](../scripts/README-hook.md).
 
 ## Troubleshooting
 
 - `codex1: command not found` — `$HOME/.local/bin` is not on `PATH`; add it and `exec $SHELL`, or re-run `make install-local`.
 - `MISSION_NOT_FOUND` — either pass `--mission <id>` explicitly or `cd` into a directory whose `PLANS/` subdirectory contains exactly one mission.
 - `REVISION_CONFLICT` — another writer advanced `STATE.json` while you were staging a mutation. Re-read it (`cat PLANS/<id>/STATE.json`) and retry with the correct `--expect-revision`. The error envelope's `context.actual` field carries the current revision.
-- `NOT_IMPLEMENTED` — the command's Phase B unit has not merged yet. See [`cli-reference.md`](cli-reference.md) for per-command ownership.
 - `doctor` warns about a network filesystem — prefer local disk for mission state; `fs2` advisory locks behave unevenly over NFS/SMB.
 
 Per-command shapes, envelopes, and error codes live in [`cli-reference.md`](cli-reference.md) and [`cli-contract-schemas.md`](cli-contract-schemas.md).

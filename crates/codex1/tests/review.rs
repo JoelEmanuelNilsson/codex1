@@ -171,7 +171,19 @@ fn set_targets_awaiting(mission_dir: &Path, targets: &[&str]) {
     state["outcome"] =
         serde_json::json!({ "ratified": true, "ratified_at": "2026-04-20T00:00:00Z" });
     state["plan"]["locked"] = Value::Bool(true);
+    let plan_hash =
+        codex1::state::plan_hash(&fs::read(mission_dir.join("PLAN.yaml")).expect("read plan"));
+    state["plan"]["hash"] = Value::String(plan_hash);
     state["phase"] = Value::String("execute".into());
+    fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
+}
+
+fn sync_plan_hash(mission_dir: &Path) {
+    let state_path = mission_dir.join("STATE.json");
+    let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["plan"]["hash"] = Value::String(codex1::state::plan_hash(
+        &fs::read(mission_dir.join("PLAN.yaml")).unwrap(),
+    ));
     fs::write(&state_path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
 }
 
@@ -555,6 +567,7 @@ fn review_start_requires_all_review_task_dependencies() {
         .unwrap()
         .replace("    depends_on: [T2]\n", "    depends_on: [T2, T4]\n");
     fs::write(&plan_path, plan).unwrap();
+    sync_plan_hash(&seeded.mission_dir);
 
     let err = run_err(
         seeded.path(),
@@ -1004,6 +1017,23 @@ fn review_start_stale_revision_wins_over_unlocked_plan() {
 }
 
 #[test]
+fn review_start_rejects_locked_plan_hash_drift() {
+    let s = Seeded::new();
+    let plan_path = s.mission_dir.join("PLAN.yaml");
+    let drifted = fs::read_to_string(&plan_path)
+        .unwrap()
+        .replace("depends_on: [T2, T3]", "depends_on: [T2]");
+    fs::write(&plan_path, drifted).unwrap();
+
+    let err = run_err(s.path(), &["review", "start", "T5", "--mission", MISSION]);
+    assert_eq!(err["code"], "PLAN_INVALID");
+    assert!(err["message"]
+        .as_str()
+        .unwrap_or("")
+        .contains("PLAN.yaml changed after the plan was locked"));
+}
+
+#[test]
 fn review_record_stale_revision_wins_over_missing_findings() {
     let s = Seeded::new();
     run_ok(s.path(), &["review", "start", "T5", "--mission", MISSION]);
@@ -1099,6 +1129,7 @@ fn review_packet_rejects_escaping_target_spec_even_if_bad_plan_is_locked() {
         .unwrap()
         .replace("spec: specs/T2/SPEC.md", "spec: ../../secret.md");
     fs::write(s.mission_dir.join("PLAN.yaml"), plan).unwrap();
+    sync_plan_hash(&s.mission_dir);
 
     let err = run_err(s.path(), &["review", "packet", "T5", "--mission", MISSION]);
     assert_eq!(err["code"], "PLAN_INVALID");

@@ -9,12 +9,14 @@ piece of Ralph. Ralph is intentionally tiny: the hook reads
 On every Codex Stop event the harness invokes the hook. The hook:
 
 1. Runs `codex1 status --json` in the current working directory.
-2. Inspects `data.stop.allow` in the returned envelope.
-3. Exits `0` when Stop is allowed (loop inactive, paused, or mission already
+2. Fails closed if `codex1 status` returns a handled mission-resolution/config error.
+3. Otherwise inspects `data.stop.allow` in the returned envelope.
+4. Exits `0` when Stop is allowed (loop inactive, paused, or mission already
    past mission-close-review-passed / terminal-complete).
-4. Exits `2` when Stop must be blocked (loop active, unpaused, and status
-   reports `stop.allow == false`). Codex treats exit code 2 as "block this
-   Stop and surface stderr to the user".
+5. Exits `2` when Stop must be blocked (loop active, unpaused, and status
+   reports `stop.allow == false`, or status failed with an explicit handled
+   error such as ambiguous mission discovery / bad selector). Codex treats
+   exit code 2 as "block this Stop and surface stderr to the user".
 
 The hook does **not** read plan files, subagent state, `.ralph/` directories,
 or any other artifact. It calls only `codex1 status --json`. If `codex1` is
@@ -98,8 +100,7 @@ safe at any time.
 ## Design notes
 
 - Ralph is status-only. It never inspects mission files. This keeps the
-  behavior consistent with whatever `codex1 status` reports today, even as
-  Phase B replaces the status projection.
+  behavior consistent with whatever `codex1 status` reports today.
 - Ralph does not enforce caller identity. Only the active main thread should
   feel Stop pressure; subagents should be prompt-governed to finish and exit
   on their own. Any additional filtering must be expressed through

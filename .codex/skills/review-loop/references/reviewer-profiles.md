@@ -151,14 +151,15 @@ Profile-specific scope:
 Focus on:
 - Does the mission as-built match OUTCOME.md (must_be_true, success_criteria, non_goals)?
 - Are all planned review tasks clean and non-superseded?
-- Does CLOSEOUT-preview honestly describe the final state?
+- Does the current close packet truthfully summarize final state using `close check`, proofs, and recorded reviews?
 - Are there unresolved blockers, unratified assumptions, or quietly dropped requirements?
 
 Packet includes:
 - OUTCOME.md
 - PLAN.yaml (final)
-- CLOSEOUT-preview
-- Proof index
+- Latest `codex1 close check --json` output
+- Relevant `specs/**/PROOF.md` artifacts
+- Recorded review files under `PLANS/<mission-id>/reviews/`
 
 Do not:
 - Reopen settled planned reviews unless you find P0/P1/P2 evidence of a mission-level failure.

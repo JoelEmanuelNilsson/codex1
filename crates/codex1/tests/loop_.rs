@@ -589,7 +589,9 @@ fn paused_loop_allows_stop_in_status() {
     state.plan.locked = true;
     state.plan.requested_level = Some(PlanLevel::Medium);
     state.plan.effective_level = Some(PlanLevel::Medium);
-    state.plan.hash = Some("deadbeef".to_string());
+    state.plan.hash = Some(codex1::state::plan_hash(
+        &std::fs::read(mission_dir.join("PLAN.yaml")).unwrap(),
+    ));
     state.tasks.insert(
         "T1".to_string(),
         TaskRecord {

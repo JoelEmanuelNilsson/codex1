@@ -18,10 +18,8 @@ pub fn run(task_id: &str, ctx: &Ctx) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let state = state::load(&paths)?;
     state::check_expected_revision(ctx.expect_revision, &state)?;
-    // Refuse to start tasks while the plan is unlocked (e.g. during a
-    // pending replan). See `state::require_plan_locked` for rationale.
-    state::require_plan_locked(&state)?;
-    let plan = load_plan(&paths)?;
+    state::require_executable_plan(&paths, &state)?;
+    let plan = load_plan(&paths, &state)?;
 
     let Some(plan_task) = plan.get(task_id) else {
         return Err(CliError::TaskNotReady {
@@ -101,14 +99,12 @@ pub fn run(task_id: &str, ctx: &Ctx) -> CliResult<()> {
     let mutation = {
         let task_id = task_id.to_string();
         let started_at = started_at.clone();
+        let guard_paths = paths.clone();
         state::mutate_dynamic_maybe(&paths, ctx.expect_revision, move |state| {
-            // Re-check `plan.locked` under the exclusive lock to
-            // close the TOCTOU between the pre-mutate shared-lock
-            // load and this closure: a concurrent `replan record`
-            // landing in that window could otherwise produce
-            // `!plan.locked && task.status == InProgress`. See
-            // round-2 correctness P1-1.
-            state::require_plan_locked(state)?;
+            // Re-check plan execution preconditions under the exclusive
+            // lock so stale-plan writes cannot land after a concurrent
+            // replan trigger or locked-plan hash drift.
+            state::require_executable_plan(&guard_paths, state)?;
             let rec = ensure_task_record(state, &task_id);
             if matches!(rec.status, TaskStatus::InProgress) {
                 return Ok(None);

@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 
 use crate::core::error::CliError;
 use crate::core::paths::{ensure_artifact_file_read_safe, MissionPaths};
+use crate::state::MissionState;
 
 /// One entry in `tasks:`. Only the fields review cares about.
 #[derive(Debug, Clone, Deserialize)]
@@ -42,7 +43,11 @@ struct PlanDoc {
 
 /// Load PLAN.yaml and return tasks indexed by id. Missing plan file is an
 /// error (planned reviews require a plan to exist).
-pub fn load_tasks(paths: &MissionPaths) -> Result<BTreeMap<String, PlanTask>, CliError> {
+pub fn load_tasks(
+    paths: &MissionPaths,
+    state: &MissionState,
+) -> Result<BTreeMap<String, PlanTask>, CliError> {
+    crate::state::require_locked_plan_snapshot(paths, state)?;
     let plan_path = paths.plan();
     if !plan_path.is_file() {
         return Err(CliError::PlanInvalid {

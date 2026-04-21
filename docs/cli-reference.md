@@ -53,7 +53,7 @@ codex1 --json doctor
 codex1 --json hook snippet
 ```
 
-The shell script itself lives at `scripts/ralph-stop-hook.sh` and is owned by Phase B Unit 12; see [`scripts/README-hook.md`](../scripts/README-hook.md) for wiring details once that unit lands.
+The shell script itself lives at `scripts/ralph-stop-hook.sh`; see [`scripts/README-hook.md`](../scripts/README-hook.md) for wiring details.
 
 ---
 
@@ -176,7 +176,7 @@ codex1 --json plan waves --mission demo
 **Mutates state:** no.
 **Arguments:** none beyond globals.
 **Success:** `{"ok":true,"data":{"next":{"kind":"run_wave","wave_id":"W1","tasks":["T1"],"parallel_safe":true}}}` (alternate shapes for review / close / replan kinds).
-**Errors:** `PLAN_INVALID`, `REPLAN_REQUIRED`, `MISSION_NOT_FOUND`.
+**Errors:** `PLAN_INVALID`, `MISSION_NOT_FOUND`.
 **Phase status:** Implemented.
 **Example:**
 ```bash
@@ -191,7 +191,7 @@ codex1 --json task next --mission demo
 **Mutates state:** yes (updates `tasks[id].status`).
 **Arguments:**
 - `<TASK_ID>` (positional, required).
-**Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"task_id":"T2","status":"InProgress"}}`
+**Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"task_id":"T2","status":"in_progress"}}`
 **Errors:** `TASK_NOT_READY`, `REVISION_CONFLICT`, `MISSION_NOT_FOUND`.
 **Phase status:** Implemented.
 **Example:**
@@ -208,7 +208,7 @@ codex1 --json task start T2 --mission demo --expect-revision 5
 **Arguments:**
 - `<TASK_ID>` (positional, required).
 - `--proof <PATH>` (required) — path to the proof file (usually `specs/T<id>/PROOF.md`).
-**Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"task_id":"T2","status":"Complete","proof_path":"specs/T2/PROOF.md"}}`
+**Success:** `{"ok":true,"mission_id":"demo","revision":N,"data":{"task_id":"T2","status":"complete","proof_path":"specs/T2/PROOF.md"}}`
 **Errors:** `PROOF_MISSING`, `TASK_NOT_READY`, `REVISION_CONFLICT`, `MISSION_NOT_FOUND`.
 **Phase status:** Implemented.
 **Example:**
@@ -224,7 +224,7 @@ codex1 --json task finish T2 --proof specs/T2/PROOF.md --mission demo
 **Mutates state:** no.
 **Arguments:**
 - `<TASK_ID>` (positional, required).
-**Success:** `{"ok":true,"data":{"task_id":"T2","status":"Complete","depends_on":["T1"],"proof_path":"…"}}`
+**Success:** `{"ok":true,"data":{"task_id":"T2","status":"complete","depends_on":["T1"],"proof_path":"…"}}`
 **Errors:** `TASK_NOT_READY` (unknown task id), `MISSION_NOT_FOUND`.
 **Phase status:** Implemented.
 **Example:**

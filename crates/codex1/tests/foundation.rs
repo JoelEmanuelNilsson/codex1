@@ -331,6 +331,33 @@ fn bare_status_reports_ambiguous_missions() {
     assert_eq!(json["context"]["ambiguous"], true);
 }
 
+#[cfg(unix)]
+#[test]
+fn bare_status_ignores_symlinked_fake_missions() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = TempDir::new().unwrap();
+    init_demo(&tmp, "real");
+    let fake_root = tmp.path().join("outside-fake");
+    fs::create_dir_all(&fake_root).unwrap();
+    fs::write(
+        fake_root.join("STATE.json"),
+        r#"{"mission_id":"fake","revision":0,"schema_version":1,"phase":"clarify","loop":{"active":false,"paused":false,"mode":"none"},"outcome":{"ratified":false,"ratified_at":null},"plan":{"locked":false,"requested_level":null,"effective_level":null,"hash":null},"tasks":{},"reviews":{},"replan":{"consecutive_dirty_by_target":{},"triggered":false,"triggered_reason":null},"close":{"review_state":"not_started","terminal_at":null},"events_cursor":0}"#,
+    )
+    .unwrap();
+    symlink(&fake_root, tmp.path().join("PLANS").join("fake")).unwrap();
+
+    let output = cmd()
+        .current_dir(tmp.path())
+        .args(["status"])
+        .output()
+        .expect("runs");
+    assert!(output.status.success());
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["mission_id"], "real");
+    assert_eq!(json["data"]["verdict"], "needs_user");
+}
+
 #[test]
 fn status_with_explicit_empty_repo_root_errors() {
     let tmp = TempDir::new().unwrap();

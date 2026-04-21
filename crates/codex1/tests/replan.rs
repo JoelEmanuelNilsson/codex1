@@ -524,11 +524,14 @@ mission_close:
         "hint should steer to plan check: {hint}"
     );
 
-    // After re-locking, the guard relaxes. (We do not drive plan check
-    // here — just confirm the plan-locked=true flip alone lifts the
-    // block, which proves the guard keys off exactly the flag.)
+    // After a fresh relock, the guard relaxes. Simulate the post-plan-check
+    // state by restoring `plan.locked`, clearing the replan trigger, and
+    // recording the current plan hash.
     patch_state(&mission_dir, |s| {
         s["plan"]["locked"] = json!(true);
+        s["plan"]["hash"] = json!(codex1::state::plan_hash(plan.as_bytes()));
+        s["replan"]["triggered"] = json!(false);
+        s["replan"]["triggered_reason"] = Value::Null;
     });
     let output = cmd()
         .current_dir(tmp.path())
