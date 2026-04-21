@@ -43,7 +43,7 @@ A review task's `depends_on` must include every task in `review_target.tasks`. T
 
 ## Replans
 
-When replanning, append new tasks with new IDs. Never reuse an ID. Use `codex1 replan record --supersedes <id>` for tasks being abandoned. The DAG can contain superseded tasks; the CLI excludes them from ready waves.
+When replanning, append new tasks with new IDs. Never reuse an ID. Use `codex1 replan record --reason <code> --supersedes <id>` for tasks being abandoned (see `crates/codex1/src/cli/replan/triggers.rs::ALLOWED_REASONS` for the reason set). The DAG can contain superseded tasks; the CLI excludes them from ready waves.
 
 - Name the failure class in `planning_process.evidence` (advisor or plan_review entry).
 - Make the new tasks smaller and more specific than the ones they replace; replans that look like the original plan repeat the original failures.

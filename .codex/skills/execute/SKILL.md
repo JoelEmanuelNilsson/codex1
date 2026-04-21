@@ -13,7 +13,7 @@ description: >
 ## Preconditions
 
 - A ratified `OUTCOME.md` exists.
-- `PLAN.yaml` is locked. `codex1 --json status` must show `plan.locked: true` and `verdict: continue_required`.
+- `PLAN.yaml` is locked. `codex1 --json status` must show `plan_locked: true` and `verdict: continue_required`.
 - The loop is active (`loop.active: true`). If paused, resume via `$close` discussion flow first.
 - Working directory is at repo root, or `--mission <id>` / `--repo-root <path>` resolve the mission.
 

@@ -250,3 +250,335 @@ fn e2e_six_dirty_reviews_trigger_replan_and_record_clears_counters() {
     assert_eq!(after["data"]["consecutive_dirty_by_target"], json!({}));
     assert_eq!(after["data"]["triggered_already"], true);
 }
+
+/// A valid plan that passes `plan check`: non-empty
+/// architecture.key_decisions, a risk, a mission_close criterion, and
+/// a direct_reasoning evidence entry (the seed for
+/// `seed_plan_locked` above is intentionally minimal for the dirty-
+/// review flow and does not round-trip through `plan check`).
+fn write_valid_plan(mission_dir: &Path) {
+    let plan = r"mission_id: demo
+
+planning_level:
+  requested: light
+  effective: light
+
+outcome_interpretation:
+  summary: replan P0 regression
+
+architecture:
+  summary: replan P0 regression
+  key_decisions:
+    - one
+
+planning_process:
+  evidence:
+    - kind: direct_reasoning
+      summary: x
+
+tasks:
+  - id: T1
+    title: Root
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+  - id: T2
+    title: Work under review
+    kind: code
+    depends_on: [T1]
+    spec: specs/T2/SPEC.md
+  - id: T3
+    title: Review of T2
+    kind: review
+    depends_on: [T2]
+    spec: specs/T3/SPEC.md
+    review_target:
+      tasks: [T2]
+
+risks:
+  - risk: x
+    mitigation: y
+
+mission_close:
+  criteria:
+    - ok
+";
+    fs::write(mission_dir.join("PLAN.yaml"), plan).unwrap();
+    for tid in ["T1", "T2", "T3"] {
+        let dir = mission_dir.join("specs").join(tid);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("SPEC.md"), format!("# {tid}\n")).unwrap();
+    }
+}
+
+/// Regression for round-2 e2e P0-1: `replan record` unlocks the plan and
+/// sets `state.replan.triggered = true`; a successful `plan check` that
+/// relocks the plan must ALSO clear `state.replan.triggered` and
+/// `state.replan.triggered_reason`. Without this, any mission that
+/// enters replan is bricked — `status.verdict` stays `blocked`,
+/// `close check` / `close complete` refuse to advance.
+#[test]
+fn plan_check_after_replan_record_clears_triggered() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_mission(&tmp);
+    write_valid_plan(&mission_dir);
+    // Seed state: outcome ratified, plan.locked=true (without actually
+    // running plan check — we want to test the post-replan relock
+    // transition, not the first-lock transition).
+    let mut state = read_state(&mission_dir);
+    state["outcome"] = json!({ "ratified": true, "ratified_at": "2026-04-20T00:00:00Z" });
+    state["plan"]["locked"] = Value::Bool(true);
+    state["phase"] = Value::String("execute".into());
+    state["tasks"] = json!({
+        "T1": {
+            "id": "T1",
+            "status": "complete",
+            "started_at": "2026-04-20T00:00:00Z",
+            "finished_at": "2026-04-20T00:00:01Z",
+            "superseded_by": null,
+        },
+        "T2": {
+            "id": "T2",
+            "status": "awaiting_review",
+            "started_at": "2026-04-20T00:00:02Z",
+            "finished_at": "2026-04-20T00:00:03Z",
+            "superseded_by": null,
+        },
+    });
+    write_state(&mission_dir, &state);
+
+    // Drive a replan so plan.locked=false and replan.triggered=true.
+    run_ok(
+        tmp.path(),
+        &[
+            "replan",
+            "record",
+            "--mission",
+            MISSION,
+            "--reason",
+            "scope_change",
+            "--supersedes",
+            "T2",
+        ],
+    );
+
+    let before = read_state(&mission_dir);
+    assert_eq!(before["plan"]["locked"], false);
+    assert_eq!(before["replan"]["triggered"], true);
+    assert_eq!(before["replan"]["triggered_reason"], "scope_change");
+
+    // Relock via `plan check`. The closure must clear `replan.triggered`.
+    run_ok(tmp.path(), &["plan", "check", "--mission", MISSION]);
+
+    let state = read_state(&mission_dir);
+    assert_eq!(state["plan"]["locked"], true);
+    assert_eq!(
+        state["replan"]["triggered"], false,
+        "plan check must clear replan.triggered after relock"
+    );
+    assert!(
+        state["replan"]["triggered_reason"].is_null(),
+        "plan check must clear replan.triggered_reason after relock: {}",
+        state["replan"]["triggered_reason"]
+    );
+}
+
+/// Regression for round-2 e2e P0-1 (full reproducer): drive the mission
+/// through `replan record` → subsequent work on a new task → mission-
+/// close review → `close complete`. Without the P0 fix the final
+/// `close complete` returns `CLOSE_NOT_READY` with a leftover
+/// `REPLAN_REQUIRED` blocker.
+#[test]
+fn full_mission_close_after_replan_reaches_terminal() {
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_mission(&tmp);
+    // Plan with T1 (root, complete), T2 (awaiting_review),
+    // T3 (review of T2), T4 (work), T5 (review of T4). Replan will
+    // supersede T2 (and its review T3 is no longer actionable), then
+    // execute T4 + T5 and mission-close review.
+    let plan = r"mission_id: demo
+
+planning_level:
+  requested: light
+  effective: light
+
+outcome_interpretation:
+  summary: replan full path
+
+architecture:
+  summary: replan full path
+  key_decisions:
+    - one
+
+planning_process:
+  evidence:
+    - kind: direct_reasoning
+      summary: x
+
+tasks:
+  - id: T1
+    title: Root
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+  - id: T2
+    title: Work to supersede
+    kind: code
+    depends_on: [T1]
+    spec: specs/T2/SPEC.md
+  - id: T3
+    title: Review of T2
+    kind: review
+    depends_on: [T2]
+    spec: specs/T3/SPEC.md
+    review_target:
+      tasks: [T2]
+  - id: T4
+    title: Replacement work
+    kind: code
+    depends_on: [T1]
+    spec: specs/T4/SPEC.md
+  - id: T5
+    title: Review of T4
+    kind: review
+    depends_on: [T4]
+    spec: specs/T5/SPEC.md
+    review_target:
+      tasks: [T4]
+
+risks:
+  - risk: x
+    mitigation: y
+
+mission_close:
+  criteria:
+    - ok
+";
+    fs::write(mission_dir.join("PLAN.yaml"), plan).unwrap();
+    for tid in ["T1", "T2", "T3", "T4", "T5"] {
+        let dir = mission_dir.join("specs").join(tid);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("SPEC.md"), format!("# {tid}\n")).unwrap();
+    }
+    // Pre-seed T1 complete and T2 awaiting_review (bypassing the usual
+    // `plan check` + `task start`/`finish` path since we only care
+    // about the post-replan close path).
+    let mut state = read_state(&mission_dir);
+    state["outcome"] = json!({ "ratified": true, "ratified_at": "2026-04-20T00:00:00Z" });
+    state["plan"]["locked"] = Value::Bool(true);
+    state["plan"]["requested_level"] = Value::String("light".into());
+    state["plan"]["effective_level"] = Value::String("light".into());
+    state["plan"]["task_ids"] = json!(["T1", "T2", "T3", "T4", "T5"]);
+    state["phase"] = Value::String("execute".into());
+    state["tasks"] = json!({
+        "T1": {
+            "id": "T1",
+            "status": "complete",
+            "started_at": "2026-04-20T00:00:00Z",
+            "finished_at": "2026-04-20T00:00:01Z",
+            "proof_path": "specs/T1/PROOF.md",
+            "superseded_by": null,
+        },
+        "T2": {
+            "id": "T2",
+            "status": "awaiting_review",
+            "started_at": "2026-04-20T00:00:02Z",
+            "finished_at": "2026-04-20T00:00:03Z",
+            "proof_path": "specs/T2/PROOF.md",
+            "superseded_by": null,
+        },
+    });
+    write_state(&mission_dir, &state);
+
+    // Replan: supersede T2 (the only task currently tracked in
+    // state.tasks besides T1-complete). plan.locked → false,
+    // replan.triggered → true.
+    run_ok(
+        tmp.path(),
+        &[
+            "replan",
+            "record",
+            "--mission",
+            MISSION,
+            "--reason",
+            "scope_change",
+            "--supersedes",
+            "T2",
+        ],
+    );
+
+    // Re-lock the plan; the P0 fix must clear replan.triggered here.
+    run_ok(tmp.path(), &["plan", "check", "--mission", MISSION]);
+    let relocked = read_state(&mission_dir);
+    assert_eq!(
+        relocked["replan"]["triggered"], false,
+        "replan.triggered should clear on relock: {}",
+        relocked["replan"]["triggered"]
+    );
+
+    // Mark T3 (review of superseded T2) as superseded in STATE so it
+    // does not block close-ready. The CLI only tracks tasks it has
+    // seen; T3 was never started, so a manual bump is acceptable
+    // here (matches the pattern used elsewhere in this file).
+    let mut state = read_state(&mission_dir);
+    state["tasks"]["T3"] = json!({
+        "id": "T3",
+        "status": "superseded",
+        "superseded_by": "replan-T2",
+    });
+    write_state(&mission_dir, &state);
+
+    // Execute T4 + T5 (the replacement work + its review).
+    run_ok(tmp.path(), &["task", "start", "T4", "--mission", MISSION]);
+    let proof = mission_dir.join("specs/T4/PROOF.md");
+    fs::write(&proof, "# T4 proof\n").unwrap();
+    run_ok(
+        tmp.path(),
+        &[
+            "task",
+            "finish",
+            "T4",
+            "--proof",
+            "specs/T4/PROOF.md",
+            "--mission",
+            MISSION,
+        ],
+    );
+    run_ok(tmp.path(), &["review", "start", "T5", "--mission", MISSION]);
+    run_ok(
+        tmp.path(),
+        &[
+            "review",
+            "record",
+            "T5",
+            "--clean",
+            "--reviewers",
+            "r1",
+            "--mission",
+            MISSION,
+        ],
+    );
+
+    // Now record the mission-close review and finalize.
+    run_ok(
+        tmp.path(),
+        &[
+            "close",
+            "record-review",
+            "--clean",
+            "--reviewers",
+            "c1",
+            "--mission",
+            MISSION,
+        ],
+    );
+    let close = run_ok(tmp.path(), &["close", "complete", "--mission", MISSION]);
+    assert_eq!(close["ok"], true, "close complete must succeed: {close}");
+
+    let state = read_state(&mission_dir);
+    assert!(
+        state["close"]["terminal_at"].is_string(),
+        "terminal_at not set: {state}"
+    );
+    assert_eq!(state["replan"]["triggered"], false);
+}

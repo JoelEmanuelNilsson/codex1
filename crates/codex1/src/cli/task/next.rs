@@ -17,6 +17,41 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
     let paths = resolve_mission(&ctx.selector(), true)?;
     let state = state::load(&paths)?;
 
+    // Short-circuit on unlocked plan and pending replan so `task next`
+    // agrees with `status.next_action`. Without these, a skill calling
+    // `task next` directly would be handed a wave while `status` is
+    // telling it to `$plan` or `$plan replan` — two canonical readiness
+    // endpoints disagreeing. See round-2 e2e P2-1 and the round-1 P2-2
+    // fix at `cli/status/project.rs::build`.
+    if !state.plan.locked {
+        let env = JsonOk::new(
+            Some(state.mission_id.clone()),
+            Some(state.revision),
+            json!({
+                "next": {
+                    "kind": "plan",
+                    "hint": "Draft and lock PLAN.yaml.",
+                }
+            }),
+        );
+        println!("{}", env.to_pretty());
+        return Ok(());
+    }
+    if state.replan.triggered {
+        let env = JsonOk::new(
+            Some(state.mission_id.clone()),
+            Some(state.revision),
+            json!({
+                "next": {
+                    "kind": "replan",
+                    "reason": state.replan.triggered_reason.clone().unwrap_or_default(),
+                }
+            }),
+        );
+        println!("{}", env.to_pretty());
+        return Ok(());
+    }
+
     let plan = load_plan(&paths)?;
     let effective = effective_tasks(&plan, &state);
 

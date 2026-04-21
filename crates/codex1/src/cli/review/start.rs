@@ -59,6 +59,11 @@ pub fn run(ctx: &Ctx, task_id: &str) -> CliResult<()> {
     }
 
     if ctx.dry_run {
+        // Stale-writer protection applies to dry-run too so every path
+        // that honors `--expect-revision` does strict equality. Mirrors
+        // the round-1 short-circuit fixes; round-2 correctness P2-1
+        // noted this branch was missed in the initial sweep.
+        state::check_expected_revision(ctx.expect_revision, &state)?;
         let env = JsonOk::new(
             Some(state.mission_id.clone()),
             Some(state.revision),
@@ -84,6 +89,10 @@ pub fn run(ctx: &Ctx, task_id: &str) -> CliResult<()> {
             "targets": targets_for_event,
         }),
         |state| {
+            // Re-check `plan.locked` under the exclusive lock to close
+            // the TOCTOU between the pre-mutate shared-lock load and
+            // this closure. See round-2 correctness P1-1.
+            state::require_plan_locked(state)?;
             // boundary_revision is the revision the state will take AFTER
             // this mutation is persisted (closure runs pre-bump, so +1).
             let boundary_revision = state.revision.saturating_add(1);

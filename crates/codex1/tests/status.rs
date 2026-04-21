@@ -505,6 +505,79 @@ fn revision_matches_state_revision() {
     assert_eq!(json["mission_id"], "demo");
 }
 
+/// Regression for round-2 e2e P2-1: `codex1 task next` must honor the
+/// same `plan.locked=false` / `replan.triggered=true` short-circuits
+/// as `codex1 status`. Without these, a skill calling `task next`
+/// directly could be handed a wave while `status` is telling it to
+/// plan or replan.
+#[test]
+fn task_next_unlocked_plan_emits_plan_kind() {
+    let fx = Fixture::new("demo");
+    let mut state = base_state("demo");
+    state.outcome.ratified = true;
+    state.plan.locked = false;
+    // Seed task records that WOULD otherwise show up as a wave.
+    state
+        .tasks
+        .insert("T1".into(), task("T1", TaskStatus::Ready).1);
+    state
+        .tasks
+        .insert("T2".into(), task("T2", TaskStatus::Pending).1);
+    fx.write_state(&state);
+    fx.write_plan(simple_plan());
+
+    let out = cmd()
+        .current_dir(fx.tmp.path())
+        .args(["task", "next", "--mission", &fx.mission])
+        .output()
+        .expect("runs");
+    assert!(
+        out.status.success(),
+        "task next should succeed: stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["data"]["next"]["kind"], "plan");
+}
+
+/// Regression for round-2 e2e P2-1: when `replan.triggered=true` but
+/// the plan is still locked (the 6th-dirty review just fired), `task
+/// next` must emit `kind=replan`, not a fresh review/wave.
+#[test]
+fn task_next_replan_triggered_emits_replan_kind() {
+    let fx = Fixture::new("demo");
+    let mut state = base_state("demo");
+    state.outcome.ratified = true;
+    state.plan.locked = true;
+    state.replan.triggered = true;
+    state.replan.triggered_reason = Some("six consecutive dirty reviews for T3".to_string());
+    state
+        .tasks
+        .insert("T1".into(), task("T1", TaskStatus::Complete).1);
+    state
+        .tasks
+        .insert("T2".into(), task("T2", TaskStatus::AwaitingReview).1);
+    fx.write_state(&state);
+    fx.write_plan(simple_plan());
+
+    let out = cmd()
+        .current_dir(fx.tmp.path())
+        .args(["task", "next", "--mission", &fx.mission])
+        .output()
+        .expect("runs");
+    assert!(
+        out.status.success(),
+        "task next should succeed: stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["data"]["next"]["kind"], "replan");
+    assert_eq!(
+        json["data"]["next"]["reason"],
+        "six consecutive dirty reviews for T3"
+    );
+}
+
 /// Regression for e2e-walkthrough round-1 P2-2: when the plan is
 /// unlocked (e.g. after `replan record`), `ready_tasks` must be empty
 /// so skills reading `ready_tasks nonempty + next_action.kind=plan`

@@ -533,6 +533,32 @@ fn t11_dry_run_preserves_state() {
     assert_eq!(events_before, events_after, "events must not change");
 }
 
+/// Regression for round-2 correctness P2-1: `review start` dry-run
+/// was not running through `state::check_expected_revision`, so a
+/// caller passing `--dry-run --expect-revision N` against a state
+/// whose revision had moved past N would get `ok:true`. The fix
+/// wires the helper into the dry-run branch to match the other
+/// short-circuit paths (task/start.rs, close/complete.rs, etc.).
+#[test]
+fn review_start_dry_run_enforces_expect_revision() {
+    let s = Seeded::new();
+    let err = run_err(
+        s.path(),
+        &[
+            "review",
+            "start",
+            "T5",
+            "--dry-run",
+            "--expect-revision",
+            "999",
+            "--mission",
+            MISSION,
+        ],
+    );
+    assert_eq!(err["code"], "REVISION_CONFLICT");
+    assert_eq!(err["retryable"], true);
+}
+
 #[test]
 fn t12_expect_revision_mismatch_returns_conflict() {
     let s = Seeded::new();

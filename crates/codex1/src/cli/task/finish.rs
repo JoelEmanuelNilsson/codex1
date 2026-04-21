@@ -106,6 +106,10 @@ pub fn run(task_id: &str, proof: &Path, ctx: &Ctx) -> CliResult<()> {
                 "next_status": next_status_str,
             }),
             move |state| {
+                // Re-check `plan.locked` under the exclusive lock to
+                // close the TOCTOU between the pre-mutate shared-lock
+                // load and this closure. See round-2 correctness P1-1.
+                state::require_plan_locked(state)?;
                 let rec = ensure_task_record(state, &task_id);
                 rec.status = next_status;
                 rec.finished_at = Some(finished_at);

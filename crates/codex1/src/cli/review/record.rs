@@ -177,6 +177,14 @@ pub fn run(ctx: &Ctx, inputs: &RecordInputs<'_>) -> CliResult<()> {
             "targets": targets_for_closure,
         }),
         |state| {
+            // Re-check `plan.locked` under the exclusive lock (skipped
+            // on terminal states so terminal-contamination classifies
+            // through `apply_record` first). Closes the TOCTOU between
+            // the pre-mutate shared-lock load and this closure; see
+            // round-2 correctness P1-1.
+            if state.close.terminal_at.is_none() {
+                state::require_plan_locked(state)?;
+            }
             apply_record(
                 state,
                 &review_task_id,

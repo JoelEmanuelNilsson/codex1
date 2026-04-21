@@ -102,6 +102,13 @@ pub fn run(task_id: &str, ctx: &Ctx) -> CliResult<()> {
             "task.started",
             json!({ "task_id": task_id, "started_at": started_at }),
             move |state| {
+                // Re-check `plan.locked` under the exclusive lock to
+                // close the TOCTOU between the pre-mutate shared-lock
+                // load and this closure: a concurrent `replan record`
+                // landing in that window could otherwise produce
+                // `!plan.locked && task.status == InProgress`. See
+                // round-2 correctness P1-1.
+                state::require_plan_locked(state)?;
                 let rec = ensure_task_record(state, &task_id);
                 rec.status = TaskStatus::InProgress;
                 rec.started_at = Some(started_at);

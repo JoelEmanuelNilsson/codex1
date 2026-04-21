@@ -17,7 +17,7 @@ description: >
 Before running `$plan`:
 
 - `PLANS/<mission-id>/OUTCOME.md` exists and is ratified.
-- `codex1 --json status` shows `outcome.ratified: true` (verdict is not `needs_user` for the outcome).
+- `codex1 --json status` shows `outcome_ratified: true` (verdict is not `needs_user` for the outcome).
 
 If the outcome is not ratified, stop and hand off to `$clarify`.
 

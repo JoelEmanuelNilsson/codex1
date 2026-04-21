@@ -122,6 +122,16 @@ pub fn run(ctx: &Ctx) -> CliResult<()> {
             if matches!(s.phase, Phase::Plan) {
                 s.phase = Phase::Execute;
             }
+            // A successful `plan check` that relocks the plan resolves
+            // any pending replan: the replan cycle ended when the user
+            // authored a new/amended PLAN.yaml and asked us to lock it.
+            // Without this clear, `state.replan.triggered` would stay
+            // `true` forever — `status.verdict` stuck at `blocked`,
+            // `close check`/`close complete` refusing to advance,
+            // `close record-review` refusing to record. See round-2
+            // e2e P0-1.
+            s.replan.triggered = false;
+            s.replan.triggered_reason = None;
             Ok(())
         },
     )?;

@@ -339,3 +339,153 @@ fn corrupt_plan_yaml_returns_plan_invalid_with_hint() {
     assert_eq!(json["code"], "PLAN_INVALID");
     assert!(json["hint"].is_string());
 }
+
+/// Regression for round-2 correctness P1-1: `require_plan_locked` is
+/// now re-checked inside the exclusive-lock mutate closure so a
+/// concurrent `replan record` that unlocks the plan between the
+/// pre-mutate shared-lock load and the closure cannot leave
+/// `task.status == InProgress` sitting on top of `!plan.locked`.
+///
+/// This test races two processes: one runs `task start T2`, the other
+/// runs `replan record --reason six_dirty --supersedes T2`. Neither
+/// passes `--expect-revision`, so the revision-conflict check does
+/// NOT catch the race; only the in-closure plan-locked re-check does.
+/// The assertion is one-sided: the final on-disk state must never be
+/// the corrupt shape `!plan.locked && task.status == "in_progress"`.
+#[test]
+fn concurrent_replan_and_task_start_preserves_plan_locked_invariant() {
+    use serde_json::json;
+    use std::sync::Arc;
+    use std::thread;
+
+    let tmp = TempDir::new().unwrap();
+    let mission_dir = init_demo(&tmp, "demo");
+    // Seed a plan-locked mission with T1 complete and T2 ready; also
+    // seed the dirty counter at threshold so `replan record` has a
+    // realistic reason to fire.
+    let plan = r"mission_id: demo
+
+planning_level:
+  requested: light
+  effective: light
+
+outcome_interpretation:
+  summary: toctou race regression
+
+architecture:
+  summary: toctou race regression
+  key_decisions:
+    - one
+
+planning_process:
+  evidence:
+    - kind: direct_reasoning
+      summary: x
+
+tasks:
+  - id: T1
+    title: Root
+    kind: code
+    depends_on: []
+    spec: specs/T1/SPEC.md
+  - id: T2
+    title: Under race
+    kind: code
+    depends_on: [T1]
+    spec: specs/T2/SPEC.md
+
+risks:
+  - risk: x
+    mitigation: y
+
+mission_close:
+  criteria:
+    - ok
+";
+    fs::write(mission_dir.join("PLAN.yaml"), plan).unwrap();
+    for tid in ["T1", "T2"] {
+        let dir = mission_dir.join("specs").join(tid);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("SPEC.md"), format!("# {tid}\n")).unwrap();
+    }
+    let mut state: Value =
+        serde_json::from_str(&fs::read_to_string(mission_dir.join("STATE.json")).unwrap()).unwrap();
+    state["outcome"] = json!({ "ratified": true, "ratified_at": "2026-04-20T00:00:00Z" });
+    state["plan"]["locked"] = Value::Bool(true);
+    state["plan"]["task_ids"] = json!(["T1", "T2"]);
+    state["phase"] = Value::String("execute".into());
+    state["replan"]["consecutive_dirty_by_target"] = json!({ "T2": 6 });
+    state["tasks"] = json!({
+        "T1": {
+            "id": "T1",
+            "status": "complete",
+            "started_at": "2026-04-20T00:00:00Z",
+            "finished_at": "2026-04-20T00:00:01Z",
+            "superseded_by": null,
+        },
+        "T2": {
+            "id": "T2",
+            "status": "ready",
+            "superseded_by": null,
+        },
+    });
+    fs::write(
+        mission_dir.join("STATE.json"),
+        serde_json::to_vec_pretty(&state).unwrap(),
+    )
+    .unwrap();
+
+    // Run both races multiple times. Even if the race is rarely
+    // triggered, the invariant check must hold on every iteration.
+    for _ in 0..4 {
+        // Reset state before each iteration.
+        fs::write(
+            mission_dir.join("STATE.json"),
+            serde_json::to_vec_pretty(&state).unwrap(),
+        )
+        .unwrap();
+        // Blank EVENTS.jsonl so every iteration starts clean.
+        fs::write(mission_dir.join("EVENTS.jsonl"), "").unwrap();
+
+        let root = Arc::new(tmp.path().to_path_buf());
+        let r1 = root.clone();
+        let r2 = root.clone();
+        let h_task = thread::spawn(move || {
+            Command::cargo_bin("codex1")
+                .expect("binary builds")
+                .current_dir(&*r1)
+                .args(["task", "start", "T2", "--mission", "demo"])
+                .output()
+                .expect("runs")
+        });
+        let h_replan = thread::spawn(move || {
+            Command::cargo_bin("codex1")
+                .expect("binary builds")
+                .current_dir(&*r2)
+                .args([
+                    "replan",
+                    "record",
+                    "--mission",
+                    "demo",
+                    "--reason",
+                    "six_dirty",
+                    "--supersedes",
+                    "T2",
+                ])
+                .output()
+                .expect("runs")
+        });
+        h_task.join().unwrap();
+        h_replan.join().unwrap();
+
+        let end: Value =
+            serde_json::from_str(&fs::read_to_string(mission_dir.join("STATE.json")).unwrap())
+                .unwrap();
+        let plan_locked = end["plan"]["locked"].as_bool().unwrap_or(true);
+        let t2_status = end["tasks"]["T2"]["status"].as_str().unwrap_or("");
+        assert!(
+            plan_locked || t2_status != "in_progress",
+            "invariant violated: plan.locked={plan_locked} && tasks.T2.status={t2_status}; end state:\n{end:#}"
+        );
+    }
+}
