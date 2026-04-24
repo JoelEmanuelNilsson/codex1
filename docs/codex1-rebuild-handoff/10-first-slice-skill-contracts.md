@@ -1,10 +1,10 @@
-# 10 First-Slice Skill Contracts
+# 10 Foundation Skill Contracts
 
-This file defines the minimum user-facing skill behavior for the first vertical
-slice. These are product contracts for `SKILL.md` wrappers, not CLI
-implementation details.
+This file defines the minimum user-facing skill behavior for the foundation
+vertical slice and the intended full-product boundary for each skill. These are
+product contracts for `SKILL.md` wrappers, not CLI implementation details.
 
-If this file disagrees with `01-product-flow.md` on first-slice skill behavior,
+If this file disagrees with `01-product-flow.md` on foundation skill behavior,
 this file wins. If it disagrees with `02-cli-contract.md`,
 `08-state-status-and-graph-contract.md`, or `09-implementation-errata.md` on
 command/state details, those command/state files win.
@@ -22,12 +22,14 @@ $interrupt
 $autopilot
 ```
 
-Full planned review/replan behavior is not part of the first slice, but its
-product boundary is already fixed: `$execute` handles review boundaries already
-present in the locked plan, and `$review-loop` is an explicit additional skill
-for iterative review/fix loops.
+The foundation slice proves the skill UX on a normal mission first. That does
+not demote planned review, repair, replan, or mission-close behavior. Those are
+core Codex1 product requirements, and this file fixes the skill boundaries they
+must follow: `$execute` handles review boundaries already present in the locked
+plan, and `$review-loop` is an explicit additional skill for iterative
+review/fix loops.
 
-Every first-slice skill should:
+Every skill should:
 
 - Prefer chat-only work when durable state adds no value.
 - Use `codex1 status --json` first when a durable mission may exist.
@@ -49,7 +51,7 @@ Purpose:
 Create a specified enough target to build the right thing.
 ```
 
-First-slice behavior:
+Foundation-slice behavior:
 
 - Decide whether durable state is useful.
 - If not, keep the work chat-only and hand off to ordinary Codex behavior.
@@ -62,7 +64,7 @@ First-slice behavior:
 - Run `codex1 outcome ratify --json` only when required fields are complete and
   the main thread judges the outcome semantically clear.
 
-Allowed first-slice writes:
+Allowed foundation-slice writes:
 
 - `codex1 init --json`
 - edits to `OUTCOME.md`
@@ -98,7 +100,7 @@ First-slice behavior:
 - Run `codex1 plan lock --json --expect-revision <N>` only after plan check
   passes and the main thread judges the plan ready.
 
-Allowed first-slice writes:
+Allowed foundation-slice writes:
 
 - `PLAN.yaml`
 - `codex1 plan scaffold --json`
@@ -128,6 +130,8 @@ Full product behavior:
   the next locked-plan action.
 - Execute normal steps, graph tasks, and safe graph waves in the main thread or
   bounded workers.
+- Workers produce edits and evidence; the main/root orchestrator records mission
+  truth with mutating `codex1` commands.
 - Run planned review boundaries when they are already part of the locked plan.
 - Triage review findings through the main thread; only accepted blocking
   findings become repair work.
@@ -142,10 +146,11 @@ First-slice behavior:
 - Prove the same continuous shape on the simple normal slice: execute all
   normal steps, record proof, run close check, run close complete, and stop at
   terminal complete.
-- Do not implement planned review boundaries in the first slice; keep their
-  product semantics in docs and tests for the later graph/review slice.
+- The foundation proof may use a normal plan with no planned review boundary,
+  but the full product implementation must run planned review boundaries through
+  `$execute` when they are part of the locked plan.
 
-Allowed first-slice writes:
+Allowed foundation-slice writes:
 
 - assigned implementation files
 - proof artifacts when useful
@@ -180,10 +185,11 @@ Full product behavior:
 - Keep looping over accepted blocking findings until clean, repair budget is
   exhausted and replan is required, or status projects `explain_and_stop`.
 
-First-slice behavior:
+Foundation-slice behavior:
 
-- It may exist as a documented public skill, but it is not implemented as a
-  full durable graph/review/replan workflow until after the normal first slice.
+- The foundation proof does not need a full durable review/replan loop. The
+  integrated product does: `$review-loop` must become the explicit review/fix
+  loop once review recording, triage, repair, and replan are implemented.
 
 Must not:
 
@@ -259,10 +265,10 @@ Must not:
 - Continue looping after `$interrupt` without an intentional resume.
 - Open a PR unless the ratified outcome says to open one.
 
-## First-Slice Proof
+## Foundation Proof
 
-The first slice is not done until a user can drive one durable normal mission
-through skills:
+The foundation slice is not done until a user can drive one durable normal
+mission through skills:
 
 ```text
 $clarify -> OUTCOME.md ratified

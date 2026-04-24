@@ -80,7 +80,11 @@ Before coding:
 5. Spawn or simulate plan critique using the roles/model guidance in 04-roles-models-prompts.md if available.
 6. Ask only questions that truly block implementation.
 
-First vertical slice:
+Foundation vertical slice:
+
+This is implementation order for one integrated product, not a reduced product
+scope. The slice proves the substrate before graph/review/replan sits on top of
+it.
 
 1. Implement codex1 --help, codex1 init, and codex1 doctor --json.
 2. Implement visible mission files with schema versions, state revision, and append-only events.
@@ -92,13 +96,13 @@ First vertical slice:
 6. Implement loop activate/pause/resume/deactivate for $execute, $autopilot, and $interrupt.
 7. Implement Ralph as a Codex Stop hook adapter that only uses codex1 status semantics.
 8. Implement minimal normal close check/complete and CLOSEOUT.md.
-9. Implement first-slice skill wrappers for $clarify, $plan, $execute,
+9. Implement foundation skill wrappers for $clarify, $plan, $execute,
    $interrupt, and minimal $autopilot according to
    10-first-slice-skill-contracts.md.
 10. Verify the installed command from outside the source folder and prove the
    normal mission slice can be driven through skills.
 
-Only after that slice works end to end:
+Then continue the same product build:
 
 1. Implement graph plan scaffold/check and graph validation.
 2. Implement derived graph waves.
@@ -106,12 +110,14 @@ Only after that slice works end to end:
 4. Implement review triage, accepted-blocking finding lifecycle, two-round repair budget, and autonomous replan after repair budget.
 5. Implement mission-close review and close record-review.
 6. Extend skills for graph/review/replan/mission-close workflows.
-7. Write broader tests proving the full contract.
+7. Write broader tests proving the full integrated contract.
 
-Required proof:
+Required proof for the integrated product:
+
+Foundation proof must show:
 
 - codex1 --help is useful.
-- first-slice skills prove the user UX: $clarify, $plan, $execute, $interrupt,
+- foundation skills prove the user UX: $clarify, $plan, $execute, $interrupt,
   and a minimal $autopilot path can drive the normal mission slice without the
   user touching raw CLI commands.
 - $execute continues a locked normal plan through all steps, close check, and
@@ -132,6 +138,9 @@ Required proof:
   complete; loop mode `autopilot` means full clarify/plan/execute/close
   lifecycle.
 - normal plans do not require depends_on, graph waves, or planned review tasks.
+
+Integrated graph/review/replan proof must also show:
+
 - invalid graph plans are rejected.
 - graph waves are derived from depends_on.
 - waves are not stored as truth.
@@ -142,6 +151,8 @@ Required proof:
 - raw review findings do not become work until triaged.
 - only accepted blocking findings can block progress.
 - repair is required only for current accepted blockers within repair budget.
+- review repair-record increments repair_round exactly once per accepted-blocker
+  repair batch.
 - still dirty after repair budget triggers autonomous replan.
 - $interrupt pauses loop and Ralph allows stop.
 - codex1 ralph stop-hook emits valid Codex Stop-hook JSON.

@@ -269,13 +269,14 @@ Task/step statuses:
 ```text
 pending
 in_progress
-proof_submitted
-review_pending
-review_clean
 complete
 superseded
 cancelled
 ```
+
+Keep review cleanliness out of task status. A task can be complete while a
+required review boundary is still not passed; dependency satisfaction is derived
+from both task state and review boundary state.
 
 Review boundary states:
 
@@ -298,8 +299,10 @@ ready_for_mission_close_review
 mission_close_review_open
 mission_close_review_passed
 close_complete_ready
-terminal_complete
 ```
+
+Terminal completion truth lives in `STATE.json.terminal.complete`, not in
+`close.state`.
 
 Do not add a normal `blocked_external` state. Do not add a top-level
 `validation_required` state.
@@ -347,6 +350,18 @@ Codex1 should treat durable outcome and plan freshness as first-class state.
   `STATE.json.plan.outcome_digest_at_lock`.
 - `codex1 status --json` recomputes current digests from the machine-parsed
   artifact content.
+
+Canonical digest inputs:
+
+```text
+OUTCOME.md digest = canonical serialization of parsed YAML frontmatter only
+PLAN.yaml digest = canonical serialization of the parsed YAML plan object
+CLOSEOUT.md digest = canonical serialization of closeout frontmatter plus body
+```
+
+Do not hash raw file bytes for outcome or plan digests. Key order and
+whitespace-only YAML formatting changes should not invalidate state. Semantic
+field changes should.
 
 Status must detect:
 
@@ -509,6 +524,19 @@ explain why:
 This is not `blocked_external`, not `needs_user`, and not a repair loop. It is a
 clean stop projection for cases where no autonomous next action exists.
 
+Rare valid reasons include:
+
+```text
+missing_required_credentials
+locked_outcome_insufficient
+unsafe_external_action_not_ratified
+unclear_user_work_ownership
+```
+
+Use this sparingly. Ordinary engineering trouble, dirty review findings,
+missing tests, and implementation ambiguity should continue through proof,
+repair, or replan.
+
 ## Graph Truth
 
 Graph truth is only:
@@ -569,7 +597,8 @@ Derive waves every time:
 load PLAN.yaml tasks
 exclude superseded/cancelled tasks
 validate graph
-mark a dependency satisfied when its current status is complete or review_clean
+mark a dependency satisfied when its task is complete and all required current
+review boundaries for that task are passed
 find all pending tasks whose dependencies are satisfied
 compute topological level for each ready task as display metadata
 current ready frontier = all pending tasks whose dependencies are satisfied
@@ -582,16 +611,16 @@ completed `T1`, `T3` may be ready even when unrelated level-0 task `T2` is still
 pending. If the mission needs breadth-first synchronization, model that as an
 explicit review/integration/barrier task in `PLAN.yaml`.
 
-Dependency-satisfying statuses are exactly:
+Dependency satisfaction is a derived predicate:
 
 ```text
-complete
-review_clean
+task.status == complete
+and all required current review boundaries for the task are passed
 ```
 
-`proof_submitted` is not dependency-satisfying. `review_pending` is not
-dependency-satisfying. `superseded` dependencies are handled by the replan or
-supersession rules for that task, not silently treated as success.
+`in_progress` is not dependency-satisfying. `superseded` dependencies are
+handled by the replan or supersession rules for that task, not silently treated
+as success.
 
 Topological level:
 

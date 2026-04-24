@@ -113,9 +113,13 @@ deployment environment. It must not pick fallback models, rewrite role configs,
 or influence runtime routing. If the model check fails, `doctor` fails; normal
 mission commands do not contain fallback branches.
 
-## First Vertical Slice
+## Foundation Vertical Slice
 
-Build this before the full graph/review surface:
+This is the first proving path for the integrated product. It is not an MVP
+scope boundary and not permission to drop graph, review, repair, replan, or
+mission-close behavior. Build this before layering the heavier graph/review
+flows so the shared state, status, loop, close, and Ralph semantics are boring
+before the product gets more powerful.
 
 1. `codex1 --help`, `codex1 init`, and `codex1 doctor --json`.
 2. `OUTCOME.md` check/ratify with schema/version rules.
@@ -133,12 +137,13 @@ Build this before the full graph/review surface:
    `$interrupt`, and minimal `$autopilot`, proving users experience Codex1
    through skills rather than raw CLI commands. `$execute` must continue the
    locked normal plan through close complete, not stop after one step. The exact
-   first-slice skill wrapper contract is in
+   foundation skill wrapper contract is in
    `10-first-slice-skill-contracts.md`.
 
-Do not implement graph waves, planned review tasks, repair budgets, or
-mission-close review until this slice works end to end from outside the source
-folder.
+Once this slice works end to end from outside the source folder, continue into
+graph waves, planned review tasks, repair budgets, replan, and mission-close
+review as the same product build. Codex1 is not complete until those contracts
+also work.
 
 ## Active Mission Pointer
 
@@ -231,5 +236,6 @@ The first implementation should feel slightly boring:
 Add the graph wave derivation and review freshness functions only when the graph
 and review slice begins.
 
-If implementation starts by creating a large module tree for every future
-command, pause and return to the first vertical slice.
+If implementation starts by creating a large module tree for every command
+before the shared substrate works, pause and return to the foundation vertical
+slice.

@@ -231,10 +231,11 @@ Use distinct close substates:
 - `ready_for_mission_close_review`
 - `mission_close_review_open`
 - `mission_close_review_passed`
-- `terminal_complete`
+- `close_complete_ready`
 
-These are close substates, not necessarily top-level status verdicts. The
-canonical post-lock status verdicts are in `08-state-status-and-graph-contract.md`.
+These are close substates, not top-level terminal truth. Terminal completion
+lives in `STATE.json.terminal.complete`. The canonical post-lock status verdicts
+are in `08-state-status-and-graph-contract.md`.
 
 Do not call a graph/large/risky mission complete just because all normal tasks are done.
 

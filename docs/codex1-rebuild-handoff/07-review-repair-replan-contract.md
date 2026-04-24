@@ -249,6 +249,16 @@ the accepted blockers is complete, before targeted re-review. Abandoned or
 failed repair attempts should remain visible in the review record instead of
 silently disappearing.
 
+Canonical repair recording command:
+
+```bash
+codex1 review repair-record RB-T4-1 --proof specs/T4/REPAIR-1.md --json
+```
+
+This command is the durable transition from `repair_required` to `repair_done`
+or re-review-ready state. It increments the boundary repair counter exactly once
+for the accepted-blocker batch.
+
 Do not drip-feed one finding at a time forever. Batch accepted blockers for the
 boundary, repair them together, then re-review the repair boundary.
 

@@ -26,12 +26,16 @@ If files `00` through `05` disagree with files `06` through `09` on Ralph,
 review loops, model choices, post-lock autonomy, state revisions, status
 verdicts, or graph/wave derivation, files `06` through `09` win. They capture
 the later decisions made after the initial handoff draft. File `09` adds
-implementation exactness for Codex hook config, doctor checks, and first-slice
+implementation exactness for Codex hook config, doctor checks, and foundation
 build order.
 
 If `01-product-flow.md` disagrees with `10-first-slice-skill-contracts.md` on
-skill boundary behavior or first-slice skill wrapper behavior, file `10` wins.
+skill boundary behavior or foundation skill wrapper behavior, file `10` wins.
 Command and state details still live in `02`, `08`, and `09`.
+
+Files named `REVIEW-*` are critique artifacts, not canonical product direction.
+They may contain rejected proposals. Use this read order and the explicit
+precedence notes above for implementation truth.
 
 ## Source Inspiration
 
@@ -165,9 +169,18 @@ Do not build:
 
 Build the CLI first, but remember the CLI is not the user product.
 
-Build the first vertical slice in `09-implementation-errata.md` before filling
-out every command module. Do not start by implementing the full graph/review
-surface in parallel.
+Codex1 is one integrated product. Normal planning, graph planning, planned
+review boundaries, repair, replan, mission-close review, Ralph, status, and the
+skills are not separate products and not optional "future" extensions.
+
+Build the foundation vertical slice in `09-implementation-errata.md` first
+because it proves the state store, status projector, loop activation, close
+path, and Ralph on the smallest useful route. That is implementation order, not
+product scope. The product is not complete until the graph/review/repair/replan
+and mission-close contracts in this handoff also work.
+
+Do not start by building every command module in parallel, but do not interpret
+the normal slice as an MVP that replaces the full Codex1 product.
 
 The correct split is:
 

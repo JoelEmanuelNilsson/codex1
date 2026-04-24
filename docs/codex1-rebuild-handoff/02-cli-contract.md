@@ -48,13 +48,15 @@ Mutating commands:
 
 - Must be idempotent where possible.
 - Must fail clearly when preconditions are missing.
+- Must require explicit `--mission <mission-id>` unless the command's purpose is
+  to initialize, select, or activate a mission.
 - Should support `--dry-run` if implementation cost is small.
 - Should support `--expect-revision <N>` or equivalent stale-writer protection.
 - Should not mutate files when validation fails.
 
 ## Target Command Surface
 
-The full v1 target command surface is:
+The full integrated target command surface is:
 
 ```bash
 codex1 init
@@ -81,6 +83,7 @@ codex1 task packet
 codex1 review start
 codex1 review packet
 codex1 review record
+codex1 review repair-record
 codex1 review status
 
 codex1 replan record
@@ -98,12 +101,14 @@ codex1 close record-review
 codex1 ralph stop-hook
 ```
 
-Do not implement that whole surface at once. The first vertical slice in
-`09-implementation-errata.md` implements only the subset needed for one durable
-normal mission: help, init, doctor, outcome, normal plan, task/step lifecycle,
-status, plan lock, loop activate/pause/resume/deactivate, Ralph, and minimal
-close. Graph, waves, review, replan, and mission-close review come after that
-slice works end to end.
+Do not implement that whole surface in a chaotic pass. The foundation vertical
+slice in `09-implementation-errata.md` implements the subset needed for one
+durable normal mission: help, init, doctor, outcome, normal plan, task/step
+lifecycle, status, plan lock, loop activate/pause/resume/deactivate, Ralph, and
+minimal close. That slice proves the shared substrate. Graph, waves, review,
+repair, replan, and mission-close review are still part of the same Codex1
+product and should be built on top of the proven substrate, not treated as a
+separate later product.
 
 `loop activate` is the canonical entry point other subsystems use to set `state.loop.active = true` without inventing their own loop-state mutation. Skills call it from `$execute` / `$autopilot` after a durable plan is locked.
 
@@ -504,6 +509,8 @@ Checks mechanical completeness:
 - No fill markers remain.
 - Required fields are not empty.
 - Required fields are not obvious boilerplate such as `TODO`, `TBD`, or untouched template text.
+- Optional outcome fields may be empty lists or maps when they are not
+  applicable. Empty optional fields are not a check failure.
 
 It does not judge semantic quality. The main thread does.
 
@@ -840,6 +847,20 @@ stale
 The CLI should persist both raw findings and adjudication. Status must only
 block on current `accepted_blocking` findings.
 
+`codex1 review repair-record RB-T4-1 --proof specs/T4/REPAIR-1.md --json`
+
+Records that the main/root orchestrator completed one repair attempt for the
+current accepted blockers in a review boundary.
+
+Effects:
+
+- Requires the current boundary to be in `repair_required`.
+- Records repair proof.
+- Increments `repair_round` exactly once for that repair batch.
+- Transitions the boundary to `repair_done` or the implementation's
+  re-review-ready state.
+- Appends one event.
+
 The CLI does not know whether the caller is main thread or reviewer. The workflow and prompts govern that. Do not build caller identity checks.
 
 Review findings should align with the official Codex review output shape:
@@ -959,7 +980,7 @@ replan clearing stay centralized in the plan-lock path.
 
 Sets `STATE.json.loop.active = true`, `STATE.json.loop.paused = false`, records
 the loop mode, and writes or updates `PLANS/ACTIVE.json` as selector metadata.
-It requires a locked plan. This command is part of the first vertical slice
+It requires a locked plan. This command is part of the foundation vertical slice
 because Ralph only blocks active, unpaused loops.
 
 Loop modes:
@@ -1061,7 +1082,7 @@ Checks terminal readiness before terminalization. It does not create or mutate
 `CLOSEOUT.md`.
 
 Mission-close review is required for graph, large, risky, or explicitly
-configured missions. It is not required for the first-slice simple normal
+configured missions. It is not required for the foundation simple normal
 mission.
 
 Normal-mode requirements:

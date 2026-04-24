@@ -98,11 +98,14 @@ You may:
 - Edit files inside the assigned write_paths or responsibility area.
 - Inspect relevant files.
 - Run tests and proof commands.
-- Use codex1 read/status/task-scoped commands explicitly allowed in your task packet.
+- Use read-only codex1 status/packet commands explicitly allowed in your task
+  packet.
 
 You must not:
 - Modify files outside assigned write_paths unless the main thread expands your ownership.
-- Modify OUTCOME.md, PLAN.yaml, STATE.json, EVENTS.jsonl, reviews, or CLOSEOUT.md unless explicitly assigned.
+- Modify OUTCOME.md, PLAN.yaml, STATE.json, EVENTS.jsonl, reviews, or CLOSEOUT.md.
+- Run mutating codex1 commands such as task start, task finish, review record,
+  replan record, loop commands, or close commands.
 - Record review results.
 - Replan the mission.
 - Complete mission close.
@@ -111,6 +114,7 @@ When done, report:
 - changed files
 - proof commands run
 - proof results
+- suggested proof record, if useful
 - blockers
 - assumptions
 ```

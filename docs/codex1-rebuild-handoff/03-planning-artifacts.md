@@ -30,6 +30,34 @@ graph
   useful for large/risky/multi-agent work
 ```
 
+Durable-state threshold:
+
+Use chat-only when all are true:
+
+- One short session is enough.
+- Blast radius is low.
+- No external irreversible action is involved.
+- No parallel workers or planned reviewers are needed.
+- Durable recovery would not protect meaningful intent.
+- Success can be checked immediately.
+
+Use durable normal mode when any are true:
+
+- Multiple steps make context loss likely.
+- Acceptance criteria need to persist.
+- Proof should be recorded.
+- The user asked for autonomous execution through `$execute` or `$autopilot`.
+- Ralph stop pressure is useful.
+
+Use graph mode when any are true:
+
+- Dependency ordering matters.
+- Parallel delegation may matter.
+- Planned review boundaries matter.
+- Late or stale outputs are plausible.
+- Repair/replan loops are likely.
+- Mission-close review is needed.
+
 ## File Layout
 
 Use visible files under `PLANS/<mission-id>/` when durable state is needed.
@@ -115,65 +143,63 @@ the structured frontmatter for required state and digest computation. Pure YAML
 may be accepted as an import convenience, but v1 writers should emit
 frontmatter.
 
-Required fields:
+Ratification truth lives in `STATE.json`, not in `OUTCOME.md`. Do not make a
+frontmatter `status: ratified` field authoritative; manual edits to
+`OUTCOME.md` must not be able to fake ratification.
+
+Required fields for every durable mission:
 
 ```yaml
 schema_version: codex1.outcome.v1
 mission_id: codex1-rebuild
-status: draft | ratified
 title: "..."
 
 original_user_goal: |
   ...
 
-interpreted_destination: |
+destination: |
   ...
 
-must_be_true:
-  - ...
-
-success_criteria:
-  - ...
-
-non_goals:
+acceptance_criteria:
   - ...
 
 constraints:
   - ...
 
-definitions:
-  term: "meaning"
-
-quality_bar:
+non_goals:
   - ...
 
 proof_expectations:
-  - ...
-
-review_expectations:
   - ...
 
 pr_intent:
   open_pr: false
   target_branch: null
   notes: "Open a PR only if this is explicitly ratified as true."
-
-known_risks:
-  - ...
-
-user_only_actions:
-  - ...
-
-resolved_questions:
-  - question: "..."
-    answer: "..."
 ```
+
+Optional or explicitly-empty fields:
+
+```yaml
+must_be_true: []
+definitions: {}
+quality_bar: []
+review_expectations: []
+known_risks: []
+user_only_actions: []
+resolved_questions: []
+```
+
+Empty optional fields are valid when there is no ambiguity to record. The CLI
+should reject unresolved ambiguity and boilerplate placeholders, not force
+paperwork for its own sake.
+
 
 ### Bad Outcome Example
 
 ```yaml
-interpreted_destination: "Codex1 works well."
-success_criteria:
+destination: "Codex1 works well."
+acceptance_criteria:
   - "Workflow is reliable."
 non_goals:
   - "Don't overengineer."
@@ -184,7 +210,7 @@ This is unacceptable. It leaves too much for another agent to infer.
 ### Good Outcome Example
 
 ```yaml
-interpreted_destination: |
+destination: |
   Codex1 is rebuilt as a native Codex workflow where users interact through
   $clarify, $plan, $execute, $review-loop, $interrupt, and $autopilot. These
   skills use a small deterministic CLI when durable mission state is useful.
@@ -209,7 +235,7 @@ must_be_true:
   - Ralph only asks codex1 status whether stop is allowed.
   - Ralph blocks at most once per Stop-hook continuation cycle.
 
-success_criteria:
+acceptance_criteria:
   - A fresh durable mission can be initialized under PLANS/<mission-id>/.
   - $clarify can produce a ratified OUTCOME.md with no fill markers and no vague sections.
   - $plan can produce a valid normal plan without graph-only fields.
