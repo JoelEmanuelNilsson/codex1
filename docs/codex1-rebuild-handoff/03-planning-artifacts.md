@@ -1,10 +1,40 @@
 # 03 Planning And Artifacts
 
-This file defines the mission files, outcome contract, planning process, DAG contract, derived waves, and review-task model.
+This file defines the mission files, outcome contract, adaptive planning process, normal-plan contract, graph-plan contract, derived waves, and review-task model.
+
+Canonical details added after this file:
+
+- Ralph stop behavior: `06-ralph-stop-hook-contract.md`
+- Review/repair/replan behavior: `07-review-repair-replan-contract.md`
+- State revisions, status verdicts, and graph/wave derivation: `08-state-status-and-graph-contract.md`
+- Implementation exactness, hook config snippets, doctor checks, and first
+  vertical slice: `09-implementation-errata.md`
+
+If this file disagrees with those files on those topics, the later canonical
+files win.
+
+## Artifact Strategy
+
+Codex1 should not create paperwork because paperwork feels serious.
+
+Use no durable state unless it protects intent. When durable state is useful, use the lightest durable state that can do the job.
+
+```text
+normal
+  lightweight planning for ordinary work
+  can be chat-only when durable state adds no value
+  can use durable outcome and plan/checklist for ordinary multi-step work
+
+graph
+  durable outcome, task graph, specs, proof records, review records
+  useful for large/risky/multi-agent work
+```
 
 ## File Layout
 
-Use visible files under `PLANS/<mission-id>/`.
+Use visible files under `PLANS/<mission-id>/` when durable state is needed.
+
+Full layout:
 
 ```text
 PLANS/<mission-id>/
@@ -25,6 +55,17 @@ PLANS/<mission-id>/
   CLOSEOUT.md
 ```
 
+Normal-mode missions may use a smaller practical subset:
+
+```text
+PLANS/<mission-id>/
+  OUTCOME.md
+  PLAN.yaml
+  STATE.json
+  EVENTS.jsonl
+  CLOSEOUT.md
+```
+
 Do not use `.ralph` for mission truth.
 
 `Ralph` is a hook behavior, not a mission-state directory.
@@ -34,34 +75,44 @@ Do not use `.ralph` for mission truth.
 | File | Owns |
 | --- | --- |
 | `OUTCOME.md` | Clarified destination truth |
-| `PLAN.yaml` | Route, architecture, task DAG, review tasks |
+| `PLAN.yaml` | Current route, planning mode, acceptance, validation, normal steps or graph tasks |
 | `STATE.json` | Current operational state |
 | `EVENTS.jsonl` | Append-only audit trail |
-| `specs/T*/SPEC.md` | Task-local instructions |
-| `specs/T*/PROOF.md` | Task proof receipts |
-| `reviews/*.md` | Main-thread-recorded review outcomes |
-| `CLOSEOUT.md` | Final terminal summary |
+| `specs/T*/SPEC.md` | Graph task-local instructions |
+| `specs/T*/PROOF.md` | Graph task proof receipts |
+| `reviews/*.md` or `reviews/*.json` | Main-thread-recorded review outcomes |
+| `CLOSEOUT.md` | Final terminal summary for durable missions |
 
 Do not create extra truth surfaces unless clearly necessary.
 
 ## OUTCOME.md Contract
 
-The outcome must be overly specified.
+The outcome must be specified enough that a future Codex thread can understand the mission without hidden chat context.
 
-A future Codex thread should understand the mission without hidden chat context.
+Do not include global workflow policy as destination truth:
 
-Do not include:
+- global approval policy
+- global autonomy rules
+- model/provider configuration
 
-- `approval_boundaries`
-- `autonomy`
+Clarify unavoidable user-owned external inputs before mission lock. A locked
+mission should not routinely bounce back to the user during execution.
 
-Approval and autonomy are global workflow/safety rules, not mission destination truth.
+Examples that should be clarified before lock when relevant:
+
+- Required credentials/accounts that are not available to Codex.
+- Required cost/tier upgrades that the user must perform.
+- Deployments or irreversible operations outside the Git-managed repository.
+
+Git-managed destructive repo edits are not user questions by default. Codex can
+make them, prove them, and rely on Git for reversibility.
 
 Recommended `OUTCOME.md` shape can be YAML frontmatter plus readable markdown, or pure YAML. The important part is that the CLI can check required fields.
 
 Required fields:
 
 ```yaml
+schema_version: codex1.outcome.v1
 mission_id: codex1-rebuild
 status: draft | ratified
 title: "..."
@@ -99,6 +150,9 @@ review_expectations:
 known_risks:
   - ...
 
+user_only_actions:
+  - ...
+
 resolved_questions:
   - question: "..."
     answer: "..."
@@ -121,37 +175,46 @@ This is unacceptable. It leaves too much for another agent to infer.
 ```yaml
 interpreted_destination: |
   Codex1 is rebuilt as a native Codex workflow where users interact through
-  $clarify, $plan, $execute, $review-loop, $close, and $autopilot. These
-  skills use a small deterministic CLI to store and validate visible mission
-  files, execute DAG-based plans, derive waves, record main-thread review
-  outcomes, pause/resume loops, and close missions only after planned work and
-  mission-close review are clean.
+  $clarify, $plan, $execute, $review-loop, $interrupt, and $autopilot. These
+  skills use a small deterministic CLI when durable mission state is useful.
+  The workflow supports normal planning for ordinary work and graph planning
+  for large/risky work. Ralph only reads codex1 status and never orchestrates.
 
 must_be_true:
   - The user-facing product is skills-first.
   - The CLI is deterministic, small, and composable.
-  - Plans contain tasks with explicit IDs and depends_on arrays.
+  - Normal work can avoid durable mission state when durable state adds no value.
+  - Normal planning uses acceptance criteria, checklist, and validation.
+  - Graph planning uses task IDs, depends_on arrays, derived waves, and planned review tasks.
   - Waves are derived and not stored as editable truth.
-  - Review timing is mostly represented by review tasks in the DAG.
   - Reviewers return findings to the main thread.
+  - Review findings include official Codex-style confidence fields.
+  - Review findings are observations until triaged; only accepted blocking findings can block progress.
+  - Still-dirty review boundaries after repair budget trigger autonomous replan.
   - The main thread records review results.
   - Role boundaries are prompt-governed, not fake CLI identity checks.
+  - Custom subagent roles disable Codex hooks so Ralph applies only to the main/root orchestrator.
+  - $interrupt pauses the active loop so the user can talk.
   - Ralph only asks codex1 status whether stop is allowed.
+  - Ralph blocks at most once per Stop-hook continuation cycle.
 
 success_criteria:
-  - A fresh mission can be initialized under PLANS/<mission-id>/.
+  - A fresh durable mission can be initialized under PLANS/<mission-id>/.
   - $clarify can produce a ratified OUTCOME.md with no fill markers and no vague sections.
-  - $plan hard can produce PLAN.yaml with full plan sections, task DAG, specs, proof strategy, review tasks, and mission-close criteria.
-  - codex1 plan check rejects missing depends_on, duplicate task IDs, unknown dependencies, and cycles.
-  - codex1 plan waves derives waves from the DAG.
-  - $execute can run a ready task or safe ready wave.
+  - $plan can produce a valid normal plan without graph-only fields.
+  - $plan can produce a valid graph plan with task graph, specs, proof strategy, review tasks, and mission-close criteria.
+  - codex1 plan check rejects missing graph depends_on, duplicate task IDs, unknown dependencies, and cycles in graph mode.
+  - codex1 plan waves derives waves from the graph.
+  - $execute can run a normal step, ready graph task, or safe ready graph wave.
   - Worker subagents can implement assigned tasks using task packets.
   - Planned review tasks spawn reviewer subagents.
   - The main thread records review clean/findings through codex1 review record.
-  - Six consecutive dirty reviews for one active target trigger replan.
-  - $close pauses the loop so the user can talk.
+  - Repeated dirty reviews after repair budget or invalidated assumptions trigger autonomous replan.
+  - $interrupt pauses the loop so the user can talk.
   - codex1 status reports whether Ralph should allow stop.
-  - Mission-close review runs before close complete.
+  - codex1 doctor proves install-time Codex integration assumptions without writing mission state.
+  - codex1 ralph stop-hook allows stop when stop_hook_active is true.
+  - Mission-close review runs before close complete for graph/large/risky missions.
   - codex1 close check and codex1 status agree about terminal readiness.
 
 non_goals:
@@ -160,12 +223,13 @@ non_goals:
   - Do not use .ralph as mission state.
   - Do not store waves as editable truth.
   - Do not make reviewers write review records directly.
+  - Do not expose $finish or $complete as user skills.
   - Do not make users operate a complex CLI manually.
 ```
 
 ## Clarify Process
 
-`$clarify` should ask enough questions to fill `OUTCOME.md`.
+`$clarify` should ask enough questions to fill `OUTCOME.md` when a durable outcome is needed.
 
 It should ask when:
 
@@ -174,7 +238,9 @@ It should ask when:
 - Non-goals are missing for broad work.
 - Constraints are implied but not explicit.
 - Terms like "simple", "perfect", "reliable", "done", "thorough", or "not overengineered" are used without definition.
-- Destructive actions, deploys, migrations, secrets, money, or external systems are involved.
+- Irreversible external actions, deploys, production migrations, secrets, money,
+  account tier upgrades, external systems, or non-Git-managed destructive
+  actions are involved.
 
 It should not ask pointless questions. Infer obvious things, state assumptions, and ask only when the answer changes the plan.
 
@@ -189,30 +255,101 @@ No vague "works well" style success criteria.
 
 ## PLAN.yaml Contract
 
-The plan is a full mission plan. The DAG is only the execution graph inside it.
+The plan is a theory of how to preserve intent through execution and repair.
 
-Required plan sections:
+Required common plan sections:
 
 ```yaml
 mission_id: codex1-rebuild
+planning_mode: normal | graph
 
 planning_level:
-  requested: hard
-  effective: hard
+  requested: medium
+  effective: medium
 
 outcome_interpretation:
   summary: "..."
 
-architecture:
+approach:
   summary: "..."
   key_decisions:
     - "..."
+
+acceptance_criteria:
+  - "..."
+
+validation:
+  checks:
+    - "..."
+  manual_inspection:
+    - "..."
+
+risks:
+  - risk: "..."
+    mitigation: "..."
+
+completion:
+  criteria:
+    - "..."
+```
+
+## Normal Plan
+
+Normal mode should be lightweight.
+
+Use it when the mission is ordinary multi-step work that needs enough state to avoid drift, but does not need dependency graph machinery.
+
+Normal `PLAN.yaml` shape:
+
+```yaml
+schema_version: codex1.plan.v1
+planning_mode: normal
+
+steps:
+  - id: S1
+    title: "Implement filtered list behavior"
+    acceptance:
+      - "List filters by selected status."
+    proof:
+      - "npm test -- filter-list"
+
+review:
+  required: false
+  notes: "Main-thread diff inspection and tests are enough unless blast radius grows."
+```
+
+Mutable step status belongs in `STATE.json`, not `PLAN.yaml`. If a scaffold
+includes initial status for readability, treat it as a template hint only.
+
+Normal mode may still use subagents, but delegation should be bounded by responsibility area rather than graph dependency.
+
+Normal mode should not require:
+
+- `depends_on`
+- derived waves
+- planned review tasks
+- mission-close review
+- task spec folders for every step
+
+Normal mode can escalate to graph mode when dependency order, parallelism, repair boundaries, or review timing become important.
+
+## Graph Plan
+
+Graph mode is for large/risky/multi-agent work.
+
+It adds a task graph inside the full plan.
+
+Graph `PLAN.yaml` shape:
+
+```yaml
+schema_version: codex1.plan.v1
+planning_mode: graph
 
 planning_process:
   evidence:
     - kind: explorer | advisor | docs_lookup | plan_review | direct_reasoning
       summary: "..."
-      required_for_hard: true
+      required_for_graph: true
 
 tasks:
   - id: T1
@@ -229,105 +366,12 @@ tasks:
     proof:
       - "..."
 
-risks:
-  - risk: "..."
-    mitigation: "..."
-
 mission_close:
   criteria:
     - "..."
 ```
 
-## Planning Levels
-
-All levels require the same basic plan structure.
-
-The level changes process depth.
-
-```text
-light  = full structure for small/local/obvious work
-medium = full structure with normal deliberation
-hard   = full structure plus mandatory deeper critique/research/delegation
-```
-
-Planning level should be selected through a CLI-supported handshake.
-
-Preferred flow:
-
-```bash
-codex1 plan choose-level
-```
-
-Interactive prompt:
-
-```text
-Choose planning level:
-1. light  - small/local/obvious work
-2. medium - normal multi-step work
-3. hard   - architecture/risky/autonomous/multi-agent work
-```
-
-Accepted inputs:
-
-```text
-1 / light
-2 / medium
-3 / hard
-```
-
-Use only `light`, `medium`, and `hard` in `PLAN.yaml`, docs, and skill prompts. Numeric values are CLI aliases. Do not use `low` or `high` as planning verbs.
-
-The selected level determines which planning workflow must run before the plan can be locked:
-
-```text
-light  -> direct planning is acceptable, with the full required plan structure
-medium -> normal planning with enough context gathering and internal critique
-hard   -> mandatory deeper planning loop with exploration, advisor critique, plan review, and validation before lock
-```
-
-The CLI records the requested level and scaffolds the plan accordingly. The main thread may escalate the effective level if risk demands it.
-
-Examples:
-
-```yaml
-planning_level:
-  requested: medium
-  effective: medium
-```
-
-```yaml
-planning_level:
-  requested: light
-  effective: hard
-  escalation_reason: "The mission touches global hooks and mission-close behavior."
-```
-
-Only include `escalation_reason` when the main thread escalates above the requested level.
-
-For hard planning, before locking the plan, the main thread should usually:
-
-- Use explorer subagents when repo context is unclear.
-- Use docs lookup when external APIs/libraries matter.
-- Use advisor/critique subagents.
-- Use plan-review subagents.
-- Validate the DAG.
-- Validate proof strategy.
-- Validate review tasks.
-- Confirm first executable wave.
-
-If the user asks for hard:
-
-```yaml
-planning_level:
-  requested: hard
-  effective: hard
-```
-
-No reason is needed.
-
-## Task DAG
-
-Every task:
+Every graph task:
 
 - Has `id`.
 - Has `title`.
@@ -337,7 +381,7 @@ Every task:
 - Uses `depends_on: []` if root.
 - References existing task IDs.
 
-Executable work tasks should also declare:
+Executable graph tasks should also declare:
 
 - `read_paths`
 - `write_paths`
@@ -399,7 +443,88 @@ tasks:
       - integration_intent
 ```
 
+## Planning Levels
+
+Planning level changes process depth.
+
+```text
+light  = small/local/obvious work
+medium = normal multi-step work
+hard   = architecture/risky/autonomous/multi-agent work
+```
+
+Planning level should be selected through a CLI-supported handshake when durable planning is needed.
+
+Preferred flow:
+
+```bash
+codex1 plan choose-level
+```
+
+Interactive prompt:
+
+```text
+Choose planning level:
+1. light  - small/local/obvious work
+2. medium - normal multi-step work
+3. hard   - architecture/risky/autonomous/multi-agent work
+```
+
+Accepted inputs:
+
+```text
+1 / light
+2 / medium
+3 / hard
+```
+
+Use only `light`, `medium`, and `hard` in `PLAN.yaml`, docs, and skill prompts. Numeric values are CLI aliases. Do not use `low` or `high` as planning verbs.
+
+The selected level determines which planning workflow must run before the plan can be locked:
+
+```text
+light  -> direct planning is acceptable
+medium -> normal planning with enough context gathering and internal critique
+hard   -> deeper planning loop with exploration, critique, plan review, and validation before lock
+```
+
+The CLI records the requested level and scaffolds the plan accordingly. The main thread may escalate the effective level if risk demands it.
+
+Examples:
+
+```yaml
+planning_level:
+  requested: medium
+  effective: medium
+```
+
+```yaml
+planning_level:
+  requested: light
+  effective: hard
+  escalation_reason: "The mission touches global hooks and mission-close behavior."
+```
+
+Only include `escalation_reason` when the main thread escalates above the requested level.
+
+## Graph Planning Process
+
+For graph/hard planning, before locking the plan, the main thread should usually:
+
+- Use the single explorer role when repo or system context is unclear.
+- Use docs lookup when external APIs/libraries matter.
+- Use advisor/critique subagents when design risk matters.
+- Use plan-review subagents when plan quality materially affects correctness.
+- Validate the graph.
+- Validate proof strategy.
+- Validate review tasks.
+- Confirm the first executable wave.
+
+Do not make this a bureaucracy. The purpose is to ensure large/risky planning gets the extra critique it needs.
+
 ## Derived Waves
+
+Graph mode only.
 
 Do not store waves in `PLAN.yaml`.
 
@@ -441,33 +566,47 @@ User does not need stored waves in the plan file.
 Wave eligibility:
 
 - All dependencies are complete or review-clean.
-- Task status is ready, or needs repair and has a current failed review target assigned for repair.
+- Task is pending and dependency-satisfied.
 - No mandatory replan trigger is open for that task.
 - Required spec/proof/plan freshness checks pass.
 
+Repairs are not wave members. A current review boundary in `repair_required`
+becomes `next_action.kind = repair` in status, not a derived graph wave task.
+
 ## Review Tasks
 
-Review timing should be planned in the DAG.
+Review timing should be risk-scaled.
 
-Use review tasks after:
+Normal work:
 
-- Meaningful code slices.
-- Waves of interacting tasks.
-- Subsystem completion.
-- High-risk workflow changes.
-- Integration boundaries.
+- Formal reviewer optional.
+- Small/local normal work usually uses direct main-thread verification.
+- Add review only when risk, ambiguity, or blast radius justifies it.
 
-Mission-close review is mandatory even if no review task exists at the end.
+Graph work:
+
+- Plan review tasks after meaningful code slices, waves of interacting tasks, subsystem completion, high-risk workflow changes, and integration boundaries.
+- Mission-close review is mandatory for large/risky graph missions even if no review task exists at the end.
+
+Review records should support official Codex-style confidence fields:
+
+```yaml
+findings:
+  - title: "..."
+    priority: 1
+    confidence_score: 0.82
+overall_confidence_score: 0.77
+```
 
 ## Specs
 
-Every executable task should have:
+Every executable graph task should have:
 
 ```text
 specs/T<ID>/SPEC.md
 ```
 
-SPEC.md should contain:
+`SPEC.md` should contain:
 
 - Task goal.
 - Relevant context.
@@ -478,3 +617,5 @@ SPEC.md should contain:
 - Review expectations.
 
 Workers read the spec. Reviewers may read relevant specs through review packets.
+
+Normal-mode steps may inline their spec in `PLAN.yaml` unless the step is complex enough to deserve a separate file.

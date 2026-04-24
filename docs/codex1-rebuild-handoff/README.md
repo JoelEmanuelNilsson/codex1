@@ -12,10 +12,21 @@ It is written for a new AI implementation agent that has no chat context and sho
 4. `03-planning-artifacts.md`
 5. `04-roles-models-prompts.md`
 6. `05-build-prompt.md`
+7. `06-ralph-stop-hook-contract.md`
+8. `07-review-repair-replan-contract.md`
+9. `08-state-status-and-graph-contract.md`
+10. `09-implementation-errata.md`
 
 The older single-file architecture draft at `../codex1-rebuild-clear-architecture.md` is background. This folder is the sharper handoff contract.
 
 If this folder disagrees with older V2 docs, this folder wins. Older docs are useful inspiration, but they contain machinery this rebuild explicitly avoids.
+
+If files `00` through `05` disagree with files `06` through `09` on Ralph,
+review loops, model choices, post-lock autonomy, state revisions, status
+verdicts, or graph/wave derivation, files `06` through `09` win. They capture
+the later decisions made after the initial handoff draft. File `09` adds
+implementation exactness for Codex hook config, doctor checks, and first-slice
+build order.
 
 ## Source Inspiration
 
@@ -50,34 +61,62 @@ Codex1 should apply that lesson to Codex missions themselves.
 
 ## Product In One Paragraph
 
-Codex1 is a skills-first native Codex workflow. Users invoke `$clarify`, `$plan`, `$execute`, `$review-loop`, `$close`, or `$autopilot`. Those skills use a small deterministic `codex1` CLI. The CLI stores visible mission files, validates a full plan with a task DAG, derives execution waves, reports next actions, records task progress, records main-thread review results, pauses/resumes the active loop, checks close readiness, and emits one status JSON for Ralph. Workers execute assigned tasks. Reviewers return findings only. The main thread records mission truth. Ralph only blocks active unpaused loops by reading `codex1 status --json`.
+Codex1 is a way to make Codex much more powerful while keeping the user
+experience native to Codex. The user-facing product is skills: users invoke
+`$clarify`, `$plan`, `$execute`, `$review-loop`, `$interrupt`, or `$autopilot`.
+Those skills use a small deterministic `codex1` CLI when durable mission state,
+gates, recovery, or Ralph stop pressure are useful. The workflow has two
+planning modes: normal work uses lightweight planning that can be chat-only or
+durable, and large/risky work uses graph planning with task IDs, dependencies,
+derived waves, planned review gates, and stricter status. Workers execute
+bounded assignments. Reviewers return findings only. One explorer role gathers
+facts when needed. The main thread owns user intent, synthesis, mission truth,
+and completion. Ralph is only a minimal stop guard over `codex1 status --json`;
+it must never become an orchestrator.
 
 ## Layer Ownership
 
 | Layer | Owns | Must Not Own |
 | --- | --- | --- |
 | Skills | User-facing workflow, interviewing, planning posture, orchestration instructions | Hidden state, stale truth derivation, gate math |
-| CLI | Validation, status projection, task DAG checks, wave derivation, task/review/close state | Architecture choice, user intent, AI role identity |
-| Visible files | Outcome, plan, state, audit, specs, proofs, reviews, closeout | Chat-only truth |
+| CLI | Validation, status projection, normal/graph plan checks, graph wave derivation, task/review/close state | Architecture choice, user intent, AI role identity |
+| Visible files | Outcome, plan, state, audit, specs, proofs, reviews, closeout when durable state is needed | Chat-only truth for work that does not need durable state |
 | Subagents | Bounded exploration, writing, reviewing, critique | Mission truth, mission close, hidden state |
 | Ralph | Stop guard over `codex1 status --json` | Planning, reviewing, executing, subagent management |
 
 ## Non-Negotiables
 
 - The user-facing product is skills-first.
+- Codex1 is an autonomous Codex power-up, not a separate wrapper runtime.
 - The deterministic substrate is a small CLI.
-- Plans are full mission plans, not just DAGs.
-- Planning level is selected through `codex1 plan choose-level` using the product verbs `light`, `medium`, and `hard`; numeric input `1`, `2`, or `3` may be accepted as aliases, but `low` and `high` are not product terms.
-- Every executable task has an explicit task ID and `depends_on`.
-- Waves are derived from the DAG; waves are not stored as editable truth.
-- Review timing is mostly represented as planned review tasks in the DAG.
-- Mission-close review is mandatory.
+- Skills are the UX; the CLI exists so skills and Codex can rely on exact
+  durable state when autonomy needs it.
+- `codex1 status --json` is the first-class product artifact for skills,
+  Ralph, humans, and tests.
+- Ralph should be installed through Codex's stable hook system as a `Stop` hook.
+- Planning is adaptive, not always heavy.
+- Normal work uses lightweight planning with acceptance criteria and validation; it may stay chat-only when durable state adds no value.
+- Ralph should not block unless there is an active unpaused mission with an autonomous next action.
+- Ralph blocks at most once per Codex Stop-hook continuation cycle; when `stop_hook_active == true`, Ralph allows stop.
+- Large/risky/multi-agent work uses graph planning.
+- Graph-mode tasks have explicit task IDs and `depends_on`; normal-mode steps do not need to pretend to be a DAG.
+- Graph waves are derived from dependencies and current state; waves are not stored as editable truth.
+- Review timing is risk-scaled: lightweight self-review for normal work, planned review tasks and mission-close review for graph/large/risky work.
+- Review findings are observations, not work; only accepted blocking findings can block progress.
+- After mission lock, ordinary ambiguity and dirty review loops should resolve through assumption recording, repair, or autonomous replan, not user questions.
+- Do not use `needs_user`, `blocked_external`, or `validation_required` as normal post-lock execution verdicts.
+- `$interrupt` is the user-facing discussion boundary; it pauses active loops so the user can talk without Ralph forcing continuation.
+- Terminal completion is internal CLI/workflow state, not a public `$finish` or `$complete` skill.
 - Workers may edit assigned paths and run proof commands.
 - Reviewers return findings to the main thread and do not record review truth.
+- Reviewer findings should follow official Codex review shape: `priority`, per-finding `confidence_score`, and `overall_confidence_score`.
+- Custom subagent roles must disable Codex hooks with `[features] codex_hooks = false`; only the main/root orchestrator should feel Ralph stop pressure.
+- Do not use full-history forks for Codex1 custom-role subagents; use explicit task packets.
 - Role boundaries are prompt-governed, not fake machine-enforced.
 - The CLI must not detect "parent vs subagent."
 - No `.ralph` mission state directory.
-- Ralph is a tiny status guard, not an orchestrator.
+- Ralph is a minimal status guard, not an orchestrator.
+- Pre/Post tool hooks can observe MCP tools, `apply_patch`, and Bash, but they must not become mission truth or Ralph's control plane.
 
 ## Explicit Anti-Goals
 
@@ -91,6 +130,10 @@ Do not build:
 - Session-ID authority system.
 - Reviewer writeback authority tokens.
 - Stored waves as canonical truth.
+- A universal DAG requirement for every task.
+- A public `$finish` or `$complete` skill.
+- A custom wrapper runtime for stop handling now that Codex has stable hooks.
+- A Ralph design that depends on observing every tool call.
 - Multiple competing closeout/gate/cache truth surfaces.
 - A CLI that spawns subagents.
 - A CLI that asks semantic clarification questions.
@@ -99,20 +142,24 @@ Do not build:
 
 Build the CLI first, but remember the CLI is not the user product.
 
+Build the first vertical slice in `09-implementation-errata.md` before filling
+out every command module. Do not start by implementing the full graph/review
+surface in parallel.
+
 The correct split is:
 
 ```text
 skills = UX and workflow guidance
 CLI = deterministic state, validation, derived views, and recording
-visible files = durable truth
+visible files = durable truth when durable truth is useful
 subagents = delegated Codex reasoning/work/review
-Ralph = tiny status guard
+Ralph = minimal status guard
 ```
 
 If a proposed implementation adds complexity, ask:
 
 ```text
-Is this enforcing artifact validity, or is it pretending to enforce AI role identity?
+Is this preserving user intent through uncertainty, or is it pretending to enforce AI role identity?
 ```
 
 Only the first is usually appropriate for the CLI.
