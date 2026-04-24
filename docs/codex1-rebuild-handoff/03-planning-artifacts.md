@@ -109,7 +109,11 @@ paths are not user questions by default. Codex can make them and prove them, but
 it must not overwrite user work or silently broaden file ownership when the safe
 scope is unclear.
 
-Recommended `OUTCOME.md` shape can be YAML frontmatter plus readable markdown, or pure YAML. The important part is that the CLI can check required fields.
+Canonical `OUTCOME.md` shape is YAML frontmatter with required typed fields plus
+optional human-readable markdown after the frontmatter. The CLI must parse only
+the structured frontmatter for required state and digest computation. Pure YAML
+may be accepted as an import convenience, but v1 writers should emit
+frontmatter.
 
 Required fields:
 
@@ -148,6 +152,11 @@ proof_expectations:
 
 review_expectations:
   - ...
+
+pr_intent:
+  open_pr: false
+  target_branch: null
+  notes: "Open a PR only if this is explicitly ratified as true."
 
 known_risks:
   - ...
@@ -244,7 +253,10 @@ It should ask when:
   account tier upgrades, external systems, or non-Git-managed destructive
   actions are involved.
 
-It should not ask pointless questions. Infer obvious things, state assumptions, and ask only when the answer changes the plan.
+It should not ask pointless questions. Infer obvious implementation details only
+after outcome truth is clear. During `$clarify` and `$autopilot` clarify phase,
+ask all questions needed to ratify user-owned outcome decisions; do not replace
+those decisions with assumptions.
 
 Ratification rule:
 

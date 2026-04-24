@@ -195,12 +195,14 @@ Recommended `STATE.json` skeleton:
   },
   "outcome": {
     "ratified": true,
-    "ratified_revision": 2
+    "ratified_revision": 2,
+    "outcome_digest": "sha256:..."
   },
   "plan": {
     "locked": true,
     "locked_revision": 5,
     "plan_digest": "sha256:...",
+    "outcome_digest_at_lock": "sha256:...",
     "supersedes": []
   },
   "loop": {
@@ -250,7 +252,8 @@ Recommended `STATE.json` skeleton:
     "boundary_revision": null,
     "latest_review_id": null,
     "passed_revision": null,
-    "closeout_path": "CLOSEOUT.md"
+    "closeout_path": "CLOSEOUT.md",
+    "closeout_digest": null
   },
   "terminal": {
     "complete": false,
@@ -301,6 +304,17 @@ terminal_complete
 Do not add a normal `blocked_external` state. Do not add a top-level
 `validation_required` state.
 
+Loop modes:
+
+```text
+none        = inactive/manual; Ralph allows stop
+execute     = continue locked-plan execution through close complete
+autopilot   = continue clarify/plan/execute/review/repair/replan/close lifecycle
+review_loop = continue explicit iterative review/fix loop
+```
+
+Only active, unpaused continuous modes are candidates for Ralph stop pressure.
+
 ## Post-Lock Verdicts
 
 After mission lock, use a small verdict set:
@@ -324,6 +338,30 @@ be resolved by continuing, repairing, or replanning.
 `validation_required` is intentionally absent. Proof and validation are part of
 `finish_task`, `review`, and `close` checks.
 
+## Digest Freshness
+
+Codex1 should treat durable outcome and plan freshness as first-class state.
+
+- `codex1 outcome ratify` stores `STATE.json.outcome.outcome_digest`.
+- `codex1 plan lock` stores both `STATE.json.plan.plan_digest` and
+  `STATE.json.plan.outcome_digest_at_lock`.
+- `codex1 status --json` recomputes current digests from the machine-parsed
+  artifact content.
+
+Status must detect:
+
+```text
+OUTCOME.md changed after ratification
+PLAN.yaml changed after lock
+PLAN.yaml digest no longer matches STATE.json.plan.plan_digest
+plan was locked against a different outcome digest
+```
+
+These are not ordinary implementation blockers. Project `invalid_state` when
+the current files/state are inconsistent or unsafe to continue, and
+`replan_required` when the change has been intentionally recorded as a plan
+change that needs relocking.
+
 ## Status JSON Contract
 
 `codex1 status --json` is the projection used by skills, the main thread, and
@@ -340,6 +378,7 @@ Recommended shape:
   "mission_id": "codex1-rebuild",
   "mission_root": "/abs/path/PLANS/codex1-rebuild",
   "state_revision": 18,
+  "outcome_digest": "sha256:...",
   "plan_digest": "sha256:...",
   "verdict": "continue_required",
   "phase": "execute",
@@ -428,6 +467,29 @@ If a task needs proof, the next action is `finish_task`, not
 If a review boundary is still dirty after repair budget, the next action is
 `replan`, not `needs_user`.
 
+Status next-action priority order:
+
+```text
+1. complete terminal state
+2. invalid or corrupt state/artifact digest mismatch
+3. paused loop
+4. inactive loop
+5. replan required
+6. untriaged review findings
+7. accepted blocking findings within repair budget
+8. accepted blocking findings after repair budget
+9. in-progress task/step needing proof or finish
+10. planned review boundary ready
+11. ready normal step, graph task, or graph wave
+12. mission-close review required
+13. close complete required
+14. explain_and_stop / none
+```
+
+The exact implementation may split rows into more specific reason codes, but
+`codex1 status`, `codex1 close check`, and Ralph stop projection must share one
+priority engine. No command should re-derive status in its own order.
+
 If there is no autonomous next action, Ralph allows stop.
 
 Use `explain_and_stop` when Codex cannot continue autonomously and should simply
@@ -509,10 +571,16 @@ exclude superseded/cancelled tasks
 validate graph
 mark a dependency satisfied when its current status is complete or review_clean
 find all pending tasks whose dependencies are satisfied
-compute topological level for each ready task
-current wave = ready tasks at the lowest topological level
-wave_id = "W" + (level + 1)
+compute topological level for each ready task as display metadata
+current ready frontier = all pending tasks whose dependencies are satisfied
+recommended wave = maximal safe subset of the ready frontier
+wave_id = deterministic display ID for the recommended wave
 ```
+
+Topological levels are not hidden scheduling barriers. If `T3` depends only on
+completed `T1`, `T3` may be ready even when unrelated level-0 task `T2` is still
+pending. If the mission needs breadth-first synchronization, model that as an
+explicit review/integration/barrier task in `PLAN.yaml`.
 
 Dependency-satisfying statuses are exactly:
 
@@ -618,7 +686,20 @@ state. The mutating commands are:
 
 `codex1 close complete --json` writes or verifies `CLOSEOUT.md`, then records
 terminal state. When terminal state is recorded, `CLOSEOUT.md` must exist and
-match the current revision.
+match the pre-terminal revision.
+
+Closeout revision rule:
+
+```text
+state revision before close complete = N
+CLOSEOUT.md frontmatter records pre_terminal_revision: N
+close complete records terminal state at revision N+1
+STATE.json.terminal.completed_revision = N+1
+STATE.json.close.closeout_digest = digest(CLOSEOUT.md)
+```
+
+This avoids an off-by-one mismatch where the closeout is written for the
+pre-close state and then invalidated by the terminalization event itself.
 
 ## Overengineering Guards
 

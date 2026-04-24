@@ -140,6 +140,7 @@ status.ok == true
 mission exists
 loop.active == true
 loop.paused == false
+loop.mode is execute, autopilot, or review_loop
 status.stop.allow == false
 status.stop.message is non-empty
 next_action.owner == codex

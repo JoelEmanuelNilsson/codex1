@@ -30,8 +30,8 @@ implementation exactness for Codex hook config, doctor checks, and first-slice
 build order.
 
 If `01-product-flow.md` disagrees with `10-first-slice-skill-contracts.md` on
-first-slice skill wrapper behavior, file `10` wins. Command and state details
-still live in `02`, `08`, and `09`.
+skill boundary behavior or first-slice skill wrapper behavior, file `10` wins.
+Command and state details still live in `02`, `08`, and `09`.
 
 ## Source Inspiration
 
@@ -70,14 +70,20 @@ Codex1 is a way to make Codex much more powerful while keeping the user
 experience native to Codex. The user-facing product is skills: users invoke
 `$clarify`, `$plan`, `$execute`, `$review-loop`, `$interrupt`, or `$autopilot`.
 Those skills use a small deterministic `codex1` CLI when durable mission state,
-gates, recovery, or Ralph stop pressure are useful. The workflow has two
-planning modes: normal work uses lightweight planning that can be chat-only or
-durable, and large/risky work uses graph planning with task IDs, dependencies,
-derived waves, planned review gates, and stricter status. Workers execute
-bounded assignments. Reviewers return findings only. One explorer role gathers
-facts when needed. The main thread owns user intent, synthesis, mission truth,
-and completion. Ralph is only a minimal stop guard over `codex1 status --json`;
-it must never become an orchestrator.
+gates, recovery, or Ralph stop pressure are useful. `$execute` runs an already
+locked plan end to end until terminal close is complete, including planned
+review boundaries that are part of that locked plan. `$autopilot` owns the
+larger lifecycle: clarify, plan, execute, review/repair/replan when planned or
+ratified, and close; it may open a PR only when the clarified outcome explicitly
+asks for that. `$review-loop` is an additional explicit skill for iterative
+review/fix loops, not the default meaning of every planned review boundary. The
+workflow has two planning modes: normal work uses lightweight planning that can
+be chat-only or durable, and large/risky work uses graph planning with task IDs,
+dependencies, derived waves, planned review gates, and stricter status. Workers
+execute bounded assignments. Reviewers return findings only. One explorer role
+gathers facts when needed. The main thread owns user intent, synthesis, mission
+truth, and completion. Ralph is only a minimal stop guard over
+`codex1 status --json`; it must never become an orchestrator.
 
 ## Layer Ownership
 
@@ -108,6 +114,18 @@ it must never become an orchestrator.
 - Graph waves are derived from dependencies and current state; waves are not stored as editable truth.
 - Review timing is risk-scaled: lightweight self-review for normal work, planned review tasks and mission-close review for graph/large/risky work.
 - Review findings are observations, not work; only accepted blocking findings can block progress.
+- `$execute` is continuous inside the locked plan. It should stop only when
+  terminal close is complete, the loop is interrupted, or status projects a
+  non-autonomous `explain_and_stop`.
+- `$execute` runs planned review boundaries that already exist in the locked
+  plan; `$review-loop` is reserved for explicitly requested iterative review
+  and fix cycles beyond ordinary execution.
+- `$autopilot` follows `$clarify` before planning. It must ask the questions
+  needed to ratify outcome truth rather than silently replacing them with
+  assumptions.
+- `$autopilot` does not open a PR by default. It may open one only when PR
+  creation is part of the ratified outcome; otherwise it stops at close-complete
+  or PR-ready state.
 - After mission lock, ordinary ambiguity and dirty review loops should resolve through assumption recording, repair, or autonomous replan, not user questions.
 - Do not use `needs_user`, `blocked_external`, or `validation_required` as normal post-lock execution verdicts.
 - `$interrupt` is the user-facing discussion boundary; it pauses active loops so the user can talk without Ralph forcing continuation.

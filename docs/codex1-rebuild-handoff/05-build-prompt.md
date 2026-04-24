@@ -85,7 +85,9 @@ First vertical slice:
 1. Implement codex1 --help, codex1 init, and codex1 doctor --json.
 2. Implement visible mission files with schema versions, state revision, and append-only events.
 3. Implement outcome check/ratify.
-4. Implement one durable normal-mode mission path: normal plan scaffold/check/lock, one step, proof, task finish.
+4. Implement one durable normal-mode mission path with at least two steps:
+   normal plan scaffold/check/lock, execute all steps, proof, task finish, and
+   close complete.
 5. Implement status JSON with planning_mode, verdict, next_action, loop, close, and stop semantics.
 6. Implement loop activate/pause/resume/deactivate for $execute, $autopilot, and $interrupt.
 7. Implement Ralph as a Codex Stop hook adapter that only uses codex1 status semantics.
@@ -112,13 +114,23 @@ Required proof:
 - first-slice skills prove the user UX: $clarify, $plan, $execute, $interrupt,
   and a minimal $autopilot path can drive the normal mission slice without the
   user touching raw CLI commands.
-- codex1 doctor --json proves install-time assumptions without writing mission state.
+- $execute continues a locked normal plan through all steps, close check, and
+  close complete; it is not a one-step command.
+- $autopilot follows $clarify for outcome truth and does not replace clarify
+  questions with assumptions.
+- $autopilot does not open a PR unless PR creation is part of the ratified
+  outcome.
+- codex1 doctor --json proves fast install-time assumptions without writing
+  mission state; codex1 doctor --json --e2e covers deeper subagent/hook probes.
 - every command supports --json.
 - invalid OUTCOME.md cannot be ratified.
 - plan choose-mode supports normal/graph and records requested/effective mode.
 - plan choose-level supports product verbs light/medium/hard, may accept 1/2/3 as aliases, records requested/effective level, and allows main-thread escalation.
 - plan lock is the only command that transitions a durable plan from valid draft to executable locked plan.
 - loop activate sets the active unpaused durable loop and updates PLANS/ACTIVE.json before Ralph is expected to block.
+- loop mode `execute` means continuous locked-plan execution through close
+  complete; loop mode `autopilot` means full clarify/plan/execute/close
+  lifecycle.
 - normal plans do not require depends_on, graph waves, or planned review tasks.
 - invalid graph plans are rejected.
 - graph waves are derived from depends_on.
@@ -138,7 +150,7 @@ Required proof:
 - exact Ralph hook snippets parse through current Codex config types.
 - Ralph fail-opens for missing mission, no active mission, paused, invalid-state, corrupt state, unknown next action, status error, schema mismatch, and stop_hook_active=true.
 - subagent role configs disable Codex hooks with [features] codex_hooks=false.
-- an e2e test proves a custom subagent role with codex_hooks=false does not run Ralph.
+- codex1 doctor --json --e2e or an equivalent e2e test proves a custom subagent role with codex_hooks=false does not run Ralph.
 - PreToolUse/PostToolUse visibility for MCP tools, apply_patch, and long-running Bash sessions is not required for Ralph correctness.
 - codex1 status and codex1 close check agree.
 - codex1 close check verifies pre-close readiness; codex1 close complete writes or verifies CLOSEOUT.md and then records terminal state.

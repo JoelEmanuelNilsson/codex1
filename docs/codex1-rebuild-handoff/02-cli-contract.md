@@ -191,11 +191,16 @@ Initial state:
   "phase": "clarify",
   "planning_mode": "unset",
   "planning_level": { "requested": null, "effective": null },
-  "outcome": { "ratified": false, "ratified_revision": null },
+  "outcome": {
+    "ratified": false,
+    "ratified_revision": null,
+    "outcome_digest": null
+  },
   "plan": {
     "locked": false,
     "locked_revision": null,
     "plan_digest": null,
+    "outcome_digest_at_lock": null,
     "supersedes": []
   },
   "loop": { "active": false, "paused": false, "mode": "none" },
@@ -209,7 +214,8 @@ Initial state:
     "boundary_revision": null,
     "latest_review_id": null,
     "passed_revision": null,
-    "closeout_path": "CLOSEOUT.md"
+    "closeout_path": "CLOSEOUT.md",
+    "closeout_digest": null
   },
   "terminal": { "complete": false, "completed_revision": null }
 }
@@ -304,6 +310,7 @@ Normal-mode example:
   "mission_id": "normal-feature",
   "mission_root": "/abs/path/PLANS/normal-feature",
   "state_revision": 12,
+  "outcome_digest": "sha256:...",
   "plan_digest": "sha256:...",
   "planning_mode": "normal",
   "phase": "execute",
@@ -355,6 +362,7 @@ Graph-mode example:
   "mission_id": "codex1-rebuild",
   "mission_root": "/abs/path/PLANS/codex1-rebuild",
   "state_revision": 18,
+  "outcome_digest": "sha256:...",
   "plan_digest": "sha256:...",
   "planning_mode": "graph",
   "phase": "execute",
@@ -422,18 +430,23 @@ Use precise mission-close vocabulary. Do not call the mission complete when it i
 `doctor` proves installation and Codex integration assumptions. It is not part
 of normal mission execution.
 
-It should check:
+Default `doctor` should be fast and non-invasive. Deep integration probes that
+spawn a custom subagent or write marker files belong behind `codex1 doctor
+--json --e2e`.
+
+Default `doctor` should check:
 
 - `codex1` is available from a folder outside the source checkout.
 - `codex1 --help` and core subcommand help are useful.
 - The inline `config.toml` Ralph Stop-hook snippet parses under current Codex.
 - The managed `requirements.toml` Ralph Stop-hook snippet parses under current Codex.
 - The deployment exposes the Codex1 model policy: `gpt-5.5` and `gpt-5.4-mini`.
-- A custom subagent role with `[features] codex_hooks = false` does not run the
-  Ralph Stop hook.
 - `STATE.json.revision` and the latest `EVENTS.jsonl` revision are consistent,
   or any audit drift is reported clearly without changing mission state.
 - `codex1 ralph stop-hook` emits valid Stop-hook output for allow and block.
+
+`doctor --e2e` should additionally prove that a custom subagent role with
+`[features] codex_hooks = false` does not run the Ralph Stop hook.
 
 `doctor` must not:
 
@@ -497,6 +510,18 @@ It does not judge semantic quality. The main thread does.
 `codex1 outcome ratify --json`
 
 Ratifies only if `outcome check` passes.
+
+Effects:
+
+- Computes and stores `STATE.json.outcome.outcome_digest` from the canonical
+  machine-parsed outcome content.
+- Sets `STATE.json.outcome.ratified = true`.
+- Sets `STATE.json.outcome.ratified_revision` to the new state revision.
+- Increments `STATE.json.revision` and appends one event.
+
+If `OUTCOME.md` changes after ratification, `codex1 status --json` must detect
+the digest mismatch and project a non-terminal state rather than silently
+executing against stale outcome truth.
 
 ## Plan Commands
 
@@ -666,11 +691,13 @@ Examples:
 
 ```bash
 codex1 plan lock --json --mission codex1-rebuild --expect-revision 4
+codex1 plan lock --json --mission codex1-rebuild --replan --supersedes T4 --expect-revision 22
 ```
 
 Requirements:
 
 - `OUTCOME.md` is ratified for durable missions.
+- Current `OUTCOME.md` matches `STATE.json.outcome.outcome_digest`.
 - `codex1 plan check --json` passes for the selected mode.
 - No fill markers remain.
 - `PLAN.yaml` contains requested/effective planning mode and level when those
@@ -682,6 +709,8 @@ Requirements:
 Effects:
 
 - Computes and stores `STATE.json.plan.plan_digest`.
+- Stores `STATE.json.plan.outcome_digest_at_lock` from the current ratified
+  outcome digest.
 - Sets `STATE.json.plan.locked = true`.
 - Sets `STATE.json.plan.locked_revision` to the new state revision.
 - Initializes `STATE.json.steps` or `STATE.json.tasks` from `PLAN.yaml`.
@@ -690,6 +719,18 @@ Effects:
 
 `plan lock` is the only normal write path that transitions a durable plan from
 draft/scaffolded to executable. `plan check` remains validation only.
+
+Replan relock:
+
+- `codex1 plan lock --replan --supersedes <ids...> --json` is the canonical
+  way to apply an edited `PLAN.yaml` after replan is required.
+- It requires `STATE.json.replan.required == true` unless a future explicit
+  force flag is added for manual recovery.
+- It validates the edited plan through the same plan checker.
+- It must not reuse superseded task IDs for new work.
+- It appends new task IDs, marks superseded tasks/review boundaries, refreshes
+  `plan_digest` and `outcome_digest_at_lock`, clears `replan.required`, and
+  appends one event.
 
 ### `codex1 plan graph --format mermaid`
 
@@ -779,6 +820,25 @@ Records clean review result entered by the main thread.
 `codex1 review record T4 --findings-file /tmp/findings.json --json`
 
 Records findings entered by the main thread.
+
+`codex1 review record T4 --raw-file /tmp/raw-review.json --adjudication-file /tmp/adjudication.json --json`
+
+Records raw reviewer output plus main-thread triage in one durable transition.
+Raw findings are audit evidence; adjudication decides whether any finding
+becomes current work.
+
+Adjudication decisions:
+
+```text
+accepted_blocking
+accepted_deferred
+rejected
+duplicate
+stale
+```
+
+The CLI should persist both raw findings and adjudication. Status must only
+block on current `accepted_blocking` findings.
 
 The CLI does not know whether the caller is main thread or reviewer. The workflow and prompts govern that. Do not build caller identity checks.
 
@@ -886,16 +946,32 @@ outcome. It does not mean `needs_user`.
 
 `codex1 replan record --reason <code> --supersedes T4 --json`
 
-Records replan decision and updates state. New tasks are added by editing `PLAN.yaml`, not by magic.
+Records that replan is required and updates `STATE.json.replan`. New tasks are
+added by editing `PLAN.yaml`, not by magic.
+
+Applying the edited plan is done by `codex1 plan lock --replan --supersedes
+<ids...> --json`, so plan validation, digest refresh, task initialization, and
+replan clearing stay centralized in the plan-lock path.
 
 ## Loop Commands
 
-`codex1 loop activate --mission <id> --mode execute --json`
+`codex1 loop activate --mission <id> --mode <execute|autopilot|review_loop> --json`
 
 Sets `STATE.json.loop.active = true`, `STATE.json.loop.paused = false`, records
 the loop mode, and writes or updates `PLANS/ACTIVE.json` as selector metadata.
 It requires a locked plan. This command is part of the first vertical slice
 because Ralph only blocks active, unpaused loops.
+
+Loop modes:
+
+```text
+execute     = continue an already locked plan until close complete
+autopilot   = continue the clarified/ratified lifecycle through plan, execute, review/repair/replan when planned, and close
+review_loop = continue an explicit iterative review/fix loop
+```
+
+`manual` is represented by an inactive or paused loop; it is not a Ralph-blocking
+continuous mode.
 
 `codex1 loop pause --json`
 
@@ -1033,7 +1109,16 @@ are triaged through the normal accepted-blocking repair/replan rules.
 
 Writes or verifies `CLOSEOUT.md`, then records terminal close state, only if
 `close check` passes. If a closeout already exists, it must match the current
-state revision or be rewritten before terminal state is recorded.
+pre-terminal state revision or be rewritten before terminal state is recorded.
+
+Closeout revision rule:
+
+- If current state revision is `N`, `close complete` writes/verifies
+  `CLOSEOUT.md` against `pre_terminal_revision: N`.
+- The command then records terminal completion at revision `N+1`.
+- `STATE.json.terminal.completed_revision` is `N+1`.
+- `STATE.json.close.closeout_digest` stores the digest of the closeout that was
+  verified before terminalization.
 
 ## Error Shape
 

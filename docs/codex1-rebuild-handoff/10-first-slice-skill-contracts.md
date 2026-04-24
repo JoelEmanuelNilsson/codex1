@@ -17,19 +17,25 @@ Skills are the user-facing product. Users should experience Codex1 through:
 $clarify
 $plan
 $execute
+$review-loop
 $interrupt
 $autopilot
 ```
 
-`$review-loop` exists as a public skill, but full planned review/replan behavior
-is not part of the first slice.
+Full planned review/replan behavior is not part of the first slice, but its
+product boundary is already fixed: `$execute` handles review boundaries already
+present in the locked plan, and `$review-loop` is an explicit additional skill
+for iterative review/fix loops.
 
 Every first-slice skill should:
 
 - Prefer chat-only work when durable state adds no value.
 - Use `codex1 status --json` first when a durable mission may exist.
 - Use stable CLI JSON instead of parsing prose artifacts when state matters.
-- Record assumptions when proceeding autonomously.
+- During `$clarify`, ask the questions needed to ratify outcome truth. Do not
+  substitute assumptions for unresolved user-owned decisions.
+- After outcome ratification and plan lock, record ordinary implementation
+  assumptions when proceeding autonomously.
 - Avoid raw CLI ceremony in user-facing prose unless the user asks for it.
 - Respect dirty worktrees and assigned write paths.
 - Never overwrite user work or silently broaden ownership when the safe scope is
@@ -50,6 +56,8 @@ First-slice behavior:
 - If durable state is useful, create or update `OUTCOME.md`.
 - Ask only questions that change scope, risk, money, credentials, deployment,
   irreversible external actions, privacy, security, or acceptance criteria.
+- Ask all such questions before ratification; do not ratify an outcome by
+  silently filling user-owned decisions with assumptions.
 - Run `codex1 outcome check --json`.
 - Run `codex1 outcome ratify --json` only when required fields are complete and
   the main thread judges the outcome semantically clear.
@@ -108,21 +116,34 @@ Must not:
 Purpose:
 
 ```text
-Execute the next ready step.
+Execute the locked plan end to end until close is complete.
 ```
 
-First-slice behavior:
+Full product behavior:
 
 - Run `codex1 status --json`.
 - If a durable plan is locked and the loop is inactive, run
   `codex1 loop activate --mission <id> --mode execute --json`.
-- Use `codex1 task next --json` or the status `next_action` to select the next
-  normal step.
-- Execute the step in the main thread or a bounded worker if useful.
-- Run proportional proof commands.
-- Record completion with `codex1 task finish <step-id> --proof <path-or-note>
-  --json --expect-revision <N>`.
-- Return to `codex1 status --json`.
+- Repeatedly use `codex1 status --json` and `codex1 task next --json` to select
+  the next locked-plan action.
+- Execute normal steps, graph tasks, and safe graph waves in the main thread or
+  bounded workers.
+- Run planned review boundaries when they are already part of the locked plan.
+- Triage review findings through the main thread; only accepted blocking
+  findings become repair work.
+- Run proportional proof commands and record proof.
+- Record progress with `codex1 task finish <id> --proof <path-or-note> --json
+  --expect-revision <N>` or the corresponding review/close command.
+- When status projects `close_complete`, run `codex1 close complete --json`.
+- Stop when status returns `complete` after terminal close.
+
+First-slice behavior:
+
+- Prove the same continuous shape on the simple normal slice: execute all
+  normal steps, record proof, run close check, run close complete, and stop at
+  terminal complete.
+- Do not implement planned review boundaries in the first slice; keep their
+  product semantics in docs and tests for the later graph/review slice.
 
 Allowed first-slice writes:
 
@@ -131,13 +152,45 @@ Allowed first-slice writes:
 - `codex1 loop activate --json`
 - `codex1 task start --json`
 - `codex1 task finish --json`
+- `codex1 close complete --json`
 
 Must not:
 
 - Edit outside mission scope or assigned write paths.
-- Record reviews.
+- Create, rewrite, or relock plans.
+- Invent unplanned review loops.
+- Open a PR.
 - Complete terminal close unless status says the next action is
   `close_complete`.
+
+## `$review-loop`
+
+Purpose:
+
+```text
+Run an explicit iterative review/fix loop.
+```
+
+Full product behavior:
+
+- Use when the user asks for a review loop or when the ratified outcome/locked
+  plan explicitly calls for extra iterative review pressure.
+- Reuse Codex1 review packet, reviewer, triage, repair, re-review, and replan
+  mechanics.
+- Keep looping over accepted blocking findings until clean, repair budget is
+  exhausted and replan is required, or status projects `explain_and_stop`.
+
+First-slice behavior:
+
+- It may exist as a documented public skill, but it is not implemented as a
+  full durable graph/review/replan workflow until after the normal first slice.
+
+Must not:
+
+- Replace ordinary `$execute` behavior for planned review boundaries already in
+  the locked plan.
+- Treat raw reviewer findings as durable work before main-thread triage.
+- Mark terminal close complete.
 
 ## `$interrupt`
 
@@ -167,7 +220,7 @@ Must not:
 Purpose:
 
 ```text
-Compose clarify, plan, execute, interrupt-safe status checks, and close.
+Compose clarify, plan, execute, planned review/repair/replan, and close.
 ```
 
 First-slice behavior:
@@ -175,14 +228,18 @@ First-slice behavior:
 - Start with `codex1 status --json` when a durable mission may exist.
 - If no durable mission is needed, do ordinary Codex work with proportional
   proof and no Codex1 files.
-- If outcome is missing, run the `$clarify` behavior.
+- If outcome is missing or unratified, run the `$clarify` behavior and ask the
+  questions needed to ratify outcome truth.
 - If a valid locked plan is missing, run the `$plan` behavior.
-- If the durable loop should continue, run `codex1 loop activate --json`.
-- Execute one status-projected autonomous next action at a time.
+- If the durable loop should continue, run `codex1 loop activate --json` or
+  `codex1 loop resume --json` as appropriate.
+- Execute the locked plan continuously using `$execute` semantics.
 - Stop and explain when status returns `explain_and_stop`.
 - Run `codex1 close check --json` when status projects close readiness.
 - Run `codex1 close complete --json` only when the projected next action is
   `close_complete`.
+- Open a PR only when PR creation is part of the ratified outcome; otherwise
+  stop at terminal close with PR-ready summary and proof.
 
 Must pause for genuine user-owned decisions involving:
 
@@ -197,8 +254,10 @@ Must pause for genuine user-owned decisions involving:
 Must not:
 
 - Invent user preferences that change the locked outcome.
+- Ratify clarify-phase assumptions in place of unanswered user-owned decisions.
 - Ask the user to resolve ordinary implementation trouble after mission lock.
 - Continue looping after `$interrupt` without an intentional resume.
+- Open a PR unless the ratified outcome says to open one.
 
 ## First-Slice Proof
 
@@ -208,10 +267,9 @@ through skills:
 ```text
 $clarify -> OUTCOME.md ratified
 $plan -> PLAN.yaml checked and locked
-$execute -> loop activated, step completed, proof recorded
+$execute -> loop activated, all normal steps completed, proof recorded, close complete
 $interrupt -> loop paused and Ralph allows stop
-$autopilot -> resumes or continues through status
-close -> codex1 close complete records terminal state
+$autopilot -> clarify/plan/execute/close path works through skills
 ```
 
 The proof must verify the installed `codex1` command from outside the source

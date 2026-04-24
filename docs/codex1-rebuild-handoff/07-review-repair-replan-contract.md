@@ -146,6 +146,11 @@ repair:
 
 Raw findings must be triaged before they can affect status.
 
+Triage is a durable CLI transition, not prose memory. `codex1 review record`
+must be able to persist raw reviewer output plus main-thread adjudication in a
+single current review record. Status must block only on current
+`accepted_blocking` findings.
+
 A finding becomes `accepted_blocking` only when all are true:
 
 - It is inside the current review boundary, or it is a direct regression caused
@@ -228,7 +233,7 @@ review boundary
 triage findings
 if accepted blockers and repair_round < max:
     repair accepted blockers as one batch
-    increment repair_round
+    record repair completion and increment repair_round
     run targeted re-review
 else if accepted blockers and repair_round >= max:
     replan_required
@@ -238,6 +243,11 @@ else:
 
 Do not count every raw review complaint. Count repair rounds for accepted
 blockers in the same boundary.
+
+Increment `repair_round` when the main thread records that a repair attempt for
+the accepted blockers is complete, before targeted re-review. Abandoned or
+failed repair attempts should remain visible in the review record instead of
+silently disappearing.
 
 Do not drip-feed one finding at a time forever. Batch accepted blockers for the
 boundary, repair them together, then re-review the repair boundary.
@@ -351,8 +361,9 @@ complete` may record terminal state.
 
 `CLOSEOUT.md` is terminal evidence, but it must not create a close-check cycle.
 `codex1 close complete` writes or verifies `CLOSEOUT.md`, then records terminal
-state. If a closeout already exists, it must match the current state revision or
-be rewritten before terminal state is recorded.
+state. If a closeout already exists, it must match the pre-terminal state
+revision or be rewritten before terminal state is recorded. The terminalizing
+state update then records the new completed revision and the closeout digest.
 
 If mission-close review is dirty, apply the same rules:
 

@@ -80,6 +80,11 @@ The main thread:
 
 The main thread should not be overloaded with deep review of all worker work. It should inspect enough to integrate, then use risk-scaled review. For graph/large/risky missions, mission-close review is required and planned review tasks are usually included.
 
+When integrating worker output, the main thread should mechanically compare the
+worker's claimed `write_paths` against the actual diff and proof. Edits outside
+assigned scope are not automatically rejected, but they must be noticed and
+handled deliberately before the task is marked complete.
+
 ## Worker Role
 
 Standing developer instructions:

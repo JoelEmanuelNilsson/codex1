@@ -60,10 +60,11 @@ flowchart TD
     ChooseMode -->|normal| NormalPlan["Normal plan: goal, constraints, checklist, acceptance, validation"]
     NormalPlan --> NormalLock["codex1 plan lock"]
     NormalLock --> NormalActivate["codex1 loop activate"]
-    NormalActivate --> NormalExecute["$execute next step"]
+    NormalActivate --> NormalExecute["$execute locked plan loop"]
     NormalExecute --> NormalCheck["Run checks / inspect diff"]
     NormalCheck --> NormalReview{"Findings or mismatch?"}
-    NormalReview -->|No| NormalDone["Internal completion"]
+    NormalReview -->|No| NormalCloseCheck["codex1 close check"]
+    NormalCloseCheck --> NormalDone["codex1 close complete"]
     NormalReview -->|Yes| NormalRepair["Repair or replan"]
     NormalRepair --> NormalExecute
 
@@ -74,7 +75,7 @@ flowchart TD
     Waves --> Execute["$execute"]
     Execute --> Kind{"Next task kind?"}
     Kind -->|work/design/docs/test/research| Work["Main thread or worker executes assigned task"]
-    Kind -->|review| ReviewTask["$review-loop executes planned review task"]
+    Kind -->|review| ReviewTask["$execute runs planned review boundary"]
     Work --> Proof["Write task proof"]
     Proof --> Finish["codex1 task finish"]
     Finish --> Waves
@@ -111,13 +112,13 @@ flowchart TD
     NeedOutcome -->|Yes| NeedPlan{"Valid plan exists?"}
     Clarify --> NeedPlan
     NeedPlan -->|No| Plan["Run $plan: choose, check, and lock plan"]
-    NeedPlan -->|Yes| NextStatus["codex1 status --json"]
-    Plan --> Activate["codex1 loop activate if durable loop should continue"]
+    NeedPlan -->|Yes| Activate
+    Plan --> Activate["codex1 loop activate/resume if durable loop should continue"]
     Activate --> NextStatus
     NextStatus --> Next{"Next action"}
     Next -->|normal step| ExecuteNormal["Run $execute"]
     Next -->|graph task/wave| ExecuteGraph["Run $execute"]
-    Next -->|planned review task| Review["Run $review-loop once"]
+    Next -->|planned review task| Review["Run planned review boundary inside $execute"]
     Next -->|repair needed| Repair["Repair or spawn worker"]
     Next -->|replan required| Replan["Run $plan replan"]
     Next -->|mission close| CloseReview["Run mission-close review loop"]
@@ -131,7 +132,16 @@ flowchart TD
     CloseCheck --> CanClose{"Can close?"}
     CanClose -->|No| NextStatus
     CanClose -->|Yes| Complete["codex1 close complete"]
+    Complete --> PR{"Ratified outcome says open PR?"}
+    PR -->|Yes| OpenPR["Open PR"]
+    PR -->|No| Done["Stop at close-complete / PR-ready state"]
 ```
+
+`$autopilot` follows `$clarify` for outcome truth. During the clarify phase, it
+asks the questions needed to ratify the destination; it must not replace
+unanswered user-owned decisions with assumptions. After the outcome is
+ratified, ordinary implementation assumptions are allowed when they do not
+change the locked destination.
 
 `$autopilot` must pause when genuine user input is required. It must not invent
 user preferences that change scope, risk, money, deployment, irreversible
@@ -139,6 +149,11 @@ external operations, or non-Git-managed destructive actions. Version-controlled
 repo edits inside the locked mission scope or assigned write paths are
 autonomous after mission lock, but Codex1 must not overwrite user work or
 silently broaden file ownership when the safe scope is unclear.
+
+Opening a PR is not the default terminal action. `$autopilot` may open a PR only
+when PR creation was requested or accepted during clarify and captured in the
+ratified outcome. Otherwise it stops after terminal close with PR-ready summary
+and proof.
 
 When planning is needed, `$autopilot` may choose the lightest safe mode and level, record the decision, and escalate if risk requires it.
 
@@ -152,7 +167,8 @@ Create a specified enough target to build the right thing.
 
 What it does:
 
-- Interviews the user only for uncertainty that cannot be discovered or safely inferred.
+- Interviews the user for uncertainty that affects outcome truth and cannot be
+  discovered from the repo or official sources.
 - Captures the original goal.
 - Resolves ambiguity that changes product outcome, scope, risk, money, irreversible actions, account access, deployment, privacy, or security.
 - Writes mission destination, must-be-true requirements, success criteria, non-goals, constraints, definitions, quality bar, proof expectations, review expectations, risks, and resolved Q&A when durable state is needed.
@@ -161,6 +177,7 @@ What it does:
 What it does not do:
 
 - It does not ask questions for ordinary implementation details Codex can safely decide.
+- It does not guess user-owned outcome decisions just to avoid asking.
 - It does not plan unless running inside `$autopilot`.
 - It does not start a loop.
 - It does not execute work.
@@ -201,8 +218,20 @@ What it does not do:
 Purpose:
 
 ```text
-Execute the next ready step, task, or wave.
+Execute the locked plan end to end until close is complete.
 ```
+
+`$execute` is continuous inside an already locked plan. It repeatedly follows
+`codex1 status --json` / `codex1 task next --json`, runs the next autonomous
+locked-plan action, records proof, and returns to status until `codex1 close
+complete` records terminal completion. It stops earlier only for `$interrupt`,
+invalid/corrupt state, or a non-autonomous `explain_and_stop` situation where no
+safe autonomous action exists.
+
+Planned review boundaries that are already part of the locked plan are
+execution work. `$execute` runs them using the review packet, reviewer, triage,
+repair, and re-review mechanics. `$review-loop` is the explicit additional
+skill for iterative review/fix loops beyond ordinary locked-plan execution.
 
 Normal-mode flow:
 
@@ -215,6 +244,9 @@ flowchart TD
     Work --> Proof["Run proportional proof"]
     Proof --> Update["Record progress"]
     Update --> Next["Return to status"]
+    Next --> Done{"Close complete?"}
+    Done -->|No| Step
+    Done -->|Yes| Stop["Stop"]
 ```
 
 Graph-mode flow:
@@ -224,24 +256,35 @@ flowchart TD
     Start["$execute"] --> Status["codex1 status / task next"]
     Status --> Activate["Activate durable loop if locked and inactive"]
     Activate --> Ready["Ready task or ready wave"]
-    Ready --> Safe{"Parallel safe?"}
+    Ready --> Kind{"Task kind?"}
+    Kind -->|planned review| ReviewBoundary["Run planned review boundary"]
+    Kind -->|work/design/docs/test/research| Safe{"Parallel safe?"}
     Safe -->|Yes| Workers["Spawn workers for wave tasks if useful"]
     Safe -->|No| Single["Run one task serially"]
+    ReviewBoundary --> ReviewProof["Record review result / repair proof"]
     Workers --> Proof["Workers report proof"]
     Single --> Proof
-    Proof --> Finish["codex1 task finish"]
+    Proof --> Finish["codex1 task finish or review record"]
+    ReviewProof --> Finish
     Finish --> Next["Return to status"]
+    Next --> Done{"Close complete?"}
+    Done -->|No| Ready
+    Done -->|Yes| Stop["Stop"]
 ```
-
-If the next graph task is `kind: review`, `$execute` hands to `$review-loop`.
 
 ## `$review-loop`
 
 Purpose:
 
 ```text
-Compare implementation evidence against intent, then repair or finish.
+Run an explicit iterative review/fix loop.
 ```
+
+`$review-loop` is additional user-facing review pressure. Use it when the user
+explicitly wants a review loop, or when a ratified outcome/plan calls for extra
+iterative review beyond ordinary planned review boundaries. It can reuse the
+same review packet, triage, repair, and re-review mechanics as `$execute`, but
+it is not required just because a locked graph plan has a planned review task.
 
 Normal mode:
 

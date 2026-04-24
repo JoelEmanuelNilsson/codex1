@@ -119,8 +119,8 @@ Build this before the full graph/review surface:
 
 1. `codex1 --help`, `codex1 init`, and `codex1 doctor --json`.
 2. `OUTCOME.md` check/ratify with schema/version rules.
-3. One durable normal-mode mission path: plan scaffold/check/lock, one step,
-   proof, and task finish.
+3. One durable normal-mode mission path with at least two steps: plan
+   scaffold/check/lock, execute every step, record proof, and finish tasks.
 4. `STATE.json` atomic revision updates and append-only `EVENTS.jsonl`.
 5. `codex1 status --json` with exact `verdict`, `next_action`, `loop`,
    `close`, and `stop` projection.
@@ -131,8 +131,10 @@ Build this before the full graph/review surface:
    `CLOSEOUT.md`.
 9. First-slice skill wrappers for `$clarify`, `$plan`, `$execute`,
    `$interrupt`, and minimal `$autopilot`, proving users experience Codex1
-   through skills rather than raw CLI commands. The exact first-slice skill
-   wrapper contract is in `10-first-slice-skill-contracts.md`.
+   through skills rather than raw CLI commands. `$execute` must continue the
+   locked normal plan through close complete, not stop after one step. The exact
+   first-slice skill wrapper contract is in
+   `10-first-slice-skill-contracts.md`.
 
 Do not implement graph waves, planned review tasks, repair budgets, or
 mission-close review until this slice works end to end from outside the source
