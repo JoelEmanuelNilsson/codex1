@@ -676,7 +676,7 @@ split truth.
 Close readiness has two phases.
 
 `requires_mission_close_review` is true for graph, large, risky, or explicitly
-configured missions. It is false for the first-slice simple normal mission.
+configured missions. It is false for the foundation simple normal mission.
 
 Pre-close readiness requires:
 

@@ -16,6 +16,7 @@ You are implementing Codex1 from scratch or as a clean rebuild. Treat the folder
 9. docs/codex1-rebuild-handoff/08-state-status-and-graph-contract.md
 10. docs/codex1-rebuild-handoff/09-implementation-errata.md
 11. docs/codex1-rebuild-handoff/10-first-slice-skill-contracts.md
+12. docs/codex1-rebuild-handoff/11-rebuild-spec-and-plan.md
 
 If files 00-05 disagree with files 06-09 on Ralph, review loops, model choices,
 post-lock autonomy, status verdicts, revisions, or graph/wave derivation, files

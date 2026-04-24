@@ -17,6 +17,7 @@ It is written for a new AI implementation agent that has no chat context and sho
 9. `08-state-status-and-graph-contract.md`
 10. `09-implementation-errata.md`
 11. `10-first-slice-skill-contracts.md`
+12. `11-rebuild-spec-and-plan.md`
 
 The older single-file architecture draft at `../codex1-rebuild-clear-architecture.md` is background. This folder is the sharper handoff contract.
 
@@ -36,6 +37,10 @@ Command and state details still live in `02`, `08`, and `09`.
 Files named `REVIEW-*` are critique artifacts, not canonical product direction.
 They may contain rejected proposals. Use this read order and the explicit
 precedence notes above for implementation truth.
+
+If this repo contains only this documentation folder, that is a valid rebuild
+starting point. Build fresh from this handoff and the official Codex source of
+truth; do not assume old source code is available or desirable.
 
 ## Source Inspiration
 
