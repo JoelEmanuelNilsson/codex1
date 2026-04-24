@@ -1,6 +1,0 @@
-interface:
-  display_name: "Close"
-  short_description: "Pause the active Codex1 loop for user discussion"
-  default_prompt: "Use $close to pause the active loop so the user can talk without Ralph forcing continuation."
-policy:
-  allow_implicit_invocation: true

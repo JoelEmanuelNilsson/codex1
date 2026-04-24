@@ -1,7 +1,0 @@
-interface:
-  display_name: "Clarify"
-  short_description: "Ratify OUTCOME.md for a Codex1 mission"
-  default_prompt: "Use $clarify to fill and ratify OUTCOME.md before planning."
-
-policy:
-  allow_implicit_invocation: true
