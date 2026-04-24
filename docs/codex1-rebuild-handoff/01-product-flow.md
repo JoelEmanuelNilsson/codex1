@@ -58,7 +58,9 @@ flowchart TD
     Outcome --> ChooseMode["$plan chooses normal or graph"]
 
     ChooseMode -->|normal| NormalPlan["Normal plan: goal, constraints, checklist, acceptance, validation"]
-    NormalPlan --> NormalExecute["$execute next step"]
+    NormalPlan --> NormalLock["codex1 plan lock"]
+    NormalLock --> NormalActivate["codex1 loop activate"]
+    NormalActivate --> NormalExecute["$execute next step"]
     NormalExecute --> NormalCheck["Run checks / inspect diff"]
     NormalCheck --> NormalReview{"Findings or mismatch?"}
     NormalReview -->|No| NormalDone["Internal completion"]
@@ -66,7 +68,9 @@ flowchart TD
     NormalRepair --> NormalExecute
 
     ChooseMode -->|graph| GraphPlan["Graph plan: tasks, dependencies, specs, proof, review tasks"]
-    GraphPlan --> Waves["codex1 plan waves derives ready wave"]
+    GraphPlan --> GraphLock["codex1 plan lock"]
+    GraphLock --> GraphActivate["codex1 loop activate"]
+    GraphActivate --> Waves["codex1 plan waves derives ready wave"]
     Waves --> Execute["$execute"]
     Execute --> Kind{"Next task kind?"}
     Kind -->|work/design/docs/test/research| Work["Main thread or worker executes assigned task"]
@@ -106,9 +110,10 @@ flowchart TD
     NeedOutcome -->|Needed but missing| Clarify["Run $clarify until outcome is ratified"]
     NeedOutcome -->|Yes| NeedPlan{"Valid plan exists?"}
     Clarify --> NeedPlan
-    NeedPlan -->|No| Plan["Run $plan: choose normal or graph"]
+    NeedPlan -->|No| Plan["Run $plan: choose, check, and lock plan"]
     NeedPlan -->|Yes| NextStatus["codex1 status --json"]
-    Plan --> NextStatus
+    Plan --> Activate["codex1 loop activate if durable loop should continue"]
+    Activate --> NextStatus
     NextStatus --> Next{"Next action"}
     Next -->|normal step| ExecuteNormal["Run $execute"]
     Next -->|graph task/wave| ExecuteGraph["Run $execute"]
@@ -130,8 +135,10 @@ flowchart TD
 
 `$autopilot` must pause when genuine user input is required. It must not invent
 user preferences that change scope, risk, money, deployment, irreversible
-external operations, or non-Git-managed destructive actions. Git-managed repo
-edits are autonomous after mission lock.
+external operations, or non-Git-managed destructive actions. Version-controlled
+repo edits inside the locked mission scope or assigned write paths are
+autonomous after mission lock, but Codex1 must not overwrite user work or
+silently broaden file ownership when the safe scope is unclear.
 
 When planning is needed, `$autopilot` may choose the lightest safe mode and level, record the decision, and escalate if risk requires it.
 
@@ -180,6 +187,7 @@ What it does:
 - Uses the single explorer role when missing facts materially affect the plan.
 - Uses advisors/critique/reviewers for graph/hard planning when useful.
 - Validates with CLI before locking durable plans.
+- Runs `codex1 plan lock` for durable plans once the plan is valid.
 
 What it does not do:
 
@@ -201,7 +209,8 @@ Normal-mode flow:
 ```mermaid
 flowchart TD
     Start["$execute"] --> Status["codex1 status / plan state"]
-    Status --> Step["Next checklist step"]
+    Status --> Activate["Activate durable loop if locked and inactive"]
+    Activate --> Step["Next checklist step"]
     Step --> Work["Main thread or bounded worker executes"]
     Work --> Proof["Run proportional proof"]
     Proof --> Update["Record progress"]
@@ -213,7 +222,8 @@ Graph-mode flow:
 ```mermaid
 flowchart TD
     Start["$execute"] --> Status["codex1 status / task next"]
-    Status --> Ready["Ready task or ready wave"]
+    Status --> Activate["Activate durable loop if locked and inactive"]
+    Activate --> Ready["Ready task or ready wave"]
     Ready --> Safe{"Parallel safe?"}
     Safe -->|Yes| Workers["Spawn workers for wave tasks if useful"]
     Safe -->|No| Single["Run one task serially"]

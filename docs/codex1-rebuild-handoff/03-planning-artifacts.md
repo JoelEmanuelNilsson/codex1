@@ -104,8 +104,10 @@ Examples that should be clarified before lock when relevant:
 - Required cost/tier upgrades that the user must perform.
 - Deployments or irreversible operations outside the Git-managed repository.
 
-Git-managed destructive repo edits are not user questions by default. Codex can
-make them, prove them, and rely on Git for reversibility.
+Version-controlled repo edits inside the locked mission scope or assigned write
+paths are not user questions by default. Codex can make them and prove them, but
+it must not overwrite user work or silently broaden file ownership when the safe
+scope is unclear.
 
 Recommended `OUTCOME.md` shape can be YAML frontmatter plus readable markdown, or pure YAML. The important part is that the CLI can check required fields.
 

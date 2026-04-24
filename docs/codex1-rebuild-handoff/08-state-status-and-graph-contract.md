@@ -118,6 +118,28 @@ append one EVENTS.jsonl line for the new revision
 return JSON with state_revision
 ```
 
+Mission-local locking:
+
+- Use one lock path per mission: `PLANS/<mission-id>/.codex1.lock`.
+- Acquire the lock with an atomic create operation. Do not check existence and
+  then write; that is a race.
+- Lock file contents should include the command, process id when available,
+  hostname when available, and `started_at`.
+- If the lock already exists, fail with a stable retryable `MISSION_LOCKED`
+  error unless an explicit repair command proves it is stale.
+- Stale-lock repair must be conservative, visible, and never automatic inside
+  Ralph.
+
+Atomic writes:
+
+- Write replacement state to a temporary file in the mission directory.
+- Flush/fsync when practical for the target platform.
+- Atomically rename the temporary file over `STATE.json`.
+- Append the matching `EVENTS.jsonl` line after the state commit.
+- If `STATE.json` commits but event append fails, state remains authoritative;
+  return a warning and let `doctor` report audit drift. Do not roll back by
+  guessing from partially written audit state.
+
 Stable revision conflict error:
 
 ```json
@@ -272,7 +294,7 @@ not_ready
 ready_for_mission_close_review
 mission_close_review_open
 mission_close_review_passed
-record_close_ready
+close_complete_ready
 terminal_complete
 ```
 
@@ -395,7 +417,7 @@ triage_review
 repair
 replan
 close_review
-record_close
+close_complete
 explain_and_stop
 none
 ```
@@ -570,7 +592,7 @@ Pre-close readiness requires:
 
 If pre-close readiness is satisfied and the mission does not require
 mission-close review, status/close-check should project close state as
-`record_close_ready` and return next action `record_close`.
+`close_complete_ready` and return next action `close_complete`.
 
 If pre-close readiness is satisfied, mission-close review is required, and
 mission-close review has not passed, status/close-check should project close
@@ -578,8 +600,8 @@ state as `ready_for_mission_close_review` or `mission_close_review_open` and
 return next action `close_review`.
 
 If required mission-close review has passed, status/close-check should project
-close state as `mission_close_review_passed` or `record_close_ready` and return
-next action `record_close`.
+close state as `mission_close_review_passed` or `close_complete_ready` and
+return next action `close_complete`.
 
 Status and close check are read-only projections. They must not mutate close
 state. The mutating commands are:
@@ -592,7 +614,7 @@ state. The mutating commands are:
 
 `codex1 close check --json` checks pre-close readiness only. A missing
 `CLOSEOUT.md` does not make pre-close readiness fail; it makes the next action
-`record_close`.
+`close_complete`.
 
 `codex1 close complete --json` writes or verifies `CLOSEOUT.md`, then records
 terminal state. When terminal state is recorded, `CLOSEOUT.md` must exist and

@@ -16,6 +16,7 @@ It is written for a new AI implementation agent that has no chat context and sho
 8. `07-review-repair-replan-contract.md`
 9. `08-state-status-and-graph-contract.md`
 10. `09-implementation-errata.md`
+11. `10-first-slice-skill-contracts.md`
 
 The older single-file architecture draft at `../codex1-rebuild-clear-architecture.md` is background. This folder is the sharper handoff contract.
 
@@ -27,6 +28,10 @@ verdicts, or graph/wave derivation, files `06` through `09` win. They capture
 the later decisions made after the initial handoff draft. File `09` adds
 implementation exactness for Codex hook config, doctor checks, and first-slice
 build order.
+
+If `01-product-flow.md` disagrees with `10-first-slice-skill-contracts.md` on
+first-slice skill wrapper behavior, file `10` wins. Command and state details
+still live in `02`, `08`, and `09`.
 
 ## Source Inspiration
 

@@ -20,6 +20,9 @@ These facts were checked against the local official Codex repo at
 - Managed requirements can carry hooks under `[hooks]` with
   `[[hooks.<Event>]]` groups, as tested in
   `codex-rs/config/src/config_requirements.rs`.
+- Runtime hook discovery/assembly is separate from config-shape parsing:
+  `codex-rs/hooks/src/engine/discovery.rs` loads managed requirement handlers,
+  hooks files, and TOML hook config layers into the active handler set.
 - `codex_hooks` is a stable feature flag and currently defaults true in
   `codex-rs/features/src/lib.rs`.
 - Thread fork/start APIs accept config overrides, and threads carry
@@ -57,6 +60,9 @@ statusMessage = "checking Codex1 mission status"
 
 These snippets are part of the product contract. The implementation must include
 tests that parse these exact snippets through the current Codex config parser.
+The field names shown here are TOML config names; do not reuse them blindly for
+app-server/protocol JSON surfaces, which may expose different casing such as
+`timeoutSec`.
 
 Required parser assertions:
 
@@ -113,19 +119,20 @@ Build this before the full graph/review surface:
 
 1. `codex1 --help`, `codex1 init`, and `codex1 doctor --json`.
 2. `OUTCOME.md` check/ratify with schema/version rules.
-3. One durable normal-mode mission path: plan scaffold/check, one step, proof,
-   and task finish.
+3. One durable normal-mode mission path: plan scaffold/check/lock, one step,
+   proof, and task finish.
 4. `STATE.json` atomic revision updates and append-only `EVENTS.jsonl`.
 5. `codex1 status --json` with exact `verdict`, `next_action`, `loop`,
    `close`, and `stop` projection.
-6. `codex1 loop pause/resume/deactivate` and `$interrupt` mapping.
+6. `codex1 loop activate/pause/resume/deactivate` and `$interrupt` mapping.
 7. `codex1 ralph stop-hook` with fail-open behavior and the one-block
    `stop_hook_active` rule.
 8. Minimal close path for a normal mission: close check, close complete, and
    `CLOSEOUT.md`.
 9. First-slice skill wrappers for `$clarify`, `$plan`, `$execute`,
    `$interrupt`, and minimal `$autopilot`, proving users experience Codex1
-   through skills rather than raw CLI commands.
+   through skills rather than raw CLI commands. The exact first-slice skill
+   wrapper contract is in `10-first-slice-skill-contracts.md`.
 
 Do not implement graph waves, planned review tasks, repair budgets, or
 mission-close review until this slice works end to end from outside the source

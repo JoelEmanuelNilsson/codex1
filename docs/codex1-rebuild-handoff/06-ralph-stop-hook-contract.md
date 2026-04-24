@@ -187,7 +187,7 @@ triage_review
 repair
 replan
 close_review
-record_close
+close_complete
 ```
 
 Unknown next-action kinds allow stop. Unknown means "do not jail."
@@ -231,7 +231,7 @@ trouble is handled by repair or replan.
 | Review boundary exhausted repair budget | block | `block_replan_required` |
 | Replan has been marked required | block | `block_replan_required` |
 | Mission-close review is ready | block | `block_mission_close_review_ready` |
-| Mission-close review passed but close not recorded | block | `block_close_record_required` |
+| Mission-close review passed but terminal close not complete | block | `block_close_complete_required` |
 
 ## Message Shape
 
@@ -268,7 +268,7 @@ If this is a false positive, explain briefly and stop; Ralph will not block agai
 ```
 
 ```text
-Codex1 says required work remains: record mission close.
+Codex1 says required work remains: complete terminal close.
 Continue that now, or use $interrupt / codex1 loop pause to stop intentionally.
 If this is a false positive, explain briefly and stop; Ralph will not block again in this turn.
 ```

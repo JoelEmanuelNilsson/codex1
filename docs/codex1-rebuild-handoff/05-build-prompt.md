@@ -15,6 +15,7 @@ You are implementing Codex1 from scratch or as a clean rebuild. Treat the folder
 8. docs/codex1-rebuild-handoff/07-review-repair-replan-contract.md
 9. docs/codex1-rebuild-handoff/08-state-status-and-graph-contract.md
 10. docs/codex1-rebuild-handoff/09-implementation-errata.md
+11. docs/codex1-rebuild-handoff/10-first-slice-skill-contracts.md
 
 If files 00-05 disagree with files 06-09 on Ralph, review loops, model choices,
 post-lock autonomy, status verdicts, revisions, or graph/wave derivation, files
@@ -84,13 +85,14 @@ First vertical slice:
 1. Implement codex1 --help, codex1 init, and codex1 doctor --json.
 2. Implement visible mission files with schema versions, state revision, and append-only events.
 3. Implement outcome check/ratify.
-4. Implement one durable normal-mode mission path: normal plan scaffold/check, one step, proof, task finish.
+4. Implement one durable normal-mode mission path: normal plan scaffold/check/lock, one step, proof, task finish.
 5. Implement status JSON with planning_mode, verdict, next_action, loop, close, and stop semantics.
-6. Implement loop pause/resume/deactivate for $interrupt.
+6. Implement loop activate/pause/resume/deactivate for $execute, $autopilot, and $interrupt.
 7. Implement Ralph as a Codex Stop hook adapter that only uses codex1 status semantics.
 8. Implement minimal normal close check/complete and CLOSEOUT.md.
 9. Implement first-slice skill wrappers for $clarify, $plan, $execute,
-   $interrupt, and minimal $autopilot.
+   $interrupt, and minimal $autopilot according to
+   10-first-slice-skill-contracts.md.
 10. Verify the installed command from outside the source folder and prove the
    normal mission slice can be driven through skills.
 
@@ -115,6 +117,8 @@ Required proof:
 - invalid OUTCOME.md cannot be ratified.
 - plan choose-mode supports normal/graph and records requested/effective mode.
 - plan choose-level supports product verbs light/medium/hard, may accept 1/2/3 as aliases, records requested/effective level, and allows main-thread escalation.
+- plan lock is the only command that transitions a durable plan from valid draft to executable locked plan.
+- loop activate sets the active unpaused durable loop and updates PLANS/ACTIVE.json before Ralph is expected to block.
 - normal plans do not require depends_on, graph waves, or planned review tasks.
 - invalid graph plans are rejected.
 - graph waves are derived from depends_on.
@@ -138,6 +142,7 @@ Required proof:
 - PreToolUse/PostToolUse visibility for MCP tools, apply_patch, and long-running Bash sessions is not required for Ralph correctness.
 - codex1 status and codex1 close check agree.
 - codex1 close check verifies pre-close readiness; codex1 close complete writes or verifies CLOSEOUT.md and then records terminal state.
+- terminal close next_action is `close_complete`; `close record-review` is reserved for mission-close review results.
 - mission-close review is mandatory before close complete for graph/large/risky missions.
 - no .ralph mission truth exists.
 

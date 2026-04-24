@@ -68,6 +68,7 @@ codex1 plan choose-mode
 codex1 plan choose-level
 codex1 plan scaffold
 codex1 plan check
+codex1 plan lock
 codex1 plan graph
 codex1 plan waves
 
@@ -100,8 +101,9 @@ codex1 ralph stop-hook
 Do not implement that whole surface at once. The first vertical slice in
 `09-implementation-errata.md` implements only the subset needed for one durable
 normal mission: help, init, doctor, outcome, normal plan, task/step lifecycle,
-status, loop pause/resume/deactivate, Ralph, and minimal close. Graph, waves,
-review, replan, and mission-close review come after that slice works end to end.
+status, plan lock, loop activate/pause/resume/deactivate, Ralph, and minimal
+close. Graph, waves, review, replan, and mission-close review come after that
+slice works end to end.
 
 `loop activate` is the canonical entry point other subsystems use to set `state.loop.active = true` without inventing their own loop-state mutation. Skills call it from `$execute` / `$autopilot` after a durable plan is locked.
 
@@ -630,7 +632,8 @@ architecture:
 
 ### `codex1 plan check --json`
 
-Checks common requirements:
+Checks common requirements. This command is read-only; it must not lock the plan
+or mutate `STATE.json`.
 
 - Required plan sections exist.
 - `planning_mode` is `normal` or `graph`.
@@ -654,6 +657,39 @@ Graph-mode checks:
 - Task IDs are unique.
 - Review tasks reference valid targets.
 - Graph/hard planning evidence exists when `planning_level.effective: hard`.
+
+### `codex1 plan lock --json`
+
+Locks the current durable `PLAN.yaml` as the execution route.
+
+Examples:
+
+```bash
+codex1 plan lock --json --mission codex1-rebuild --expect-revision 4
+```
+
+Requirements:
+
+- `OUTCOME.md` is ratified for durable missions.
+- `codex1 plan check --json` passes for the selected mode.
+- No fill markers remain.
+- `PLAN.yaml` contains requested/effective planning mode and level when those
+  are durable.
+- Normal-mode plans include steps/checklist, acceptance criteria, and validation.
+- Graph-mode plans include valid task IDs, `depends_on`, specs, proof strategy,
+  and review requirements.
+
+Effects:
+
+- Computes and stores `STATE.json.plan.plan_digest`.
+- Sets `STATE.json.plan.locked = true`.
+- Sets `STATE.json.plan.locked_revision` to the new state revision.
+- Initializes `STATE.json.steps` or `STATE.json.tasks` from `PLAN.yaml`.
+- Sets `STATE.json.planning_mode` and `STATE.json.planning_level`.
+- Increments `STATE.json.revision` and appends one event.
+
+`plan lock` is the only normal write path that transitions a durable plan from
+draft/scaffolded to executable. `plan check` remains validation only.
 
 ### `codex1 plan graph --format mermaid`
 
@@ -700,9 +736,15 @@ Every mutating command should:
 - Read current `STATE.json`.
 - Check expected revision if provided.
 - Validate preconditions.
-- Write state atomically.
-- Append exactly one event describing the mutation.
+- Acquire `PLANS/<mission-id>/.codex1.lock` with an atomic create operation.
+- Re-read and re-check state under the lock.
+- Write state atomically through a temporary file and rename.
+- Append exactly one event describing the mutation after state commit.
 - Return the new state revision in JSON.
+
+If state commits but `EVENTS.jsonl` append fails, state remains authoritative.
+The command should return a warning, and `codex1 doctor --json` should report
+audit drift.
 
 Stale writers should receive a stable error:
 
@@ -848,6 +890,13 @@ Records replan decision and updates state. New tasks are added by editing `PLAN.
 
 ## Loop Commands
 
+`codex1 loop activate --mission <id> --mode execute --json`
+
+Sets `STATE.json.loop.active = true`, `STATE.json.loop.paused = false`, records
+the loop mode, and writes or updates `PLANS/ACTIVE.json` as selector metadata.
+It requires a locked plan. This command is part of the first vertical slice
+because Ralph only blocks active, unpaused loops.
+
 `codex1 loop pause --json`
 
 Used by `$interrupt`.
@@ -962,14 +1011,14 @@ Close check phase rules:
 - If pre-close requirements fail, return `continue_required` or
   `replan_required` with the appropriate next action.
 - If pre-close requirements pass and the mission does not require mission-close
-  review, return `close_required` with next action `record_close`.
+  review, return `close_required` with next action `close_complete`.
 - If pre-close requirements pass, mission-close review is required, and
   mission-close review has not passed, return `close_required` with next action
   `close_review`.
 - If mission-close review is open, return `close_required` with next action
   `close_review`.
 - If required mission-close review has passed, return `close_required` with next
-  action `record_close`.
+  action `close_complete`.
 
 `close check` should report whether `CLOSEOUT.md` already exists. A missing
 closeout is not a failed pre-close gate; it is work for `close complete`.
@@ -1010,6 +1059,7 @@ PLAN_INVALID
 MODE_UNSUPPORTED
 PLAN_GRAPH_CYCLE
 PLAN_GRAPH_MISSING_DEP
+MISSION_LOCKED
 TASK_NOT_READY
 MISSING_PROOF
 ACCEPTED_BLOCKING_FINDINGS
@@ -1029,6 +1079,8 @@ The implementation should prove:
 - `codex1 doctor --json` proves install-time assumptions without changing mission state.
 - `codex1 status --json` emits stable schema with `planning_mode` and `stop`.
 - `codex1 plan check` accepts valid normal plans without graph fields.
+- `codex1 plan lock` is the only plan command that mutates `STATE.json.plan.locked`.
+- `codex1 loop activate` sets an active unpaused loop and writes `PLANS/ACTIVE.json`.
 - `codex1 plan check` rejects invalid graph plans.
 - `codex1 plan waves` derives graph waves and refuses normal mode clearly.
 - `codex1 task packet` and `codex1 review packet` produce useful prompt packets.

@@ -18,8 +18,8 @@ After mission lock, Codex1 should stay autonomous.
 
 The user has already clarified the destination. `OUTCOME.md` is ratified and
 `PLAN.yaml` is locked. From that point forward, ordinary product ambiguity,
-implementation trouble, review dirtiness, and destructive repo edits should not
-turn into user homework.
+implementation trouble, and review dirtiness should not turn into user
+homework.
 
 Post-lock Codex1 should:
 
@@ -34,7 +34,9 @@ Post-lock Codex1 should not ask the user to resolve:
 - Product details missing from `OUTCOME.md`.
 - Business rules not explicitly specified.
 - Incompatible UX details that can be resolved by preserving the locked outcome.
-- Destructive repo changes that are covered by Git, proof, and validation.
+- Version-controlled repo edits inside the locked mission scope or assigned
+  write paths, provided Codex1 does not overwrite user work or silently broaden
+  file ownership when the safe scope is unclear.
 - Ordinary test/tool/dependency problems.
 - Repeated dirty reviews.
 
@@ -372,7 +374,7 @@ projected next-action kinds:
 - `repair`
 - `replan`
 - `close_review`
-- `record_close`
+- `close_complete`
 
 The full Ralph allowlist is canonical in
 `06-ralph-stop-hook-contract.md`. The status projection is responsible for
