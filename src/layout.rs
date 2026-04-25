@@ -5,8 +5,8 @@ use std::str::FromStr;
 
 use serde::Serialize;
 
-use crate::error::{Codex1Error, IoContext, Result};
-use crate::paths::{safe_join, validate_mission_id};
+use crate::error::{Codex1Error, Result};
+use crate::paths::{create_dir_all_contained, safe_join, validate_mission_id};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -159,29 +159,32 @@ impl MissionLayout {
         Self::new(repo_root, id).ok()
     }
 
-    pub fn standard_dirs(&self) -> Vec<PathBuf> {
-        let mut dirs = vec![
-            self.mission_dir.clone(),
-            self.meta_dir(),
-            self.research_dir(),
-            self.specs_dir(),
-            self.adrs_dir(),
-            self.reviews_dir(),
-            self.triage_dir(),
-            self.proofs_dir(),
-            self.receipts_dir(),
-        ];
-        for state in SubplanState::ALL {
-            dirs.push(self.subplans_dir().join(state.as_str()));
-        }
-        dirs
-    }
-
     pub fn create_dirs(&self) -> Result<()> {
-        for dir in self.standard_dirs() {
-            fs::create_dir_all(&dir).io_context(format!("failed to create {}", dir.display()))?;
+        create_dir_all_contained(
+            &self.repo_root,
+            Path::new(".codex1").join("missions").join(&self.mission_id),
+        )?;
+        for relative in self.standard_dir_relatives() {
+            create_dir_all_contained(&self.mission_dir, relative)?;
         }
         Ok(())
+    }
+
+    fn standard_dir_relatives(&self) -> Vec<PathBuf> {
+        let mut dirs = vec![
+            PathBuf::from(".codex1"),
+            PathBuf::from("RESEARCH"),
+            PathBuf::from("SPECS"),
+            PathBuf::from("ADRS"),
+            PathBuf::from("REVIEWS"),
+            PathBuf::from("TRIAGE"),
+            PathBuf::from("PROOFS"),
+            PathBuf::from(".codex1").join("receipts"),
+        ];
+        for state in SubplanState::ALL {
+            dirs.push(PathBuf::from("SUBPLANS").join(state.as_str()));
+        }
+        dirs
     }
 
     pub fn meta_dir(&self) -> PathBuf {

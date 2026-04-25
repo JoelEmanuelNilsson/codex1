@@ -1,6 +1,7 @@
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Component, Path, PathBuf};
 
 use crate::error::{Codex1Error, IoContext, Result};
@@ -42,7 +43,17 @@ pub fn discover_repo_root(explicit: Option<PathBuf>) -> Result<PathBuf> {
         return absolutize_existing_or_parent(&path);
     }
 
-    let mut current = env::current_dir().io_context("failed to read current directory")?;
+    let current = env::current_dir().io_context("failed to read current directory")?;
+    discover_repo_root_from(&current)
+}
+
+pub fn discover_repo_root_from(start: &Path) -> Result<PathBuf> {
+    let original = if start.exists() {
+        fs::canonicalize(start).io_context(format!("failed to canonicalize {}", start.display()))?
+    } else {
+        absolutize_existing_or_parent(start)?
+    };
+    let mut current = original.clone();
     loop {
         if current.join(".git").exists() || current.join("Cargo.toml").exists() {
             return Ok(current);
@@ -51,7 +62,7 @@ pub fn discover_repo_root(explicit: Option<PathBuf>) -> Result<PathBuf> {
             break;
         }
     }
-    env::current_dir().io_context("failed to read current directory")
+    Ok(original)
 }
 
 fn absolutize_existing_or_parent(path: &Path) -> Result<PathBuf> {
@@ -90,6 +101,89 @@ pub fn safe_join(base: &Path, relative: impl AsRef<Path>) -> Result<PathBuf> {
     let joined = base.join(relative);
     ensure_contained_for_write(base, &joined)?;
     Ok(joined)
+}
+
+pub fn create_dir_all_contained(base: &Path, relative: impl AsRef<Path>) -> Result<PathBuf> {
+    let base_real =
+        fs::canonicalize(base).io_context(format!("failed to canonicalize {}", base.display()))?;
+    let relative = relative.as_ref();
+    if relative.as_os_str().is_empty() {
+        return Ok(base_real);
+    }
+    if relative.is_absolute() {
+        return Err(Codex1Error::MissionPath(format!(
+            "absolute path is not allowed: {}",
+            relative.display()
+        )));
+    }
+
+    let mut current = base_real.clone();
+    for component in relative.components() {
+        let Component::Normal(part) = component else {
+            return Err(Codex1Error::MissionPath(format!(
+                "unsafe directory path: {}",
+                relative.display()
+            )));
+        };
+        current.push(part);
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() {
+                    return Err(Codex1Error::MissionPath(format!(
+                        "directory path contains symlink: {}",
+                        current.display()
+                    )));
+                }
+                if !metadata.is_dir() {
+                    return Err(Codex1Error::MissionPath(format!(
+                        "directory path is not a directory: {}",
+                        current.display()
+                    )));
+                }
+                let current_real = fs::canonicalize(&current)
+                    .io_context(format!("failed to canonicalize {}", current.display()))?;
+                if !current_real.starts_with(&base_real) {
+                    return Err(Codex1Error::MissionPath(format!(
+                        "directory escapes base: {}",
+                        current.display()
+                    )));
+                }
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                fs::create_dir(&current)
+                    .io_context(format!("failed to create {}", current.display()))?;
+            }
+            Err(error) => {
+                return Err(Codex1Error::Io {
+                    context: format!("failed to inspect {}", current.display()),
+                    source: error,
+                });
+            }
+        }
+    }
+    Ok(current)
+}
+
+pub fn ensure_existing_contained(base: &Path, path: &Path) -> Result<()> {
+    let base_real =
+        fs::canonicalize(base).io_context(format!("failed to canonicalize {}", base.display()))?;
+    let metadata =
+        fs::symlink_metadata(path).io_context(format!("failed to inspect {}", path.display()))?;
+    if metadata.file_type().is_symlink() {
+        return Err(Codex1Error::MissionPath(format!(
+            "path must not be a symlink: {}",
+            path.display()
+        )));
+    }
+    let real =
+        fs::canonicalize(path).io_context(format!("failed to canonicalize {}", path.display()))?;
+    if !real.starts_with(&base_real) {
+        return Err(Codex1Error::MissionPath(format!(
+            "path escapes base: {}",
+            path.display()
+        )));
+    }
+    Ok(())
 }
 
 pub fn ensure_contained_for_write(base: &Path, target: &Path) -> Result<()> {

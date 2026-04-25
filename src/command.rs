@@ -19,7 +19,10 @@ use crate::inspect;
 use crate::interview;
 use crate::layout::{descriptors, ArtifactKind, MissionLayout, SubplanState};
 use crate::loop_state::{self, LoopState};
-use crate::paths::{discover_repo_root, safe_join, slug, validate_mission_id};
+use crate::paths::{
+    create_dir_all_contained, discover_repo_root, ensure_contained_for_write,
+    ensure_existing_contained, safe_join, slug, validate_mission_id,
+};
 use crate::ralph;
 use crate::render::{render_markdown, render_template_outline, AnswerValue, Answers};
 use crate::template;
@@ -218,8 +221,11 @@ fn cmd_subplan(cli: &Cli, command: SubplanCommand) -> Result<()> {
                     target.display()
                 )));
             }
-            fs::create_dir_all(target.parent().unwrap())
-                .io_context(format!("failed to create parent for {}", target.display()))?;
+            ensure_existing_contained(&layout.mission_dir, &source)?;
+            create_dir_all_contained(
+                &layout.mission_dir,
+                Path::new("SUBPLANS").join(target_state.as_str()),
+            )?;
             fs::rename(&source, &target).io_context(format!(
                 "failed to move {} to {}",
                 source.display(),
@@ -244,6 +250,7 @@ fn cmd_receipt(cli: &Cli, command: ReceiptCommand) -> Result<()> {
     match command {
         ReceiptCommand::Append { message } => {
             let path = layout.receipts_dir().join("receipts.jsonl");
+            ensure_contained_for_write(&layout.mission_dir, &path)?;
             let record = json!({
                 "version": 1,
                 "timestamp": Utc::now(),
@@ -359,7 +366,13 @@ fn artifact_write_path(
     }
 
     let dir = layout.collection_dir(kind)?;
-    fs::create_dir_all(&dir).io_context(format!("failed to create {}", dir.display()))?;
+    let relative_dir = dir.strip_prefix(&layout.mission_dir).map_err(|_| {
+        Codex1Error::MissionPath(format!(
+            "artifact directory escapes mission: {}",
+            dir.display()
+        ))
+    })?;
+    create_dir_all_contained(&layout.mission_dir, relative_dir)?;
     let title = match answers.get("title") {
         Some(AnswerValue::Text(text)) => text.as_str(),
         _ => kind.title(),
@@ -403,12 +416,35 @@ fn find_subplan(layout: &MissionLayout, id: &str) -> Result<PathBuf> {
     let mut matches = Vec::new();
     for state in SubplanState::ALL {
         let dir = layout.subplans_dir().join(state.as_str());
-        if !dir.is_dir() {
+        let Ok(metadata) = fs::symlink_metadata(&dir) else {
+            continue;
+        };
+        if metadata.file_type().is_symlink() {
+            return Err(Codex1Error::MissionPath(format!(
+                "subplan lifecycle directory must not be a symlink: {}",
+                dir.display()
+            )));
+        }
+        if !metadata.is_dir() {
             continue;
         }
+        ensure_existing_contained(&layout.mission_dir, &dir)?;
         for entry in fs::read_dir(&dir).io_context(format!("failed to read {}", dir.display()))? {
             let entry = entry.io_context(format!("failed to read entry in {}", dir.display()))?;
+            let file_type = entry
+                .file_type()
+                .io_context(format!("failed to inspect entry in {}", dir.display()))?;
+            if file_type.is_symlink() {
+                return Err(Codex1Error::MissionPath(format!(
+                    "subplan file must not be a symlink: {}",
+                    entry.path().display()
+                )));
+            }
+            if !file_type.is_file() {
+                continue;
+            }
             let path = entry.path();
+            ensure_existing_contained(&layout.mission_dir, &path)?;
             if path.extension().and_then(|value| value.to_str()) != Some("md") {
                 continue;
             }

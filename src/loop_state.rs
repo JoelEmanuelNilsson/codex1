@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Codex1Error, IoContext, Result};
 use crate::layout::MissionLayout;
+use crate::paths::{create_dir_all_contained, ensure_contained_for_write};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct LoopState {
@@ -68,10 +69,10 @@ pub fn read_optional(layout: &MissionLayout) -> Option<LoopState> {
 }
 
 pub fn write(layout: &MissionLayout, state: &LoopState) -> Result<()> {
-    fs::create_dir_all(layout.meta_dir())
-        .io_context(format!("failed to create {}", layout.meta_dir().display()))?;
+    create_dir_all_contained(&layout.mission_dir, ".codex1")?;
     let text = serde_json::to_string_pretty(state)
         .map_err(|source| Codex1Error::Loop(format!("failed to serialize loop state: {source}")))?;
+    ensure_contained_for_write(&layout.mission_dir, &layout.loop_file())?;
     fs::write(layout.loop_file(), format!("{text}\n"))
         .io_context(format!("failed to write {}", layout.loop_file().display()))
 }

@@ -8,6 +8,9 @@ use predicates::prelude::*;
 use serde_json::Value;
 use tempfile::TempDir;
 
+#[cfg(unix)]
+use std::os::unix::fs::symlink;
+
 fn bin() -> Command {
     Command::cargo_bin("codex1").unwrap()
 }
@@ -245,7 +248,7 @@ fn loop_state_and_ralph_block_only_for_explicit_active_loop() {
             .args(["ralph", "stop-hook"]),
         format!(r#"{{"cwd":"{}"}}"#, mission_dir.display()),
     );
-    assert_eq!(allow["decision"], "approve");
+    assert!(allow.as_object().unwrap().get("decision").is_none());
 
     bin()
         .args(["--repo-root"])
@@ -286,5 +289,165 @@ fn loop_state_and_ralph_block_only_for_explicit_active_loop() {
             mission_dir.display()
         ),
     );
-    assert_eq!(allow_active_hook["decision"], "approve");
+    assert!(allow_active_hook
+        .as_object()
+        .unwrap()
+        .get("decision")
+        .is_none());
+}
+
+#[test]
+fn ralph_resolves_repo_root_from_hook_cwd_when_invoked_elsewhere() {
+    let repo = repo();
+    let outside = tempfile::tempdir().unwrap();
+    init(&repo, "alpha");
+    let mission_dir = repo.path().join(".codex1/missions/alpha");
+
+    bin()
+        .args(["--repo-root"])
+        .arg(repo.path())
+        .args([
+            "--mission",
+            "alpha",
+            "loop",
+            "start",
+            "--mode",
+            "autopilot",
+            "--message",
+            "Continue from cwd.",
+        ])
+        .assert()
+        .success();
+
+    let mut command = bin();
+    command
+        .current_dir(outside.path())
+        .args(["ralph", "stop-hook"]);
+    let block = json_output_with_stdin(
+        &mut command,
+        format!(r#"{{"cwd":"{}"}}"#, mission_dir.display()),
+    );
+    assert_eq!(block["decision"], "block");
+    assert!(block["reason"]
+        .as_str()
+        .unwrap()
+        .contains("Continue from cwd."));
+}
+
+#[test]
+fn repeatable_answers_file_sections_must_be_arrays() {
+    let repo = repo();
+    init(&repo, "alpha");
+    let answers = repo.path().join("bad-repeatable.json");
+    fs::write(
+        &answers,
+        r#"{
+          "title": "Bad PRD",
+          "original_request": "Build alpha",
+          "interpreted_destination": "A deterministic alpha",
+          "success_criteria": "artifact exists",
+          "proof_expectations": ["cargo test"],
+          "pr_intent": "No PR"
+        }"#,
+    )
+    .unwrap();
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["--mission", "alpha", "interview", "prd", "--answers"])
+        .arg(&answers)
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("must be a list of strings"));
+}
+
+#[cfg(unix)]
+#[test]
+fn loop_state_write_rejects_symlinked_meta_directory() {
+    let repo = repo();
+    let external = tempfile::tempdir().unwrap();
+    init(&repo, "alpha");
+    let mission_dir = repo.path().join(".codex1/missions/alpha");
+    let meta_dir = mission_dir.join(".codex1");
+    fs::remove_dir_all(&meta_dir).unwrap();
+    symlink(external.path(), &meta_dir).unwrap();
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args([
+            "--mission",
+            "alpha",
+            "loop",
+            "start",
+            "--mode",
+            "autopilot",
+            "--message",
+            "Do not write outside.",
+        ])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("MISSION_PATH_ERROR"));
+
+    assert!(!external.path().join("LOOP.json").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn receipt_append_rejects_symlinked_receipts_directory() {
+    let repo = repo();
+    let external = tempfile::tempdir().unwrap();
+    init(&repo, "alpha");
+    let receipts_dir = repo.path().join(".codex1/missions/alpha/.codex1/receipts");
+    fs::remove_dir_all(&receipts_dir).unwrap();
+    symlink(external.path(), &receipts_dir).unwrap();
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args([
+            "--mission",
+            "alpha",
+            "receipt",
+            "append",
+            "--message",
+            "do not append outside",
+        ])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("MISSION_PATH_ERROR"));
+
+    assert!(!external.path().join("receipts.jsonl").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn subplan_move_rejects_symlinked_lifecycle_directory() {
+    let repo = repo();
+    let external = tempfile::tempdir().unwrap();
+    init(&repo, "alpha");
+    fs::write(external.path().join("0001-external.md"), "# External\n").unwrap();
+    let ready_dir = repo.path().join(".codex1/missions/alpha/SUBPLANS/ready");
+    fs::remove_dir_all(&ready_dir).unwrap();
+    symlink(external.path(), &ready_dir).unwrap();
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args([
+            "--mission",
+            "alpha",
+            "subplan",
+            "move",
+            "--id",
+            "0001-external",
+            "--to",
+            "active",
+        ])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("MISSION_PATH_ERROR"));
+
+    assert!(external.path().join("0001-external.md").is_file());
 }

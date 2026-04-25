@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use crate::layout::MissionLayout;
 use crate::loop_state;
-use crate::paths::discover_repo_root;
+use crate::paths::{discover_repo_root, discover_repo_root_from};
 
 #[derive(Debug, Deserialize)]
 struct StopHookInput {
@@ -16,16 +16,33 @@ struct StopHookInput {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "decision", rename_all = "snake_case")]
-pub enum StopHookOutput {
-    Approve,
-    Block { reason: String },
+pub struct StopHookOutput {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    decision: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+}
+
+impl StopHookOutput {
+    fn approve() -> Self {
+        Self {
+            decision: None,
+            reason: None,
+        }
+    }
+
+    fn block(reason: String) -> Self {
+        Self {
+            decision: Some("block"),
+            reason: Some(reason),
+        }
+    }
 }
 
 pub fn stop_hook(repo_root: Option<PathBuf>, mission: Option<String>) -> StopHookOutput {
     let mut input = String::new();
     if io::stdin().read_to_string(&mut input).is_err() {
-        return StopHookOutput::Approve;
+        return StopHookOutput::approve();
     }
     let parsed: StopHookInput = if input.trim().is_empty() {
         StopHookInput {
@@ -35,40 +52,42 @@ pub fn stop_hook(repo_root: Option<PathBuf>, mission: Option<String>) -> StopHoo
     } else {
         match serde_json::from_str(&input) {
             Ok(value) => value,
-            Err(_) => return StopHookOutput::Approve,
+            Err(_) => return StopHookOutput::approve(),
         }
     };
     if parsed.stop_hook_active {
-        return StopHookOutput::Approve;
+        return StopHookOutput::approve();
     }
-    let root = match discover_repo_root(repo_root) {
+    let cwd = parsed
+        .cwd
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let root = match repo_root {
+        Some(root) => discover_repo_root(Some(root)),
+        None => discover_repo_root_from(&cwd),
+    };
+    let root = match root {
         Ok(root) => root,
-        Err(_) => return StopHookOutput::Approve,
+        Err(_) => return StopHookOutput::approve(),
     };
     let layout = if let Some(id) = mission {
         match MissionLayout::new(root, id) {
             Ok(layout) => layout,
-            Err(_) => return StopHookOutput::Approve,
+            Err(_) => return StopHookOutput::approve(),
         }
     } else {
-        let cwd = parsed
-            .cwd
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or(root.clone()));
         match MissionLayout::from_cwd(root, &cwd) {
             Some(layout) => layout,
-            None => return StopHookOutput::Approve,
+            None => return StopHookOutput::approve(),
         }
     };
     let Some(state) = loop_state::read_optional(&layout) else {
-        return StopHookOutput::Approve;
+        return StopHookOutput::approve();
     };
     if !state.active || state.paused || state.message.trim().is_empty() {
-        return StopHookOutput::Approve;
+        return StopHookOutput::approve();
     }
-    StopHookOutput::Block {
-        reason: format!(
-            "{}\n\nPause or stop this loop with: {}",
-            state.message, state.pause_command
-        ),
-    }
+    StopHookOutput::block(format!(
+        "{}\n\nPause or stop this loop with: {}",
+        state.message, state.pause_command
+    ))
 }

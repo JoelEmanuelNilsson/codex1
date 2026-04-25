@@ -75,7 +75,10 @@ pub fn validate_answers(template: &Template, answers: &Answers) -> Result<()> {
     for section in template.sections {
         if let Some(answer) = answers.get(section.id) {
             if section.repeatable && matches!(answer, AnswerValue::Text(_)) {
-                continue;
+                return Err(Codex1Error::Interview(format!(
+                    "answer {} must be a list of strings",
+                    section.id
+                )));
             }
             if !section.repeatable && matches!(answer, AnswerValue::List(_)) {
                 return Err(Codex1Error::Interview(format!(
