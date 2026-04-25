@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::ErrorKind;
 use std::path::Path;
 
 use serde::Serialize;
@@ -51,39 +52,51 @@ pub fn inspect(layout: &MissionLayout) -> Result<Inventory> {
         layout.proofs_dir(),
     ];
     for dir in required_dirs {
-        if !dir.is_dir() {
-            warnings.push(MechanicalWarning {
-                code: "MISSING_STANDARD_DIRECTORY",
-                detail: display_inside(layout, &dir),
-            });
-        }
+        inspect_required_dir(layout, &dir, "MISSING_STANDARD_DIRECTORY", &mut warnings)?;
     }
 
     for state in SubplanState::ALL {
         let dir = layout.subplans_dir().join(state.as_str());
-        if !dir.is_dir() {
-            warnings.push(MechanicalWarning {
-                code: "MISSING_SUBPLAN_DIRECTORY",
-                detail: format!("SUBPLANS lifecycle folder index {}", state_index(state)),
-            });
-        }
+        inspect_required_dir_with_detail(
+            &dir,
+            "MISSING_SUBPLAN_DIRECTORY",
+            format!("SUBPLANS lifecycle folder index {}", state_index(state)),
+            layout,
+            &mut warnings,
+        )?;
     }
 
-    counts.prd = exists(layout.singleton_path(ArtifactKind::Prd)?.as_path());
-    counts.plan = exists(layout.singleton_path(ArtifactKind::Plan)?.as_path());
-    counts.research_plan = exists(layout.singleton_path(ArtifactKind::ResearchPlan)?.as_path());
-    counts.closeout = exists(layout.singleton_path(ArtifactKind::Closeout)?.as_path());
-    counts.research = count_md(&layout.research_dir())?;
-    counts.specs = count_md(&layout.specs_dir())?;
-    counts.subplans = count_md_recursive(&layout.subplans_dir())?;
-    counts.adrs = count_md(&layout.adrs_dir())?;
-    counts.reviews = count_md(&layout.reviews_dir())?;
-    counts.triage = count_md(&layout.triage_dir())?;
-    counts.proofs = count_md(&layout.proofs_dir())?;
-    counts.optional_receipts = count_jsonl(&layout.receipts_dir())?;
+    counts.prd = exists(
+        layout,
+        layout.singleton_path(ArtifactKind::Prd)?.as_path(),
+        &mut warnings,
+    )?;
+    counts.plan = exists(
+        layout,
+        layout.singleton_path(ArtifactKind::Plan)?.as_path(),
+        &mut warnings,
+    )?;
+    counts.research_plan = exists(
+        layout,
+        layout.singleton_path(ArtifactKind::ResearchPlan)?.as_path(),
+        &mut warnings,
+    )?;
+    counts.closeout = exists(
+        layout,
+        layout.singleton_path(ArtifactKind::Closeout)?.as_path(),
+        &mut warnings,
+    )?;
+    counts.research = count_md(layout, &layout.research_dir(), &mut warnings)?;
+    counts.specs = count_md(layout, &layout.specs_dir(), &mut warnings)?;
+    counts.subplans = count_md_recursive(layout, &layout.subplans_dir(), &mut warnings)?;
+    counts.adrs = count_md(layout, &layout.adrs_dir(), &mut warnings)?;
+    counts.reviews = count_md(layout, &layout.reviews_dir(), &mut warnings)?;
+    counts.triage = count_md(layout, &layout.triage_dir(), &mut warnings)?;
+    counts.proofs = count_md(layout, &layout.proofs_dir(), &mut warnings)?;
+    counts.optional_receipts = count_jsonl(layout, &layout.receipts_dir(), &mut warnings)?;
 
     for file in singleton_files(layout)? {
-        if file.exists() {
+        if regular_file_exists(layout, &file, &mut warnings)? {
             let text = fs::read_to_string(&file)
                 .io_context(format!("failed to read {}", file.display()))?;
             if !text.starts_with("---\n") {
@@ -112,32 +125,139 @@ fn singleton_files(layout: &MissionLayout) -> Result<Vec<std::path::PathBuf>> {
     ])
 }
 
-fn exists(path: &Path) -> usize {
-    usize::from(path.is_file())
+fn inspect_required_dir(
+    layout: &MissionLayout,
+    dir: &Path,
+    missing_code: &'static str,
+    warnings: &mut Vec<MechanicalWarning>,
+) -> Result<()> {
+    inspect_required_dir_with_detail(
+        dir,
+        missing_code,
+        display_inside(layout, dir),
+        layout,
+        warnings,
+    )
 }
 
-fn count_md(dir: &Path) -> Result<usize> {
-    count_matching(dir, false, "md")
+fn inspect_required_dir_with_detail(
+    dir: &Path,
+    missing_code: &'static str,
+    missing_detail: String,
+    layout: &MissionLayout,
+    warnings: &mut Vec<MechanicalWarning>,
+) -> Result<()> {
+    match fs::symlink_metadata(dir) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            warnings.push(MechanicalWarning {
+                code: "SYMLINKED_PATH",
+                detail: display_inside(layout, dir),
+            });
+        }
+        Ok(metadata) if metadata.is_dir() => {}
+        Ok(_) | Err(_) => warnings.push(MechanicalWarning {
+            code: missing_code,
+            detail: missing_detail,
+        }),
+    }
+    Ok(())
 }
 
-fn count_md_recursive(dir: &Path) -> Result<usize> {
-    count_matching(dir, true, "md")
+fn exists(
+    layout: &MissionLayout,
+    path: &Path,
+    warnings: &mut Vec<MechanicalWarning>,
+) -> Result<usize> {
+    Ok(usize::from(regular_file_exists(layout, path, warnings)?))
 }
 
-fn count_jsonl(dir: &Path) -> Result<usize> {
-    count_matching(dir, false, "jsonl")
+fn regular_file_exists(
+    layout: &MissionLayout,
+    path: &Path,
+    warnings: &mut Vec<MechanicalWarning>,
+) -> Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            warnings.push(MechanicalWarning {
+                code: "SYMLINKED_PATH",
+                detail: display_inside(layout, path),
+            });
+            Ok(false)
+        }
+        Ok(metadata) => Ok(metadata.is_file()),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(crate::error::Codex1Error::Io {
+            context: format!("failed to inspect {}", path.display()),
+            source: error,
+        }),
+    }
 }
 
-fn count_matching(dir: &Path, recursive: bool, extension: &str) -> Result<usize> {
-    if !dir.is_dir() {
-        return Ok(0);
+fn count_md(
+    layout: &MissionLayout,
+    dir: &Path,
+    warnings: &mut Vec<MechanicalWarning>,
+) -> Result<usize> {
+    count_matching(layout, dir, false, "md", warnings)
+}
+
+fn count_md_recursive(
+    layout: &MissionLayout,
+    dir: &Path,
+    warnings: &mut Vec<MechanicalWarning>,
+) -> Result<usize> {
+    count_matching(layout, dir, true, "md", warnings)
+}
+
+fn count_jsonl(
+    layout: &MissionLayout,
+    dir: &Path,
+    warnings: &mut Vec<MechanicalWarning>,
+) -> Result<usize> {
+    count_matching(layout, dir, false, "jsonl", warnings)
+}
+
+fn count_matching(
+    layout: &MissionLayout,
+    dir: &Path,
+    recursive: bool,
+    extension: &str,
+    warnings: &mut Vec<MechanicalWarning>,
+) -> Result<usize> {
+    match fs::symlink_metadata(dir) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            warnings.push(MechanicalWarning {
+                code: "SYMLINKED_PATH",
+                detail: display_inside(layout, dir),
+            });
+            return Ok(0);
+        }
+        Ok(metadata) if metadata.is_dir() => {}
+        Ok(_) => return Ok(0),
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(0),
+        Err(error) => {
+            return Err(crate::error::Codex1Error::Io {
+                context: format!("failed to inspect {}", dir.display()),
+                source: error,
+            })
+        }
     }
     let mut count = 0;
     for entry in fs::read_dir(dir).io_context(format!("failed to read {}", dir.display()))? {
         let entry = entry.io_context(format!("failed to read entry in {}", dir.display()))?;
         let path = entry.path();
-        if recursive && path.is_dir() {
-            count += count_matching(&path, true, extension)?;
+        let file_type = entry
+            .file_type()
+            .io_context(format!("failed to inspect entry in {}", dir.display()))?;
+        if file_type.is_symlink() {
+            warnings.push(MechanicalWarning {
+                code: "SYMLINKED_PATH",
+                detail: display_inside(layout, &path),
+            });
+            continue;
+        }
+        if recursive && file_type.is_dir() {
+            count += count_matching(layout, &path, true, extension, warnings)?;
         } else if path.extension().and_then(|value| value.to_str()) == Some(extension) {
             count += 1;
         }

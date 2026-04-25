@@ -454,6 +454,30 @@ const REVIEW: &[Section] = &[
         "What findings were identified?"
     ),
     section!(
+        "finding_priorities",
+        "Finding Priorities",
+        optional_list,
+        "What priorities apply to the findings?"
+    ),
+    section!(
+        "finding_confidences",
+        "Finding Confidences",
+        optional_list,
+        "What confidence applies to each finding?"
+    ),
+    section!(
+        "finding_locations",
+        "Finding Locations",
+        optional_list,
+        "What artifact or code locations apply to the findings?"
+    ),
+    section!(
+        "finding_rationales",
+        "Finding Rationales",
+        optional_list,
+        "What rationale supports each finding?"
+    ),
+    section!(
         "non_blocking_notes",
         "Non-Blocking Notes",
         optional_list,

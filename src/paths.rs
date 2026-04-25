@@ -222,16 +222,31 @@ pub fn ensure_contained_for_write(base: &Path, target: &Path) -> Result<()> {
             target.display()
         )));
     }
-    if target.exists() {
-        let target_real = fs::canonicalize(target).io_context(format!(
-            "failed to canonicalize target {}",
-            target.display()
-        ))?;
-        if !target_real.starts_with(&base_real) {
-            return Err(Codex1Error::MissionPath(format!(
-                "target escapes mission directory: {}",
+    match fs::symlink_metadata(target) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() {
+                return Err(Codex1Error::MissionPath(format!(
+                    "target must not be a symlink: {}",
+                    target.display()
+                )));
+            }
+            let target_real = fs::canonicalize(target).io_context(format!(
+                "failed to canonicalize target {}",
                 target.display()
-            )));
+            ))?;
+            if !target_real.starts_with(&base_real) {
+                return Err(Codex1Error::MissionPath(format!(
+                    "target escapes mission directory: {}",
+                    target.display()
+                )));
+            }
+        }
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(Codex1Error::Io {
+                context: format!("failed to inspect target {}", target.display()),
+                source: error,
+            });
         }
     }
     Ok(())

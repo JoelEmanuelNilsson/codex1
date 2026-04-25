@@ -451,3 +451,191 @@ fn subplan_move_rejects_symlinked_lifecycle_directory() {
 
     assert!(external.path().join("0001-external.md").is_file());
 }
+
+#[cfg(unix)]
+#[test]
+fn writes_reject_dangling_symlink_targets() {
+    let repo = repo();
+    let external = tempfile::tempdir().unwrap();
+    init(&repo, "alpha");
+    let mission_dir = repo.path().join(".codex1/missions/alpha");
+
+    let prd_answers = repo.path().join("prd.json");
+    fs::write(
+        &prd_answers,
+        r#"{
+          "title": "Dangling PRD",
+          "original_request": "Build alpha",
+          "interpreted_destination": "A deterministic alpha",
+          "success_criteria": ["artifact exists"],
+          "proof_expectations": ["cargo test"],
+          "pr_intent": "No PR"
+        }"#,
+    )
+    .unwrap();
+    let outside_prd = external.path().join("outside-prd.md");
+    symlink(&outside_prd, mission_dir.join("PRD.md")).unwrap();
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["--mission", "alpha", "interview", "prd", "--answers"])
+        .arg(&prd_answers)
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("target must not be a symlink"));
+    assert!(!outside_prd.exists());
+
+    let outside_loop = external.path().join("outside-loop.json");
+    symlink(&outside_loop, mission_dir.join(".codex1/LOOP.json")).unwrap();
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args([
+            "--mission",
+            "alpha",
+            "loop",
+            "start",
+            "--mode",
+            "autopilot",
+            "--message",
+            "do not follow",
+        ])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("target must not be a symlink"));
+    assert!(!outside_loop.exists());
+
+    let outside_receipt = external.path().join("outside-receipts.jsonl");
+    symlink(
+        &outside_receipt,
+        mission_dir.join(".codex1/receipts/receipts.jsonl"),
+    )
+    .unwrap();
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args([
+            "--mission",
+            "alpha",
+            "receipt",
+            "append",
+            "--message",
+            "do not follow",
+        ])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("target must not be a symlink"));
+    assert!(!outside_receipt.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_skips_symlinked_inventory_paths() {
+    let repo = repo();
+    let external_collection = tempfile::tempdir().unwrap();
+    let external_subplan = tempfile::tempdir().unwrap();
+    init(&repo, "alpha");
+    fs::write(
+        external_collection.path().join("outside-research.md"),
+        "# Outside\n",
+    )
+    .unwrap();
+    fs::write(
+        external_subplan.path().join("outside-subplan.md"),
+        "# Outside\n",
+    )
+    .unwrap();
+
+    let mission_dir = repo.path().join(".codex1/missions/alpha");
+    let research_dir = mission_dir.join("RESEARCH");
+    fs::remove_dir_all(&research_dir).unwrap();
+    symlink(external_collection.path(), &research_dir).unwrap();
+    symlink(
+        external_subplan.path(),
+        mission_dir.join("SUBPLANS/ready/external"),
+    )
+    .unwrap();
+
+    let value = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["--mission", "alpha", "inspect"]),
+    );
+    assert_eq!(value["data"]["artifacts"]["research"], 0);
+    assert_eq!(value["data"]["artifacts"]["subplans"], 0);
+    let warnings = value["data"]["mechanical_warnings"].as_array().unwrap();
+    assert!(warnings
+        .iter()
+        .any(|warning| warning["code"] == "SYMLINKED_PATH"));
+}
+
+#[test]
+fn answers_file_rejects_duplicate_json_keys() {
+    let repo = repo();
+    init(&repo, "alpha");
+    let answers = repo.path().join("duplicate-keys.json");
+    fs::write(
+        &answers,
+        r#"{
+          "title": "First",
+          "title": "Second",
+          "original_request": "Build alpha",
+          "interpreted_destination": "A deterministic alpha",
+          "success_criteria": ["artifact exists"],
+          "proof_expectations": ["cargo test"],
+          "pr_intent": "No PR"
+        }"#,
+    )
+    .unwrap();
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["--mission", "alpha", "interview", "prd", "--answers"])
+        .arg(&answers)
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("duplicate JSON key: title"));
+}
+
+#[test]
+fn review_template_accepts_structured_finding_fields() {
+    let repo = repo();
+    init(&repo, "alpha");
+    let answers = repo.path().join("review.json");
+    fs::write(
+        &answers,
+        r#"{
+          "title": "Review",
+          "target": "src/main.rs",
+          "reviewer_role": "reviewer",
+          "overall_assessment": "Needs one fix",
+          "confidence": "high",
+          "findings": ["Reject symlink targets"],
+          "finding_priorities": ["P1"],
+          "finding_confidences": ["high"],
+          "finding_locations": ["src/paths.rs:225"],
+          "finding_rationales": ["Dangling symlinks can escape containment"],
+          "recommended_followup": ["Patch path helper"]
+        }"#,
+    )
+    .unwrap();
+
+    bin()
+        .args(["--repo-root"])
+        .arg(repo.path())
+        .args(["--mission", "alpha", "interview", "review", "--answers"])
+        .arg(&answers)
+        .assert()
+        .success();
+
+    let rendered = fs::read_to_string(
+        repo.path()
+            .join(".codex1/missions/alpha/REVIEWS/0001-review.md"),
+    )
+    .unwrap();
+    assert!(rendered.contains("<!-- codex1-section: finding_priorities -->"));
+    assert!(rendered.contains("<!-- codex1-section: finding_locations -->"));
+    assert!(rendered.contains("<!-- codex1-section: finding_rationales -->"));
+}
