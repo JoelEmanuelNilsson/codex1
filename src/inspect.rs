@@ -5,6 +5,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use crate::error::{IoContext, Result};
+use crate::event;
 use crate::layout::{ArtifactKind, MissionLayout, SubplanState};
 
 #[derive(Debug, Serialize)]
@@ -29,6 +30,7 @@ pub struct ArtifactCounts {
     pub proofs: usize,
     pub closeout: usize,
     pub optional_receipts: usize,
+    pub events: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -94,6 +96,17 @@ pub fn inspect(layout: &MissionLayout) -> Result<Inventory> {
     counts.triage = count_md(layout, &layout.triage_dir(), &mut warnings)?;
     counts.proofs = count_md(layout, &layout.proofs_dir(), &mut warnings)?;
     counts.optional_receipts = count_jsonl(layout, &layout.receipts_dir(), &mut warnings)?;
+    let event_scan = event::scan(layout)?;
+    counts.events = event_scan.event_count;
+    warnings.extend(
+        event_scan
+            .warnings
+            .into_iter()
+            .map(|warning| MechanicalWarning {
+                code: warning.code,
+                detail: warning.detail,
+            }),
+    );
 
     for file in singleton_files(layout)? {
         if regular_file_exists(layout, &file, &mut warnings)? {

@@ -197,6 +197,10 @@ impl MissionLayout {
         self.meta_dir().join("LOOP.json")
     }
 
+    pub fn event_log(&self) -> PathBuf {
+        self.meta_dir().join("events.jsonl")
+    }
+
     pub fn receipts_dir(&self) -> PathBuf {
         self.meta_dir().join("receipts")
     }

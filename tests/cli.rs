@@ -64,6 +64,25 @@ fn init(repo: &TempDir, mission: &str) {
         .stdout(predicate::str::contains(r#""ok": true"#));
 }
 
+fn events_path(repo: &TempDir, mission: &str) -> std::path::PathBuf {
+    repo.path()
+        .join(".codex1/missions")
+        .join(mission)
+        .join(".codex1/events.jsonl")
+}
+
+fn read_events(repo: &TempDir, mission: &str) -> Vec<Value> {
+    fs::read_to_string(events_path(repo, mission))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+fn event_log_text(repo: &TempDir, mission: &str) -> String {
+    fs::read_to_string(events_path(repo, mission)).unwrap()
+}
+
 #[test]
 fn init_returns_success_envelope() {
     let repo = repo();
@@ -85,6 +104,28 @@ fn init_returns_success_envelope() {
         .path()
         .join(".codex1/missions/alpha/SUBPLANS/ready")
         .is_dir());
+}
+
+#[test]
+fn init_appends_mission_initialized_event() {
+    let repo = repo();
+    init(&repo, "alpha");
+
+    let events = read_events(&repo, "alpha");
+    assert_eq!(events.len(), 1);
+    let event = &events[0];
+    assert_eq!(event["version"], 1);
+    assert!(event["timestamp"].as_str().unwrap().contains('T'));
+    assert_eq!(event["mission_id"], "alpha");
+    assert_eq!(event["command"], "init");
+    assert_eq!(event["kind"], "mission_initialized");
+    assert_eq!(event["result"], "success");
+    assert!(event["duration_ms"].as_u64().is_some());
+    assert_eq!(event["metadata"], serde_json::json!({}));
+    assert!(event.get("sequence").is_none());
+    assert!(event.get("argv").is_none());
+    assert!(event.get("stdout").is_none());
+    assert!(event.get("stderr").is_none());
 }
 
 #[test]
@@ -191,6 +232,478 @@ fn prd_interview_writes_artifact_and_respects_collision_policy() {
         .assert()
         .failure()
         .stdout(predicate::str::contains("ARTIFACT_VALIDATION_ERROR"));
+}
+
+#[test]
+fn artifact_interview_appends_private_metadata_only_event() {
+    let repo = repo();
+    init(&repo, "alpha");
+    let answers = repo.path().join("answers-private.json");
+    fs::write(
+        &answers,
+        r#"{
+          "title": "Secret Alpha PRD",
+          "original_request": "payload text that must stay out of events",
+          "interpreted_destination": "A deterministic alpha",
+          "success_criteria": ["generated markdown body marker"],
+          "proof_expectations": ["cargo test"],
+          "pr_intent": "No PR"
+        }"#,
+    )
+    .unwrap();
+
+    bin()
+        .args(["--repo-root"])
+        .arg(repo.path())
+        .args(["--mission", "alpha", "interview", "prd", "--answers"])
+        .arg(&answers)
+        .assert()
+        .success();
+
+    let events = read_events(&repo, "alpha");
+    let event = events.last().unwrap();
+    assert_eq!(event["command"], "interview");
+    assert_eq!(event["kind"], "artifact_written");
+    assert_eq!(event["result"], "success");
+    assert_eq!(event["metadata"]["artifact_kind"], "prd");
+    assert_eq!(event["metadata"]["template_version"], 1);
+    assert_eq!(event["metadata"]["overwrite"], false);
+    assert_eq!(event["metadata"]["path"], "PRD.md");
+
+    let text = event_log_text(&repo, "alpha");
+    assert!(!text.contains("payload text that must stay out of events"));
+    assert!(!text.contains("generated markdown body marker"));
+    assert!(!text.contains("answers-private.json"));
+    assert!(!text.contains(repo.path().to_str().unwrap()));
+}
+
+#[test]
+fn successful_mutations_append_forensic_events_without_messages() {
+    let repo = repo();
+    init(&repo, "alpha");
+    let subplan_answers = repo.path().join("subplan-event.json");
+    fs::write(
+        &subplan_answers,
+        r#"{
+          "title": "Move Me",
+          "goal": "Create a subplan",
+          "linked_prd": "PRD.md",
+          "linked_plan": "PLAN.md",
+          "owner": "main",
+          "scope": ["CLI"],
+          "steps": ["write file"],
+          "expected_proof": ["test"],
+          "exit_criteria": ["done"]
+        }"#,
+    )
+    .unwrap();
+    bin()
+        .args(["--repo-root"])
+        .arg(repo.path())
+        .args(["--mission", "alpha", "interview", "subplan", "--answers"])
+        .arg(&subplan_answers)
+        .assert()
+        .success();
+
+    bin()
+        .args(["--repo-root"])
+        .arg(repo.path())
+        .args([
+            "--mission",
+            "alpha",
+            "subplan",
+            "move",
+            "--id",
+            "0001-move-me",
+            "--to",
+            "active",
+        ])
+        .assert()
+        .success();
+    bin()
+        .args(["--repo-root"])
+        .arg(repo.path())
+        .args([
+            "--mission",
+            "alpha",
+            "receipt",
+            "append",
+            "--message",
+            "receipt text must not leak",
+        ])
+        .assert()
+        .success();
+    bin()
+        .args(["--repo-root"])
+        .arg(repo.path())
+        .args([
+            "--mission",
+            "alpha",
+            "loop",
+            "start",
+            "--mode",
+            "autopilot",
+            "--message",
+            "loop message must not leak",
+        ])
+        .assert()
+        .success();
+    bin()
+        .args(["--repo-root"])
+        .arg(repo.path())
+        .args([
+            "--mission",
+            "alpha",
+            "loop",
+            "pause",
+            "--reason",
+            "pause reason must not leak",
+        ])
+        .assert()
+        .success();
+    bin()
+        .args(["--repo-root"])
+        .arg(repo.path())
+        .args(["--mission", "alpha", "loop", "resume"])
+        .assert()
+        .success();
+    bin()
+        .args(["--repo-root"])
+        .arg(repo.path())
+        .args([
+            "--mission",
+            "alpha",
+            "loop",
+            "stop",
+            "--reason",
+            "stop reason must not leak",
+        ])
+        .assert()
+        .success();
+
+    let events = read_events(&repo, "alpha");
+    let kinds: Vec<_> = events
+        .iter()
+        .map(|event| event["kind"].as_str().unwrap())
+        .collect();
+    assert!(kinds.contains(&"subplan_moved"));
+    assert!(kinds.contains(&"receipt_appended"));
+    assert!(kinds.contains(&"loop_started"));
+    assert!(kinds.contains(&"loop_paused"));
+    assert!(kinds.contains(&"loop_resumed"));
+    assert!(kinds.contains(&"loop_stopped"));
+
+    let moved = events
+        .iter()
+        .find(|event| event["kind"] == "subplan_moved")
+        .unwrap();
+    assert_eq!(
+        moved["metadata"]["from_path"],
+        "SUBPLANS/ready/0001-move-me.md"
+    );
+    assert_eq!(
+        moved["metadata"]["to_path"],
+        "SUBPLANS/active/0001-move-me.md"
+    );
+    assert_eq!(moved["metadata"]["from_lifecycle"], "ready");
+    assert_eq!(moved["metadata"]["to_lifecycle"], "active");
+
+    let receipt = events
+        .iter()
+        .find(|event| event["kind"] == "receipt_appended")
+        .unwrap();
+    assert_eq!(
+        receipt["metadata"]["path"],
+        ".codex1/receipts/receipts.jsonl"
+    );
+
+    let started = events
+        .iter()
+        .find(|event| event["kind"] == "loop_started")
+        .unwrap();
+    assert_eq!(started["metadata"]["mode"], "autopilot");
+    assert_eq!(started["metadata"]["message_present"], true);
+
+    let paused = events
+        .iter()
+        .find(|event| event["kind"] == "loop_paused")
+        .unwrap();
+    assert_eq!(paused["metadata"]["reason_present"], true);
+
+    let text = event_log_text(&repo, "alpha");
+    for private in [
+        "receipt text must not leak",
+        "loop message must not leak",
+        "pause reason must not leak",
+        "stop reason must not leak",
+        repo.path().to_str().unwrap(),
+    ] {
+        assert!(!text.contains(private));
+    }
+}
+
+#[test]
+fn event_append_failure_warns_without_failing_primary_mutation() {
+    let json_repo = repo();
+    init(&json_repo, "alpha");
+    let event_path = events_path(&json_repo, "alpha");
+    fs::remove_file(&event_path).unwrap();
+    fs::create_dir(&event_path).unwrap();
+    let answers = json_repo.path().join("warning-answers.json");
+    fs::write(
+        &answers,
+        r#"{
+          "title": "Warning PRD",
+          "original_request": "Build alpha",
+          "interpreted_destination": "A deterministic alpha",
+          "success_criteria": ["artifact exists"],
+          "proof_expectations": ["cargo test"],
+          "pr_intent": "No PR"
+        }"#,
+    )
+    .unwrap();
+
+    let value = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(json_repo.path())
+            .args(["--mission", "alpha", "interview", "prd", "--answers"])
+            .arg(&answers),
+    );
+
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["warnings"][0]["code"], "EVENT_LOG_APPEND_FAILED");
+    assert!(json_repo
+        .path()
+        .join(".codex1/missions/alpha/PRD.md")
+        .is_file());
+
+    let human = repo();
+    init(&human, "alpha");
+    let event_path = events_path(&human, "alpha");
+    fs::remove_file(&event_path).unwrap();
+    fs::create_dir(&event_path).unwrap();
+    let output = bin()
+        .args(["--repo-root"])
+        .arg(human.path())
+        .args([
+            "--mission",
+            "alpha",
+            "receipt",
+            "append",
+            "--message",
+            "human warning primary mutation",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Appended optional receipt"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("EVENT_LOG_APPEND_FAILED"));
+    assert!(human
+        .path()
+        .join(".codex1/missions/alpha/.codex1/receipts/receipts.jsonl")
+        .is_file());
+}
+
+#[test]
+fn read_only_commands_do_not_append_events() {
+    let repo = repo();
+    init(&repo, "alpha");
+    let before = event_log_text(&repo, "alpha");
+    let mission_dir = repo.path().join(".codex1/missions/alpha");
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["--mission", "alpha", "inspect"])
+        .assert()
+        .success();
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["template", "list"])
+        .assert()
+        .success();
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["template", "show", "prd"])
+        .assert()
+        .success();
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["doctor"])
+        .assert()
+        .success();
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["--mission", "alpha", "loop", "status"])
+        .assert()
+        .failure();
+    let _ = json_output_with_stdin(
+        bin()
+            .args(["--repo-root"])
+            .arg(repo.path())
+            .args(["ralph", "stop-hook"]),
+        format!(r#"{{"cwd":"{}"}}"#, mission_dir.display()),
+    );
+
+    assert_eq!(event_log_text(&repo, "alpha"), before);
+}
+
+#[test]
+fn inspect_reports_event_count_and_malformed_event_warnings_only() {
+    let repo = repo();
+    init(&repo, "alpha");
+    fs::OpenOptions::new()
+        .append(true)
+        .open(events_path(&repo, "alpha"))
+        .unwrap()
+        .write_all(b"not-json\n{\"version\":99,\"kind\":\"future\"}\n{\"version\":1}\n[]\n")
+        .unwrap();
+
+    let value = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["--mission", "alpha", "inspect"]),
+    );
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["data"]["artifacts"]["events"], 1);
+    let warnings = value["data"]["mechanical_warnings"].as_array().unwrap();
+    assert!(warnings
+        .iter()
+        .any(|warning| warning["code"] == "MALFORMED_EVENT_LOG_LINE"));
+    assert!(warnings
+        .iter()
+        .any(|warning| warning["code"] == "UNSUPPORTED_EVENT_LOG_VERSION"));
+    assert!(warnings
+        .iter()
+        .any(|warning| warning["code"] == "MISSING_EVENT_LOG_KIND"));
+    assert!(warnings
+        .iter()
+        .any(|warning| warning["code"] == "NON_OBJECT_EVENT_LOG_LINE"));
+
+    let text = serde_json::to_string(&value).unwrap();
+    for forbidden in [
+        "last_event",
+        "last_activity",
+        "activity_status",
+        "progress",
+        "ready",
+        "complete",
+        "next_action",
+    ] {
+        assert!(!text.contains(forbidden), "{forbidden} leaked into inspect");
+    }
+}
+
+#[test]
+fn malformed_event_logs_do_not_block_future_appends() {
+    let repo = repo();
+    init(&repo, "alpha");
+    fs::OpenOptions::new()
+        .append(true)
+        .open(events_path(&repo, "alpha"))
+        .unwrap()
+        .write_all(b"not-json\n")
+        .unwrap();
+
+    bin()
+        .args(["--repo-root"])
+        .arg(repo.path())
+        .args([
+            "--mission",
+            "alpha",
+            "receipt",
+            "append",
+            "--message",
+            "append after malformed log",
+        ])
+        .assert()
+        .success();
+
+    let text = event_log_text(&repo, "alpha");
+    assert!(text.contains("not-json"));
+    assert!(text.lines().any(|line| serde_json::from_str::<Value>(line)
+        .ok()
+        .is_some_and(|event| event["kind"] == "receipt_appended")));
+}
+
+#[test]
+fn safe_mutation_failures_append_failure_events_without_hiding_errors() {
+    let repo = repo();
+    init(&repo, "alpha");
+    let answers = repo.path().join("failure-answers.json");
+    fs::write(
+        &answers,
+        r#"{
+          "title": "Failure PRD",
+          "original_request": "failure payload must not leak",
+          "interpreted_destination": "A deterministic alpha",
+          "success_criteria": ["artifact exists"],
+          "proof_expectations": ["cargo test"],
+          "pr_intent": "No PR"
+        }"#,
+    )
+    .unwrap();
+    bin()
+        .args(["--repo-root"])
+        .arg(repo.path())
+        .args(["--mission", "alpha", "interview", "prd", "--answers"])
+        .arg(&answers)
+        .assert()
+        .success();
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["--mission", "alpha", "interview", "prd", "--answers"])
+        .arg(&answers)
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("ARTIFACT_VALIDATION_ERROR"));
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args([
+            "--mission",
+            "alpha",
+            "subplan",
+            "move",
+            "--id",
+            "missing",
+            "--to",
+            "active",
+        ])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("ARTIFACT_VALIDATION_ERROR"));
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["--mission", "alpha", "loop", "pause"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("IO_ERROR"));
+
+    let events = read_events(&repo, "alpha");
+    for (kind, code) in [
+        ("artifact_write_failed", "ARTIFACT_VALIDATION_ERROR"),
+        ("subplan_move_failed", "ARTIFACT_VALIDATION_ERROR"),
+        ("loop_pause_failed", "IO_ERROR"),
+    ] {
+        let event = events
+            .iter()
+            .find(|event| event["kind"] == kind)
+            .unwrap_or_else(|| panic!("{kind} was not logged"));
+        assert_eq!(event["result"], "error");
+        assert_eq!(event["metadata"]["error_code"], code);
+    }
+
+    assert!(!event_log_text(&repo, "alpha").contains("failure payload must not leak"));
 }
 
 #[test]

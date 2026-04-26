@@ -2,6 +2,7 @@ mod cli;
 mod command;
 mod envelope;
 mod error;
+mod event;
 mod inspect;
 mod interview;
 mod layout;

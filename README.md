@@ -44,10 +44,13 @@ The mission ID is intentionally boring: ASCII letters, digits, `-`, and `_` only
   PROOFS/
   .codex1/
     LOOP.json
+    events.jsonl
     receipts/
 ```
 
 `init` creates the folders only. Interviews write content when Codex has enough answers.
+
+Codex1 also keeps `.codex1/events.jsonl` as a mission-local forensic trail of mechanical command metadata. It is usually ignored unless Codex or a human needs to debug unusual mission history. It is not status, not proof, and not mission truth.
 
 ## Answers Files
 

@@ -10,6 +10,13 @@ pub struct SuccessEnvelope<T: Serialize> {
 }
 
 #[derive(Debug, Serialize)]
+pub struct SuccessEnvelopeWithWarnings<T: Serialize, W: Serialize> {
+    pub ok: bool,
+    pub data: T,
+    pub warnings: Vec<W>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct ErrorEnvelope<'a> {
     pub ok: bool,
     pub error: ErrorBody<'a>,
@@ -26,6 +33,30 @@ pub fn success<T: Serialize>(data: T) -> serde_json::Value {
         json!({
             "ok": true,
             "data": null
+        })
+    })
+}
+
+pub fn success_with_warnings<T: Serialize, W: Serialize>(
+    data: T,
+    warnings: Vec<W>,
+) -> serde_json::Value {
+    if warnings.is_empty() {
+        return success(data);
+    }
+    serde_json::to_value(SuccessEnvelopeWithWarnings {
+        ok: true,
+        data,
+        warnings,
+    })
+    .unwrap_or_else(|_| {
+        json!({
+            "ok": true,
+            "data": null,
+            "warnings": [{
+                "code": "IO_ERROR",
+                "message": "failed to serialize warning envelope"
+            }]
         })
     })
 }
