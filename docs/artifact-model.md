@@ -34,4 +34,6 @@ The artifact tree is the durable product. Files are human-facing markdown with m
 
 `.codex1/receipts/` stores optional audit receipts. Receipts are not replay authority.
 
+`.codex1/events.jsonl` stores automatic forensic command metadata. Events help explain mechanical command history during debugging, but they are not durable content truth, not receipts, not workflow state, and not replay authority. Normal planning and execution should ignore events unless mission archaeology is needed.
+
 There is no authoritative `STATE.json`.

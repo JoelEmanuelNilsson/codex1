@@ -14,6 +14,21 @@ codex1 --json --repo-root <path> --mission <id> <command>
 { "ok": true, "data": {} }
 ```
 
+Successful mutating commands may include forensic warnings without becoming failures:
+
+```json
+{
+  "ok": true,
+  "data": {},
+  "warnings": [
+    {
+      "code": "EVENT_LOG_APPEND_FAILED",
+      "message": "..."
+    }
+  ]
+}
+```
+
 Errors use:
 
 ```json
@@ -47,6 +62,18 @@ Error codes are mechanical: `ARGUMENT_ERROR`, `MISSION_PATH_ERROR`, `ARTIFACT_VA
 `ralph stop-hook` reads Stop-hook JSON from stdin and fails open unless explicit loop state says to block.
 
 `doctor` runs fast diagnostics for template registration, path validation basics, loop schema version, the installed-command JSON envelope, and a loop/Ralph smoke check.
+
+## Mission Event Log
+
+Codex1 keeps a mission-local forensic event log at `.codex1/events.jsonl` inside each mission directory. It records automatic metadata for mutating command outcomes such as initialization, artifact writes, subplan moves, receipt appends, and loop changes.
+
+The log is append-only, best-effort, and non-authoritative. If appending an event fails after the real mutation succeeds, the command still succeeds and reports a warning in JSON mode or stderr in human mode. If a mutating command fails after a safe mission layout was resolved, Codex1 may append a small failure event and still returns the original command error.
+
+Read-only commands do not append events: `template list`, `template show`, `inspect`, `doctor`, `loop status`, and `ralph stop-hook` stay read-only.
+
+Event records contain small mechanical metadata: schema version, timestamp, mission id, command name, event kind, result, optional duration, artifact kind, template version, overwrite flag, lifecycle folders, booleans for message or reason presence, error code, and mission-relative paths. They do not contain raw argv, absolute paths, answer payloads, artifact body text, loop messages, receipt messages, review finding text, stdout, stderr, sequence numbers, or semantic status fields.
+
+`inspect` reports only the count of parseable event entries and shallow mechanical warnings for malformed event log lines. It does not summarize last activity or infer progress, readiness, review state, close state, or next action from events.
 
 ## Path Safety
 

@@ -3,6 +3,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Output};
+use std::time::Instant;
 
 use chrono::Utc;
 use clap::error::ErrorKind;
@@ -16,6 +17,7 @@ use crate::cli::{
 };
 use crate::envelope;
 use crate::error::{Codex1Error, IoContext, Result};
+use crate::event;
 use crate::inspect;
 use crate::interview;
 use crate::layout::{descriptors, ArtifactKind, MissionLayout, SubplanState};
@@ -79,8 +81,15 @@ fn run_cli(cli: Cli) -> Result<()> {
 }
 
 fn cmd_init(cli: &Cli) -> Result<()> {
+    let started = Instant::now();
     let layout = explicit_layout(cli)?;
     layout.create_dirs()?;
+    let warnings: Vec<_> = event::append_best_effort(
+        &layout,
+        &event::EventRecord::mission_initialized(&layout, started.elapsed()),
+    )
+    .into_iter()
+    .collect();
     let data = json!({
         "mission_id": layout.mission_id,
         "repo_root": layout.repo_root,
@@ -88,8 +97,9 @@ fn cmd_init(cli: &Cli) -> Result<()> {
         "artifacts": descriptors(&layout),
     });
     if cli.json {
-        print_json(&envelope::success(data));
+        print_json(&envelope::success_with_warnings(data, warnings));
     } else {
+        print_event_warnings(&warnings);
         println!("Initialized mission {}", layout.mission_id);
         println!("{}", layout.mission_dir.display());
     }
@@ -136,6 +146,7 @@ fn cmd_template(cli: &Cli, command: TemplateCommand) -> Result<()> {
 }
 
 fn cmd_interview(cli: &Cli, args: InterviewArgs) -> Result<()> {
+    let started = Instant::now();
     let layout = resolve_layout(cli)?;
     if cli.json && args.answers.is_none() {
         return Err(Codex1Error::Argument(
@@ -154,19 +165,57 @@ fn cmd_interview(cli: &Cli, args: InterviewArgs) -> Result<()> {
         }
     };
     let content = render_markdown(&template, &answers)?;
-    let path = artifact_write_path(&layout, kind, &answers, args.overwrite)?;
-    write_new_or_overwrite(
+    let path = match artifact_write_path(&layout, kind, &answers, args.overwrite) {
+        Ok(path) => path,
+        Err(error) => {
+            log_artifact_write_failed(
+                &layout,
+                kind,
+                template.version,
+                args.overwrite,
+                &error,
+                started.elapsed(),
+            );
+            return Err(error);
+        }
+    };
+    if let Err(error) = write_new_or_overwrite(
         &layout,
         &path,
         &content,
         args.overwrite || !kind.is_singleton(),
-    )?;
+    ) {
+        log_artifact_write_failed(
+            &layout,
+            kind,
+            template.version,
+            args.overwrite,
+            &error,
+            started.elapsed(),
+        );
+        return Err(error);
+    }
+    let mut warnings = Vec::new();
+    if let Ok(record) = event::EventRecord::artifact_written(
+        &layout,
+        kind,
+        template.version,
+        args.overwrite,
+        &path,
+        started.elapsed(),
+    ) {
+        if let Some(warning) = event::append_best_effort(&layout, &record) {
+            warnings.push(warning);
+        }
+    }
+    let data = json!({
+        "kind": kind,
+        "path": path,
+    });
     if cli.json {
-        print_json(&envelope::success(json!({
-            "kind": kind,
-            "path": path,
-        })));
+        print_json(&envelope::success_with_warnings(data, warnings));
     } else {
+        print_event_warnings(&warnings);
         println!("Wrote {} artifact to {}", kind, path.display());
     }
     Ok(())
@@ -196,6 +245,7 @@ fn cmd_inspect(cli: &Cli) -> Result<()> {
             "  optional_receipts: {}",
             inventory.artifacts.optional_receipts
         );
+        println!("  events: {}", inventory.artifacts.events);
         if !inventory.mechanical_warnings.is_empty() {
             println!("Mechanical warnings:");
             for warning in inventory.mechanical_warnings {
@@ -207,11 +257,26 @@ fn cmd_inspect(cli: &Cli) -> Result<()> {
 }
 
 fn cmd_subplan(cli: &Cli, command: SubplanCommand) -> Result<()> {
+    let started = Instant::now();
     let layout = resolve_layout(cli)?;
+    let mut warnings = Vec::new();
     match command {
         SubplanCommand::Move { id, to } => {
             let target_state: SubplanState = to.into();
-            let source = find_subplan(&layout, &id)?;
+            let source = match find_subplan(&layout, &id) {
+                Ok(source) => source,
+                Err(error) => {
+                    log_subplan_move_failed(&layout, target_state, &error, started.elapsed());
+                    return Err(error);
+                }
+            };
+            let source_state = match subplan_lifecycle_for_path(&source) {
+                Ok(state) => state,
+                Err(error) => {
+                    log_subplan_move_failed(&layout, target_state, &error, started.elapsed());
+                    return Err(error);
+                }
+            };
             let file_name = source.file_name().ok_or_else(|| {
                 Codex1Error::MissionPath("subplan source has no file name".into())
             })?;
@@ -222,27 +287,52 @@ fn cmd_subplan(cli: &Cli, command: SubplanCommand) -> Result<()> {
                     .join(file_name),
             )?;
             if target.exists() {
-                return Err(Codex1Error::ArtifactValidation(format!(
+                let error = Codex1Error::ArtifactValidation(format!(
                     "target already exists: {}",
                     target.display()
-                )));
+                ));
+                log_subplan_move_failed(&layout, target_state, &error, started.elapsed());
+                return Err(error);
             }
-            ensure_existing_contained(&layout.mission_dir, &source)?;
-            create_dir_all_contained(
+            if let Err(error) = ensure_existing_contained(&layout.mission_dir, &source) {
+                log_subplan_move_failed(&layout, target_state, &error, started.elapsed());
+                return Err(error);
+            }
+            if let Err(error) = create_dir_all_contained(
                 &layout.mission_dir,
                 Path::new("SUBPLANS").join(target_state.as_str()),
-            )?;
-            fs::rename(&source, &target).io_context(format!(
+            ) {
+                log_subplan_move_failed(&layout, target_state, &error, started.elapsed());
+                return Err(error);
+            }
+            if let Err(error) = fs::rename(&source, &target).io_context(format!(
                 "failed to move {} to {}",
                 source.display(),
                 target.display()
-            ))?;
+            )) {
+                log_subplan_move_failed(&layout, target_state, &error, started.elapsed());
+                return Err(error);
+            }
+            if let Ok(record) = event::EventRecord::subplan_moved(
+                &layout,
+                &source,
+                &target,
+                source_state,
+                target_state,
+                started.elapsed(),
+            ) {
+                if let Some(warning) = event::append_best_effort(&layout, &record) {
+                    warnings.push(warning);
+                }
+            }
+            let data = json!({
+                "from": source,
+                "to": target,
+            });
             if cli.json {
-                print_json(&envelope::success(json!({
-                    "from": source,
-                    "to": target,
-                })));
+                print_json(&envelope::success_with_warnings(data, warnings));
             } else {
+                print_event_warnings(&warnings);
                 println!("Moved subplan to {}", target.display());
             }
         }
@@ -251,8 +341,10 @@ fn cmd_subplan(cli: &Cli, command: SubplanCommand) -> Result<()> {
 }
 
 fn cmd_receipt(cli: &Cli, command: ReceiptCommand) -> Result<()> {
+    let started = Instant::now();
     let layout = resolve_layout(cli)?;
     layout.create_dirs()?;
+    let mut warnings = Vec::new();
     match command {
         ReceiptCommand::Append { message } => {
             let path = layout.receipts_dir().join("receipts.jsonl");
@@ -262,16 +354,38 @@ fn cmd_receipt(cli: &Cli, command: ReceiptCommand) -> Result<()> {
                 "timestamp": Utc::now(),
                 "message": message,
             });
-            let mut file = OpenOptions::new()
+            let mut file = match OpenOptions::new()
                 .create(true)
                 .append(true)
                 .open(&path)
-                .io_context(format!("failed to open {}", path.display()))?;
-            writeln!(file, "{record}")
-                .io_context(format!("failed to append {}", path.display()))?;
+                .io_context(format!("failed to open {}", path.display()))
+            {
+                Ok(file) => file,
+                Err(error) => {
+                    log_receipt_append_failed(&layout, &error, started.elapsed());
+                    return Err(error);
+                }
+            };
+            if let Err(error) = writeln!(file, "{record}")
+                .io_context(format!("failed to append {}", path.display()))
+            {
+                log_receipt_append_failed(&layout, &error, started.elapsed());
+                return Err(error);
+            }
+            if let Ok(record) =
+                event::EventRecord::receipt_appended(&layout, &path, started.elapsed())
+            {
+                if let Some(warning) = event::append_best_effort(&layout, &record) {
+                    warnings.push(warning);
+                }
+            }
             if cli.json {
-                print_json(&envelope::success(json!({ "path": path })));
+                print_json(&envelope::success_with_warnings(
+                    json!({ "path": path }),
+                    warnings,
+                ));
             } else {
+                print_event_warnings(&warnings);
                 println!("Appended optional receipt to {}", path.display());
             }
         }
@@ -280,22 +394,133 @@ fn cmd_receipt(cli: &Cli, command: ReceiptCommand) -> Result<()> {
 }
 
 fn cmd_loop(cli: &Cli, command: LoopCommand) -> Result<()> {
+    let started = Instant::now();
     let layout = resolve_layout(cli)?;
+    let mut warnings = Vec::new();
     let state = match command {
         LoopCommand::Start { mode, message } => {
             layout.create_dirs()?;
-            let state = LoopState::start(mode, message, &layout)?;
-            loop_state::write(&layout, &state)?;
+            let message_present = !message.trim().is_empty();
+            let mode_for_event = mode.clone();
+            let state = match LoopState::start(mode, message, &layout) {
+                Ok(state) => state,
+                Err(error) => {
+                    if should_log_failure_event(&error) {
+                        let record = event::EventRecord::loop_start_failed(
+                            &layout,
+                            &mode_for_event,
+                            message_present,
+                            error.code().as_str(),
+                            started.elapsed(),
+                        );
+                        let _ = event::append_best_effort(&layout, &record);
+                    }
+                    return Err(error);
+                }
+            };
+            if let Err(error) = loop_state::write(&layout, &state) {
+                if should_log_failure_event(&error) {
+                    let record = event::EventRecord::loop_start_failed(
+                        &layout,
+                        &state.mode,
+                        message_present,
+                        error.code().as_str(),
+                        started.elapsed(),
+                    );
+                    let _ = event::append_best_effort(&layout, &record);
+                }
+                return Err(error);
+            }
+            let record = event::EventRecord::loop_started(
+                &layout,
+                &state.mode,
+                message_present,
+                started.elapsed(),
+            );
+            if let Some(warning) = event::append_best_effort(&layout, &record) {
+                warnings.push(warning);
+            }
             state
         }
-        LoopCommand::Pause { reason } => loop_state::pause(&layout, reason)?,
-        LoopCommand::Resume => loop_state::resume(&layout)?,
-        LoopCommand::Stop { reason } => loop_state::stop(&layout, reason)?,
+        LoopCommand::Pause { reason } => {
+            let reason_present = reason
+                .as_ref()
+                .is_some_and(|value| !value.trim().is_empty());
+            let state = match loop_state::pause(&layout, reason) {
+                Ok(state) => state,
+                Err(error) => {
+                    if should_log_failure_event(&error) {
+                        let record = event::EventRecord::loop_pause_failed(
+                            &layout,
+                            reason_present,
+                            error.code().as_str(),
+                            started.elapsed(),
+                        );
+                        let _ = event::append_best_effort(&layout, &record);
+                    }
+                    return Err(error);
+                }
+            };
+            let record =
+                event::EventRecord::loop_paused(&layout, reason_present, started.elapsed());
+            if let Some(warning) = event::append_best_effort(&layout, &record) {
+                warnings.push(warning);
+            }
+            state
+        }
+        LoopCommand::Resume => {
+            let state = match loop_state::resume(&layout) {
+                Ok(state) => state,
+                Err(error) => {
+                    if should_log_failure_event(&error) {
+                        let record = event::EventRecord::loop_resume_failed(
+                            &layout,
+                            error.code().as_str(),
+                            started.elapsed(),
+                        );
+                        let _ = event::append_best_effort(&layout, &record);
+                    }
+                    return Err(error);
+                }
+            };
+            let record = event::EventRecord::loop_resumed(&layout, started.elapsed());
+            if let Some(warning) = event::append_best_effort(&layout, &record) {
+                warnings.push(warning);
+            }
+            state
+        }
+        LoopCommand::Stop { reason } => {
+            let reason_present = reason
+                .as_ref()
+                .is_some_and(|value| !value.trim().is_empty());
+            let state = match loop_state::stop(&layout, reason) {
+                Ok(state) => state,
+                Err(error) => {
+                    if should_log_failure_event(&error) {
+                        let record = event::EventRecord::loop_stop_failed(
+                            &layout,
+                            reason_present,
+                            error.code().as_str(),
+                            started.elapsed(),
+                        );
+                        let _ = event::append_best_effort(&layout, &record);
+                    }
+                    return Err(error);
+                }
+            };
+            let record =
+                event::EventRecord::loop_stopped(&layout, reason_present, started.elapsed());
+            if let Some(warning) = event::append_best_effort(&layout, &record) {
+                warnings.push(warning);
+            }
+            state
+        }
         LoopCommand::Status => loop_state::read(&layout)?,
     };
     if cli.json {
-        print_json(&envelope::success(state));
+        print_json(&envelope::success_with_warnings(state, warnings));
     } else {
+        print_event_warnings(&warnings);
         println!(
             "Loop active={} paused={} mode={}",
             state.active, state.paused, state.mode
@@ -548,6 +773,80 @@ fn find_subplan(layout: &MissionLayout, id: &str) -> Result<PathBuf> {
     }
 }
 
+fn subplan_lifecycle_for_path(path: &Path) -> Result<SubplanState> {
+    let lifecycle = path
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| Codex1Error::MissionPath("subplan path has no lifecycle folder".into()))?;
+    match lifecycle {
+        "ready" => Ok(SubplanState::Ready),
+        "active" => Ok(SubplanState::Active),
+        "done" => Ok(SubplanState::Done),
+        "paused" => Ok(SubplanState::Paused),
+        "superseded" => Ok(SubplanState::Superseded),
+        _ => Err(Codex1Error::MissionPath(format!(
+            "unknown subplan lifecycle folder: {lifecycle}"
+        ))),
+    }
+}
+
+fn log_artifact_write_failed(
+    layout: &MissionLayout,
+    kind: ArtifactKind,
+    template_version: u32,
+    overwrite: bool,
+    error: &Codex1Error,
+    duration: std::time::Duration,
+) {
+    if !should_log_failure_event(error) {
+        return;
+    }
+    let record = event::EventRecord::artifact_write_failed(
+        layout,
+        kind,
+        template_version,
+        overwrite,
+        error.code().as_str(),
+        duration,
+    );
+    let _ = event::append_best_effort(layout, &record);
+}
+
+fn log_subplan_move_failed(
+    layout: &MissionLayout,
+    target_state: SubplanState,
+    error: &Codex1Error,
+    duration: std::time::Duration,
+) {
+    if !should_log_failure_event(error) {
+        return;
+    }
+    let record = event::EventRecord::subplan_move_failed(
+        layout,
+        target_state,
+        error.code().as_str(),
+        duration,
+    );
+    let _ = event::append_best_effort(layout, &record);
+}
+
+fn log_receipt_append_failed(
+    layout: &MissionLayout,
+    error: &Codex1Error,
+    duration: std::time::Duration,
+) {
+    if !should_log_failure_event(error) {
+        return;
+    }
+    let record = event::EventRecord::receipt_append_failed(layout, error.code().as_str(), duration);
+    let _ = event::append_best_effort(layout, &record);
+}
+
+fn should_log_failure_event(error: &Codex1Error) -> bool {
+    !matches!(error, Codex1Error::MissionPath(_))
+}
+
 fn run_installed_command_check(current_exe: &Path) -> Result<Value> {
     let (binary, source, on_path) = match find_on_path("codex1") {
         Some(path) => (path, "path", true),
@@ -678,5 +977,11 @@ fn print_json<T: Serialize>(value: &T) {
         Err(_) => println!(
             r#"{{"ok":false,"error":{{"code":"IO_ERROR","message":"failed to serialize output"}}}}"#
         ),
+    }
+}
+
+fn print_event_warnings(warnings: &[event::EventWarning]) {
+    for warning in warnings {
+        eprintln!("{}: {}", warning.code, warning.message);
     }
 }
