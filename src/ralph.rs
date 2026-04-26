@@ -8,6 +8,7 @@ use serde::Serialize;
 use crate::layout::MissionLayout;
 use crate::loop_state::{self, LoopState};
 use crate::paths::{discover_repo_root, discover_repo_root_from};
+use crate::setup;
 
 #[derive(Debug, Deserialize)]
 struct StopHookInput {
@@ -70,6 +71,9 @@ pub fn stop_hook(repo_root: Option<PathBuf>, mission: Option<String>) -> StopHoo
         Ok(root) => root,
         Err(_) => return StopHookOutput::approve(),
     };
+    if !setup::ralph_should_scan_repo(&root) {
+        return StopHookOutput::approve();
+    }
     let active_loops = if let Some(id) = mission {
         let layout = match MissionLayout::new(root, id) {
             Ok(layout) => layout,

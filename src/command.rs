@@ -28,6 +28,7 @@ use crate::paths::{
 };
 use crate::ralph;
 use crate::render::{render_markdown, render_template_outline, AnswerValue, Answers};
+use crate::setup;
 use crate::template;
 
 pub fn run() -> ExitCode {
@@ -76,6 +77,7 @@ fn run_cli(cli: Cli) -> Result<()> {
         Commands::Receipt { command } => cmd_receipt(&cli, command),
         Commands::Loop { command } => cmd_loop(&cli, command),
         Commands::Ralph { command } => cmd_ralph(&cli, command),
+        Commands::Setup { command } => cmd_setup(&cli, command),
         Commands::Doctor => cmd_doctor(&cli),
     }
 }
@@ -537,6 +539,10 @@ fn cmd_ralph(cli: &Cli, command: RalphCommand) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn cmd_setup(cli: &Cli, command: crate::cli::SetupCommand) -> Result<()> {
+    setup::run(cli.json, command)
 }
 
 fn cmd_doctor(cli: &Cli) -> Result<()> {

@@ -11,6 +11,12 @@ pub enum ErrorCode {
     Template,
     Interview,
     Loop,
+    SetupArgument,
+    SetupConfigParse,
+    SetupConfigWrite,
+    SetupBackup,
+    SetupRestore,
+    SetupBundle,
 }
 
 impl ErrorCode {
@@ -23,6 +29,12 @@ impl ErrorCode {
             Self::Template => "TEMPLATE_ERROR",
             Self::Interview => "INTERVIEW_ERROR",
             Self::Loop => "LOOP_ERROR",
+            Self::SetupArgument => "SETUP_ARGUMENT_ERROR",
+            Self::SetupConfigParse => "SETUP_CONFIG_PARSE_ERROR",
+            Self::SetupConfigWrite => "SETUP_CONFIG_WRITE_ERROR",
+            Self::SetupBackup => "SETUP_BACKUP_ERROR",
+            Self::SetupRestore => "SETUP_RESTORE_ERROR",
+            Self::SetupBundle => "SETUP_BUNDLE_ERROR",
         }
     }
 }
@@ -41,6 +53,18 @@ pub enum Codex1Error {
     Interview(String),
     #[error("{0}")]
     Loop(String),
+    #[error("{0}")]
+    SetupArgument(String),
+    #[error("{0}")]
+    SetupConfigParse(String),
+    #[error("{0}")]
+    SetupConfigWrite(String),
+    #[error("{0}")]
+    SetupBackup(String),
+    #[error("{0}")]
+    SetupRestore(String),
+    #[error("{0}")]
+    SetupBundle(String),
     #[error("{context}: {source}")]
     Io {
         context: String,
@@ -64,6 +88,12 @@ impl Codex1Error {
             Self::Template(_) => ErrorCode::Template,
             Self::Interview(_) | Self::Json { .. } => ErrorCode::Interview,
             Self::Loop(_) => ErrorCode::Loop,
+            Self::SetupArgument(_) => ErrorCode::SetupArgument,
+            Self::SetupConfigParse(_) => ErrorCode::SetupConfigParse,
+            Self::SetupConfigWrite(_) => ErrorCode::SetupConfigWrite,
+            Self::SetupBackup(_) => ErrorCode::SetupBackup,
+            Self::SetupRestore(_) => ErrorCode::SetupRestore,
+            Self::SetupBundle(_) => ErrorCode::SetupBundle,
             Self::Io { .. } => ErrorCode::Io,
         }
     }

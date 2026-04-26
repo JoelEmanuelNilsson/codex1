@@ -51,6 +51,10 @@ pub enum Commands {
         #[command(subcommand)]
         command: RalphCommand,
     },
+    Setup {
+        #[command(subcommand)]
+        command: SetupCommand,
+    },
     Doctor,
 }
 
@@ -110,6 +114,90 @@ pub enum LoopCommand {
 #[derive(Clone, Debug, Subcommand)]
 pub enum RalphCommand {
     StopHook,
+}
+
+#[derive(Clone, Debug, Subcommand)]
+pub enum SetupCommand {
+    Install(SetupInstallArgs),
+    Enable(SetupRepoArgs),
+    Disable(SetupRepoArgs),
+    Uninstall(SetupUninstallArgs),
+    Migrate(SetupMigrateArgs),
+    Status(SetupRepoArgs),
+    Doctor(SetupRepoArgs),
+    Backups {
+        #[command(subcommand)]
+        command: SetupBackupsCommand,
+    },
+}
+
+#[derive(Clone, Debug, Args)]
+pub struct SetupInstallArgs {
+    #[arg(long, value_enum)]
+    pub mode: Option<SetupModeArg>,
+    #[arg(long, value_enum)]
+    pub scope: Option<SetupScopeArg>,
+    #[arg(long, value_name = "PATH")]
+    pub repo: Option<PathBuf>,
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Clone, Debug, Args)]
+pub struct SetupRepoArgs {
+    #[arg(long, value_name = "PATH")]
+    pub repo: Option<PathBuf>,
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Clone, Debug, Args)]
+pub struct SetupUninstallArgs {
+    #[arg(long, value_enum)]
+    pub scope: Option<SetupScopeArg>,
+    #[arg(long, value_name = "PATH")]
+    pub repo: Option<PathBuf>,
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Clone, Debug, Args)]
+pub struct SetupMigrateArgs {
+    #[arg(long, value_enum)]
+    pub to: SetupScopeArg,
+    #[arg(long, value_name = "PATH")]
+    pub repo: Option<PathBuf>,
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Clone, Debug, Subcommand)]
+pub enum SetupBackupsCommand {
+    List,
+    Restore(SetupBackupRestoreArgs),
+}
+
+#[derive(Clone, Debug, Args)]
+pub struct SetupBackupRestoreArgs {
+    pub id: String,
+    #[arg(long)]
+    pub force: bool,
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Clone, Debug, ValueEnum)]
+pub enum SetupModeArg {
+    Off,
+    Allowlist,
+    Denylist,
+    All,
+}
+
+#[derive(Clone, Debug, ValueEnum)]
+pub enum SetupScopeArg {
+    Global,
+    Project,
 }
 
 #[derive(Clone, Debug, ValueEnum)]
