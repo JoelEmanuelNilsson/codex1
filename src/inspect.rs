@@ -122,13 +122,17 @@ fn validate_frontmatter(
     warnings: &mut Vec<MechanicalWarning>,
 ) -> Result<()> {
     let text = fs::read_to_string(file).io_context(format!("failed to read {}", file.display()))?;
-    if !text.starts_with("---\n") {
+    if !has_valid_frontmatter(&text) {
         warnings.push(MechanicalWarning {
             code: "MALFORMED_FRONTMATTER",
             detail: display_inside(layout, file),
         });
     }
     Ok(())
+}
+
+fn has_valid_frontmatter(text: &str) -> bool {
+    text.starts_with("---\n") && text.lines().skip(1).any(|line| line == "---")
 }
 
 fn singleton_files(layout: &MissionLayout) -> Result<Vec<std::path::PathBuf>> {

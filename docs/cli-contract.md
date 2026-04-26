@@ -34,7 +34,7 @@ Error codes are mechanical: `ARGUMENT_ERROR`, `MISSION_PATH_ERROR`, `ARTIFACT_VA
 
 `template list` and `template show <kind>` expose built-in v1 templates. There are no project or user template overrides.
 
-`interview <kind> --answers <file>` validates answers and writes an artifact. Singleton artifacts fail on collision unless `--overwrite` is passed. Collection artifacts allocate unique numbered filenames.
+`interview <kind> --answers <file>` validates answers and writes an artifact. Singleton artifacts fail on collision unless `--overwrite` is passed. Collection artifacts allocate unique numbered filenames. JSON mode requires `--answers` so stdout remains a parseable envelope.
 
 `subplan move --id <id> --to <state>` safely moves one subplan file between lifecycle folders. It does not enforce one active subplan.
 
@@ -46,13 +46,13 @@ Error codes are mechanical: `ARGUMENT_ERROR`, `MISSION_PATH_ERROR`, `ARTIFACT_VA
 
 `ralph stop-hook` reads Stop-hook JSON from stdin and fails open unless explicit loop state says to block.
 
-`doctor` runs fast diagnostics for template registration, path validation basics, loop schema version, and the installed binary path.
+`doctor` runs fast diagnostics for template registration, path validation basics, loop schema version, the installed-command JSON envelope, and a loop/Ralph smoke check.
 
 ## Path Safety
 
 Mission IDs are limited to ASCII letters, digits, `-`, and `_`. Absolute paths, separators, NUL bytes, dot segments, hidden path tricks, and names containing `..` are rejected.
 
-Artifact writes are contained inside the mission directory and check symlink-resolved parents before writing.
+Artifact writes are contained inside the mission directory and check symlink-resolved parents before writing. Existing mission root components must be real directories, not symlinks.
 
 ## Non-Goals
 

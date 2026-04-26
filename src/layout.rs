@@ -1,11 +1,12 @@
 use std::fmt;
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use serde::Serialize;
 
-use crate::error::{Codex1Error, Result};
+use crate::error::{Codex1Error, IoContext, Result};
 use crate::paths::{create_dir_all_contained, safe_join, validate_mission_id};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize)]
@@ -138,6 +139,7 @@ impl MissionLayout {
         validate_mission_id(&mission_id)?;
         let missions_dir = repo_root.join(".codex1").join("missions");
         let mission_dir = missions_dir.join(&mission_id);
+        validate_existing_mission_path(&repo_root, &mission_id)?;
         Ok(Self {
             repo_root,
             mission_id,
@@ -261,9 +263,56 @@ impl MissionLayout {
     }
 }
 
+fn validate_existing_mission_path(repo_root: &Path, mission_id: &str) -> Result<()> {
+    let repo_real = fs::canonicalize(repo_root).io_context(format!(
+        "failed to canonicalize repo root {}",
+        repo_root.display()
+    ))?;
+    let components = [
+        PathBuf::from(".codex1"),
+        PathBuf::from(".codex1").join("missions"),
+        PathBuf::from(".codex1").join("missions").join(mission_id),
+    ];
+    for relative in components {
+        let path = repo_root.join(&relative);
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() {
+                    return Err(Codex1Error::MissionPath(format!(
+                        "mission path component must not be a symlink: {}",
+                        path.display()
+                    )));
+                }
+                if !metadata.is_dir() {
+                    return Err(Codex1Error::MissionPath(format!(
+                        "mission path component must be a directory: {}",
+                        path.display()
+                    )));
+                }
+                let real = fs::canonicalize(&path)
+                    .io_context(format!("failed to canonicalize {}", path.display()))?;
+                if !real.starts_with(&repo_real) {
+                    return Err(Codex1Error::MissionPath(format!(
+                        "mission path escapes repo root: {}",
+                        path.display()
+                    )));
+                }
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
+            Err(error) => {
+                return Err(Codex1Error::Io {
+                    context: format!("failed to inspect {}", path.display()),
+                    source: error,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Serialize)]
 pub struct ArtifactDescriptor {
-    pub kind: ArtifactKind,
+    pub kind: String,
     pub path: String,
 }
 
@@ -277,9 +326,19 @@ pub fn descriptors(layout: &MissionLayout) -> Vec<ArtifactDescriptor> {
                 layout.collection_dir(kind).ok()?
             };
             Some(ArtifactDescriptor {
-                kind,
+                kind: kind.as_str().to_string(),
                 path: path.display().to_string(),
             })
         })
+        .chain([
+            ArtifactDescriptor {
+                kind: "loop-state".into(),
+                path: layout.loop_file().display().to_string(),
+            },
+            ArtifactDescriptor {
+                kind: "receipts".into(),
+                path: layout.receipts_dir().display().to_string(),
+            },
+        ])
         .collect()
 }

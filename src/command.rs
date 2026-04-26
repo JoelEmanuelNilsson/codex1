@@ -1,13 +1,14 @@
+use std::env;
 use std::fs::{self, OpenOptions};
 use std::io::{self, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{Command, ExitCode, Output};
 
 use chrono::Utc;
 use clap::error::ErrorKind;
 use clap::Parser;
 use serde::Serialize;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::cli::{
     Cli, Commands, InterviewArgs, LoopCommand, RalphCommand, ReceiptCommand, SubplanCommand,
@@ -136,6 +137,11 @@ fn cmd_template(cli: &Cli, command: TemplateCommand) -> Result<()> {
 
 fn cmd_interview(cli: &Cli, args: InterviewArgs) -> Result<()> {
     let layout = resolve_layout(cli)?;
+    if cli.json && args.answers.is_none() {
+        return Err(Codex1Error::Argument(
+            "interactive interviews in --json mode require --answers".into(),
+        ));
+    }
     layout.create_dirs()?;
     let kind: ArtifactKind = args.kind.into();
     let template = template::get(kind);
@@ -311,12 +317,16 @@ fn cmd_ralph(cli: &Cli, command: RalphCommand) -> Result<()> {
 fn cmd_doctor(cli: &Cli) -> Result<()> {
     template::validate_registry()?;
     validate_mission_id("doctor-smoke")?;
-    let exe = std::env::current_exe().io_context("failed to resolve current executable")?;
+    let exe = env::current_exe().io_context("failed to resolve current executable")?;
+    let installed_command = run_installed_command_check(&exe)?;
+    let loop_ralph_smoke = run_loop_ralph_smoke(&exe)?;
     let data = json!({
         "binary": exe,
         "templates_registered": template::all().len(),
         "mission_id_validation": "ok",
         "loop_schema_version": 1,
+        "installed_command": installed_command,
+        "loop_ralph_smoke": loop_ralph_smoke,
         "anti_oracle": "inspect reports inventory and mechanical warnings only",
     });
     if cli.json {
@@ -536,6 +546,130 @@ fn find_subplan(layout: &MissionLayout, id: &str) -> Result<PathBuf> {
             "multiple subplans matched id {id}"
         ))),
     }
+}
+
+fn run_installed_command_check(current_exe: &Path) -> Result<Value> {
+    let (binary, source, on_path) = match find_on_path("codex1") {
+        Some(path) => (path, "path", true),
+        None => (current_exe.to_path_buf(), "current-exe", false),
+    };
+    let output = run_command(Command::new(&binary).current_dir(env::temp_dir()).args([
+        "--json",
+        "--mission",
+        "../bad",
+        "init",
+    ]))?;
+    let value = parse_json_output(&output, "installed command JSON-envelope smoke")?;
+    let json_error_envelope = value.get("ok") == Some(&Value::Bool(false))
+        && value
+            .get("error")
+            .and_then(Value::as_object)
+            .and_then(|error| error.get("code"))
+            .and_then(Value::as_str)
+            .is_some();
+    if !json_error_envelope {
+        return Err(Codex1Error::Argument(
+            "installed command did not emit a JSON error envelope".into(),
+        ));
+    }
+    Ok(json!({
+        "binary": binary,
+        "source": source,
+        "on_path": on_path,
+        "json_error_envelope": true,
+    }))
+}
+
+fn find_on_path(name: &str) -> Option<PathBuf> {
+    let executable_name = format!("{name}{}", env::consts::EXE_SUFFIX);
+    env::split_paths(&env::var_os("PATH")?)
+        .map(|dir| dir.join(&executable_name))
+        .find(|candidate| candidate.is_file())
+}
+
+fn run_loop_ralph_smoke(current_exe: &Path) -> Result<Value> {
+    let root = env::temp_dir().join(format!(
+        "codex1-doctor-{}-{}",
+        std::process::id(),
+        Utc::now().timestamp_nanos_opt().unwrap_or(0)
+    ));
+    fs::create_dir(&root).io_context(format!("failed to create {}", root.display()))?;
+    let result = run_loop_ralph_smoke_in(current_exe, &root);
+    let _ = fs::remove_dir_all(&root);
+    result
+}
+
+fn run_loop_ralph_smoke_in(current_exe: &Path, root: &Path) -> Result<Value> {
+    fs::create_dir(root.join(".git"))
+        .io_context(format!("failed to create {}", root.join(".git").display()))?;
+
+    let init = run_command(
+        Command::new(current_exe)
+            .current_dir(root)
+            .args(["--json", "--repo-root"])
+            .arg(root)
+            .args(["--mission", "smoke", "init"]),
+    )?;
+    ensure_json_success(&init, "doctor init smoke")?;
+
+    let start = run_command(
+        Command::new(current_exe)
+            .current_dir(root)
+            .args(["--json", "--repo-root"])
+            .arg(root)
+            .args([
+                "--mission",
+                "smoke",
+                "loop",
+                "start",
+                "--mode",
+                "doctor",
+                "--message",
+                "Doctor continuation smoke.",
+            ]),
+    )?;
+    ensure_json_success(&start, "doctor loop smoke")?;
+
+    let ralph = run_command(
+        Command::new(current_exe)
+            .current_dir(root)
+            .args(["--repo-root"])
+            .arg(root)
+            .args(["--mission", "smoke", "ralph", "stop-hook"]),
+    )?;
+    let value = parse_json_output(&ralph, "doctor Ralph smoke")?;
+    if value.get("decision").and_then(Value::as_str) != Some("block") {
+        return Err(Codex1Error::Loop(
+            "Ralph smoke did not block an active loop".into(),
+        ));
+    }
+    Ok(json!({ "blocked": true }))
+}
+
+fn ensure_json_success(output: &Output, label: &str) -> Result<Value> {
+    let value = parse_json_output(output, label)?;
+    if value.get("ok") != Some(&Value::Bool(true)) {
+        return Err(Codex1Error::Argument(format!(
+            "{label} did not emit a success envelope"
+        )));
+    }
+    Ok(value)
+}
+
+fn parse_json_output(output: &Output, label: &str) -> Result<Value> {
+    serde_json::from_slice(&output.stdout).map_err(|source| {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Codex1Error::Argument(format!(
+            "{label} emitted invalid JSON: {source}; stdout={stdout:?}; stderr={stderr:?}"
+        ))
+    })
+}
+
+fn run_command(command: &mut Command) -> Result<Output> {
+    command
+        .output()
+        .io_context(format!("failed to run diagnostic command: {command:?}"))
 }
 
 fn print_json<T: Serialize>(value: &T) {

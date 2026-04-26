@@ -74,6 +74,13 @@ fn init_returns_success_envelope() {
             .args(["--mission", "alpha", "init"]),
     );
     assert_eq!(value["ok"], true);
+    let descriptors = value["data"]["artifacts"].as_array().unwrap();
+    assert!(descriptors
+        .iter()
+        .any(|descriptor| descriptor["kind"] == "loop-state"));
+    assert!(descriptors
+        .iter()
+        .any(|descriptor| descriptor["kind"] == "receipts"));
     assert!(repo
         .path()
         .join(".codex1/missions/alpha/SUBPLANS/ready")
@@ -87,6 +94,22 @@ fn argument_errors_can_be_json() {
         .assert()
         .failure()
         .stdout(predicate::str::contains("ARGUMENT_ERROR"));
+}
+
+#[test]
+fn interactive_json_interview_requires_answers_file() {
+    let repo = repo();
+    let output = bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["--mission", "alpha", "interview", "prd"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "ARGUMENT_ERROR");
+    assert!(!repo.path().join(".codex1/missions/alpha").exists());
 }
 
 #[test]
@@ -479,6 +502,95 @@ fn ralph_fails_open_for_symlinked_loop_state() {
     assert!(allow.as_object().unwrap().get("decision").is_none());
 }
 
+#[cfg(unix)]
+#[test]
+fn symlinked_mission_root_is_rejected_before_reads() {
+    let repo = repo();
+    let external = tempfile::tempdir().unwrap();
+    init(&repo, "alpha");
+    fs::create_dir_all(external.path().join(".codex1")).unwrap();
+    fs::write(
+        external.path().join(".codex1/LOOP.json"),
+        r#"{
+          "version": 1,
+          "active": true,
+          "paused": false,
+          "mode": "autopilot",
+          "message": "External mission should not be trusted.",
+          "pause_command": "codex1 --mission=alpha loop pause --reason <reason>",
+          "stop_command": "codex1 --mission=alpha loop stop --reason <reason>",
+          "updated_at": "2026-04-26T00:00:00Z"
+        }"#,
+    )
+    .unwrap();
+    let mission_dir = repo.path().join(".codex1/missions/alpha");
+    fs::remove_dir_all(&mission_dir).unwrap();
+    symlink(external.path(), &mission_dir).unwrap();
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["--mission", "alpha", "loop", "status"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("MISSION_PATH_ERROR"));
+
+    let allow = json_output_with_stdin(
+        bin().args(["--repo-root"]).arg(repo.path()).args([
+            "--mission",
+            "alpha",
+            "ralph",
+            "stop-hook",
+        ]),
+        "{}".to_string(),
+    );
+    assert!(allow.as_object().unwrap().get("decision").is_none());
+}
+
+#[cfg(unix)]
+#[test]
+fn symlinked_missions_directory_is_not_scanned_by_ralph() {
+    let repo = repo();
+    let external = tempfile::tempdir().unwrap();
+    init(&repo, "alpha");
+    fs::create_dir_all(external.path().join("alpha/.codex1")).unwrap();
+    fs::write(
+        external.path().join("alpha/.codex1/LOOP.json"),
+        r#"{
+          "version": 1,
+          "active": true,
+          "paused": false,
+          "mode": "autopilot",
+          "message": "External missions directory should not be scanned.",
+          "pause_command": "codex1 --mission=alpha loop pause --reason <reason>",
+          "stop_command": "codex1 --mission=alpha loop stop --reason <reason>",
+          "updated_at": "2026-04-26T00:00:00Z"
+        }"#,
+    )
+    .unwrap();
+    let missions_dir = repo.path().join(".codex1/missions");
+    fs::remove_dir_all(&missions_dir).unwrap();
+    symlink(external.path(), &missions_dir).unwrap();
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["--mission", "alpha", "loop", "status"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("MISSION_PATH_ERROR"));
+
+    let mut command = bin();
+    command
+        .current_dir(repo.path())
+        .args(["ralph", "stop-hook"]);
+    let allow = json_output_with_stdin(
+        &mut command,
+        format!(r#"{{"cwd":"{}"}}"#, repo.path().display()),
+    );
+    assert!(allow.as_object().unwrap().get("decision").is_none());
+}
+
 #[test]
 fn repeatable_answers_file_sections_must_be_arrays() {
     let repo = repo();
@@ -518,6 +630,17 @@ fn loop_status_does_not_create_missing_mission() {
         .failure();
 
     assert!(!repo.path().join(".codex1/missions/typo").exists());
+}
+
+#[test]
+fn doctor_runs_installed_command_and_loop_smoke() {
+    let value = json_output(bin().args(["--json", "doctor"]));
+    assert_eq!(value["ok"], true);
+    assert_eq!(
+        value["data"]["installed_command"]["json_error_envelope"],
+        true
+    );
+    assert_eq!(value["data"]["loop_ralph_smoke"]["blocked"], true);
 }
 
 #[cfg(unix)]
@@ -822,6 +945,33 @@ fn inspect_warns_on_malformed_collection_frontmatter() {
                 .as_str()
                 .unwrap()
                 .contains("SPECS/0001-bad.md")
+    }));
+}
+
+#[test]
+fn inspect_warns_on_unterminated_collection_frontmatter() {
+    let repo = repo();
+    init(&repo, "alpha");
+    fs::write(
+        repo.path()
+            .join(".codex1/missions/alpha/SPECS/0001-unterminated.md"),
+        "---\ntemplate_version: 1\n# Missing Close\n",
+    )
+    .unwrap();
+
+    let value = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["--mission", "alpha", "inspect"]),
+    );
+    let warnings = value["data"]["mechanical_warnings"].as_array().unwrap();
+    assert!(warnings.iter().any(|warning| {
+        warning["code"] == "MALFORMED_FRONTMATTER"
+            && warning["detail"]
+                .as_str()
+                .unwrap()
+                .contains("SPECS/0001-unterminated.md")
     }));
 }
 

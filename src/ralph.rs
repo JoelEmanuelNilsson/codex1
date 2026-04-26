@@ -100,6 +100,12 @@ fn active_loop_for_layout(layout: MissionLayout) -> Option<(MissionLayout, LoopS
 
 fn active_loops_under_repo(root: &std::path::Path) -> Vec<(MissionLayout, LoopState)> {
     let missions_dir = root.join(".codex1").join("missions");
+    let Ok(metadata) = fs::symlink_metadata(&missions_dir) else {
+        return Vec::new();
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Vec::new();
+    }
     let Ok(entries) = fs::read_dir(missions_dir) else {
         return Vec::new();
     };
