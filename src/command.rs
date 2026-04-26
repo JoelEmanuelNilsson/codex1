@@ -275,9 +275,9 @@ fn cmd_receipt(cli: &Cli, command: ReceiptCommand) -> Result<()> {
 
 fn cmd_loop(cli: &Cli, command: LoopCommand) -> Result<()> {
     let layout = resolve_layout(cli)?;
-    layout.create_dirs()?;
     let state = match command {
         LoopCommand::Start { mode, message } => {
+            layout.create_dirs()?;
             let state = LoopState::start(mode, message, &layout)?;
             loop_state::write(&layout, &state)?;
             state
@@ -378,6 +378,9 @@ fn artifact_write_path(
         _ => kind.title(),
     };
     let base = slug(title);
+    if kind == ArtifactKind::Subplan {
+        return allocate_subplan_path(layout, &base);
+    }
     for index in 1..10_000 {
         let name = format!("{index:04}-{base}.md");
         let candidate = dir.join(&name);
@@ -391,6 +394,69 @@ fn artifact_write_path(
         "could not allocate unique filename for {}",
         kind
     )))
+}
+
+fn allocate_subplan_path(layout: &MissionLayout, base: &str) -> Result<PathBuf> {
+    let mut max_index = 0;
+    for state in SubplanState::ALL {
+        let dir = layout.subplans_dir().join(state.as_str());
+        let Ok(metadata) = fs::symlink_metadata(&dir) else {
+            continue;
+        };
+        if metadata.file_type().is_symlink() {
+            return Err(Codex1Error::MissionPath(format!(
+                "subplan lifecycle directory must not be a symlink: {}",
+                dir.display()
+            )));
+        }
+        if !metadata.is_dir() {
+            continue;
+        }
+        ensure_existing_contained(&layout.mission_dir, &dir)?;
+        for entry in fs::read_dir(&dir).io_context(format!("failed to read {}", dir.display()))? {
+            let entry = entry.io_context(format!("failed to read entry in {}", dir.display()))?;
+            let file_type = entry
+                .file_type()
+                .io_context(format!("failed to inspect entry in {}", dir.display()))?;
+            if file_type.is_symlink() {
+                return Err(Codex1Error::MissionPath(format!(
+                    "subplan file must not be a symlink: {}",
+                    entry.path().display()
+                )));
+            }
+            if !file_type.is_file() {
+                continue;
+            }
+            let path = entry.path();
+            ensure_existing_contained(&layout.mission_dir, &path)?;
+            let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            let Some((prefix, suffix)) = file_name.split_once('-') else {
+                continue;
+            };
+            if suffix == format!("{base}.md") {
+                if let Ok(index) = prefix.parse::<usize>() {
+                    max_index = max_index.max(index);
+                }
+            }
+        }
+    }
+
+    let index = max_index + 1;
+    if index >= 10_000 {
+        return Err(Codex1Error::ArtifactValidation(format!(
+            "could not allocate unique filename for subplan {}",
+            base
+        )));
+    }
+    let name = format!("{index:04}-{base}.md");
+    safe_join(
+        &layout.mission_dir,
+        Path::new("SUBPLANS")
+            .join(SubplanState::Ready.as_str())
+            .join(name),
+    )
 }
 
 fn write_new_or_overwrite(

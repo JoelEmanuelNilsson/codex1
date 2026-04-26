@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Codex1Error, IoContext, Result};
 use crate::layout::MissionLayout;
-use crate::paths::{create_dir_all_contained, ensure_contained_for_write};
+use crate::paths::{
+    create_dir_all_contained, ensure_contained_for_write, ensure_existing_contained,
+};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct LoopState {
@@ -15,6 +17,8 @@ pub struct LoopState {
     pub mode: String,
     pub message: String,
     pub pause_command: String,
+    #[serde(default)]
+    pub stop_command: String,
     pub updated_at: DateTime<Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pause_reason: Option<String>,
@@ -33,10 +37,8 @@ impl LoopState {
             paused: false,
             mode,
             message,
-            pause_command: format!(
-                "codex1 --mission {} loop pause --reason <reason>",
-                layout.mission_id
-            ),
+            pause_command: pause_command(layout),
+            stop_command: stop_command(layout),
             updated_at: Utc::now(),
             pause_reason: None,
             stop_reason: None,
@@ -56,12 +58,33 @@ impl LoopState {
 
 pub fn read(layout: &MissionLayout) -> Result<LoopState> {
     let path = layout.loop_file();
+    ensure_existing_contained(&layout.mission_dir, &path)?;
     let text =
         fs::read_to_string(&path).io_context(format!("failed to read {}", path.display()))?;
-    let state: LoopState = serde_json::from_str(&text)
+    let mut state: LoopState = serde_json::from_str(&text)
         .map_err(|source| Codex1Error::Loop(format!("failed to parse loop state: {source}")))?;
     state.validate()?;
+    if state.pause_command.trim().is_empty() {
+        state.pause_command = pause_command(layout);
+    }
+    if state.stop_command.trim().is_empty() {
+        state.stop_command = stop_command(layout);
+    }
     Ok(state)
+}
+
+pub fn pause_command(layout: &MissionLayout) -> String {
+    format!(
+        "codex1 --mission={} loop pause --reason <reason>",
+        layout.mission_id
+    )
+}
+
+pub fn stop_command(layout: &MissionLayout) -> String {
+    format!(
+        "codex1 --mission={} loop stop --reason <reason>",
+        layout.mission_id
+    )
 }
 
 pub fn read_optional(layout: &MissionLayout) -> Option<LoopState> {

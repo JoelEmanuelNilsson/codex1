@@ -12,6 +12,11 @@ pub fn validate_mission_id(id: &str) -> Result<()> {
             "mission id must not be empty".into(),
         ));
     }
+    if !id.chars().next().is_some_and(|c| c.is_ascii_alphanumeric()) {
+        return Err(Codex1Error::MissionPath(
+            "mission id must start with an ASCII letter or digit".into(),
+        ));
+    }
     if id.starts_with('.') {
         return Err(Codex1Error::MissionPath(
             "mission id must not start with a dot".into(),
@@ -54,15 +59,19 @@ pub fn discover_repo_root_from(start: &Path) -> Result<PathBuf> {
         absolutize_existing_or_parent(start)?
     };
     let mut current = original.clone();
+    let mut cargo_fallback = None;
     loop {
-        if current.join(".git").exists() || current.join("Cargo.toml").exists() {
+        if current.join(".git").exists() {
             return Ok(current);
+        }
+        if cargo_fallback.is_none() && current.join("Cargo.toml").exists() {
+            cargo_fallback = Some(current.clone());
         }
         if !current.pop() {
             break;
         }
     }
-    Ok(original)
+    Ok(cargo_fallback.unwrap_or(original))
 }
 
 fn absolutize_existing_or_parent(path: &Path) -> Result<PathBuf> {
@@ -296,6 +305,8 @@ mod tests {
             ".",
             "..",
             ".hidden",
+            "-hidden",
+            "_hidden",
             "../x",
             "x/y",
             "x\\y",

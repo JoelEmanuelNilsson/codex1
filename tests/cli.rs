@@ -102,6 +102,36 @@ fn unsafe_mission_id_is_rejected() {
 }
 
 #[test]
+fn leading_hyphen_mission_id_is_rejected() {
+    let repo = repo();
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .arg("--mission=-bad")
+        .arg("init")
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("MISSION_PATH_ERROR"));
+}
+
+#[test]
+fn nested_cargo_manifest_uses_outer_git_repo_root() {
+    let repo = repo();
+    let nested = repo.path().join("crates/inner");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(nested.join("Cargo.toml"), "[package]\nname = \"inner\"\n").unwrap();
+
+    bin()
+        .current_dir(&nested)
+        .args(["--mission", "alpha", "init"])
+        .assert()
+        .success();
+
+    assert!(repo.path().join(".codex1/missions/alpha").is_dir());
+    assert!(!nested.join(".codex1/missions/alpha").exists());
+}
+
+#[test]
 fn prd_interview_writes_artifact_and_respects_collision_policy() {
     let repo = repo();
     init(&repo, "alpha");
@@ -335,6 +365,121 @@ fn ralph_resolves_repo_root_from_hook_cwd_when_invoked_elsewhere() {
 }
 
 #[test]
+fn ralph_blocks_from_normal_repo_cwd_for_single_active_loop() {
+    let repo = repo();
+    init(&repo, "alpha");
+
+    bin()
+        .args(["--repo-root"])
+        .arg(repo.path())
+        .args([
+            "--mission",
+            "alpha",
+            "loop",
+            "start",
+            "--mode",
+            "autopilot",
+            "--message",
+            "Continue from repo cwd.",
+        ])
+        .assert()
+        .success();
+
+    let mut command = bin();
+    command
+        .current_dir(repo.path())
+        .args(["ralph", "stop-hook"]);
+    let block = json_output_with_stdin(
+        &mut command,
+        format!(r#"{{"cwd":"{}"}}"#, repo.path().display()),
+    );
+    assert_eq!(block["decision"], "block");
+    let reason = block["reason"].as_str().unwrap();
+    assert!(reason.contains("Continue from repo cwd."));
+    assert!(reason.contains("codex1 --mission=alpha loop pause"));
+    assert!(reason.contains("codex1 --mission=alpha loop stop"));
+}
+
+#[test]
+fn ralph_blocks_with_deterministic_guidance_for_multiple_active_loops() {
+    let repo = repo();
+    init(&repo, "beta");
+    init(&repo, "alpha");
+
+    for (mission, message) in [("beta", "Continue beta."), ("alpha", "Continue alpha.")] {
+        bin()
+            .args(["--repo-root"])
+            .arg(repo.path())
+            .args([
+                "--mission",
+                mission,
+                "loop",
+                "start",
+                "--mode",
+                "autopilot",
+                "--message",
+                message,
+            ])
+            .assert()
+            .success();
+    }
+
+    let mut command = bin();
+    command
+        .current_dir(repo.path())
+        .args(["ralph", "stop-hook"]);
+    let block = json_output_with_stdin(
+        &mut command,
+        format!(r#"{{"cwd":"{}"}}"#, repo.path().display()),
+    );
+    assert_eq!(block["decision"], "block");
+    let reason = block["reason"].as_str().unwrap();
+    assert!(reason.contains("Multiple active Codex1 loops exist"));
+    assert!(reason.find("- alpha:").unwrap() < reason.find("- beta:").unwrap());
+    assert!(reason.contains("codex1 --mission=alpha loop pause"));
+    assert!(reason.contains("codex1 --mission=beta loop stop"));
+}
+
+#[cfg(unix)]
+#[test]
+fn ralph_fails_open_for_symlinked_loop_state() {
+    let repo = repo();
+    let external = tempfile::tempdir().unwrap();
+    init(&repo, "alpha");
+    let mission_dir = repo.path().join(".codex1/missions/alpha");
+    fs::write(
+        external.path().join("LOOP.json"),
+        r#"{
+          "version": 1,
+          "active": true,
+          "paused": false,
+          "mode": "autopilot",
+          "message": "External loop should not block.",
+          "pause_command": "codex1 --mission=alpha loop pause --reason <reason>",
+          "stop_command": "codex1 --mission=alpha loop stop --reason <reason>",
+          "updated_at": "2026-04-26T00:00:00Z"
+        }"#,
+    )
+    .unwrap();
+    symlink(
+        external.path().join("LOOP.json"),
+        mission_dir.join(".codex1/LOOP.json"),
+    )
+    .unwrap();
+
+    let allow = json_output_with_stdin(
+        bin().args(["--repo-root"]).arg(repo.path()).args([
+            "--mission",
+            "alpha",
+            "ralph",
+            "stop-hook",
+        ]),
+        "{}".to_string(),
+    );
+    assert!(allow.as_object().unwrap().get("decision").is_none());
+}
+
+#[test]
 fn repeatable_answers_file_sections_must_be_arrays() {
     let repo = repo();
     init(&repo, "alpha");
@@ -360,6 +505,19 @@ fn repeatable_answers_file_sections_must_be_arrays() {
         .assert()
         .failure()
         .stdout(predicate::str::contains("must be a list of strings"));
+}
+
+#[test]
+fn loop_status_does_not_create_missing_mission() {
+    let repo = repo();
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["--mission", "typo", "loop", "status"])
+        .assert()
+        .failure();
+
+    assert!(!repo.path().join(".codex1/missions/typo").exists());
 }
 
 #[cfg(unix)]
@@ -638,4 +796,107 @@ fn review_template_accepts_structured_finding_fields() {
     assert!(rendered.contains("<!-- codex1-section: finding_priorities -->"));
     assert!(rendered.contains("<!-- codex1-section: finding_locations -->"));
     assert!(rendered.contains("<!-- codex1-section: finding_rationales -->"));
+}
+
+#[test]
+fn inspect_warns_on_malformed_collection_frontmatter() {
+    let repo = repo();
+    init(&repo, "alpha");
+    fs::write(
+        repo.path().join(".codex1/missions/alpha/SPECS/0001-bad.md"),
+        "# Missing Frontmatter\n",
+    )
+    .unwrap();
+
+    let value = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["--mission", "alpha", "inspect"]),
+    );
+    assert_eq!(value["data"]["artifacts"]["specs"], 1);
+    let warnings = value["data"]["mechanical_warnings"].as_array().unwrap();
+    assert!(warnings.iter().any(|warning| {
+        warning["code"] == "MALFORMED_FRONTMATTER"
+            && warning["detail"]
+                .as_str()
+                .unwrap()
+                .contains("SPECS/0001-bad.md")
+    }));
+}
+
+#[test]
+fn subplan_ids_stay_unique_across_lifecycle_folders() {
+    let repo = repo();
+    init(&repo, "alpha");
+    let answers = repo.path().join("subplan.json");
+    fs::write(
+        &answers,
+        r#"{
+          "title": "Repeat Slice",
+          "goal": "Do the repeated slice",
+          "linked_prd": "PRD.md",
+          "linked_plan": "PLAN.md",
+          "owner": "main",
+          "scope": ["CLI"],
+          "steps": ["write file"],
+          "expected_proof": ["test"],
+          "exit_criteria": ["done"]
+        }"#,
+    )
+    .unwrap();
+
+    bin()
+        .args(["--repo-root"])
+        .arg(repo.path())
+        .args(["--mission", "alpha", "interview", "subplan", "--answers"])
+        .arg(&answers)
+        .assert()
+        .success();
+    bin()
+        .args(["--repo-root"])
+        .arg(repo.path())
+        .args([
+            "--mission",
+            "alpha",
+            "subplan",
+            "move",
+            "--id",
+            "0001-repeat-slice",
+            "--to",
+            "active",
+        ])
+        .assert()
+        .success();
+    bin()
+        .args(["--repo-root"])
+        .arg(repo.path())
+        .args(["--mission", "alpha", "interview", "subplan", "--answers"])
+        .arg(&answers)
+        .assert()
+        .success();
+
+    assert!(repo
+        .path()
+        .join(".codex1/missions/alpha/SUBPLANS/active/0001-repeat-slice.md")
+        .is_file());
+    assert!(repo
+        .path()
+        .join(".codex1/missions/alpha/SUBPLANS/ready/0002-repeat-slice.md")
+        .is_file());
+    bin()
+        .args(["--repo-root"])
+        .arg(repo.path())
+        .args([
+            "--mission",
+            "alpha",
+            "subplan",
+            "move",
+            "--id",
+            "0002-repeat-slice",
+            "--to",
+            "done",
+        ])
+        .assert()
+        .success();
 }

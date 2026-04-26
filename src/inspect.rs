@@ -97,16 +97,16 @@ pub fn inspect(layout: &MissionLayout) -> Result<Inventory> {
 
     for file in singleton_files(layout)? {
         if regular_file_exists(layout, &file, &mut warnings)? {
-            let text = fs::read_to_string(&file)
-                .io_context(format!("failed to read {}", file.display()))?;
-            if !text.starts_with("---\n") {
-                warnings.push(MechanicalWarning {
-                    code: "MALFORMED_FRONTMATTER",
-                    detail: display_inside(layout, &file),
-                });
-            }
+            validate_frontmatter(layout, &file, &mut warnings)?;
         }
     }
+    validate_collection_frontmatter(layout, &layout.research_dir(), false, &mut warnings)?;
+    validate_collection_frontmatter(layout, &layout.specs_dir(), false, &mut warnings)?;
+    validate_collection_frontmatter(layout, &layout.subplans_dir(), true, &mut warnings)?;
+    validate_collection_frontmatter(layout, &layout.adrs_dir(), false, &mut warnings)?;
+    validate_collection_frontmatter(layout, &layout.reviews_dir(), false, &mut warnings)?;
+    validate_collection_frontmatter(layout, &layout.triage_dir(), false, &mut warnings)?;
+    validate_collection_frontmatter(layout, &layout.proofs_dir(), false, &mut warnings)?;
 
     Ok(Inventory {
         mission_id: layout.mission_id.clone(),
@@ -114,6 +114,21 @@ pub fn inspect(layout: &MissionLayout) -> Result<Inventory> {
         artifacts: counts,
         mechanical_warnings: warnings,
     })
+}
+
+fn validate_frontmatter(
+    layout: &MissionLayout,
+    file: &Path,
+    warnings: &mut Vec<MechanicalWarning>,
+) -> Result<()> {
+    let text = fs::read_to_string(file).io_context(format!("failed to read {}", file.display()))?;
+    if !text.starts_with("---\n") {
+        warnings.push(MechanicalWarning {
+            code: "MALFORMED_FRONTMATTER",
+            detail: display_inside(layout, file),
+        });
+    }
+    Ok(())
 }
 
 fn singleton_files(layout: &MissionLayout) -> Result<Vec<std::path::PathBuf>> {
@@ -263,6 +278,45 @@ fn count_matching(
         }
     }
     Ok(count)
+}
+
+fn validate_collection_frontmatter(
+    layout: &MissionLayout,
+    dir: &Path,
+    recursive: bool,
+    warnings: &mut Vec<MechanicalWarning>,
+) -> Result<()> {
+    match fs::symlink_metadata(dir) {
+        Ok(metadata) if metadata.file_type().is_symlink() => return Ok(()),
+        Ok(metadata) if metadata.is_dir() => {}
+        Ok(_) => return Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(crate::error::Codex1Error::Io {
+                context: format!("failed to inspect {}", dir.display()),
+                source: error,
+            })
+        }
+    }
+
+    for entry in fs::read_dir(dir).io_context(format!("failed to read {}", dir.display()))? {
+        let entry = entry.io_context(format!("failed to read entry in {}", dir.display()))?;
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .io_context(format!("failed to inspect entry in {}", dir.display()))?;
+        if file_type.is_symlink() {
+            continue;
+        }
+        if recursive && file_type.is_dir() {
+            validate_collection_frontmatter(layout, &path, true, warnings)?;
+        } else if file_type.is_file()
+            && path.extension().and_then(|value| value.to_str()) == Some("md")
+        {
+            validate_frontmatter(layout, &path, warnings)?;
+        }
+    }
+    Ok(())
 }
 
 fn display_inside(layout: &MissionLayout, path: &Path) -> String {
