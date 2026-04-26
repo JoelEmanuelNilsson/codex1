@@ -9,7 +9,9 @@ use serde_json::{json, Value};
 
 use crate::error::{Codex1Error, IoContext, Result};
 use crate::layout::{ArtifactKind, MissionLayout, SubplanState};
-use crate::paths::{create_dir_all_contained, ensure_contained_for_write};
+use crate::paths::{
+    create_dir_all_contained, ensure_contained_for_write, ensure_existing_contained,
+};
 
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -385,7 +387,11 @@ pub fn scan(layout: &MissionLayout) -> Result<EventLogScan> {
                 warnings,
             });
         }
-        Ok(metadata) if metadata.is_file() => {}
+        Ok(metadata) if metadata.is_file() => {
+            if let Err(error) = ensure_existing_contained(&layout.mission_dir, &path) {
+                return handle_unsafe_scan_path(layout, &path, error, warnings);
+            }
+        }
         Ok(_) => {
             warnings.push(EventLogScanWarning {
                 code: "EVENT_LOG_NOT_FILE",
@@ -460,6 +466,7 @@ fn append(layout: &MissionLayout, record: &EventRecord) -> Result<()> {
     create_dir_all_contained(&layout.mission_dir, ".codex1")?;
     let path = layout.event_log();
     ensure_contained_for_write(&layout.mission_dir, &path)?;
+    ensure_append_target_is_regular_file(&path)?;
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
@@ -470,6 +477,46 @@ fn append(layout: &MissionLayout, record: &EventRecord) -> Result<()> {
         source: std::io::Error::new(std::io::ErrorKind::InvalidData, source),
     })?;
     writeln!(file, "{line}").io_context(format!("failed to append {}", path.display()))
+}
+
+fn handle_unsafe_scan_path(
+    layout: &MissionLayout,
+    path: &Path,
+    error: Codex1Error,
+    mut warnings: Vec<EventLogScanWarning>,
+) -> Result<EventLogScan> {
+    match error {
+        Codex1Error::MissionPath(_) => {
+            warnings.push(EventLogScanWarning {
+                code: "SYMLINKED_PATH",
+                detail: mission_relative_path(layout, path)
+                    .unwrap_or_else(|_| path.display().to_string()),
+            });
+            Ok(EventLogScan {
+                event_count: 0,
+                warnings,
+            })
+        }
+        error => Err(error),
+    }
+}
+
+fn ensure_append_target_is_regular_file(path: &Path) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_file() => Ok(()),
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(Codex1Error::MissionPath(
+            format!("event log target must not be a symlink: {}", path.display()),
+        )),
+        Ok(_) => Err(Codex1Error::MissionPath(format!(
+            "event log target must be a regular file: {}",
+            path.display()
+        ))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(Codex1Error::Io {
+            context: format!("failed to inspect {}", path.display()),
+            source: error,
+        }),
+    }
 }
 
 pub fn mission_relative_path(layout: &MissionLayout, path: &Path) -> Result<String> {

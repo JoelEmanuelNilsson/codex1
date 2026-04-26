@@ -2,6 +2,8 @@ use std::fs;
 use std::io::Write;
 use std::process::Command;
 use std::process::Stdio;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use assert_cmd::prelude::*;
 use predicates::prelude::*;
@@ -598,6 +600,126 @@ fn inspect_reports_event_count_and_malformed_event_warnings_only() {
     ] {
         assert!(!text.contains(forbidden), "{forbidden} leaked into inspect");
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_does_not_scan_events_through_symlinked_meta_directory() {
+    let repo = repo();
+    let external = tempfile::tempdir().unwrap();
+    init(&repo, "alpha");
+    fs::write(
+        external.path().join("events.jsonl"),
+        r#"{"version":1,"kind":"mission_initialized"}"#,
+    )
+    .unwrap();
+    let meta_dir = repo.path().join(".codex1/missions/alpha/.codex1");
+    fs::remove_dir_all(&meta_dir).unwrap();
+    symlink(external.path(), &meta_dir).unwrap();
+
+    let value = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["--mission", "alpha", "inspect"]),
+    );
+
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["data"]["artifacts"]["events"], 0);
+    let warnings = value["data"]["mechanical_warnings"].as_array().unwrap();
+    assert!(warnings
+        .iter()
+        .any(|warning| warning["code"] == "SYMLINKED_PATH"));
+}
+
+#[cfg(unix)]
+#[test]
+fn event_append_rejects_fifo_without_hanging_primary_mutation() {
+    let repo = repo();
+    init(&repo, "alpha");
+    let event_path = events_path(&repo, "alpha");
+    fs::remove_file(&event_path).unwrap();
+    let status = Command::new("mkfifo").arg(&event_path).status().unwrap();
+    assert!(status.success());
+
+    let mut child = bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args([
+            "--mission",
+            "alpha",
+            "receipt",
+            "append",
+            "--message",
+            "fifo should not hang",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_secs(2) {
+        if child.try_wait().unwrap().is_some() {
+            let output = child.wait_with_output().unwrap();
+            assert!(
+                output.status.success(),
+                "stdout: {}\nstderr: {}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(value["ok"], true);
+            assert_eq!(value["warnings"][0]["code"], "EVENT_LOG_APPEND_FAILED");
+            assert!(repo
+                .path()
+                .join(".codex1/missions/alpha/.codex1/receipts/receipts.jsonl")
+                .is_file());
+            return;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    child.kill().unwrap();
+    let _ = child.wait();
+    panic!("event append blocked on FIFO");
+}
+
+#[cfg(unix)]
+#[test]
+fn unsafe_path_failures_do_not_append_failure_events() {
+    let repo = repo();
+    let external = tempfile::tempdir().unwrap();
+    init(&repo, "alpha");
+    let before = event_log_text(&repo, "alpha");
+    fs::write(external.path().join("PRD.md"), "# external\n").unwrap();
+    symlink(
+        external.path().join("PRD.md"),
+        repo.path().join(".codex1/missions/alpha/PRD.md"),
+    )
+    .unwrap();
+    let answers = repo.path().join("unsafe-path-answers.json");
+    fs::write(
+        &answers,
+        r#"{
+          "title": "Unsafe PRD",
+          "original_request": "Build alpha",
+          "interpreted_destination": "A deterministic alpha",
+          "success_criteria": ["artifact exists"],
+          "proof_expectations": ["cargo test"],
+          "pr_intent": "No PR"
+        }"#,
+    )
+    .unwrap();
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["--mission", "alpha", "interview", "prd", "--answers"])
+        .arg(&answers)
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("MISSION_PATH_ERROR"));
+
+    assert_eq!(event_log_text(&repo, "alpha"), before);
 }
 
 #[test]

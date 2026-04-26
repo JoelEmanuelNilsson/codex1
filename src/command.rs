@@ -405,26 +405,30 @@ fn cmd_loop(cli: &Cli, command: LoopCommand) -> Result<()> {
             let state = match LoopState::start(mode, message, &layout) {
                 Ok(state) => state,
                 Err(error) => {
+                    if should_log_failure_event(&error) {
+                        let record = event::EventRecord::loop_start_failed(
+                            &layout,
+                            &mode_for_event,
+                            message_present,
+                            error.code().as_str(),
+                            started.elapsed(),
+                        );
+                        let _ = event::append_best_effort(&layout, &record);
+                    }
+                    return Err(error);
+                }
+            };
+            if let Err(error) = loop_state::write(&layout, &state) {
+                if should_log_failure_event(&error) {
                     let record = event::EventRecord::loop_start_failed(
                         &layout,
-                        &mode_for_event,
+                        &state.mode,
                         message_present,
                         error.code().as_str(),
                         started.elapsed(),
                     );
                     let _ = event::append_best_effort(&layout, &record);
-                    return Err(error);
                 }
-            };
-            if let Err(error) = loop_state::write(&layout, &state) {
-                let record = event::EventRecord::loop_start_failed(
-                    &layout,
-                    &state.mode,
-                    message_present,
-                    error.code().as_str(),
-                    started.elapsed(),
-                );
-                let _ = event::append_best_effort(&layout, &record);
                 return Err(error);
             }
             let record = event::EventRecord::loop_started(
@@ -445,13 +449,15 @@ fn cmd_loop(cli: &Cli, command: LoopCommand) -> Result<()> {
             let state = match loop_state::pause(&layout, reason) {
                 Ok(state) => state,
                 Err(error) => {
-                    let record = event::EventRecord::loop_pause_failed(
-                        &layout,
-                        reason_present,
-                        error.code().as_str(),
-                        started.elapsed(),
-                    );
-                    let _ = event::append_best_effort(&layout, &record);
+                    if should_log_failure_event(&error) {
+                        let record = event::EventRecord::loop_pause_failed(
+                            &layout,
+                            reason_present,
+                            error.code().as_str(),
+                            started.elapsed(),
+                        );
+                        let _ = event::append_best_effort(&layout, &record);
+                    }
                     return Err(error);
                 }
             };
@@ -466,12 +472,14 @@ fn cmd_loop(cli: &Cli, command: LoopCommand) -> Result<()> {
             let state = match loop_state::resume(&layout) {
                 Ok(state) => state,
                 Err(error) => {
-                    let record = event::EventRecord::loop_resume_failed(
-                        &layout,
-                        error.code().as_str(),
-                        started.elapsed(),
-                    );
-                    let _ = event::append_best_effort(&layout, &record);
+                    if should_log_failure_event(&error) {
+                        let record = event::EventRecord::loop_resume_failed(
+                            &layout,
+                            error.code().as_str(),
+                            started.elapsed(),
+                        );
+                        let _ = event::append_best_effort(&layout, &record);
+                    }
                     return Err(error);
                 }
             };
@@ -488,13 +496,15 @@ fn cmd_loop(cli: &Cli, command: LoopCommand) -> Result<()> {
             let state = match loop_state::stop(&layout, reason) {
                 Ok(state) => state,
                 Err(error) => {
-                    let record = event::EventRecord::loop_stop_failed(
-                        &layout,
-                        reason_present,
-                        error.code().as_str(),
-                        started.elapsed(),
-                    );
-                    let _ = event::append_best_effort(&layout, &record);
+                    if should_log_failure_event(&error) {
+                        let record = event::EventRecord::loop_stop_failed(
+                            &layout,
+                            reason_present,
+                            error.code().as_str(),
+                            started.elapsed(),
+                        );
+                        let _ = event::append_best_effort(&layout, &record);
+                    }
                     return Err(error);
                 }
             };
@@ -789,6 +799,9 @@ fn log_artifact_write_failed(
     error: &Codex1Error,
     duration: std::time::Duration,
 ) {
+    if !should_log_failure_event(error) {
+        return;
+    }
     let record = event::EventRecord::artifact_write_failed(
         layout,
         kind,
@@ -806,6 +819,9 @@ fn log_subplan_move_failed(
     error: &Codex1Error,
     duration: std::time::Duration,
 ) {
+    if !should_log_failure_event(error) {
+        return;
+    }
     let record = event::EventRecord::subplan_move_failed(
         layout,
         target_state,
@@ -820,8 +836,15 @@ fn log_receipt_append_failed(
     error: &Codex1Error,
     duration: std::time::Duration,
 ) {
+    if !should_log_failure_event(error) {
+        return;
+    }
     let record = event::EventRecord::receipt_append_failed(layout, error.code().as_str(), duration);
     let _ = event::append_best_effort(layout, &record);
+}
+
+fn should_log_failure_event(error: &Codex1Error) -> bool {
+    !matches!(error, Codex1Error::MissionPath(_))
 }
 
 fn run_installed_command_check(current_exe: &Path) -> Result<Value> {
