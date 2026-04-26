@@ -13,6 +13,8 @@ The revised problem is therefore:
 - Codex needs durable, high-quality artifacts for serious work.
 - Codex needs deterministic help creating those artifacts.
 - Codex needs a minimal continuation guard so it does not accidentally stop during explicit execute/autopilot loops.
+- Codex needs an easy way for users to enable or disable the Codex1 way of working per repo.
+- Codex needs Codex1 skills, Ralph hooks, and guidance to activate together as one bundle rather than leaking into every Codex session.
 - Codex does not need a smart CLI that decides mission truth.
 - The user does not want bloated process, hidden state machines, fake subagent permissions, or a review-finding generator disguised as a product.
 
@@ -53,6 +55,18 @@ The CLI supports interactive interviews and equivalent non-interactive answers-f
 The CLI may inspect and summarize artifact presence. It may check parseability, required fields, safe paths, unique IDs, and stable output envelopes. It must not decide whether the plan is good, whether a task is ready, whether review passed, whether proof is sufficient, whether close is safe, or whether replan is required.
 
 Ralph is reduced to a minimal Stop-hook adapter over explicit loop state. Ralph does not infer readiness from PRD, plan, specs, subplans, reviews, or proofs. If an explicit loop file says continuation is active and unpaused, Ralph blocks once with the recorded message and tells Codex how to pause or stop the loop. Otherwise Ralph allows stop.
+
+Codex1 setup treats the product as a bundle:
+
+- the `codex1` CLI
+- the Ralph Stop-hook adapter
+- Codex1 skills
+- Codex1 guidance or instructions
+- mission artifact conventions
+
+Global setup means the bundle is available on the machine, not that it is active everywhere. By default, setup should install the global hook capability and create a global Codex1 activation policy that enables only the current repo. Users can later enable, disable, uninstall, or migrate between global and project-local activation without losing mission artifacts.
+
+Skills follow the same activation boundary as Ralph. If a repo is not enabled for Codex1, Codex1 skills and Codex1 guidance should not be loaded or advertised there. If a repo is enabled, the hook, skills, and guidance should activate as a coherent bundle. Setup should make this obvious, reversible, and safe by backing up Codex config before edits and by providing status and doctor commands that explain the effective activation state.
 
 ## User Stories
 
@@ -136,6 +150,31 @@ Ralph is reduced to a minimal Stop-hook adapter over explicit loop state. Ralph 
 78. As a tester, I want to validate generated artifacts from known answers, so that template behavior is deterministic.
 79. As a tester, I want to validate Ralph with explicit loop files only, so that stop-hook behavior stays tiny and reliable.
 80. As a tester, I want to confirm the CLI never emits semantic readiness claims, so that oracle behavior does not creep back in.
+81. As a user, I want one setup command to start using Codex1 in the current repo, so that trying the workflow is easy.
+82. As a user, I want global install to mean "available globally" rather than "active everywhere," so that Codex1 does not unexpectedly change all my Codex sessions.
+83. As a user, I want Codex1 to be enabled per repo by default, so that I can choose where the Codex1 workflow applies.
+84. As a user, I want to disable Codex1 for a repo with one command, so that I can stop using the bundle without deleting artifacts.
+85. As a user, I want to re-enable Codex1 for a repo with one command, so that temporary opt-out is painless.
+86. As a user, I want to uninstall Codex1 hook integration without deleting mission artifacts, so that setup changes do not destroy work.
+87. As a user, I want to migrate between global and project-local setup, so that I can use the activation style that fits a repo or team.
+88. As a user, I want setup to back up config files before editing them, so that I can recover from bad setup changes.
+89. As a user, I want setup status to explain whether Codex1 is active here and why, so that I do not need to reverse engineer Codex config precedence.
+90. As a user, I want setup doctor to diagnose hook, skill, config, executable, backup, and trust problems, so that setup failures are understandable.
+91. As a user, I want Codex1 skills to activate only where Codex1 is enabled, so that Codex1 commands and workflows do not pollute unrelated repos.
+92. As a user, I want Codex1 guidance to activate only where Codex1 is enabled, so that ordinary Codex sessions remain ordinary.
+93. As a user, I want Ralph to fail open where Codex1 is disabled, so that disabled repos are not blocked by stale global hooks.
+94. As a user, I want global activation policy to support allowlist behavior, so that global setup can safely enable only selected repos.
+95. As a user, I want global activation policy to support all-repos behavior when I explicitly choose it, so that power users can opt into Codex1 everywhere.
+96. As a user, I want repo-local setup to work when global setup is not desired, so that a single project can carry its own Codex1 hook configuration.
+97. As a user, I want setup to show dry-run edits, so that I can inspect config changes before applying them.
+98. As a user, I want JSON setup output, so that Codex can run setup and understand what changed.
+99. As a user, I want setup to avoid duplicate global and project hooks where practical, so that Ralph does not run twice for the same repo.
+100. As a user, I want setup to account for official Codex trust behavior, so that project-local hooks are not silently assumed to work when Codex would skip project config.
+101. As a maintainer, I want setup activation to be a simple policy check, so that setup does not become a second workflow engine.
+102. As a maintainer, I want Codex1 bundle activation to be tested independently from artifact interviews, so that setup bugs do not destabilize the artifact model.
+103. As a tester, I want to verify disabled repos do not load Codex1 skills or block through Ralph, so that the activation boundary is real.
+104. As a tester, I want to verify enabled repos activate hook, skills, and guidance together, so that users get one coherent bundle.
+105. As a tester, I want to verify setup backups can be listed and restored, so that config edits are reversible.
 
 ## Implementation Decisions
 
@@ -231,6 +270,25 @@ Ralph is reduced to a minimal Stop-hook adapter over explicit loop state. Ralph 
 - Loop/Ralph behavior should be isolated and tiny.
 - Inspection should be isolated from semantic workflow decisions.
 - Doctor checks should verify the installed command can run from outside the source checkout when installation exists.
+- Codex1 setup treats the CLI, Ralph hook, Codex1 skills, Codex1 guidance, and mission artifact conventions as one bundle.
+- Global setup installs machine-level Codex1 capability but does not activate Codex1 everywhere by default.
+- The default setup command should install global capability and enable only the current repo.
+- Global activation policy should live in Codex1-owned global configuration.
+- Official Codex hook configuration should remain in official Codex config locations.
+- Codex1 must not assume that `.codex1` configuration is read by official Codex.
+- Project-local setup may edit project Codex config when a repo should carry its own integration.
+- Setup must support enable, disable, uninstall, migrate, status, doctor, dry-run, and backup restoration flows.
+- Setup must back up any Codex or Codex1 config file before mutating it.
+- Setup must never delete mission artifacts as part of disabling, uninstalling, or migrating activation.
+- Setup status should explain effective activation in human terms.
+- Setup doctor should diagnose executable availability, hook installation, activation policy, duplicate hooks, config parse errors, backup availability, and project trust caveats.
+- Setup should avoid making disabled repos pay semantic workflow costs.
+- Ralph must fail open when activation policy says the repo is disabled.
+- Codex1 skills and guidance must follow the same activation boundary as the hook.
+- If Codex1 is disabled for a repo, Codex1 skills should not be advertised or loaded there.
+- If Codex1 is enabled for a repo, the setup should make hook, skills, and guidance available as a coherent bundle.
+- Setup policy checks are mechanical activation checks only.
+- Setup does not decide mission readiness, artifact correctness, review status, close status, or PRD satisfaction.
 
 ## Testing Decisions
 
@@ -265,6 +323,21 @@ Ralph is reduced to a minimal Stop-hook adapter over explicit loop state. Ralph 
 - Ralph tests should verify Stop-hook active circuit breaker allows stop.
 - Ralph tests should verify block messages include pause or stop guidance.
 - Doctor tests should verify installed-command behavior without relying on source-local execution.
+- Setup tests should verify default install creates global capability and enables only the current repo.
+- Setup tests should verify global install does not activate all repos unless explicitly requested.
+- Setup tests should verify enable and disable toggle the effective activation policy for the current repo.
+- Setup tests should verify disabled repos cause Ralph to fail open.
+- Setup tests should verify disabled repos do not expose Codex1 skill bundle activation.
+- Setup tests should verify enabled repos expose hook, skills, and guidance as a coherent bundle.
+- Setup tests should verify project-local setup writes only managed hook configuration.
+- Setup tests should verify migration between global and project setup avoids duplicate active hooks.
+- Setup tests should verify config backups are created before mutation.
+- Setup tests should verify backups can be listed and restored.
+- Setup tests should verify dry-run reports intended edits without writing files.
+- Setup tests should verify status explains effective activation source and reason.
+- Setup tests should verify doctor catches missing executable, stale executable, invalid config, duplicate hook, inactive repo, and project trust caveats.
+- Setup tests should verify uninstall removes managed integration without deleting mission artifacts.
+- Setup tests should verify JSON setup commands use stable envelopes and mechanical error codes.
 - Regression tests should explicitly prevent reintroducing semantic oracle behavior into inspect or loop commands.
 - Tests should assert that there is no authoritative semantic state file in the initial product.
 - Tests should assert that audit receipts are not required to determine artifact inventory.
@@ -316,6 +389,13 @@ Ralph is reduced to a minimal Stop-hook adapter over explicit loop state. Ralph 
 - Mandatory research plans for small missions.
 - Mandatory specs for trivial one-shot non-durable work.
 - Any feature that makes the CLI the judge of mission truth.
+- Activating Codex1 globally in all repos by default.
+- Loading Codex1 skills in repos where Codex1 is disabled.
+- Injecting Codex1 guidance in repos where Codex1 is disabled.
+- Deleting mission artifacts during setup disable, uninstall, or migration.
+- Treating setup activation policy as mission status.
+- Replacing official Codex configuration with Codex1-specific configuration.
+- User-editable setup hook snippets in the first product.
 
 ## Further Notes
 
