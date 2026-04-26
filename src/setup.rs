@@ -15,7 +15,7 @@ use crate::cli::{
 };
 use crate::envelope;
 use crate::error::{Codex1Error, IoContext, Result};
-use crate::paths::discover_repo_root;
+use crate::paths::{discover_repo_root, ensure_contained_for_write};
 
 const CONFIG_FILE: &str = "config.toml";
 const BACKUP_MANIFEST_VERSION: u32 = 1;
@@ -26,6 +26,7 @@ const MANAGED_HOOK_STATUS: &str = "Codex1 Ralph";
 const BUNDLE_SKILL: &str = ".agents/skills/codex1/SKILL.md";
 const BUNDLE_GUIDANCE: &str = ".codex1/setup-guidance.md";
 const BUNDLE_MARKER: &str = ".codex1/setup-bundle.json";
+const MANAGED_BUNDLE_FILES: [&str; 2] = [BUNDLE_SKILL, BUNDLE_GUIDANCE];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -224,7 +225,10 @@ pub fn run(cli_json: bool, command: SetupCommand) -> Result<()> {
     }
 }
 
-pub fn ralph_should_scan_repo(repo: &Path) -> bool {
+pub fn ralph_should_scan_repo(repo: &Path, project_hook: bool) -> bool {
+    if project_hook {
+        return true;
+    }
     let Ok(paths) = resolve_paths() else {
         return false;
     };
@@ -254,12 +258,16 @@ fn emit(cli_json: bool, data: serde_json::Value) -> Result<()> {
 fn install(args: SetupInstallArgs) -> Result<serde_json::Value> {
     let scope = SetupScope::from_arg(args.scope);
     let mode = ActivationMode::from_arg(args.mode);
+    if scope == SetupScope::Project && mode == ActivationMode::Off {
+        return Err(Codex1Error::SetupArgument(
+            "setup install --scope project cannot use --mode off".into(),
+        ));
+    }
     let repo = resolve_repo(args.repo)?;
     let paths = resolve_paths()?;
     let mut plan = SetupPlan::new(args.dry_run);
     match scope {
         SetupScope::Global => {
-            install_managed_hook(&paths.codex_config, &mut plan, args.dry_run, "global hook")?;
             let mut policy = read_policy_or_default(&paths)?;
             policy.mode = mode;
             if matches!(
@@ -268,13 +276,30 @@ fn install(args: SetupInstallArgs) -> Result<serde_json::Value> {
             ) {
                 policy.set_repo(repo.clone(), true);
             }
+            if policy.effective_for(&repo) {
+                materialize_bundle(&repo, &mut plan, args.dry_run)?;
+                install_managed_hook(
+                    &paths.codex_config,
+                    SetupScope::Global,
+                    &mut plan,
+                    args.dry_run,
+                    "global hook",
+                )?;
+            } else {
+                remove_bundle(&repo, &mut plan, args.dry_run)?;
+            }
             write_policy(&paths, &policy, &mut plan, args.dry_run)?;
-            materialize_bundle(&repo, &mut plan, args.dry_run)?;
         }
         SetupScope::Project => {
             let project_config = project_config_path(&repo);
-            install_managed_hook(&project_config, &mut plan, args.dry_run, "project hook")?;
             materialize_bundle(&repo, &mut plan, args.dry_run)?;
+            install_managed_hook(
+                &project_config,
+                SetupScope::Project,
+                &mut plan,
+                args.dry_run,
+                "project hook",
+            )?;
         }
     }
     Ok(json!({
@@ -290,12 +315,12 @@ fn install(args: SetupInstallArgs) -> Result<serde_json::Value> {
 fn enable(args: SetupRepoArgs) -> Result<serde_json::Value> {
     let repo = resolve_repo(args.repo)?;
     let paths = resolve_paths()?;
-    if !paths.codex1_config.exists() && !args.dry_run {
+    if !paths.codex1_config.exists() {
         return install(SetupInstallArgs {
             mode: Some(SetupModeArg::Allowlist),
             scope: Some(SetupScopeArg::Global),
             repo: Some(repo),
-            dry_run: false,
+            dry_run: args.dry_run,
         });
     }
     let mut plan = SetupPlan::new(args.dry_run);
@@ -304,8 +329,15 @@ fn enable(args: SetupRepoArgs) -> Result<serde_json::Value> {
         policy.mode = ActivationMode::Allowlist;
     }
     policy.set_repo(repo.clone(), true);
-    write_policy(&paths, &policy, &mut plan, args.dry_run)?;
     materialize_bundle(&repo, &mut plan, args.dry_run)?;
+    install_managed_hook(
+        &paths.codex_config,
+        SetupScope::Global,
+        &mut plan,
+        args.dry_run,
+        "global hook",
+    )?;
+    write_policy(&paths, &policy, &mut plan, args.dry_run)?;
     Ok(json!({
         "summary": format!("setup enabled for {}", repo.display()),
         "command": "setup enable",
@@ -373,6 +405,7 @@ fn migrate(args: SetupMigrateArgs) -> Result<serde_json::Value> {
         SetupScope::Project => {
             install_managed_hook(
                 &project_config_path(&repo),
+                SetupScope::Project,
                 &mut plan,
                 args.dry_run,
                 "project hook",
@@ -383,7 +416,13 @@ fn migrate(args: SetupMigrateArgs) -> Result<serde_json::Value> {
             write_policy(&paths, &policy, &mut plan, args.dry_run)?;
         }
         SetupScope::Global => {
-            install_managed_hook(&paths.codex_config, &mut plan, args.dry_run, "global hook")?;
+            install_managed_hook(
+                &paths.codex_config,
+                SetupScope::Global,
+                &mut plan,
+                args.dry_run,
+                "global hook",
+            )?;
             let mut policy = read_policy_or_default(&paths)?;
             if matches!(policy.mode, ActivationMode::Off) {
                 policy.mode = ActivationMode::Allowlist;
@@ -670,6 +709,7 @@ fn write_policy(
 
 fn install_managed_hook(
     config_path: &Path,
+    hook_scope: SetupScope,
     plan: &mut SetupPlan,
     dry_run: bool,
     reason: &str,
@@ -691,11 +731,11 @@ fn install_managed_hook(
         }
     };
     parse_toml_text(&text)?;
-    text = remove_managed_hook_block(&text);
+    text = remove_managed_hook_block(&text)?;
     if !text.trim().is_empty() && !text.ends_with('\n') {
         text.push('\n');
     }
-    text.push_str(&managed_hook_block()?);
+    text.push_str(&managed_hook_block(hook_scope)?);
     parse_toml_text(&text)?;
     write_text(config_path, &text)
 }
@@ -715,7 +755,7 @@ fn remove_managed_hook(
             config_path.display()
         ))
     })?;
-    let edited = remove_managed_hook_block(&original);
+    let edited = remove_managed_hook_block(&original)?;
     if edited == original {
         return Ok(());
     }
@@ -736,28 +776,48 @@ fn managed_hook_count(config_path: &Path) -> usize {
     text.matches(MANAGED_HOOK_START).count()
 }
 
-fn managed_hook_block() -> Result<String> {
+fn managed_hook_block(scope: SetupScope) -> Result<String> {
     let exe = env::current_exe().io_context("failed to resolve current executable")?;
-    Ok(format!(
+    Ok(managed_hook_block_for_command(&hook_command_for_exe(
+        &exe, scope,
+    )))
+}
+
+fn managed_hook_block_for_command(command: &str) -> String {
+    format!(
         r#"{MANAGED_HOOK_START}
 [[hooks.Stop]]
 
 [[hooks.Stop.hooks]]
 type = "command"
-command = "{} ralph stop-hook"
+command = {}
 timeout = 10
 statusMessage = "{MANAGED_HOOK_STATUS}"
 {MANAGED_HOOK_END}
 "#,
-        shell_quote(&exe)
-    ))
+        toml_string(command)
+    )
 }
 
-fn remove_managed_hook_block(text: &str) -> String {
+fn hook_command_for_exe(exe: &Path, scope: SetupScope) -> String {
+    let scope_arg = match scope {
+        SetupScope::Global => "global",
+        SetupScope::Project => "project",
+    };
+    let exe = exe.display().to_string().replace('"', "\\\"");
+    format!("\"{exe}\" ralph stop-hook --scope {scope_arg}")
+}
+
+fn remove_managed_hook_block(text: &str) -> Result<String> {
     let mut out = String::new();
     let mut skipping = false;
     for line in text.lines() {
         if line.trim() == MANAGED_HOOK_START {
+            if skipping {
+                return Err(Codex1Error::SetupConfigParse(
+                    "nested Codex1 managed hook marker".into(),
+                ));
+            }
             skipping = true;
             continue;
         }
@@ -770,7 +830,12 @@ fn remove_managed_hook_block(text: &str) -> String {
             out.push('\n');
         }
     }
-    out
+    if skipping {
+        return Err(Codex1Error::SetupConfigParse(
+            "unterminated Codex1 managed hook block".into(),
+        ));
+    }
+    Ok(out)
 }
 
 fn parse_toml_file(path: &Path) -> Result<()> {
@@ -794,29 +859,29 @@ fn parse_toml_text(text: &str) -> Result<()> {
 }
 
 fn materialize_bundle(repo: &Path, plan: &mut SetupPlan, dry_run: bool) -> Result<()> {
-    let skill = repo.join(BUNDLE_SKILL);
-    let guidance = repo.join(BUNDLE_GUIDANCE);
-    let marker = bundle_marker_path(repo);
+    let skill = repo_bundle_target(repo, BUNDLE_SKILL)?;
+    let guidance = repo_bundle_target(repo, BUNDLE_GUIDANCE)?;
+    let marker = repo_bundle_target(repo, BUNDLE_MARKER)?;
     plan.materialized.push(skill.clone());
     plan.materialized.push(guidance.clone());
     plan.writes.push(marker.clone());
     if dry_run {
         return Ok(());
     }
-    write_owned_file(&skill, skill_body())?;
-    write_owned_file(&guidance, guidance_body())?;
+    write_owned_file(repo, &skill, skill_body())?;
+    write_owned_file(repo, &guidance, guidance_body())?;
     let marker_body = serde_json::to_string_pretty(&BundleMarker {
         managed_by: "codex1-managed".to_string(),
         version: BUNDLE_VERSION,
         files: vec![BUNDLE_SKILL.into(), BUNDLE_GUIDANCE.into()],
     })
     .unwrap();
-    write_owned_file(&marker, &(marker_body + "\n"))?;
+    write_owned_file(repo, &marker, &(marker_body + "\n"))?;
     Ok(())
 }
 
 fn remove_bundle(repo: &Path, plan: &mut SetupPlan, dry_run: bool) -> Result<()> {
-    let marker = bundle_marker_path(repo);
+    let marker = repo_bundle_target(repo, BUNDLE_MARKER)?;
     let marker_text = match fs::read_to_string(&marker) {
         Ok(text) => text,
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
@@ -833,21 +898,65 @@ fn remove_bundle(repo: &Path, plan: &mut SetupPlan, dry_run: bool) -> Result<()>
             marker.display()
         ))
     })?;
+    if marker_data.managed_by != "codex1-managed" || marker_data.version != BUNDLE_VERSION {
+        return Err(Codex1Error::SetupBundle(format!(
+            "invalid Codex1 bundle marker {}",
+            marker.display()
+        )));
+    }
     for relative in marker_data.files {
-        let path = repo.join(&relative);
+        if !MANAGED_BUNDLE_FILES.contains(&relative.as_str()) {
+            return Err(Codex1Error::SetupBundle(format!(
+                "bundle marker contains unmanaged file {}",
+                relative
+            )));
+        }
+        let path = repo_bundle_target(repo, &relative)?;
         plan.removes.push(path.clone());
         if !dry_run {
-            remove_file_if_owned(&path)?;
+            remove_file_if_owned(repo, &path)?;
         }
     }
     plan.removes.push(marker.clone());
     if !dry_run {
-        remove_file_if_owned(&marker)?;
+        remove_file_if_owned(repo, &marker)?;
     }
     Ok(())
 }
 
-fn write_owned_file(path: &Path, body: &str) -> Result<()> {
+fn repo_bundle_target(repo: &Path, relative: impl AsRef<Path>) -> Result<PathBuf> {
+    let relative = relative.as_ref();
+    if relative.is_absolute() {
+        return Err(Codex1Error::SetupBundle(format!(
+            "bundle path must be relative: {}",
+            relative.display()
+        )));
+    }
+    if relative.components().any(
+        |component| !matches!(component, std::path::Component::Normal(part) if !part.is_empty()),
+    ) {
+        return Err(Codex1Error::SetupBundle(format!(
+            "unsafe bundle path: {}",
+            relative.display()
+        )));
+    }
+    let path = repo.join(relative);
+    ensure_contained_for_write(repo, &path).map_err(|error| {
+        Codex1Error::SetupBundle(format!(
+            "bundle path escapes repo or crosses a symlink: {}: {error}",
+            path.display()
+        ))
+    })?;
+    Ok(path)
+}
+
+fn write_owned_file(repo: &Path, path: &Path, body: &str) -> Result<()> {
+    ensure_contained_for_write(repo, path).map_err(|error| {
+        Codex1Error::SetupBundle(format!(
+            "bundle path escapes repo or crosses a symlink: {}: {error}",
+            path.display()
+        ))
+    })?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|source| {
             Codex1Error::SetupBundle(format!("failed to create {}: {source}", parent.display()))
@@ -869,7 +978,13 @@ fn write_owned_file(path: &Path, body: &str) -> Result<()> {
     })
 }
 
-fn remove_file_if_owned(path: &Path) -> Result<()> {
+fn remove_file_if_owned(repo: &Path, path: &Path) -> Result<()> {
+    ensure_contained_for_write(repo, path).map_err(|error| {
+        Codex1Error::SetupBundle(format!(
+            "bundle path escapes repo or crosses a symlink: {}: {error}",
+            path.display()
+        ))
+    })?;
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
@@ -1054,6 +1169,23 @@ fn toml_escape_path(path: &Path) -> String {
         .replace('"', "\\\"")
 }
 
+fn toml_string(value: &str) -> String {
+    let mut out = String::from("\"");
+    for ch in value.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() => out.push_str(&format!("\\u{:04X}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 fn mode_name(mode: ActivationMode) -> &'static str {
     match mode {
         ActivationMode::Off => "off",
@@ -1061,11 +1193,6 @@ fn mode_name(mode: ActivationMode) -> &'static str {
         ActivationMode::Denylist => "denylist",
         ActivationMode::All => "all",
     }
-}
-
-fn shell_quote(path: &Path) -> String {
-    let text = path.display().to_string();
-    format!("'{}'", text.replace('\'', r#"'\''"#))
 }
 
 #[cfg(test)]
@@ -1111,8 +1238,26 @@ mod tests {
             "model = \"x\"\n{MANAGED_HOOK_START}\n[[hooks.Stop]]\n{MANAGED_HOOK_END}\n[other]\na = 1\n"
         );
         assert_eq!(
-            remove_managed_hook_block(&text),
+            remove_managed_hook_block(&text).unwrap(),
             "model = \"x\"\n[other]\na = 1\n"
         );
+    }
+
+    #[test]
+    fn managed_hook_block_removal_rejects_unterminated_marker() {
+        let text = format!("model = \"x\"\n{MANAGED_HOOK_START}\n[other]\na = 1\n");
+        assert!(remove_managed_hook_block(&text).is_err());
+    }
+
+    #[test]
+    fn hook_command_is_toml_escaped_for_windows_paths() {
+        let command =
+            hook_command_for_exe(Path::new(r"C:\Users\me\codex1.exe"), SetupScope::Global);
+        assert_eq!(
+            toml_string(&command),
+            r#""\"C:\\Users\\me\\codex1.exe\" ralph stop-hook --scope global""#
+        );
+        let block = managed_hook_block_for_command(&command);
+        parse_toml_text(&block).unwrap();
     }
 }

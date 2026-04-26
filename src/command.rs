@@ -12,8 +12,8 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::cli::{
-    Cli, Commands, InterviewArgs, LoopCommand, RalphCommand, ReceiptCommand, SubplanCommand,
-    TemplateCommand,
+    Cli, Commands, InterviewArgs, LoopCommand, RalphCommand, RalphHookScopeArg, ReceiptCommand,
+    SubplanCommand, TemplateCommand,
 };
 use crate::envelope;
 use crate::error::{Codex1Error, IoContext, Result};
@@ -533,8 +533,12 @@ fn cmd_loop(cli: &Cli, command: LoopCommand) -> Result<()> {
 
 fn cmd_ralph(cli: &Cli, command: RalphCommand) -> Result<()> {
     match command {
-        RalphCommand::StopHook => {
-            let output = ralph::stop_hook(cli.repo_root.clone(), cli.mission.clone());
+        RalphCommand::StopHook { scope } => {
+            let scope = match scope {
+                RalphHookScopeArg::Global => ralph::HookScope::Global,
+                RalphHookScopeArg::Project => ralph::HookScope::Project,
+            };
+            let output = ralph::stop_hook(cli.repo_root.clone(), cli.mission.clone(), scope);
             print_json(&output);
         }
     }

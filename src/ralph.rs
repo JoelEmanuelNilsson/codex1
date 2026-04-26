@@ -10,6 +10,12 @@ use crate::loop_state::{self, LoopState};
 use crate::paths::{discover_repo_root, discover_repo_root_from};
 use crate::setup;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HookScope {
+    Global,
+    Project,
+}
+
 #[derive(Debug, Deserialize)]
 struct StopHookInput {
     #[serde(default)]
@@ -41,7 +47,11 @@ impl StopHookOutput {
     }
 }
 
-pub fn stop_hook(repo_root: Option<PathBuf>, mission: Option<String>) -> StopHookOutput {
+pub fn stop_hook(
+    repo_root: Option<PathBuf>,
+    mission: Option<String>,
+    hook_scope: HookScope,
+) -> StopHookOutput {
     let mut input = String::new();
     if io::stdin().read_to_string(&mut input).is_err() {
         return StopHookOutput::approve();
@@ -71,7 +81,7 @@ pub fn stop_hook(repo_root: Option<PathBuf>, mission: Option<String>) -> StopHoo
         Ok(root) => root,
         Err(_) => return StopHookOutput::approve(),
     };
-    if !setup::ralph_should_scan_repo(&root) {
+    if !setup::ralph_should_scan_repo(&root, hook_scope == HookScope::Project) {
         return StopHookOutput::approve();
     }
     let active_loops = if let Some(id) = mission {

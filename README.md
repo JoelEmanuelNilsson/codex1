@@ -105,7 +105,7 @@ codex1 --mission demo loop stop --reason "Mission closed"
 
 `codex1 ralph stop-hook` reads Stop-hook JSON from stdin. It blocks only when the mission has active, unpaused loop state with a non-empty message. Missing, corrupt, inactive, paused, or recursive hook input allows stop.
 
-When setup policy exists, Ralph checks repo activation before scanning loop state. Disabled repos, malformed setup policy, and unresolved repos fail open.
+When setup policy exists, global Ralph hooks check repo activation before scanning loop state. Disabled repos, malformed setup policy, and unresolved repos fail open. Project-local hooks use `ralph stop-hook --scope project` so migration to project setup keeps that repo's hook effective without re-enabling the global hook.
 
 ## Anti-Oracle Rule
 

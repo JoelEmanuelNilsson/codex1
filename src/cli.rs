@@ -113,7 +113,16 @@ pub enum LoopCommand {
 
 #[derive(Clone, Debug, Subcommand)]
 pub enum RalphCommand {
-    StopHook,
+    StopHook {
+        #[arg(long, value_enum, default_value = "global")]
+        scope: RalphHookScopeArg,
+    },
+}
+
+#[derive(Clone, Debug, ValueEnum)]
+pub enum RalphHookScopeArg {
+    Global,
+    Project,
 }
 
 #[derive(Clone, Debug, Subcommand)]
