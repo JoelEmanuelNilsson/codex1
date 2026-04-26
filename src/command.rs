@@ -546,7 +546,7 @@ fn cmd_ralph(cli: &Cli, command: RalphCommand) -> Result<()> {
 }
 
 fn cmd_setup(cli: &Cli, command: crate::cli::SetupCommand) -> Result<()> {
-    setup::run(cli.json, command)
+    setup::run(cli.json, cli.repo_root.clone(), command)
 }
 
 fn cmd_doctor(cli: &Cli) -> Result<()> {
@@ -942,6 +942,7 @@ fn run_loop_ralph_smoke_in(current_exe: &Path, root: &Path) -> Result<Value> {
     let ralph = run_command(
         Command::new(current_exe)
             .current_dir(root)
+            .env("CODEX1_DOCTOR_SMOKE", "1")
             .args(["--repo-root"])
             .arg(root)
             .args(["--mission", "smoke", "ralph", "stop-hook"]),
