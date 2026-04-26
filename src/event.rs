@@ -388,6 +388,13 @@ pub fn scan(layout: &MissionLayout) -> Result<EventLogScan> {
             });
         }
         Ok(metadata) if metadata.is_file() => {
+            ensure_scan_parent_is_not_symlinked(layout, &path, &mut warnings)?;
+            if !warnings.is_empty() {
+                return Ok(EventLogScan {
+                    event_count: 0,
+                    warnings,
+                });
+            }
             if let Err(error) = ensure_existing_contained(&layout.mission_dir, &path) {
                 return handle_unsafe_scan_path(layout, &path, error, warnings);
             }
@@ -419,10 +426,23 @@ pub fn scan(layout: &MissionLayout) -> Result<EventLogScan> {
 
     let file = fs::File::open(&path).io_context(format!("failed to open {}", path.display()))?;
     let mut event_count = 0;
-    for (index, line) in BufReader::new(file).lines().enumerate() {
+    for (index, line) in BufReader::new(file).split(b'\n').enumerate() {
         let line_number = index + 1;
         let line = line.io_context(format!("failed to read {}", path.display()))?;
-        let value: Value = match serde_json::from_str(&line) {
+        let line = match std::str::from_utf8(&line) {
+            Ok(line) => line.trim_end_matches('\r'),
+            Err(_) => {
+                warnings.push(EventLogScanWarning {
+                    code: "MALFORMED_EVENT_LOG_LINE",
+                    detail: format!("events.jsonl line {line_number}"),
+                });
+                continue;
+            }
+        };
+        if line.is_empty() {
+            continue;
+        }
+        let value: Value = match serde_json::from_str(line) {
             Ok(value) => value,
             Err(_) => {
                 warnings.push(EventLogScanWarning {
@@ -499,6 +519,65 @@ fn handle_unsafe_scan_path(
         }
         error => Err(error),
     }
+}
+
+fn ensure_scan_parent_is_not_symlinked(
+    layout: &MissionLayout,
+    path: &Path,
+    warnings: &mut Vec<EventLogScanWarning>,
+) -> Result<()> {
+    let relative_parent = path
+        .parent()
+        .and_then(|parent| parent.strip_prefix(&layout.mission_dir).ok())
+        .ok_or_else(|| {
+            Codex1Error::MissionPath(format!(
+                "event log parent escapes mission directory: {}",
+                path.display()
+            ))
+        })?;
+    let mut current = layout.mission_dir.clone();
+    for component in relative_parent.components() {
+        let std::path::Component::Normal(part) = component else {
+            return Err(Codex1Error::MissionPath(format!(
+                "unsafe event log parent: {}",
+                path.display()
+            )));
+        };
+        current.push(part);
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                warnings.push(EventLogScanWarning {
+                    code: "SYMLINKED_PATH",
+                    detail: current
+                        .strip_prefix(&layout.mission_dir)
+                        .unwrap_or(&current)
+                        .display()
+                        .to_string(),
+                });
+                return Ok(());
+            }
+            Ok(metadata) if metadata.is_dir() => {}
+            Ok(_) => {
+                warnings.push(EventLogScanWarning {
+                    code: "EVENT_LOG_NOT_FILE",
+                    detail: current
+                        .strip_prefix(&layout.mission_dir)
+                        .unwrap_or(&current)
+                        .display()
+                        .to_string(),
+                });
+                return Ok(());
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => {
+                return Err(Codex1Error::Io {
+                    context: format!("failed to inspect {}", current.display()),
+                    source: error,
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 fn ensure_append_target_is_regular_file(path: &Path) -> Result<()> {

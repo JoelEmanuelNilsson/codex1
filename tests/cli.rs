@@ -634,6 +634,65 @@ fn inspect_does_not_scan_events_through_symlinked_meta_directory() {
 
 #[cfg(unix)]
 #[test]
+fn inspect_does_not_scan_events_through_in_mission_symlinked_meta_directory() {
+    let repo = repo();
+    init(&repo, "alpha");
+    let mission_dir = repo.path().join(".codex1/missions/alpha");
+    let linked_meta = mission_dir.join("linked-meta");
+    fs::create_dir(&linked_meta).unwrap();
+    fs::write(
+        linked_meta.join("events.jsonl"),
+        r#"{"version":1,"kind":"mission_initialized"}"#,
+    )
+    .unwrap();
+    let meta_dir = mission_dir.join(".codex1");
+    fs::remove_dir_all(&meta_dir).unwrap();
+    symlink(&linked_meta, &meta_dir).unwrap();
+
+    let value = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["--mission", "alpha", "inspect"]),
+    );
+
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["data"]["artifacts"]["events"], 0);
+    let warnings = value["data"]["mechanical_warnings"].as_array().unwrap();
+    assert!(warnings
+        .iter()
+        .any(|warning| warning["code"] == "SYMLINKED_PATH"));
+}
+
+#[test]
+fn inspect_treats_invalid_utf8_event_lines_as_malformed() {
+    let repo = repo();
+    init(&repo, "alpha");
+    fs::OpenOptions::new()
+        .append(true)
+        .open(events_path(&repo, "alpha"))
+        .unwrap()
+        .write_all(b"{\"version\":1,\"kind\":\"artifact_written\"}\n\xff\n")
+        .unwrap();
+
+    let value = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["--mission", "alpha", "inspect"]),
+    );
+
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["data"]["artifacts"]["events"], 2);
+    let warnings = value["data"]["mechanical_warnings"].as_array().unwrap();
+    assert!(warnings
+        .iter()
+        .any(|warning| warning["code"] == "MALFORMED_EVENT_LOG_LINE"
+            && warning["detail"] == "events.jsonl line 3"));
+}
+
+#[cfg(unix)]
+#[test]
 fn event_append_rejects_fifo_without_hanging_primary_mutation() {
     let repo = repo();
     init(&repo, "alpha");
