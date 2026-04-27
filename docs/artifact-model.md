@@ -37,3 +37,9 @@ The artifact tree is the durable product. Files are human-facing markdown with m
 `.codex1/events.jsonl` stores automatic forensic command metadata. Events help explain mechanical command history during debugging, but they are not durable content truth, not receipts, not workflow state, and not replay authority. Normal planning and execution should ignore events unless mission archaeology is needed.
 
 There is no authoritative `STATE.json`.
+
+## Setup Bundle Boundary
+
+Codex1 setup is a bundle activation layer for the CLI, Ralph hook, skills, guidance, and mission artifact conventions. It may materialize repo-scoped Codex1 skill and guidance files for enabled repos, but it does not create, delete, validate, or judge mission artifacts as part of activation.
+
+See [setup-bundle.md](setup-bundle.md) for the setup activation model.

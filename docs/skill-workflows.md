@@ -2,6 +2,8 @@
 
 Codex skills are the user-facing workflow. The CLI is a deterministic artifact helper.
 
+Codex1 setup activates Codex1 skills repo-by-repo. Do not assume Codex1 skills are available outside enabled repositories. `codex1 setup enable` materializes Codex1-managed repo-scoped skills and guidance, and `codex1 setup disable` removes only those managed files.
+
 ## Clarify
 
 Clarify gathers enough user intent to write `PRD.md` through `codex1 interview prd`. Codex decides how much detail the mission needs.

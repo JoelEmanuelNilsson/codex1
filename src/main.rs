@@ -10,6 +10,7 @@ mod loop_state;
 mod paths;
 mod ralph;
 mod render;
+mod setup;
 mod template;
 
 use std::process::ExitCode;

@@ -12,8 +12,8 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::cli::{
-    Cli, Commands, InterviewArgs, LoopCommand, RalphCommand, ReceiptCommand, SubplanCommand,
-    TemplateCommand,
+    Cli, Commands, InterviewArgs, LoopCommand, RalphCommand, RalphHookScopeArg, ReceiptCommand,
+    SubplanCommand, TemplateCommand,
 };
 use crate::envelope;
 use crate::error::{Codex1Error, IoContext, Result};
@@ -28,6 +28,7 @@ use crate::paths::{
 };
 use crate::ralph;
 use crate::render::{render_markdown, render_template_outline, AnswerValue, Answers};
+use crate::setup;
 use crate::template;
 
 pub fn run() -> ExitCode {
@@ -76,6 +77,7 @@ fn run_cli(cli: Cli) -> Result<()> {
         Commands::Receipt { command } => cmd_receipt(&cli, command),
         Commands::Loop { command } => cmd_loop(&cli, command),
         Commands::Ralph { command } => cmd_ralph(&cli, command),
+        Commands::Setup { command } => cmd_setup(&cli, command),
         Commands::Doctor => cmd_doctor(&cli),
     }
 }
@@ -531,12 +533,20 @@ fn cmd_loop(cli: &Cli, command: LoopCommand) -> Result<()> {
 
 fn cmd_ralph(cli: &Cli, command: RalphCommand) -> Result<()> {
     match command {
-        RalphCommand::StopHook => {
-            let output = ralph::stop_hook(cli.repo_root.clone(), cli.mission.clone());
+        RalphCommand::StopHook { scope } => {
+            let scope = match scope {
+                RalphHookScopeArg::Global => ralph::HookScope::Global,
+                RalphHookScopeArg::Project => ralph::HookScope::Project,
+            };
+            let output = ralph::stop_hook(cli.repo_root.clone(), cli.mission.clone(), scope);
             print_json(&output);
         }
     }
     Ok(())
+}
+
+fn cmd_setup(cli: &Cli, command: crate::cli::SetupCommand) -> Result<()> {
+    setup::run(cli.json, cli.repo_root.clone(), command)
 }
 
 fn cmd_doctor(cli: &Cli) -> Result<()> {
@@ -932,6 +942,7 @@ fn run_loop_ralph_smoke_in(current_exe: &Path, root: &Path) -> Result<Value> {
     let ralph = run_command(
         Command::new(current_exe)
             .current_dir(root)
+            .env("CODEX1_DOCTOR_SMOKE", "1")
             .args(["--repo-root"])
             .arg(root)
             .args(["--mission", "smoke", "ralph", "stop-hook"]),
