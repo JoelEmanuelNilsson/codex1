@@ -2,6 +2,8 @@ use std::env;
 use std::ffi::OsStr;
 use std::fs;
 use std::io::ErrorKind;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
@@ -64,6 +66,13 @@ impl SetupScope {
             Some(SetupScopeArg::Global) | None => Self::Global,
         }
     }
+
+    fn hook_arg(self) -> &'static str {
+        match self {
+            Self::Global => "global",
+            Self::Project => "project",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -118,6 +127,14 @@ impl ActivationPolicy {
             self.mode = ActivationMode::Denylist;
         }
         self.set_repo(repo, false);
+    }
+
+    fn has_any_global_activation(&self) -> bool {
+        match self.mode {
+            ActivationMode::Off => false,
+            ActivationMode::Allowlist => self.repos.iter().any(|entry| entry.enabled),
+            ActivationMode::Denylist | ActivationMode::All => true,
+        }
     }
 
     fn to_toml(&self) -> String {
@@ -250,7 +267,9 @@ pub fn run(cli_json: bool, global_repo: Option<PathBuf>, command: SetupCommand) 
         }
         SetupCommand::Backups { command } => match command {
             SetupBackupsCommand::List => emit(cli_json, backups_list()?),
-            SetupBackupsCommand::Restore(args) => emit(cli_json, backups_restore(args)?),
+            SetupBackupsCommand::Restore(args) => {
+                emit(cli_json, backups_restore(global_repo, args)?)
+            }
         },
     }
 }
@@ -280,17 +299,29 @@ fn global_policy_should_scan_repo(policy: &ActivationPolicy, repo: &Path) -> boo
     }
     match policy.mode {
         ActivationMode::Off => false,
-        ActivationMode::Allowlist | ActivationMode::Denylist | ActivationMode::All => {
-            repo_bundle_materialized(repo)
-        }
+        ActivationMode::Allowlist => repo_bundle_materialized(repo),
+        ActivationMode::Denylist | ActivationMode::All => true,
     }
 }
 
-fn known_policy_repos(policy: &ActivationPolicy, fallback: &Path) -> Vec<PathBuf> {
+fn known_policy_repos(
+    paths: &SetupPaths,
+    policy: &ActivationPolicy,
+    fallback: &Path,
+) -> Vec<PathBuf> {
     let mut repos = vec![fallback.to_path_buf()];
     for entry in &policy.repos {
         if !repos.contains(&entry.path) {
             repos.push(entry.path.clone());
+        }
+    }
+    if let Ok(manifest) = read_manifest(paths) {
+        for record in manifest.records {
+            if let Some(repo) = project_config_repo(&record.target_path) {
+                if !repos.contains(&repo) {
+                    repos.push(repo);
+                }
+            }
         }
     }
     repos
@@ -302,6 +333,47 @@ fn remove_repo_scoped_setup(repo: &Path, plan: &mut SetupPlan, dry_run: bool) ->
     }
     remove_bundle(repo, plan, dry_run)?;
     remove_project_hook(repo, plan, dry_run)
+}
+
+fn project_setup_recorded(paths: &SetupPaths, repo: &Path) -> bool {
+    read_manifest(paths)
+        .map(|manifest| {
+            manifest
+                .records
+                .iter()
+                .filter_map(|record| project_config_repo(&record.target_path))
+                .any(|record_repo| record_repo == repo)
+        })
+        .unwrap_or(false)
+}
+
+fn dedup_paths(paths: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for path in paths {
+        if !out.contains(&path) {
+            out.push(path);
+        }
+    }
+    out
+}
+
+fn global_setup_remains_for_repo(paths: &SetupPaths, repo: &Path) -> Result<bool> {
+    if managed_hook_count_parseable(&paths.codex_config) == 0 {
+        return Ok(false);
+    }
+    if !managed_hook_executable_ok(&paths.codex_config, SetupScope::Global) {
+        return Ok(false);
+    }
+    let policy = read_policy_or_default(paths)?;
+    Ok(global_policy_should_scan_repo(&policy, repo))
+}
+
+fn global_policy_enables_repo(paths: &SetupPaths, repo: &Path) -> Result<bool> {
+    if !paths.codex1_config.exists() {
+        return Ok(false);
+    }
+    let policy = read_policy_or_default(paths)?;
+    Ok(global_policy_should_scan_repo(&policy, repo))
 }
 
 fn remove_project_hook(repo: &Path, plan: &mut SetupPlan, dry_run: bool) -> Result<()> {
@@ -326,8 +398,65 @@ fn preflight_remove_project_hook(repo: &Path) -> Result<()> {
 }
 
 fn preflight_remove_bundle(repo: &Path) -> Result<()> {
-    let mut plan = SetupPlan::new(true);
-    remove_bundle(repo, &mut plan, true)
+    validate_bundle_removal(repo).map(|_| ())
+}
+
+fn validate_bundle_removal(repo: &Path) -> Result<Option<Vec<String>>> {
+    let marker = repo_bundle_target(repo, BUNDLE_MARKER)?;
+    let marker_text = match fs::read_to_string(&marker) {
+        Ok(text) => text,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(Codex1Error::SetupBundle(format!(
+                "failed to read {}: {error}",
+                marker.display()
+            )))
+        }
+    };
+    let marker_data = parse_bundle_marker(&marker, &marker_text)?;
+    if marker_data.managed_by != "codex1-managed" || marker_data.version != BUNDLE_VERSION {
+        return Err(Codex1Error::SetupBundle(format!(
+            "invalid Codex1 bundle marker {}",
+            marker.display()
+        )));
+    }
+    if marker_text != bundle_marker_body() {
+        return Err(Codex1Error::SetupBundle(format!(
+            "refusing to remove non-managed file {}",
+            marker.display()
+        )));
+    }
+    for relative in &marker_data.files {
+        if !MANAGED_BUNDLE_FILES.contains(&relative.as_str()) {
+            return Err(Codex1Error::SetupBundle(format!(
+                "bundle marker contains unmanaged file {}",
+                relative
+            )));
+        }
+        let path = repo_bundle_target(repo, relative)?;
+        let text = match fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(error) if error.kind() == ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(Codex1Error::SetupBundle(format!(
+                    "failed to read {}: {error}",
+                    path.display()
+                )))
+            }
+        };
+        let owned = if relative == BUNDLE_GUIDANCE {
+            guidance_has_managed_block(&text) || text == guidance_body()
+        } else {
+            text == expected_bundle_body(relative)
+        };
+        if !owned {
+            return Err(Codex1Error::SetupBundle(format!(
+                "refusing to remove non-managed file {}",
+                path.display()
+            )));
+        }
+    }
+    Ok(Some(marker_data.files))
 }
 
 fn emit(cli_json: bool, data: serde_json::Value) -> Result<()> {
@@ -359,7 +488,7 @@ fn install(args: SetupInstallArgs) -> Result<serde_json::Value> {
             let paths = resolve_paths()?;
             let mut policy = read_policy_or_default(&paths)?;
             let cleanup_repos = if matches!(mode, ActivationMode::Off) {
-                known_policy_repos(&policy, &repo)
+                known_policy_repos(&paths, &policy, &repo)
             } else {
                 Vec::new()
             };
@@ -375,10 +504,11 @@ fn install(args: SetupInstallArgs) -> Result<serde_json::Value> {
                 let had_global_hook = managed_hook_count_parseable(&paths.codex_config) > 0;
                 let original_policy = read_optional_text(&paths.codex1_config)?;
                 preflight_materialize_bundle(&repo)?;
+                preflight_write_policy(&paths)?;
                 preflight_install_managed_hook(&paths.codex_config, SetupScope::Global)?;
                 preflight_remove_project_hook(&repo)?;
-                materialize_bundle(&repo, &mut plan, args.dry_run)?;
-                if let Err(error) = write_policy(&paths, &policy, &mut plan, args.dry_run)
+                if let Err(error) = materialize_bundle(&repo, &mut plan, args.dry_run)
+                    .and_then(|()| write_policy(&paths, &policy, &mut plan, args.dry_run))
                     .and_then(|()| {
                         install_managed_hook(
                             &paths.codex_config,
@@ -407,29 +537,63 @@ fn install(args: SetupInstallArgs) -> Result<serde_json::Value> {
                     return Err(error);
                 }
             } else {
+                for repo in &cleanup_repos {
+                    preflight_remove_bundle(repo)?;
+                    preflight_remove_project_hook(repo)?;
+                }
+                if !matches!(mode, ActivationMode::Off) {
+                    preflight_remove_bundle(&repo)?;
+                }
+                write_policy(&paths, &policy, &mut plan, args.dry_run)?;
                 for repo in cleanup_repos {
                     remove_repo_scoped_setup(&repo, &mut plan, args.dry_run)?;
                 }
                 if !matches!(mode, ActivationMode::Off) {
                     remove_bundle(&repo, &mut plan, args.dry_run)?;
                 }
-                write_policy(&paths, &policy, &mut plan, args.dry_run)?;
             }
         }
         SetupScope::Project => {
+            let paths = resolve_paths()?;
             let project_config = project_config_path_checked(&repo)?;
             preflight_materialize_bundle(&repo)?;
+            let suppress_global = global_policy_enables_repo(&paths, &repo)?;
+            let original_policy = if suppress_global {
+                Some(read_optional_text(&paths.codex1_config)?)
+            } else {
+                None
+            };
+            let mut suppressed_policy = if suppress_global {
+                let mut policy = read_policy_or_default(&paths)?;
+                policy.disable_repo(repo.clone());
+                preflight_write_policy(&paths)?;
+                Some(policy)
+            } else {
+                None
+            };
             let had_bundle = repo_bundle_materialized(&repo);
             let had_project_hook = managed_hook_count_parseable(&project_config) > 0;
-            if let Err(error) = install_managed_hook_without_backup(
+            let install_result = install_managed_hook(
                 &project_config,
                 SetupScope::Project,
                 &mut plan,
                 args.dry_run,
-            )
-            .and_then(|()| materialize_bundle(&repo, &mut plan, args.dry_run))
+                "project hook",
+            );
+            if let Err(error) = install_result
+                .and_then(|()| materialize_bundle(&repo, &mut plan, args.dry_run))
+                .and_then(|()| {
+                    if let Some(policy) = suppressed_policy.take() {
+                        write_policy(&paths, &policy, &mut plan, args.dry_run)
+                    } else {
+                        Ok(())
+                    }
+                })
             {
                 if !args.dry_run {
+                    if let Some(original_policy) = original_policy.as_ref() {
+                        let _ = restore_text(&paths.codex1_config, original_policy.as_deref());
+                    }
                     if !had_project_hook {
                         let _ = remove_managed_hook(
                             &project_config,
@@ -460,6 +624,17 @@ fn enable(args: SetupRepoArgs) -> Result<serde_json::Value> {
     let repo = resolve_repo(args.repo)?;
     let paths = resolve_paths()?;
     if !paths.codex1_config.exists() {
+        let project_config = project_config_path(&repo);
+        if managed_hook_count_parseable(&project_config) > 0
+            || project_setup_recorded(&paths, &repo)
+        {
+            return install(SetupInstallArgs {
+                mode: Some(SetupModeArg::Allowlist),
+                scope: Some(SetupScopeArg::Project),
+                repo: Some(repo),
+                dry_run: args.dry_run,
+            });
+        }
         return install(SetupInstallArgs {
             mode: Some(SetupModeArg::Allowlist),
             scope: Some(SetupScopeArg::Global),
@@ -477,10 +652,11 @@ fn enable(args: SetupRepoArgs) -> Result<serde_json::Value> {
     let had_global_hook = managed_hook_count_parseable(&paths.codex_config) > 0;
     let original_policy = read_optional_text(&paths.codex1_config)?;
     preflight_materialize_bundle(&repo)?;
+    preflight_write_policy(&paths)?;
     preflight_install_managed_hook(&paths.codex_config, SetupScope::Global)?;
     preflight_remove_project_hook(&repo)?;
-    materialize_bundle(&repo, &mut plan, args.dry_run)?;
-    if let Err(error) = write_policy(&paths, &policy, &mut plan, args.dry_run)
+    if let Err(error) = materialize_bundle(&repo, &mut plan, args.dry_run)
+        .and_then(|()| write_policy(&paths, &policy, &mut plan, args.dry_run))
         .and_then(|()| {
             install_managed_hook(
                 &paths.codex_config,
@@ -520,6 +696,20 @@ fn disable(args: SetupRepoArgs) -> Result<serde_json::Value> {
     let repo = resolve_repo(args.repo)?;
     let paths = resolve_paths()?;
     let mut plan = SetupPlan::new(args.dry_run);
+    if !paths.codex1_config.exists()
+        && managed_hook_count_parseable(&project_config_path(&repo)) > 0
+    {
+        preflight_remove_bundle(&repo)?;
+        preflight_remove_project_hook(&repo)?;
+        remove_bundle(&repo, &mut plan, args.dry_run)?;
+        remove_project_hook(&repo, &mut plan, args.dry_run)?;
+        return Ok(json!({
+            "summary": format!("setup disabled for {}", repo.display()),
+            "command": "setup disable",
+            "repo": repo,
+            "plan": plan,
+        }));
+    }
     let mut policy = read_policy_or_default(&paths)?;
     policy.disable_repo(repo.clone());
     preflight_remove_bundle(&repo)?;
@@ -542,16 +732,52 @@ fn uninstall(args: SetupUninstallArgs) -> Result<serde_json::Value> {
     let mut plan = SetupPlan::new(args.dry_run);
     match scope {
         SetupScope::Global => {
-            remove_managed_hook(&paths.codex_config, &mut plan, args.dry_run, "global hook")?;
+            let original_policy = read_policy_or_default(&paths)?;
+            let known_repos = known_policy_repos(&paths, &original_policy, &repo);
+            let mut policy = original_policy.clone();
+            policy.disable_repo(repo.clone());
+            let remove_shared_hook = !policy.has_any_global_activation();
+            let selected_has_project_hook =
+                managed_hook_count_parseable(&project_config_path(&repo)) > 0;
+            let bundle_repos = if remove_shared_hook {
+                dedup_paths(known_repos.into_iter().filter(|known_repo| {
+                    managed_hook_count_parseable(&project_config_path(known_repo)) == 0
+                }))
+            } else if selected_has_project_hook {
+                Vec::new()
+            } else {
+                vec![repo.clone()]
+            };
+            for bundle_repo in &bundle_repos {
+                preflight_remove_bundle(bundle_repo)?;
+            }
+            if remove_shared_hook {
+                preflight_remove_managed_hook(&paths.codex_config)?;
+            }
+            if paths.codex1_config.exists() {
+                write_policy(&paths, &policy, &mut plan, args.dry_run)?;
+            }
+            if remove_shared_hook {
+                remove_managed_hook(&paths.codex_config, &mut plan, args.dry_run, "global hook")?;
+            }
+            for bundle_repo in bundle_repos {
+                remove_bundle(&bundle_repo, &mut plan, args.dry_run)?;
+            }
         }
         SetupScope::Project => {
+            let keep_bundle = global_setup_remains_for_repo(&paths, &repo)?;
+            if !keep_bundle {
+                preflight_remove_bundle(&repo)?;
+            }
             remove_managed_hook(
                 &project_config_path_checked(&repo)?,
                 &mut plan,
                 args.dry_run,
                 "project hook",
             )?;
-            remove_bundle(&repo, &mut plan, args.dry_run)?;
+            if !keep_bundle {
+                remove_bundle(&repo, &mut plan, args.dry_run)?;
+            }
         }
     }
     Ok(json!({
@@ -573,7 +799,9 @@ fn migrate(args: SetupMigrateArgs) -> Result<serde_json::Value> {
             preflight_materialize_bundle(&repo)?;
             let project_config = project_config_path_checked(&repo)?;
             let mut policy = read_policy_or_default(&paths)?;
+            let original_policy = read_optional_text(&paths.codex1_config)?;
             policy.disable_repo(repo.clone());
+            preflight_write_policy(&paths)?;
             let had_bundle = repo_bundle_materialized(&repo);
             let had_project_hook = managed_hook_count_parseable(&project_config) > 0;
             if let Err(error) = install_managed_hook(
@@ -587,6 +815,7 @@ fn migrate(args: SetupMigrateArgs) -> Result<serde_json::Value> {
             .and_then(|()| write_policy(&paths, &policy, &mut plan, args.dry_run))
             {
                 if !args.dry_run {
+                    let _ = restore_text(&paths.codex1_config, original_policy.as_deref());
                     if !had_project_hook {
                         let _ = remove_managed_hook(
                             &project_config,
@@ -608,6 +837,7 @@ fn migrate(args: SetupMigrateArgs) -> Result<serde_json::Value> {
             parse_toml_file(&project_config)?;
             preflight_remove_managed_hook(&project_config)?;
             preflight_install_managed_hook(&paths.codex_config, SetupScope::Global)?;
+            preflight_write_policy(&paths)?;
             let mut policy = read_policy_or_default(&paths)?;
             if matches!(policy.mode, ActivationMode::Off) {
                 policy.mode = ActivationMode::Allowlist;
@@ -672,7 +902,7 @@ fn doctor(repo_arg: Option<PathBuf>) -> Result<serde_json::Value> {
         json!({"name": "codex1_policy_parseable", "ok": status.global_config_parseable}),
         json!({"name": "backup_manifest_parseable", "ok": read_manifest(&paths).is_ok()}),
         json!({"name": "global_hook_installed", "ok": status.global_hook_installed || status.project_hook_installed}),
-        json!({"name": "managed_hook_executable", "ok": managed_hook_executable_ok(&status.codex_config) && managed_hook_executable_ok(&project_config)}),
+        json!({"name": "managed_hook_executable", "ok": managed_hook_executable_ok(&status.codex_config, SetupScope::Global) && managed_hook_executable_ok(&project_config, SetupScope::Project)}),
         json!({"name": "repo_bundle_materialized", "ok": status.repo_bundle_materialized}),
         json!({"name": "duplicate_hook_risk", "ok": !status.duplicate_hook_risk}),
     ];
@@ -700,17 +930,21 @@ fn status(repo_arg: Option<PathBuf>) -> Result<SetupStatus> {
     let global_hook_count = managed_hook_count_parseable(&paths.codex_config);
     let project_config = project_config_path(&repo);
     let project_hook_count = managed_hook_count_parseable(&project_config);
-    let global_hook_executable_ok = managed_hook_executable_ok(&paths.codex_config);
-    let project_hook_executable_ok = managed_hook_executable_ok(&project_config);
+    let global_hook_executable_ok =
+        managed_hook_executable_ok(&paths.codex_config, SetupScope::Global);
+    let project_hook_executable_ok =
+        managed_hook_executable_ok(&project_config, SetupScope::Project);
     let repo_bundle_materialized = repo_bundle_materialized(&repo);
     if project_hook_count > 0 {
         warnings.push("project-local hooks depend on official Codex project trust".to_string());
     }
     let repo_policy_enabled = policy.effective_for(&repo);
-    let effective_active = (global_hook_count > 0
+    let global_hook_active = global_hook_count > 0
         && global_hook_executable_ok
-        && global_policy_should_scan_repo(&policy, &repo))
-        || (project_hook_count > 0 && project_hook_executable_ok && repo_bundle_materialized);
+        && global_policy_should_scan_repo(&policy, &repo);
+    let project_hook_active =
+        project_hook_count > 0 && project_hook_executable_ok && repo_bundle_materialized;
+    let effective_active = global_hook_active || project_hook_active;
     let backups_available = read_manifest(&paths)
         .map(|manifest| manifest.records.len())
         .unwrap_or(0);
@@ -727,7 +961,7 @@ fn status(repo_arg: Option<PathBuf>) -> Result<SetupStatus> {
         global_hook_installed: global_hook_count > 0,
         project_hook_installed: project_hook_count > 0,
         repo_bundle_materialized,
-        duplicate_hook_risk: global_hook_count + project_hook_count > 1,
+        duplicate_hook_risk: global_hook_active && project_hook_active,
         backups_available,
         project_trust_caveat: project_hook_count > 0,
         warnings,
@@ -744,7 +978,10 @@ fn backups_list() -> Result<serde_json::Value> {
     }))
 }
 
-fn backups_restore(args: SetupBackupRestoreArgs) -> Result<serde_json::Value> {
+fn backups_restore(
+    repo_arg: Option<PathBuf>,
+    args: SetupBackupRestoreArgs,
+) -> Result<serde_json::Value> {
     if !args.force && !args.dry_run {
         return Err(Codex1Error::SetupRestore(
             "setup backups restore requires --force unless --dry-run is used".into(),
@@ -757,7 +994,7 @@ fn backups_restore(args: SetupBackupRestoreArgs) -> Result<serde_json::Value> {
         .iter()
         .find(|record| record.id == args.id)
         .ok_or_else(|| Codex1Error::SetupRestore(format!("unknown backup id {}", args.id)))?;
-    validate_backup_record_for_restore(&paths, record)?;
+    validate_backup_record_for_restore(&paths, repo_arg.as_deref(), record)?;
     if !args.dry_run {
         if record.existed {
             let backup_path = record.backup_path.as_ref().ok_or_else(|| {
@@ -798,13 +1035,25 @@ fn backups_restore(args: SetupBackupRestoreArgs) -> Result<serde_json::Value> {
     }))
 }
 
-fn validate_backup_record_for_restore(paths: &SetupPaths, record: &BackupRecord) -> Result<()> {
-    if record.target_path != paths.codex_config && record.target_path != paths.codex1_config {
+fn validate_backup_record_for_restore(
+    paths: &SetupPaths,
+    repo_arg: Option<&Path>,
+    record: &BackupRecord,
+) -> Result<()> {
+    let valid_target = record.target_path == paths.codex_config
+        || record.target_path == paths.codex1_config
+        || validate_project_config_restore_target(repo_arg, &record.target_path).is_ok();
+    if !valid_target {
         return Err(Codex1Error::SetupRestore(format!(
             "backup {} target is outside managed setup paths: {}",
             record.id,
             record.target_path.display()
         )));
+    }
+    if record.target_path == paths.codex_config || record.target_path == paths.codex1_config {
+        reject_symlinked_config_target(&record.target_path).map_err(|error| {
+            Codex1Error::SetupRestore(format!("backup {} target is unsafe: {error}", record.id))
+        })?;
     }
     if let Some(backup_path) = &record.backup_path {
         let backups_dir = fs::canonicalize(&paths.backups_dir).map_err(|source| {
@@ -846,6 +1095,64 @@ fn validate_backup_record_for_restore(paths: &SetupPaths, record: &BackupRecord)
         )));
     }
     Ok(())
+}
+
+fn validate_project_config_restore_target(repo_arg: Option<&Path>, target: &Path) -> Result<()> {
+    if target.file_name().and_then(OsStr::to_str) != Some(CONFIG_FILE) {
+        return Err(Codex1Error::SetupRestore(format!(
+            "project config backup target must be config.toml: {}",
+            target.display()
+        )));
+    }
+    let codex_dir = target.parent().ok_or_else(|| {
+        Codex1Error::SetupRestore(format!(
+            "project config backup target has no parent: {}",
+            target.display()
+        ))
+    })?;
+    if codex_dir.file_name().and_then(OsStr::to_str) != Some(".codex") {
+        return Err(Codex1Error::SetupRestore(format!(
+            "project config backup target must be under .codex: {}",
+            target.display()
+        )));
+    }
+    let repo = project_config_repo(target).ok_or_else(|| {
+        Codex1Error::SetupRestore(format!(
+            "project config backup target has no repo parent: {}",
+            target.display()
+        ))
+    })?;
+    let selected_repo = resolve_repo(repo_arg.map(Path::to_path_buf))?;
+    if repo != selected_repo {
+        return Err(Codex1Error::SetupRestore(format!(
+            "project config backup target is outside selected repo: {}",
+            target.display()
+        )));
+    }
+    if !selected_repo.join(".git").exists() {
+        return Err(Codex1Error::SetupRestore(format!(
+            "project config backup target is not under a repo: {}",
+            target.display()
+        )));
+    }
+    ensure_contained_for_write(&selected_repo, target).map_err(|source| {
+        Codex1Error::SetupRestore(format!(
+            "project config backup target escapes repo: {}: {source}",
+            target.display()
+        ))
+    })
+}
+
+fn project_config_repo(target: &Path) -> Option<PathBuf> {
+    if target.file_name().and_then(OsStr::to_str) != Some(CONFIG_FILE) {
+        return None;
+    }
+    let codex_dir = target.parent()?;
+    if codex_dir.file_name().and_then(OsStr::to_str) != Some(".codex") {
+        return None;
+    }
+    let repo = codex_dir.parent()?;
+    fs::canonicalize(repo).ok()
 }
 
 fn resolve_repo(repo: Option<PathBuf>) -> Result<PathBuf> {
@@ -966,6 +1273,7 @@ fn write_policy(
     if dry_run {
         return Ok(());
     }
+    preflight_write_policy(paths)?;
     backup_target(
         paths,
         &paths.codex1_config,
@@ -987,6 +1295,11 @@ fn write_policy(
             paths.codex1_config.display()
         ))
     })
+}
+
+fn preflight_write_policy(paths: &SetupPaths) -> Result<()> {
+    reject_symlinked_config_target(&paths.codex1_config)?;
+    read_manifest(paths).map(|_| ())
 }
 
 fn read_optional_text(path: &Path) -> Result<Option<String>> {
@@ -1015,6 +1328,7 @@ fn restore_text(path: &Path, text: Option<&str>) -> Result<()> {
 }
 
 fn preflight_install_managed_hook(config_path: &Path, hook_scope: SetupScope) -> Result<()> {
+    reject_symlinked_config_target(config_path)?;
     let mut text = match fs::read_to_string(config_path) {
         Ok(text) => text,
         Err(error) if error.kind() == ErrorKind::NotFound => String::new(),
@@ -1038,6 +1352,7 @@ fn preflight_remove_managed_hook(config_path: &Path) -> Result<()> {
     if !config_path.exists() {
         return Ok(());
     }
+    reject_symlinked_config_target(config_path)?;
     let original = fs::read_to_string(config_path).map_err(|source| {
         Codex1Error::SetupConfigParse(format!(
             "failed to read {}: {source}",
@@ -1061,15 +1376,6 @@ fn install_managed_hook(
     install_managed_hook_inner(config_path, hook_scope, plan, dry_run, Some(reason))
 }
 
-fn install_managed_hook_without_backup(
-    config_path: &Path,
-    hook_scope: SetupScope,
-    plan: &mut SetupPlan,
-    dry_run: bool,
-) -> Result<()> {
-    install_managed_hook_inner(config_path, hook_scope, plan, dry_run, None)
-}
-
 fn install_managed_hook_inner(
     config_path: &Path,
     hook_scope: SetupScope,
@@ -1081,6 +1387,7 @@ fn install_managed_hook_inner(
     if dry_run {
         return Ok(());
     }
+    reject_symlinked_config_target(config_path)?;
     if let Some(reason) = backup_reason {
         let paths = resolve_paths()?;
         backup_target(&paths, config_path, "codex-config", reason, plan)?;
@@ -1114,6 +1421,7 @@ fn remove_managed_hook(
     if !config_path.exists() {
         return Ok(());
     }
+    reject_symlinked_config_target(config_path)?;
     let original = fs::read_to_string(config_path).map_err(|source| {
         Codex1Error::SetupConfigParse(format!(
             "failed to read {}: {source}",
@@ -1148,7 +1456,7 @@ fn managed_hook_count_parseable(config_path: &Path) -> usize {
     managed_hook_count(config_path)
 }
 
-fn managed_hook_executable_ok(config_path: &Path) -> bool {
+fn managed_hook_executable_ok(config_path: &Path, hook_scope: SetupScope) -> bool {
     let Ok(commands) = managed_hook_commands(config_path) else {
         return false;
     };
@@ -1160,7 +1468,45 @@ fn managed_hook_executable_ok(config_path: &Path) -> bool {
     }
     commands
         .iter()
-        .all(|command| hook_command_executable(command).is_some_and(|path| path.is_file()))
+        .all(|command| managed_hook_command_ok(command, hook_scope))
+}
+
+fn managed_hook_command_ok(command: &str, hook_scope: SetupScope) -> bool {
+    let Some((path, rest)) = hook_command_invocation(command) else {
+        return false;
+    };
+    if !hook_executable_ok(&path) {
+        return false;
+    }
+    let mut args = rest.split_whitespace();
+    matches!(
+        (
+            args.next(),
+            args.next(),
+            args.next(),
+            args.next(),
+            args.next()
+        ),
+        (Some("ralph"), Some("stop-hook"), Some("--scope"), Some(scope), None)
+            if scope == hook_scope.hook_arg()
+    )
+}
+
+fn hook_executable_ok(path: &Path) -> bool {
+    let Ok(metadata) = fs::metadata(path) else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
 }
 
 fn managed_hook_commands(config_path: &Path) -> Result<Vec<String>> {
@@ -1210,18 +1556,27 @@ fn managed_hook_commands(config_path: &Path) -> Result<Vec<String>> {
     Ok(commands)
 }
 
+#[cfg(test)]
 fn hook_command_executable(command: &str) -> Option<PathBuf> {
+    hook_command_invocation(command).map(|(path, _)| path)
+}
+
+fn hook_command_invocation(command: &str) -> Option<(PathBuf, String)> {
     let command = command.trim_start();
     if let Some(rest) = command.strip_prefix('\'') {
-        return posix_single_quoted_word(rest).map(PathBuf::from);
+        return posix_single_quoted_word(rest)
+            .map(|(word, rest)| (PathBuf::from(word), rest.trim_start().to_string()));
     }
     if let Some(rest) = command.strip_prefix('"') {
         let mut path = String::new();
-        let mut chars = rest.chars().peekable();
+        let mut chars = rest.char_indices().peekable();
         while let Some(ch) = chars.next() {
-            match ch {
-                '"' => return Some(PathBuf::from(path)),
-                '\\' if chars.peek() == Some(&'"') => {
+            match ch.1 {
+                '"' => {
+                    let rest = &rest[ch.0 + ch.1.len_utf8()..];
+                    return Some((PathBuf::from(path), rest.trim_start().to_string()));
+                }
+                '\\' if chars.peek().is_some_and(|next| next.1 == '"') => {
                     chars.next();
                     path.push('"');
                 }
@@ -1230,10 +1585,13 @@ fn hook_command_executable(command: &str) -> Option<PathBuf> {
         }
         return None;
     }
-    command.split_whitespace().next().map(PathBuf::from)
+    let mut parts = command.splitn(2, char::is_whitespace);
+    let word = parts.next()?;
+    let rest = parts.next().unwrap_or("").trim_start();
+    Some((PathBuf::from(word), rest.to_string()))
 }
 
-fn posix_single_quoted_word(mut rest: &str) -> Option<String> {
+fn posix_single_quoted_word(mut rest: &str) -> Option<(String, &str)> {
     let mut word = String::new();
     loop {
         let end = rest.find('\'')?;
@@ -1244,7 +1602,7 @@ fn posix_single_quoted_word(mut rest: &str) -> Option<String> {
             rest = next;
             continue;
         }
-        return Some(word);
+        return Some((word, rest));
     }
 }
 
@@ -1287,13 +1645,10 @@ enum CommandShell {
 }
 
 fn hook_command_for_exe_with_shell(exe: &Path, scope: SetupScope, shell: CommandShell) -> String {
-    let scope_arg = match scope {
-        SetupScope::Global => "global",
-        SetupScope::Project => "project",
-    };
     format!(
-        "{} ralph stop-hook --scope {scope_arg}",
-        shell_escape_exe(exe, shell)
+        "{} ralph stop-hook --scope {}",
+        shell_escape_exe(exe, shell),
+        scope.hook_arg()
     )
 }
 
@@ -1382,6 +1737,12 @@ fn validate_bundle(repo: &Path) -> Result<()> {
         ))
     })?;
     let marker_data = parse_bundle_marker(&marker, &marker_text)?;
+    if marker_data.managed_by != "codex1-managed" || marker_data.version != BUNDLE_VERSION {
+        return Err(Codex1Error::SetupBundle(format!(
+            "invalid Codex1 bundle marker {}",
+            marker.display()
+        )));
+    }
     if marker_data.files != MANAGED_BUNDLE_FILES.map(String::from) {
         return Err(Codex1Error::SetupBundle(format!(
             "bundle marker has unexpected files {}",
@@ -1394,7 +1755,7 @@ fn validate_bundle(repo: &Path) -> Result<()> {
             Codex1Error::SetupBundle(format!("failed to read {}: {source}", path.display()))
         })?;
         let valid = if relative == BUNDLE_GUIDANCE {
-            guidance_has_managed_block(&text) || text == guidance_body()
+            guidance_has_current_managed_block(&text)
         } else {
             text == expected_bundle_body(relative)
         };
@@ -1449,32 +1810,11 @@ fn materialize_bundle(repo: &Path, plan: &mut SetupPlan, dry_run: bool) -> Resul
 
 fn remove_bundle(repo: &Path, plan: &mut SetupPlan, dry_run: bool) -> Result<()> {
     let marker = repo_bundle_target(repo, BUNDLE_MARKER)?;
-    let marker_text = match fs::read_to_string(&marker) {
-        Ok(text) => text,
-        Err(error) if error.kind() == ErrorKind::NotFound => {
-            return remove_known_bundle_files(repo, plan, dry_run);
-        }
-        Err(error) => {
-            return Err(Codex1Error::SetupBundle(format!(
-                "failed to read {}: {error}",
-                marker.display()
-            )))
-        }
+    let Some(files) = validate_bundle_removal(repo)? else {
+        return remove_known_bundle_files(repo, plan, dry_run);
     };
-    let marker_data = parse_bundle_marker(&marker, &marker_text)?;
-    if marker_data.managed_by != "codex1-managed" || marker_data.version != BUNDLE_VERSION {
-        return Err(Codex1Error::SetupBundle(format!(
-            "invalid Codex1 bundle marker {}",
-            marker.display()
-        )));
-    }
-    for relative in marker_data.files {
-        if !MANAGED_BUNDLE_FILES.contains(&relative.as_str()) {
-            return Err(Codex1Error::SetupBundle(format!(
-                "bundle marker contains unmanaged file {}",
-                relative
-            )));
-        }
+
+    for relative in files {
         let path = repo_bundle_target(repo, &relative)?;
         plan.removes.push(path.clone());
         if !dry_run {
@@ -1616,17 +1956,28 @@ fn write_guidance_file(repo: &Path, path: &Path) -> Result<()> {
             )))
         }
     };
-    if guidance_has_managed_block(&text) || text == guidance_body() {
+    if guidance_has_current_managed_block(&text) {
         return Ok(());
     }
-    let mut edited = text;
+    let mut edited = if guidance_has_managed_block(&text) {
+        replace_guidance_block(&text, &block).ok_or_else(|| {
+            Codex1Error::SetupBundle(format!(
+                "failed to replace managed guidance block in {}",
+                path.display()
+            ))
+        })?
+    } else {
+        text
+    };
     if !edited.ends_with('\n') {
         edited.push('\n');
     }
-    if !edited.ends_with("\n\n") {
-        edited.push('\n');
+    if !guidance_has_managed_block(&edited) {
+        if !edited.ends_with("\n\n") {
+            edited.push('\n');
+        }
+        edited.push_str(&block);
     }
-    edited.push_str(&block);
     fs::write(path, edited).map_err(|source| {
         Codex1Error::SetupBundle(format!("failed to write {}: {source}", path.display()))
     })
@@ -1762,6 +2113,27 @@ fn managed_guidance_block() -> String {
 
 fn guidance_has_managed_block(text: &str) -> bool {
     text.contains(MANAGED_GUIDANCE_START) && text.contains(MANAGED_GUIDANCE_END)
+}
+
+fn guidance_has_current_managed_block(text: &str) -> bool {
+    text == guidance_body() || text.contains(&managed_guidance_block())
+}
+
+fn replace_guidance_block(text: &str, replacement: &str) -> Option<String> {
+    let start = text.find(MANAGED_GUIDANCE_START)?;
+    let after_start = start + MANAGED_GUIDANCE_START.len();
+    let relative_end = text[after_start..].find(MANAGED_GUIDANCE_END)?;
+    let mut end = after_start + relative_end + MANAGED_GUIDANCE_END.len();
+    if text[end..].starts_with("\r\n") {
+        end += 2;
+    } else if text[end..].starts_with('\n') {
+        end += 1;
+    }
+    let mut edited = String::new();
+    edited.push_str(&text[..start]);
+    edited.push_str(replacement);
+    edited.push_str(&text[end..]);
+    Some(edited)
 }
 
 fn remove_guidance_block(text: &str) -> Option<String> {
@@ -1900,6 +2272,7 @@ fn write_manifest(paths: &SetupPaths, manifest: &BackupManifest) -> Result<()> {
 }
 
 fn write_text(path: &Path, text: &str) -> Result<()> {
+    reject_symlinked_config_target(path)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|source| {
             Codex1Error::SetupConfigWrite(format!(
@@ -1911,6 +2284,20 @@ fn write_text(path: &Path, text: &str) -> Result<()> {
     fs::write(path, text).map_err(|source| {
         Codex1Error::SetupConfigWrite(format!("failed to write {}: {source}", path.display()))
     })
+}
+
+fn reject_symlinked_config_target(path: &Path) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(Codex1Error::SetupConfigWrite(
+            format!("refusing to write symlinked config {}", path.display()),
+        )),
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(Codex1Error::SetupConfigWrite(format!(
+            "failed to inspect {}: {error}",
+            path.display()
+        ))),
+    }
 }
 
 fn safe_backup_name(path: &Path) -> String {
