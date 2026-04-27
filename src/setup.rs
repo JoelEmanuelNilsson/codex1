@@ -1349,16 +1349,17 @@ fn preflight_install_managed_hook(config_path: &Path, hook_scope: SetupScope) ->
 }
 
 fn preflight_remove_managed_hook(config_path: &Path) -> Result<()> {
-    if !config_path.exists() {
-        return Ok(());
-    }
     reject_symlinked_config_target(config_path)?;
-    let original = fs::read_to_string(config_path).map_err(|source| {
-        Codex1Error::SetupConfigParse(format!(
-            "failed to read {}: {source}",
-            config_path.display()
-        ))
-    })?;
+    let original = match fs::read_to_string(config_path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(Codex1Error::SetupConfigParse(format!(
+                "failed to read {}: {error}",
+                config_path.display()
+            )))
+        }
+    };
     let edited = remove_managed_hook_block(&original)?;
     if edited != original {
         parse_toml_text(&edited)?;
@@ -1373,25 +1374,13 @@ fn install_managed_hook(
     dry_run: bool,
     reason: &str,
 ) -> Result<()> {
-    install_managed_hook_inner(config_path, hook_scope, plan, dry_run, Some(reason))
-}
-
-fn install_managed_hook_inner(
-    config_path: &Path,
-    hook_scope: SetupScope,
-    plan: &mut SetupPlan,
-    dry_run: bool,
-    backup_reason: Option<&str>,
-) -> Result<()> {
     plan.writes.push(config_path.to_path_buf());
     if dry_run {
         return Ok(());
     }
     reject_symlinked_config_target(config_path)?;
-    if let Some(reason) = backup_reason {
-        let paths = resolve_paths()?;
-        backup_target(&paths, config_path, "codex-config", reason, plan)?;
-    }
+    let paths = resolve_paths()?;
+    backup_target(&paths, config_path, "codex-config", reason, plan)?;
     let mut text = match fs::read_to_string(config_path) {
         Ok(text) => text,
         Err(error) if error.kind() == ErrorKind::NotFound => String::new(),
@@ -1418,16 +1407,17 @@ fn remove_managed_hook(
     dry_run: bool,
     reason: &str,
 ) -> Result<()> {
-    if !config_path.exists() {
-        return Ok(());
-    }
     reject_symlinked_config_target(config_path)?;
-    let original = fs::read_to_string(config_path).map_err(|source| {
-        Codex1Error::SetupConfigParse(format!(
-            "failed to read {}: {source}",
-            config_path.display()
-        ))
-    })?;
+    let original = match fs::read_to_string(config_path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(Codex1Error::SetupConfigParse(format!(
+                "failed to read {}: {error}",
+                config_path.display()
+            )))
+        }
+    };
     let edited = remove_managed_hook_block(&original)?;
     if edited == original {
         return Ok(());
@@ -1450,19 +1440,27 @@ fn managed_hook_count(config_path: &Path) -> usize {
 }
 
 fn managed_hook_count_parseable(config_path: &Path) -> usize {
-    if parse_toml_file(config_path).is_err() {
+    let Ok(text) = fs::read_to_string(config_path) else {
+        return 0;
+    };
+    if parse_toml_text(&text).is_err() {
         return 0;
     }
-    managed_hook_count(config_path)
+    text.matches(MANAGED_HOOK_START).count()
 }
 
 fn managed_hook_executable_ok(config_path: &Path, hook_scope: SetupScope) -> bool {
-    let Ok(commands) = managed_hook_commands(config_path) else {
-        return false;
+    let text = match fs::read_to_string(config_path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == ErrorKind::NotFound => return true,
+        Err(_) => return false,
     };
-    if managed_hook_count(config_path) == 0 {
+    if !text.contains(MANAGED_HOOK_START) {
         return true;
     }
+    let Ok(commands) = parse_managed_hook_commands(&text) else {
+        return false;
+    };
     if commands.is_empty() {
         return false;
     }
@@ -1509,17 +1507,7 @@ fn hook_executable_ok(path: &Path) -> bool {
     }
 }
 
-fn managed_hook_commands(config_path: &Path) -> Result<Vec<String>> {
-    let text = match fs::read_to_string(config_path) {
-        Ok(text) => text,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => {
-            return Err(Codex1Error::SetupConfigParse(format!(
-                "failed to read {}: {error}",
-                config_path.display()
-            )))
-        }
-    };
+fn parse_managed_hook_commands(text: &str) -> Result<Vec<String>> {
     let mut commands = Vec::new();
     let mut scanning = false;
     for line in text.lines() {
