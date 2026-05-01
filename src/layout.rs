@@ -193,10 +193,6 @@ impl MissionLayout {
         self.mission_dir.join(".codex1")
     }
 
-    pub fn loop_file(&self) -> PathBuf {
-        self.meta_dir().join("LOOP.json")
-    }
-
     pub fn event_log(&self) -> PathBuf {
         self.meta_dir().join("events.jsonl")
     }
@@ -334,15 +330,9 @@ pub fn descriptors(layout: &MissionLayout) -> Vec<ArtifactDescriptor> {
                 path: path.display().to_string(),
             })
         })
-        .chain([
-            ArtifactDescriptor {
-                kind: "loop-state".into(),
-                path: layout.loop_file().display().to_string(),
-            },
-            ArtifactDescriptor {
-                kind: "receipts".into(),
-                path: layout.receipts_dir().display().to_string(),
-            },
-        ])
+        .chain([ArtifactDescriptor {
+            kind: "receipts".into(),
+            path: layout.receipts_dir().display().to_string(),
+        }])
         .collect()
 }

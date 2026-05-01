@@ -34,28 +34,6 @@ fn json_output(command: &mut Command) -> Value {
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
-fn json_output_with_stdin(command: &mut Command, stdin: String) -> Value {
-    let mut child = command
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(stdin.as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
-    assert!(
-        output.status.success(),
-        "stdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    serde_json::from_slice(&output.stdout).unwrap()
-}
-
 fn init(repo: &TempDir, mission: &str) {
     bin()
         .args(["--json", "--repo-root"])
@@ -96,7 +74,7 @@ fn init_returns_success_envelope() {
     );
     assert_eq!(value["ok"], true);
     let descriptors = value["data"]["artifacts"].as_array().unwrap();
-    assert!(descriptors
+    assert!(!descriptors
         .iter()
         .any(|descriptor| descriptor["kind"] == "loop-state"));
     assert!(descriptors
@@ -106,6 +84,10 @@ fn init_returns_success_envelope() {
         .path()
         .join(".codex1/missions/alpha/SUBPLANS/ready")
         .is_dir());
+    assert!(!repo
+        .path()
+        .join(".codex1/missions/alpha/.codex1/LOOP.json")
+        .exists());
 }
 
 #[test]
@@ -335,53 +317,6 @@ fn successful_mutations_append_forensic_events_without_messages() {
         ])
         .assert()
         .success();
-    bin()
-        .args(["--repo-root"])
-        .arg(repo.path())
-        .args([
-            "--mission",
-            "alpha",
-            "loop",
-            "start",
-            "--mode",
-            "autopilot",
-            "--message",
-            "loop message must not leak",
-        ])
-        .assert()
-        .success();
-    bin()
-        .args(["--repo-root"])
-        .arg(repo.path())
-        .args([
-            "--mission",
-            "alpha",
-            "loop",
-            "pause",
-            "--reason",
-            "pause reason must not leak",
-        ])
-        .assert()
-        .success();
-    bin()
-        .args(["--repo-root"])
-        .arg(repo.path())
-        .args(["--mission", "alpha", "loop", "resume"])
-        .assert()
-        .success();
-    bin()
-        .args(["--repo-root"])
-        .arg(repo.path())
-        .args([
-            "--mission",
-            "alpha",
-            "loop",
-            "stop",
-            "--reason",
-            "stop reason must not leak",
-        ])
-        .assert()
-        .success();
 
     let events = read_events(&repo, "alpha");
     let kinds: Vec<_> = events
@@ -390,10 +325,7 @@ fn successful_mutations_append_forensic_events_without_messages() {
         .collect();
     assert!(kinds.contains(&"subplan_moved"));
     assert!(kinds.contains(&"receipt_appended"));
-    assert!(kinds.contains(&"loop_started"));
-    assert!(kinds.contains(&"loop_paused"));
-    assert!(kinds.contains(&"loop_resumed"));
-    assert!(kinds.contains(&"loop_stopped"));
+    assert!(kinds.iter().all(|kind| !kind.starts_with("loop_")));
 
     let moved = events
         .iter()
@@ -419,27 +351,8 @@ fn successful_mutations_append_forensic_events_without_messages() {
         ".codex1/receipts/receipts.jsonl"
     );
 
-    let started = events
-        .iter()
-        .find(|event| event["kind"] == "loop_started")
-        .unwrap();
-    assert_eq!(started["metadata"]["mode"], "autopilot");
-    assert_eq!(started["metadata"]["message_present"], true);
-
-    let paused = events
-        .iter()
-        .find(|event| event["kind"] == "loop_paused")
-        .unwrap();
-    assert_eq!(paused["metadata"]["reason_present"], true);
-
     let text = event_log_text(&repo, "alpha");
-    for private in [
-        "receipt text must not leak",
-        "loop message must not leak",
-        "pause reason must not leak",
-        "stop reason must not leak",
-        repo.path().to_str().unwrap(),
-    ] {
+    for private in ["receipt text must not leak", repo.path().to_str().unwrap()] {
         assert!(!text.contains(private));
     }
 }
@@ -512,7 +425,6 @@ fn read_only_commands_do_not_append_events() {
     let repo = repo();
     init(&repo, "alpha");
     let before = event_log_text(&repo, "alpha");
-    let mission_dir = repo.path().join(".codex1/missions/alpha");
 
     bin()
         .args(["--json", "--repo-root"])
@@ -538,19 +450,6 @@ fn read_only_commands_do_not_append_events() {
         .args(["doctor"])
         .assert()
         .success();
-    bin()
-        .args(["--json", "--repo-root"])
-        .arg(repo.path())
-        .args(["--mission", "alpha", "loop", "status"])
-        .assert()
-        .failure();
-    let _ = json_output_with_stdin(
-        bin()
-            .args(["--repo-root"])
-            .arg(repo.path())
-            .args(["ralph", "stop-hook"]),
-        format!(r#"{{"cwd":"{}"}}"#, mission_dir.display()),
-    );
 
     assert_eq!(event_log_text(&repo, "alpha"), before);
 }
@@ -862,19 +761,10 @@ fn safe_mutation_failures_append_failure_events_without_hiding_errors() {
         .assert()
         .failure()
         .stdout(predicate::str::contains("ARTIFACT_VALIDATION_ERROR"));
-    bin()
-        .args(["--json", "--repo-root"])
-        .arg(repo.path())
-        .args(["--mission", "alpha", "loop", "pause"])
-        .assert()
-        .failure()
-        .stdout(predicate::str::contains("IO_ERROR"));
-
     let events = read_events(&repo, "alpha");
     for (kind, code) in [
         ("artifact_write_failed", "ARTIFACT_VALIDATION_ERROR"),
         ("subplan_move_failed", "ARTIFACT_VALIDATION_ERROR"),
-        ("loop_pause_failed", "IO_ERROR"),
     ] {
         let event = events
             .iter()
@@ -983,240 +873,64 @@ fn inspect_is_inventory_only() {
 }
 
 #[test]
-fn loop_state_and_ralph_block_only_for_explicit_active_loop() {
+fn removed_loop_commands_fail_through_argument_parser() {
     let repo = repo();
-    init(&repo, "alpha");
-    let mission_dir = repo.path().join(".codex1/missions/alpha");
 
-    let allow = json_output_with_stdin(
-        bin()
-            .args(["--repo-root"])
-            .arg(repo.path())
-            .args(["ralph", "stop-hook"]),
-        format!(r#"{{"cwd":"{}"}}"#, mission_dir.display()),
-    );
-    assert!(allow.as_object().unwrap().get("decision").is_none());
-
-    bin()
-        .args(["--repo-root"])
+    let output = bin()
+        .args(["--json", "--repo-root"])
         .arg(repo.path())
-        .args([
-            "--mission",
-            "alpha",
-            "loop",
-            "start",
-            "--mode",
-            "autopilot",
-            "--message",
-            "Continue the mission.",
-        ])
-        .assert()
-        .success();
+        .args(["--mission", "typo", "loop", "status"])
+        .output()
+        .unwrap();
 
-    let block = json_output_with_stdin(
-        bin()
-            .args(["--repo-root"])
-            .arg(repo.path())
-            .args(["ralph", "stop-hook"]),
-        format!(r#"{{"cwd":"{}"}}"#, mission_dir.display()),
-    );
-    assert_eq!(block["decision"], "block");
-    assert!(block["reason"]
+    assert_eq!(output.status.code(), Some(2));
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "ARGUMENT_ERROR");
+    assert!(value["error"]["message"]
         .as_str()
         .unwrap()
-        .contains("Continue the mission."));
-
-    let allow_active_hook = json_output_with_stdin(
-        bin()
-            .args(["--repo-root"])
-            .arg(repo.path())
-            .args(["ralph", "stop-hook"]),
-        format!(
-            r#"{{"cwd":"{}","stop_hook_active":true}}"#,
-            mission_dir.display()
-        ),
-    );
-    assert!(allow_active_hook
-        .as_object()
-        .unwrap()
-        .get("decision")
-        .is_none());
+        .contains("unrecognized subcommand 'loop'"));
+    assert!(!repo.path().join(".codex1/missions/typo").exists());
 }
 
 #[test]
-fn ralph_resolves_repo_root_from_hook_cwd_when_invoked_elsewhere() {
+fn removed_ralph_commands_fail_through_argument_parser() {
     let repo = repo();
-    let outside = tempfile::tempdir().unwrap();
-    init(&repo, "alpha");
-    let mission_dir = repo.path().join(".codex1/missions/alpha");
 
-    bin()
-        .args(["--repo-root"])
+    let output = bin()
+        .args(["--json", "--repo-root"])
         .arg(repo.path())
-        .args([
-            "--mission",
-            "alpha",
-            "loop",
-            "start",
-            "--mode",
-            "autopilot",
-            "--message",
-            "Continue from cwd.",
-        ])
-        .assert()
-        .success();
+        .args(["ralph", "stop-hook"])
+        .output()
+        .unwrap();
 
-    let mut command = bin();
-    command
-        .current_dir(outside.path())
-        .args(["ralph", "stop-hook"]);
-    let block = json_output_with_stdin(
-        &mut command,
-        format!(r#"{{"cwd":"{}"}}"#, mission_dir.display()),
-    );
-    assert_eq!(block["decision"], "block");
-    assert!(block["reason"]
+    assert_eq!(output.status.code(), Some(2));
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "ARGUMENT_ERROR");
+    assert!(value["error"]["message"]
         .as_str()
         .unwrap()
-        .contains("Continue from cwd."));
+        .contains("unrecognized subcommand 'ralph'"));
 }
 
 #[test]
-fn ralph_blocks_from_normal_repo_cwd_for_single_active_loop() {
-    let repo = repo();
-    init(&repo, "alpha");
+fn help_does_not_advertise_removed_continuation_commands() {
+    let output = bin().arg("--help").output().unwrap();
 
-    bin()
-        .args(["--repo-root"])
-        .arg(repo.path())
-        .args([
-            "--mission",
-            "alpha",
-            "loop",
-            "start",
-            "--mode",
-            "autopilot",
-            "--message",
-            "Continue from repo cwd.",
-        ])
-        .assert()
-        .success();
-
-    let mut command = bin();
-    command
-        .current_dir(repo.path())
-        .args(["ralph", "stop-hook"]);
-    let block = json_output_with_stdin(
-        &mut command,
-        format!(r#"{{"cwd":"{}"}}"#, repo.path().display()),
-    );
-    assert_eq!(block["decision"], "block");
-    let reason = block["reason"].as_str().unwrap();
-    assert!(reason.contains("Continue from repo cwd."));
-    assert!(reason.contains("codex1 --mission=alpha loop pause"));
-    assert!(reason.contains("codex1 --mission=alpha loop stop"));
-}
-
-#[test]
-fn ralph_blocks_with_deterministic_guidance_for_multiple_active_loops() {
-    let repo = repo();
-    init(&repo, "beta");
-    init(&repo, "alpha");
-
-    for (mission, message) in [("beta", "Continue beta."), ("alpha", "Continue alpha.")] {
-        bin()
-            .args(["--repo-root"])
-            .arg(repo.path())
-            .args([
-                "--mission",
-                mission,
-                "loop",
-                "start",
-                "--mode",
-                "autopilot",
-                "--message",
-                message,
-            ])
-            .assert()
-            .success();
-    }
-
-    let mut command = bin();
-    command
-        .current_dir(repo.path())
-        .args(["ralph", "stop-hook"]);
-    let block = json_output_with_stdin(
-        &mut command,
-        format!(r#"{{"cwd":"{}"}}"#, repo.path().display()),
-    );
-    assert_eq!(block["decision"], "block");
-    let reason = block["reason"].as_str().unwrap();
-    assert!(reason.contains("Multiple active Codex1 loops exist"));
-    assert!(reason.find("- alpha:").unwrap() < reason.find("- beta:").unwrap());
-    assert!(reason.contains("codex1 --mission=alpha loop pause"));
-    assert!(reason.contains("codex1 --mission=beta loop stop"));
+    assert!(output.status.success());
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(!text.contains("loop"));
+    assert!(!text.contains("ralph"));
 }
 
 #[cfg(unix)]
 #[test]
-fn ralph_fails_open_for_symlinked_loop_state() {
+fn symlinked_mission_root_is_rejected_before_inspect_reads() {
     let repo = repo();
     let external = tempfile::tempdir().unwrap();
     init(&repo, "alpha");
-    let mission_dir = repo.path().join(".codex1/missions/alpha");
-    fs::write(
-        external.path().join("LOOP.json"),
-        r#"{
-          "version": 1,
-          "active": true,
-          "paused": false,
-          "mode": "autopilot",
-          "message": "External loop should not block.",
-          "pause_command": "codex1 --mission=alpha loop pause --reason <reason>",
-          "stop_command": "codex1 --mission=alpha loop stop --reason <reason>",
-          "updated_at": "2026-04-26T00:00:00Z"
-        }"#,
-    )
-    .unwrap();
-    symlink(
-        external.path().join("LOOP.json"),
-        mission_dir.join(".codex1/LOOP.json"),
-    )
-    .unwrap();
-
-    let allow = json_output_with_stdin(
-        bin().args(["--repo-root"]).arg(repo.path()).args([
-            "--mission",
-            "alpha",
-            "ralph",
-            "stop-hook",
-        ]),
-        "{}".to_string(),
-    );
-    assert!(allow.as_object().unwrap().get("decision").is_none());
-}
-
-#[cfg(unix)]
-#[test]
-fn symlinked_mission_root_is_rejected_before_reads() {
-    let repo = repo();
-    let external = tempfile::tempdir().unwrap();
-    init(&repo, "alpha");
-    fs::create_dir_all(external.path().join(".codex1")).unwrap();
-    fs::write(
-        external.path().join(".codex1/LOOP.json"),
-        r#"{
-          "version": 1,
-          "active": true,
-          "paused": false,
-          "mode": "autopilot",
-          "message": "External mission should not be trusted.",
-          "pause_command": "codex1 --mission=alpha loop pause --reason <reason>",
-          "stop_command": "codex1 --mission=alpha loop stop --reason <reason>",
-          "updated_at": "2026-04-26T00:00:00Z"
-        }"#,
-    )
-    .unwrap();
     let mission_dir = repo.path().join(".codex1/missions/alpha");
     fs::remove_dir_all(&mission_dir).unwrap();
     symlink(external.path(), &mission_dir).unwrap();
@@ -1224,44 +938,18 @@ fn symlinked_mission_root_is_rejected_before_reads() {
     bin()
         .args(["--json", "--repo-root"])
         .arg(repo.path())
-        .args(["--mission", "alpha", "loop", "status"])
+        .args(["--mission", "alpha", "inspect"])
         .assert()
         .failure()
         .stdout(predicate::str::contains("MISSION_PATH_ERROR"));
-
-    let allow = json_output_with_stdin(
-        bin().args(["--repo-root"]).arg(repo.path()).args([
-            "--mission",
-            "alpha",
-            "ralph",
-            "stop-hook",
-        ]),
-        "{}".to_string(),
-    );
-    assert!(allow.as_object().unwrap().get("decision").is_none());
 }
 
 #[cfg(unix)]
 #[test]
-fn symlinked_missions_directory_is_not_scanned_by_ralph() {
+fn symlinked_missions_directory_is_rejected_before_reads() {
     let repo = repo();
     let external = tempfile::tempdir().unwrap();
     init(&repo, "alpha");
-    fs::create_dir_all(external.path().join("alpha/.codex1")).unwrap();
-    fs::write(
-        external.path().join("alpha/.codex1/LOOP.json"),
-        r#"{
-          "version": 1,
-          "active": true,
-          "paused": false,
-          "mode": "autopilot",
-          "message": "External missions directory should not be scanned.",
-          "pause_command": "codex1 --mission=alpha loop pause --reason <reason>",
-          "stop_command": "codex1 --mission=alpha loop stop --reason <reason>",
-          "updated_at": "2026-04-26T00:00:00Z"
-        }"#,
-    )
-    .unwrap();
     let missions_dir = repo.path().join(".codex1/missions");
     fs::remove_dir_all(&missions_dir).unwrap();
     symlink(external.path(), &missions_dir).unwrap();
@@ -1269,20 +957,10 @@ fn symlinked_missions_directory_is_not_scanned_by_ralph() {
     bin()
         .args(["--json", "--repo-root"])
         .arg(repo.path())
-        .args(["--mission", "alpha", "loop", "status"])
+        .args(["--mission", "alpha", "inspect"])
         .assert()
         .failure()
         .stdout(predicate::str::contains("MISSION_PATH_ERROR"));
-
-    let mut command = bin();
-    command
-        .current_dir(repo.path())
-        .args(["ralph", "stop-hook"]);
-    let allow = json_output_with_stdin(
-        &mut command,
-        format!(r#"{{"cwd":"{}"}}"#, repo.path().display()),
-    );
-    assert!(allow.as_object().unwrap().get("decision").is_none());
 }
 
 #[test]
@@ -1314,58 +992,15 @@ fn repeatable_answers_file_sections_must_be_arrays() {
 }
 
 #[test]
-fn loop_status_does_not_create_missing_mission() {
-    let repo = repo();
-    bin()
-        .args(["--json", "--repo-root"])
-        .arg(repo.path())
-        .args(["--mission", "typo", "loop", "status"])
-        .assert()
-        .failure();
-
-    assert!(!repo.path().join(".codex1/missions/typo").exists());
-}
-
-#[test]
-fn doctor_runs_installed_command_and_loop_smoke() {
+fn doctor_runs_installed_command_smoke() {
     let value = json_output(bin().args(["--json", "doctor"]));
     assert_eq!(value["ok"], true);
     assert_eq!(
         value["data"]["installed_command"]["json_error_envelope"],
         true
     );
-    assert_eq!(value["data"]["loop_ralph_smoke"]["blocked"], true);
-}
-
-#[cfg(unix)]
-#[test]
-fn loop_state_write_rejects_symlinked_meta_directory() {
-    let repo = repo();
-    let external = tempfile::tempdir().unwrap();
-    init(&repo, "alpha");
-    let mission_dir = repo.path().join(".codex1/missions/alpha");
-    let meta_dir = mission_dir.join(".codex1");
-    fs::remove_dir_all(&meta_dir).unwrap();
-    symlink(external.path(), &meta_dir).unwrap();
-
-    bin()
-        .args(["--json", "--repo-root"])
-        .arg(repo.path())
-        .args([
-            "--mission",
-            "alpha",
-            "loop",
-            "start",
-            "--mode",
-            "autopilot",
-            "--message",
-            "Do not write outside.",
-        ])
-        .assert()
-        .failure()
-        .stdout(predicate::str::contains("MISSION_PATH_ERROR"));
-
-    assert!(!external.path().join("LOOP.json").exists());
+    assert!(value["data"].get("loop_schema_version").is_none());
+    assert!(value["data"].get("loop_ralph_smoke").is_none());
 }
 
 #[cfg(unix)]
@@ -1459,26 +1094,6 @@ fn writes_reject_dangling_symlink_targets() {
         .failure()
         .stdout(predicate::str::contains("target must not be a symlink"));
     assert!(!outside_prd.exists());
-
-    let outside_loop = external.path().join("outside-loop.json");
-    symlink(&outside_loop, mission_dir.join(".codex1/LOOP.json")).unwrap();
-    bin()
-        .args(["--json", "--repo-root"])
-        .arg(repo.path())
-        .args([
-            "--mission",
-            "alpha",
-            "loop",
-            "start",
-            "--mode",
-            "autopilot",
-            "--message",
-            "do not follow",
-        ])
-        .assert()
-        .failure()
-        .stdout(predicate::str::contains("target must not be a symlink"));
-    assert!(!outside_loop.exists());
 
     let outside_receipt = external.path().join("outside-receipts.jsonl");
     symlink(

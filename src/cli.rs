@@ -43,14 +43,6 @@ pub enum Commands {
         #[command(subcommand)]
         command: ReceiptCommand,
     },
-    Loop {
-        #[command(subcommand)]
-        command: LoopCommand,
-    },
-    Ralph {
-        #[command(subcommand)]
-        command: RalphCommand,
-    },
     Doctor,
 }
 
@@ -85,31 +77,6 @@ pub enum ReceiptCommand {
         #[arg(long)]
         message: String,
     },
-}
-
-#[derive(Clone, Debug, Subcommand)]
-pub enum LoopCommand {
-    Start {
-        #[arg(long)]
-        mode: String,
-        #[arg(long)]
-        message: String,
-    },
-    Pause {
-        #[arg(long)]
-        reason: Option<String>,
-    },
-    Resume,
-    Stop {
-        #[arg(long)]
-        reason: Option<String>,
-    },
-    Status,
-}
-
-#[derive(Clone, Debug, Subcommand)]
-pub enum RalphCommand {
-    StopHook,
 }
 
 #[derive(Clone, Debug, ValueEnum)]

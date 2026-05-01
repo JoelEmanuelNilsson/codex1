@@ -1,6 +1,8 @@
 # CLI Contract
 
-Codex1 commands are mechanical. They validate paths, render built-in templates, write artifacts, move subplan files, report inventory, and manage explicit loop state.
+Codex1 commands are mechanical. They validate paths, render built-in templates, write artifacts, move subplan files, append receipts, report inventory, and record small forensic events. They do not own long-running continuation.
+
+Native Codex `/goal` is the only continuation primitive. Codex1 does not implement goal persistence, goal status, token or time accounting, automatic continuation, or goal completion.
 
 ## Global Flags
 
@@ -41,7 +43,7 @@ Errors use:
 }
 ```
 
-Error codes are mechanical: `ARGUMENT_ERROR`, `MISSION_PATH_ERROR`, `ARTIFACT_VALIDATION_ERROR`, `IO_ERROR`, `TEMPLATE_ERROR`, `INTERVIEW_ERROR`, and `LOOP_ERROR`.
+Error codes are mechanical: `ARGUMENT_ERROR`, `MISSION_PATH_ERROR`, `ARTIFACT_VALIDATION_ERROR`, `IO_ERROR`, `TEMPLATE_ERROR`, and `INTERVIEW_ERROR`.
 
 ## Commands
 
@@ -53,27 +55,25 @@ Error codes are mechanical: `ARGUMENT_ERROR`, `MISSION_PATH_ERROR`, `ARTIFACT_VA
 
 `subplan move --id <id> --to <state>` safely moves one subplan file between lifecycle folders. It does not enforce one active subplan.
 
-`inspect` reports artifact inventory and mechanical warnings only.
-
 `receipt append --message <text>` appends an optional JSONL receipt.
 
-`loop start|pause|resume|stop|status` manages `.codex1/LOOP.json`.
+`inspect` reports artifact inventory and mechanical warnings only.
 
-`ralph stop-hook` reads Stop-hook JSON from stdin and fails open unless explicit loop state says to block.
+`doctor` runs fast diagnostics for template registration, mission id validation, the installed-command JSON envelope, and the anti-oracle posture.
 
-`doctor` runs fast diagnostics for template registration, path validation basics, loop schema version, the installed-command JSON envelope, and a loop/Ralph smoke check.
+Removed continuation command surfaces are intentionally absent and fail through the normal argument parser path. There are no compatibility shims.
 
 ## Mission Event Log
 
-Codex1 keeps a mission-local forensic event log at `.codex1/events.jsonl` inside each mission directory. It records automatic metadata for mutating command outcomes such as initialization, artifact writes, subplan moves, receipt appends, and loop changes.
+Codex1 keeps a mission-local forensic event log at `.codex1/events.jsonl` inside each mission directory. It records automatic metadata for remaining mutating command outcomes: initialization, artifact writes, subplan moves, and receipt appends, plus safe-layout failures for those command families.
 
 The log is append-only, best-effort, and non-authoritative. If appending an event fails after the real mutation succeeds, the command still succeeds and reports a warning in JSON mode or stderr in human mode. If a mutating command fails after a safe mission layout was resolved, Codex1 may append a small failure event and still returns the original command error.
 
-Read-only commands do not append events: `template list`, `template show`, `inspect`, `doctor`, `loop status`, and `ralph stop-hook` stay read-only.
+Read-only commands do not append events: `template list`, `template show`, `inspect`, and `doctor` stay read-only.
 
-Event records contain small mechanical metadata: schema version, timestamp, mission id, command name, event kind, result, optional duration, artifact kind, template version, overwrite flag, lifecycle folders, booleans for message or reason presence, error code, and mission-relative paths. They do not contain raw argv, absolute paths, answer payloads, artifact body text, loop messages, receipt messages, review finding text, stdout, stderr, sequence numbers, or semantic status fields.
+Event records contain small mechanical metadata: schema version, timestamp, mission id, command name, event kind, result, optional duration, artifact kind, template version, overwrite flag, lifecycle folders, error code, and mission-relative paths. They do not contain raw argv, absolute paths, answer payloads, artifact body text, receipt messages, review finding text, stdout, stderr, sequence numbers, native goal state, or semantic status fields.
 
-`inspect` reports only the count of parseable event entries and shallow mechanical warnings for malformed event log lines. It does not summarize last activity or infer progress, readiness, review state, close state, or next action from events.
+`inspect` reports only the count of parseable event entries and shallow mechanical warnings for malformed event log lines. It does not summarize last activity or infer progress, readiness, review state, close state, goal state, or next action from events.
 
 ## Path Safety
 
@@ -83,4 +83,4 @@ Artifact writes are contained inside the mission directory and check symlink-res
 
 ## Non-Goals
 
-The CLI does not compute task readiness, review cleanliness, proof sufficiency, PRD satisfaction, close safety, replan priority, graph waves, or terminal completion.
+The CLI does not compute task readiness, review cleanliness, proof sufficiency, PRD satisfaction, close safety, replan priority, graph waves, terminal completion, native goal status, or continuation prompts.

@@ -10,7 +10,6 @@ pub enum ErrorCode {
     Io,
     Template,
     Interview,
-    Loop,
 }
 
 impl ErrorCode {
@@ -22,7 +21,6 @@ impl ErrorCode {
             Self::Io => "IO_ERROR",
             Self::Template => "TEMPLATE_ERROR",
             Self::Interview => "INTERVIEW_ERROR",
-            Self::Loop => "LOOP_ERROR",
         }
     }
 }
@@ -39,8 +37,6 @@ pub enum Codex1Error {
     Template(String),
     #[error("{0}")]
     Interview(String),
-    #[error("{0}")]
-    Loop(String),
     #[error("{context}: {source}")]
     Io {
         context: String,
@@ -63,7 +59,6 @@ impl Codex1Error {
             Self::ArtifactValidation(_) => ErrorCode::ArtifactValidation,
             Self::Template(_) => ErrorCode::Template,
             Self::Interview(_) | Self::Json { .. } => ErrorCode::Interview,
-            Self::Loop(_) => ErrorCode::Loop,
             Self::Io { .. } => ErrorCode::Io,
         }
     }

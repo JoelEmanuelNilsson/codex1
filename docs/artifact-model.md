@@ -2,6 +2,8 @@
 
 The artifact tree is the durable product. Files are human-facing markdown with minimal frontmatter and deterministic section tags.
 
+Native Codex goals are external thread state. Codex1 artifacts provide context, structure, and evidence for Codex; they are not a continuation scheduler and do not mirror native goal state.
+
 ## Mission Artifacts
 
 `PRD.md` captures the mission goal, interpreted destination, success criteria, constraints, assumptions, proof expectations, review expectations, and PR intent. It is the anchor for durable work.
@@ -10,7 +12,7 @@ The artifact tree is the durable product. Files are human-facing markdown with m
 
 `RESEARCH_PLAN.md` is optional. Codex writes it when research is substantial enough to need durable structure.
 
-`CLOSEOUT.md` summarizes how Codex judges the PRD was satisfied, including completed, superseded, paused, or deferred work and remaining risks.
+`CLOSEOUT.md` summarizes how Codex judges the PRD was satisfied, including completed, superseded, paused, or deferred work and remaining risks. It is durable evidence, not native goal completion state.
 
 ## Collection Artifacts
 
@@ -30,10 +32,8 @@ The artifact tree is the durable product. Files are human-facing markdown with m
 
 ## Machine Substrate
 
-`.codex1/LOOP.json` is the explicit continuation loop state used by Ralph.
-
 `.codex1/receipts/` stores optional audit receipts. Receipts are not replay authority.
 
-`.codex1/events.jsonl` stores automatic forensic command metadata. Events help explain mechanical command history during debugging, but they are not durable content truth, not receipts, not workflow state, and not replay authority. Normal planning and execution should ignore events unless mission archaeology is needed.
+`.codex1/events.jsonl` stores automatic forensic command metadata. Events help explain mechanical command history during debugging, but they are not durable content truth, not receipts, not workflow state, not native goal state, and not replay authority. Normal planning and execution should ignore events unless mission archaeology is needed.
 
-There is no authoritative `STATE.json`.
+There is no authoritative `STATE.json` and no Codex1-owned continuation file.

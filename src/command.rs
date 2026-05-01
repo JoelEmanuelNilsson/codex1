@@ -11,22 +11,17 @@ use clap::Parser;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::cli::{
-    Cli, Commands, InterviewArgs, LoopCommand, RalphCommand, ReceiptCommand, SubplanCommand,
-    TemplateCommand,
-};
+use crate::cli::{Cli, Commands, InterviewArgs, ReceiptCommand, SubplanCommand, TemplateCommand};
 use crate::envelope;
 use crate::error::{Codex1Error, IoContext, Result};
 use crate::event;
 use crate::inspect;
 use crate::interview;
 use crate::layout::{descriptors, ArtifactKind, MissionLayout, SubplanState};
-use crate::loop_state::{self, LoopState};
 use crate::paths::{
     create_dir_all_contained, discover_repo_root, ensure_contained_for_write,
     ensure_existing_contained, safe_join, slug, validate_mission_id,
 };
-use crate::ralph;
 use crate::render::{render_markdown, render_template_outline, AnswerValue, Answers};
 use crate::template;
 
@@ -74,8 +69,6 @@ fn run_cli(cli: Cli) -> Result<()> {
         Commands::Inspect => cmd_inspect(&cli),
         Commands::Subplan { command } => cmd_subplan(&cli, command),
         Commands::Receipt { command } => cmd_receipt(&cli, command),
-        Commands::Loop { command } => cmd_loop(&cli, command),
-        Commands::Ralph { command } => cmd_ralph(&cli, command),
         Commands::Doctor => cmd_doctor(&cli),
     }
 }
@@ -393,165 +386,16 @@ fn cmd_receipt(cli: &Cli, command: ReceiptCommand) -> Result<()> {
     Ok(())
 }
 
-fn cmd_loop(cli: &Cli, command: LoopCommand) -> Result<()> {
-    let started = Instant::now();
-    let layout = resolve_layout(cli)?;
-    let mut warnings = Vec::new();
-    let state = match command {
-        LoopCommand::Start { mode, message } => {
-            layout.create_dirs()?;
-            let message_present = !message.trim().is_empty();
-            let mode_for_event = mode.clone();
-            let state = match LoopState::start(mode, message, &layout) {
-                Ok(state) => state,
-                Err(error) => {
-                    if should_log_failure_event(&error) {
-                        let record = event::EventRecord::loop_start_failed(
-                            &layout,
-                            &mode_for_event,
-                            message_present,
-                            error.code().as_str(),
-                            started.elapsed(),
-                        );
-                        let _ = event::append_best_effort(&layout, &record);
-                    }
-                    return Err(error);
-                }
-            };
-            if let Err(error) = loop_state::write(&layout, &state) {
-                if should_log_failure_event(&error) {
-                    let record = event::EventRecord::loop_start_failed(
-                        &layout,
-                        &state.mode,
-                        message_present,
-                        error.code().as_str(),
-                        started.elapsed(),
-                    );
-                    let _ = event::append_best_effort(&layout, &record);
-                }
-                return Err(error);
-            }
-            let record = event::EventRecord::loop_started(
-                &layout,
-                &state.mode,
-                message_present,
-                started.elapsed(),
-            );
-            if let Some(warning) = event::append_best_effort(&layout, &record) {
-                warnings.push(warning);
-            }
-            state
-        }
-        LoopCommand::Pause { reason } => {
-            let reason_present = reason
-                .as_ref()
-                .is_some_and(|value| !value.trim().is_empty());
-            let state = match loop_state::pause(&layout, reason) {
-                Ok(state) => state,
-                Err(error) => {
-                    if should_log_failure_event(&error) {
-                        let record = event::EventRecord::loop_pause_failed(
-                            &layout,
-                            reason_present,
-                            error.code().as_str(),
-                            started.elapsed(),
-                        );
-                        let _ = event::append_best_effort(&layout, &record);
-                    }
-                    return Err(error);
-                }
-            };
-            let record =
-                event::EventRecord::loop_paused(&layout, reason_present, started.elapsed());
-            if let Some(warning) = event::append_best_effort(&layout, &record) {
-                warnings.push(warning);
-            }
-            state
-        }
-        LoopCommand::Resume => {
-            let state = match loop_state::resume(&layout) {
-                Ok(state) => state,
-                Err(error) => {
-                    if should_log_failure_event(&error) {
-                        let record = event::EventRecord::loop_resume_failed(
-                            &layout,
-                            error.code().as_str(),
-                            started.elapsed(),
-                        );
-                        let _ = event::append_best_effort(&layout, &record);
-                    }
-                    return Err(error);
-                }
-            };
-            let record = event::EventRecord::loop_resumed(&layout, started.elapsed());
-            if let Some(warning) = event::append_best_effort(&layout, &record) {
-                warnings.push(warning);
-            }
-            state
-        }
-        LoopCommand::Stop { reason } => {
-            let reason_present = reason
-                .as_ref()
-                .is_some_and(|value| !value.trim().is_empty());
-            let state = match loop_state::stop(&layout, reason) {
-                Ok(state) => state,
-                Err(error) => {
-                    if should_log_failure_event(&error) {
-                        let record = event::EventRecord::loop_stop_failed(
-                            &layout,
-                            reason_present,
-                            error.code().as_str(),
-                            started.elapsed(),
-                        );
-                        let _ = event::append_best_effort(&layout, &record);
-                    }
-                    return Err(error);
-                }
-            };
-            let record =
-                event::EventRecord::loop_stopped(&layout, reason_present, started.elapsed());
-            if let Some(warning) = event::append_best_effort(&layout, &record) {
-                warnings.push(warning);
-            }
-            state
-        }
-        LoopCommand::Status => loop_state::read(&layout)?,
-    };
-    if cli.json {
-        print_json(&envelope::success_with_warnings(state, warnings));
-    } else {
-        print_event_warnings(&warnings);
-        println!(
-            "Loop active={} paused={} mode={}",
-            state.active, state.paused, state.mode
-        );
-    }
-    Ok(())
-}
-
-fn cmd_ralph(cli: &Cli, command: RalphCommand) -> Result<()> {
-    match command {
-        RalphCommand::StopHook => {
-            let output = ralph::stop_hook(cli.repo_root.clone(), cli.mission.clone());
-            print_json(&output);
-        }
-    }
-    Ok(())
-}
-
 fn cmd_doctor(cli: &Cli) -> Result<()> {
     template::validate_registry()?;
     validate_mission_id("doctor-smoke")?;
     let exe = env::current_exe().io_context("failed to resolve current executable")?;
     let installed_command = run_installed_command_check(&exe)?;
-    let loop_ralph_smoke = run_loop_ralph_smoke(&exe)?;
     let data = json!({
         "binary": exe,
         "templates_registered": template::all().len(),
         "mission_id_validation": "ok",
-        "loop_schema_version": 1,
         "installed_command": installed_command,
-        "loop_ralph_smoke": loop_ralph_smoke,
         "anti_oracle": "inspect reports inventory and mechanical warnings only",
     });
     if cli.json {
@@ -884,75 +728,6 @@ fn find_on_path(name: &str) -> Option<PathBuf> {
     env::split_paths(&env::var_os("PATH")?)
         .map(|dir| dir.join(&executable_name))
         .find(|candidate| candidate.is_file())
-}
-
-fn run_loop_ralph_smoke(current_exe: &Path) -> Result<Value> {
-    let root = env::temp_dir().join(format!(
-        "codex1-doctor-{}-{}",
-        std::process::id(),
-        Utc::now().timestamp_nanos_opt().unwrap_or(0)
-    ));
-    fs::create_dir(&root).io_context(format!("failed to create {}", root.display()))?;
-    let result = run_loop_ralph_smoke_in(current_exe, &root);
-    let _ = fs::remove_dir_all(&root);
-    result
-}
-
-fn run_loop_ralph_smoke_in(current_exe: &Path, root: &Path) -> Result<Value> {
-    fs::create_dir(root.join(".git"))
-        .io_context(format!("failed to create {}", root.join(".git").display()))?;
-
-    let init = run_command(
-        Command::new(current_exe)
-            .current_dir(root)
-            .args(["--json", "--repo-root"])
-            .arg(root)
-            .args(["--mission", "smoke", "init"]),
-    )?;
-    ensure_json_success(&init, "doctor init smoke")?;
-
-    let start = run_command(
-        Command::new(current_exe)
-            .current_dir(root)
-            .args(["--json", "--repo-root"])
-            .arg(root)
-            .args([
-                "--mission",
-                "smoke",
-                "loop",
-                "start",
-                "--mode",
-                "doctor",
-                "--message",
-                "Doctor continuation smoke.",
-            ]),
-    )?;
-    ensure_json_success(&start, "doctor loop smoke")?;
-
-    let ralph = run_command(
-        Command::new(current_exe)
-            .current_dir(root)
-            .args(["--repo-root"])
-            .arg(root)
-            .args(["--mission", "smoke", "ralph", "stop-hook"]),
-    )?;
-    let value = parse_json_output(&ralph, "doctor Ralph smoke")?;
-    if value.get("decision").and_then(Value::as_str) != Some("block") {
-        return Err(Codex1Error::Loop(
-            "Ralph smoke did not block an active loop".into(),
-        ));
-    }
-    Ok(json!({ "blocked": true }))
-}
-
-fn ensure_json_success(output: &Output, label: &str) -> Result<Value> {
-    let value = parse_json_output(output, label)?;
-    if value.get("ok") != Some(&Value::Bool(true)) {
-        return Err(Codex1Error::Argument(format!(
-            "{label} did not emit a success envelope"
-        )));
-    }
-    Ok(value)
 }
 
 fn parse_json_output(output: &Output, label: &str) -> Result<Value> {
