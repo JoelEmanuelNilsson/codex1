@@ -987,6 +987,42 @@ fn setup_status_reports_bundle_state_only() {
 }
 
 #[test]
+fn setup_doctor_reports_malformed_backup_manifest() {
+    let repo = repo();
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install"]),
+    );
+    fs::write(
+        repo.path().join(".codex1/setup-backups/manifest.json"),
+        "not json\n",
+    )
+    .unwrap();
+
+    let value = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "doctor"]),
+    );
+
+    assert_eq!(value["ok"], true);
+    let backup_manifest = value["data"]["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|check| check["name"] == "backup_manifest")
+        .unwrap();
+    assert_eq!(backup_manifest["ok"], false);
+    assert!(backup_manifest["error"]
+        .as_str()
+        .unwrap()
+        .contains("failed to parse backup manifest"));
+}
+
+#[test]
 fn setup_install_dry_run_does_not_materialize_files() {
     let repo = repo();
 
@@ -1356,6 +1392,45 @@ fn setup_backups_restore_rejects_non_setup_targets() {
         .stdout(predicate::str::contains("SETUP_RESTORE_ERROR"));
 
     assert!(!repo.path().join(".codex1/missions/alpha/PRD.md").exists());
+}
+
+#[test]
+fn setup_backups_restore_rejects_escaping_backup_path() {
+    let repo = repo();
+    let target = repo.path().join(".agents/skills/codex1/SKILL.md");
+    fs::create_dir_all(target.parent().unwrap()).unwrap();
+    fs::write(&target, "# Current skill\n").unwrap();
+    fs::create_dir_all(repo.path().join(".codex1/setup-backups/files/tampered")).unwrap();
+    fs::write(repo.path().join("AGENTS.md"), "# Not a backup\n").unwrap();
+    fs::write(
+        repo.path().join(".codex1/setup-backups/manifest.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "version": 1,
+            "records": [{
+                "id": "tampered",
+                "timestamp": "2026-05-02T00:00:00Z",
+                "target_kind": "repo-setup",
+                "target_path": target,
+                "target_path_label": ".agents/skills/codex1/SKILL.md",
+                "backup_path": repo.path().join(".codex1/setup-backups/files/tampered/../../../../AGENTS.md"),
+                "existed": true,
+                "reason": "tampered"
+            }]
+        }))
+        .unwrap()
+            + "\n",
+    )
+    .unwrap();
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["setup", "backups", "restore", "tampered", "--force"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("SETUP_RESTORE_ERROR"));
+
+    assert_eq!(fs::read_to_string(target).unwrap(), "# Current skill\n");
 }
 
 #[test]

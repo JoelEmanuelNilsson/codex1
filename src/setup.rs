@@ -166,11 +166,17 @@ fn status_value(args: SetupStatusArgs) -> Result<serde_json::Value> {
 
 fn doctor(args: SetupStatusArgs) -> Result<serde_json::Value> {
     let status = status(args.repo)?;
+    let backup_manifest = match read_manifest(&status.repo) {
+        Ok(_) => json!({"name": "backup_manifest", "ok": true}),
+        Err(error) => {
+            json!({"name": "backup_manifest", "ok": false, "error": error.to_string()})
+        }
+    };
     let checks = vec![
         json!({"name": "bundle_marker", "ok": status.marker == SetupFileState::Current}),
         json!({"name": "managed_skill", "ok": status.skill == SetupFileState::Current}),
         json!({"name": "managed_guidance", "ok": status.guidance == SetupFileState::Current}),
-        json!({"name": "backup_manifest", "ok": true}),
+        backup_manifest,
     ];
     Ok(json!({
         "summary": "setup doctor complete",
@@ -655,6 +661,18 @@ fn ensure_backup_file(repo: &Path, path: &Path) -> Result<()> {
         Codex1Error::SetupRestore(format!("invalid backup file {}: {error}", path.display()))
     })?;
     let backup_root = setup_target(repo, BACKUP_DIR)?;
+    let backup_root = fs::canonicalize(&backup_root).map_err(|source| {
+        Codex1Error::SetupRestore(format!(
+            "failed to canonicalize backup root {}: {source}",
+            backup_root.display()
+        ))
+    })?;
+    let path = fs::canonicalize(path).map_err(|source| {
+        Codex1Error::SetupRestore(format!(
+            "failed to canonicalize backup file {}: {source}",
+            path.display()
+        ))
+    })?;
     if path.starts_with(&backup_root) {
         Ok(())
     } else {
