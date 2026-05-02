@@ -1,6 +1,8 @@
 # CLI Contract
 
-Codex1 commands are mechanical. They validate paths, render built-in templates, write artifacts, move subplan files, report inventory, and manage explicit loop state.
+Codex1 commands are mechanical. They validate paths, render built-in templates, write artifacts, move subplan files, append receipts, report inventory, and record small forensic events. They do not own long-running continuation.
+
+Native Codex `/goal` is the only continuation primitive. Codex1 does not implement goal persistence, goal status, token or time accounting, automatic continuation, or goal completion.
 
 ## Global Flags
 
@@ -41,7 +43,7 @@ Errors use:
 }
 ```
 
-Error codes are mechanical: `ARGUMENT_ERROR`, `MISSION_PATH_ERROR`, `ARTIFACT_VALIDATION_ERROR`, `IO_ERROR`, `TEMPLATE_ERROR`, `INTERVIEW_ERROR`, `LOOP_ERROR`, `SETUP_ARGUMENT_ERROR`, `SETUP_CONFIG_PARSE_ERROR`, `SETUP_CONFIG_WRITE_ERROR`, `SETUP_BACKUP_ERROR`, `SETUP_RESTORE_ERROR`, and `SETUP_BUNDLE_ERROR`.
+Error codes are mechanical: `ARGUMENT_ERROR`, `MISSION_PATH_ERROR`, `ARTIFACT_VALIDATION_ERROR`, `IO_ERROR`, `TEMPLATE_ERROR`, `INTERVIEW_ERROR`, `SETUP_BACKUP_ERROR`, `SETUP_RESTORE_ERROR`, and `SETUP_BUNDLE_ERROR`.
 
 ## Commands
 
@@ -53,57 +55,33 @@ Error codes are mechanical: `ARGUMENT_ERROR`, `MISSION_PATH_ERROR`, `ARTIFACT_VA
 
 `subplan move --id <id> --to <state>` safely moves one subplan file between lifecycle folders. It does not enforce one active subplan.
 
-`inspect` reports artifact inventory and mechanical warnings only.
-
 `receipt append --message <text>` appends an optional JSONL receipt.
 
-`loop start|pause|resume|stop|status` manages `.codex1/LOOP.json`.
+`setup install` and `setup enable` materialize or repair repo-scoped Codex1 skill and guidance files. `--dry-run` reports planned writes, removals, backups, and materialized files without changing repo files.
 
-`ralph stop-hook [--scope global|project]` reads Stop-hook JSON from stdin and fails open unless explicit loop state says to block. Global hook invocations consult Codex1 activation policy when it exists. Project hook invocations are repo-local and do not let a disabled global policy entry veto the project hook.
+`setup disable` and `setup uninstall` remove only Codex1-managed setup files and managed guidance blocks. They do not delete mission artifacts, user-authored guidance, user skills, native goal state, or legacy continuation files.
 
-`setup install|enable|disable|uninstall|migrate|status|doctor|backups` manages Codex1 bundle availability and activation. Setup commands are about hook/config/skill/guidance activation only; they do not inspect or judge mission artifacts.
+`setup status` reports mechanical repo bundle state: managed marker, managed skill, managed guidance, bundle materialization, backup count, warnings, and anti-oracle language. It does not report hook state, native goal state, readiness, review state, proof sufficiency, or close safety.
 
-`doctor` runs fast diagnostics for template registration, path validation basics, loop schema version, the installed-command JSON envelope, and a loop/Ralph smoke check.
+`setup doctor` diagnoses repo guidance mechanics only. `setup backups list` and `setup backups restore <id> --force` list and restore setup backups for repo-scoped setup targets.
 
-## Setup Contract
+`inspect` reports artifact inventory and mechanical warnings only.
 
-Setup treats Codex1 as a bundle of the `codex1` CLI, the Ralph Stop-hook adapter, Codex1 skills, Codex1 guidance, and mission artifact conventions. Global setup makes the bundle available on the machine. It does not make Codex1 active in every repository unless the user explicitly chooses all-repos activation.
+`doctor` runs fast diagnostics for template registration, mission id validation, the installed-command JSON envelope, and the anti-oracle posture.
 
-The setup command surface is:
-
-```sh
-codex1 setup install [--mode off|allowlist|denylist|all] [--scope global|project] [--repo <path>] [--dry-run]
-codex1 setup enable [--repo <path>] [--dry-run]
-codex1 setup disable [--repo <path>] [--dry-run]
-codex1 setup uninstall [--scope global|project] [--repo <path>] [--dry-run]
-codex1 setup migrate --to global|project [--repo <path>] [--dry-run]
-codex1 setup status [--repo <path>]
-codex1 setup doctor [--repo <path>]
-codex1 setup backups list
-codex1 setup backups restore <id> [--force] [--dry-run]
-```
-
-The default activation mode for global setup is `allowlist`: `setup install` enables only the target repo, normally the current repo. `all` activation is valid only when requested explicitly. `off` disables Codex1 everywhere and is valid only for global setup. `denylist` enables all repos except disabled entries. Activation policy is Codex1-owned global config, while repo-scoped skills and guidance are materialized into enabled repositories so they do not leak into unrelated repos.
-
-Mutating setup commands plan every write, removal, and bundle materialization. With `--dry-run`, they return the planned edits without changing files. Without `--dry-run`, they back up every existing config file before mutation and record enough metadata to restore a previously missing file back to absence. Backups are setup metadata, not mission receipts.
-
-JSON setup output uses the normal envelope. Successful mutation responses report mechanical fields such as activation mode, target repo, files written or removed, backups created, hook state, and bundle state. Setup errors use setup-specific mechanical codes for argument, parse, write, backup, restore, and bundle materialization failures.
-
-`setup status` explains effective activation: global config presence, activation mode, repo policy result, global hook state, project hook state, repo bundle state, duplicate-hook risk, backup availability, and project-trust caveats. `setup doctor` diagnoses setup health such as executable availability, hook parseability, activation policy parseability, bundle materialization, duplicate hooks, and backup manifest health.
-
-Setup must fail open for Ralph. If a setup policy is absent, invalid, unreadable, or cannot resolve the repo, Ralph falls back to existing explicit loop behavior or allows stop according to the applicable fail-open rule for that slice. Disabled repos must not receive loop pressure from the global setup hook, while project-local hooks remain effective for repos that explicitly install them.
+Removed continuation command surfaces are intentionally absent and fail through the normal argument parser path. There are no compatibility shims.
 
 ## Mission Event Log
 
-Codex1 keeps a mission-local forensic event log at `.codex1/events.jsonl` inside each mission directory. It records automatic metadata for mutating command outcomes such as initialization, artifact writes, subplan moves, receipt appends, and loop changes.
+Codex1 keeps a mission-local forensic event log at `.codex1/events.jsonl` inside each mission directory. It records automatic metadata for remaining mutating command outcomes: initialization, artifact writes, subplan moves, and receipt appends, plus safe-layout failures for those command families.
 
 The log is append-only, best-effort, and non-authoritative. If appending an event fails after the real mutation succeeds, the command still succeeds and reports a warning in JSON mode or stderr in human mode. If a mutating command fails after a safe mission layout was resolved, Codex1 may append a small failure event and still returns the original command error.
 
-Read-only commands do not append events: `template list`, `template show`, `inspect`, `doctor`, `loop status`, and `ralph stop-hook` stay read-only.
+Read-only commands do not append events: `template list`, `template show`, `inspect`, `doctor`, and setup status/doctor stay read-only.
 
-Event records contain small mechanical metadata: schema version, timestamp, mission id, command name, event kind, result, optional duration, artifact kind, template version, overwrite flag, lifecycle folders, booleans for message or reason presence, error code, and mission-relative paths. They do not contain raw argv, absolute paths, answer payloads, artifact body text, loop messages, receipt messages, review finding text, stdout, stderr, sequence numbers, or semantic status fields.
+Event records contain small mechanical metadata: schema version, timestamp, mission id, command name, event kind, result, optional duration, artifact kind, template version, overwrite flag, lifecycle folders, error code, and mission-relative paths. They do not contain raw argv, absolute paths, answer payloads, artifact body text, receipt messages, review finding text, stdout, stderr, sequence numbers, native goal state, or semantic status fields.
 
-`inspect` reports only the count of parseable event entries and shallow mechanical warnings for malformed event log lines. It does not summarize last activity or infer progress, readiness, review state, close state, or next action from events.
+`inspect` reports only the count of parseable event entries and shallow mechanical warnings for malformed event log lines. It does not summarize last activity or infer progress, readiness, review state, close state, goal state, or next action from events.
 
 ## Path Safety
 
@@ -113,4 +91,4 @@ Artifact writes are contained inside the mission directory and check symlink-res
 
 ## Non-Goals
 
-The CLI does not compute task readiness, review cleanliness, proof sufficiency, PRD satisfaction, close safety, replan priority, graph waves, or terminal completion.
+The CLI does not compute task readiness, review cleanliness, proof sufficiency, PRD satisfaction, close safety, replan priority, graph waves, terminal completion, native goal status, or continuation prompts.

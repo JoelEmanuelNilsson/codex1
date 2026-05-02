@@ -2,7 +2,9 @@
 
 Codex1 is a deterministic artifact helper for native Codex workflows.
 
-It does not decide whether work is ready, reviewed, correct, or done. Codex remains the semantic judge. The CLI creates and moves durable files, renders built-in templates, reports artifact inventory, and manages a tiny explicit continuation loop for Ralph.
+It does not decide whether work is ready, reviewed, correct, or done. Codex remains the semantic judge. The CLI creates and moves durable files, renders built-in templates, reports artifact inventory, and records mission-local forensic event metadata.
+
+Long-running objective tracking belongs to native Codex goals. Use Codex's `/goal` flow to create, inspect, and complete an active goal; Codex1 only stores mission artifacts that can support that work.
 
 ## Quickstart
 
@@ -13,9 +15,10 @@ codex1 setup install
 codex1 setup status
 codex1 setup disable
 codex1 setup enable
+codex1 setup backups list
 ```
 
-`setup install` installs the global Ralph hook capability and enables only the current repo by default. It writes backups before config mutations and materializes Codex1-managed repo skills/guidance only where Codex1 is enabled.
+`setup install` materializes repo-scoped Codex1 skill and guidance files. It writes backups before changing managed repo guidance and never installs continuation hooks, edits global activation policy, or deletes mission artifacts.
 
 ```sh
 cargo run -- --mission demo init
@@ -54,7 +57,6 @@ The mission ID is intentionally boring: ASCII letters, digits, `-`, and `_` only
   TRIAGE/
   PROOFS/
   .codex1/
-    LOOP.json
     events.jsonl
     receipts/
 ```
@@ -92,21 +94,20 @@ codex1 --mission demo interview plan --answers plan.json --overwrite
 
 The CLI records what Codex learned. It does not decide that research is sufficient.
 
-## Loop And Ralph
+## Native Goals
 
-The explicit loop is opt-in:
+Codex1 does not provide continuation commands or hook adapters. Those belonged to an older custom continuation layer that duplicated native Codex behavior.
 
-```sh
-codex1 --mission demo loop start --mode autopilot --message "Continue the mission until the current slice is handled."
-codex1 --mission demo loop pause --reason "User interrupted"
-codex1 --mission demo loop resume
-codex1 --mission demo loop stop --reason "Mission closed"
+Use native Codex goals for continuation discipline:
+
+```text
+/goal Execute the mission end to end and mark complete only after evidence is audited.
 ```
 
-`codex1 ralph stop-hook` reads Stop-hook JSON from stdin. It blocks only when the mission has active, unpaused loop state with a non-empty message. Missing, corrupt, inactive, paused, or recursive hook input allows stop.
+Codex can use mission artifacts to clarify and prove the work, but the active objective, continuation, pause/resume, accounting, budget limiting, and completion discipline live in Codex itself. Codex1 does not create, mirror, or complete native goals.
 
-When setup policy exists, global Ralph hooks check repo activation before scanning loop state. Disabled repos, malformed setup policy, and unresolved repos fail open. Project-local hooks use `ralph stop-hook --scope project` so migration to project setup keeps that repo's hook effective without re-enabling the global hook.
+Legacy missions may contain old `.codex1/LOOP.json` files from the removed continuation system. Current Codex1 ignores those files and does not migrate them. Setup does not read, write, restore, or remove them.
 
 ## Anti-Oracle Rule
 
-Codex1 must not expose workflow truth. In particular, `inspect` is inventory-only: artifact counts plus mechanical warnings such as missing folders or malformed frontmatter. It does not emit next actions, completion claims, review pass/fail, close gates, graph waves, or task status.
+Codex1 must not expose workflow truth. In particular, `inspect` is inventory-only: artifact counts plus mechanical warnings such as missing folders or malformed frontmatter. It does not emit next actions, completion claims, review pass/fail, close gates, graph waves, native goal state, or task status.

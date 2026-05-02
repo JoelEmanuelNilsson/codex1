@@ -43,14 +43,6 @@ pub enum Commands {
         #[command(subcommand)]
         command: ReceiptCommand,
     },
-    Loop {
-        #[command(subcommand)]
-        command: LoopCommand,
-    },
-    Ralph {
-        #[command(subcommand)]
-        command: RalphCommand,
-    },
     Setup {
         #[command(subcommand)]
         command: SetupCommand,
@@ -92,64 +84,17 @@ pub enum ReceiptCommand {
 }
 
 #[derive(Clone, Debug, Subcommand)]
-pub enum LoopCommand {
-    Start {
-        #[arg(long)]
-        mode: String,
-        #[arg(long)]
-        message: String,
-    },
-    Pause {
-        #[arg(long)]
-        reason: Option<String>,
-    },
-    Resume,
-    Stop {
-        #[arg(long)]
-        reason: Option<String>,
-    },
-    Status,
-}
-
-#[derive(Clone, Debug, Subcommand)]
-pub enum RalphCommand {
-    StopHook {
-        #[arg(long, value_enum, default_value = "global")]
-        scope: RalphHookScopeArg,
-    },
-}
-
-#[derive(Clone, Debug, ValueEnum)]
-pub enum RalphHookScopeArg {
-    Global,
-    Project,
-}
-
-#[derive(Clone, Debug, Subcommand)]
 pub enum SetupCommand {
-    Install(SetupInstallArgs),
+    Install(SetupRepoArgs),
     Enable(SetupRepoArgs),
     Disable(SetupRepoArgs),
-    Uninstall(SetupUninstallArgs),
-    Migrate(SetupMigrateArgs),
-    Status(SetupRepoArgs),
-    Doctor(SetupRepoArgs),
+    Uninstall(SetupRepoArgs),
+    Status(SetupStatusArgs),
+    Doctor(SetupStatusArgs),
     Backups {
         #[command(subcommand)]
         command: SetupBackupsCommand,
     },
-}
-
-#[derive(Clone, Debug, Args)]
-pub struct SetupInstallArgs {
-    #[arg(long, value_enum)]
-    pub mode: Option<SetupModeArg>,
-    #[arg(long, value_enum)]
-    pub scope: Option<SetupScopeArg>,
-    #[arg(long, value_name = "PATH")]
-    pub repo: Option<PathBuf>,
-    #[arg(long)]
-    pub dry_run: bool,
 }
 
 #[derive(Clone, Debug, Args)]
@@ -161,23 +106,9 @@ pub struct SetupRepoArgs {
 }
 
 #[derive(Clone, Debug, Args)]
-pub struct SetupUninstallArgs {
-    #[arg(long, value_enum)]
-    pub scope: Option<SetupScopeArg>,
+pub struct SetupStatusArgs {
     #[arg(long, value_name = "PATH")]
     pub repo: Option<PathBuf>,
-    #[arg(long)]
-    pub dry_run: bool,
-}
-
-#[derive(Clone, Debug, Args)]
-pub struct SetupMigrateArgs {
-    #[arg(long, value_enum)]
-    pub to: SetupScopeArg,
-    #[arg(long, value_name = "PATH")]
-    pub repo: Option<PathBuf>,
-    #[arg(long)]
-    pub dry_run: bool,
 }
 
 #[derive(Clone, Debug, Subcommand)]
@@ -190,23 +121,11 @@ pub enum SetupBackupsCommand {
 pub struct SetupBackupRestoreArgs {
     pub id: String,
     #[arg(long)]
+    pub repo: Option<PathBuf>,
+    #[arg(long)]
     pub force: bool,
     #[arg(long)]
     pub dry_run: bool,
-}
-
-#[derive(Clone, Debug, ValueEnum)]
-pub enum SetupModeArg {
-    Off,
-    Allowlist,
-    Denylist,
-    All,
-}
-
-#[derive(Clone, Debug, ValueEnum)]
-pub enum SetupScopeArg {
-    Global,
-    Project,
 }
 
 #[derive(Clone, Debug, ValueEnum)]

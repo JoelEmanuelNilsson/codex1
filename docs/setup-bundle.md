@@ -1,15 +1,14 @@
 # Setup Bundle
 
-Codex1 setup treats the product as one bundle:
+Codex1 setup materializes repo-scoped artifact workflow guidance:
 
-- `codex1` CLI commands
-- the Ralph Stop-hook adapter
-- Codex1 skills
-- Codex1 guidance
-- mission artifact conventions
+- a Codex1 repo skill
+- a managed repo guidance block
+- a managed setup marker
+- backups for touched setup files
 
-Global setup means the bundle is available on the machine. It does not mean the bundle is active in every repository. The default setup path is global availability plus activation for only the current repo through an allowlist policy.
+Setup is local to the target repository. It does not install global hooks, project hooks, custom continuation adapters, continuation policy, or native goal integrations.
 
-Activation is mechanical and reversible. Setup edits known Codex integration points, writes Codex1-owned policy, materializes owned repo-scoped skill and guidance files, creates backups before mutation, and reports effective activation. It does not decide mission truth, artifact correctness, review state, close readiness, or PRD satisfaction.
+Activation is mechanical and reversible. Setup writes only Codex1-managed repo files, creates backups before mutation, supports dry-run plans, and reports whether the managed repo guidance is current. It does not decide mission truth, artifact correctness, native goal state, review state, close readiness, or PRD satisfaction.
 
-Repo disable, uninstall, and migration must not delete mission artifacts. They may remove only Codex1-managed hook entries and Codex1-managed repo bundle files.
+Repo disable and uninstall must not delete mission artifacts, user skills, user-authored guidance, native goal state, or legacy `.codex1/LOOP.json` files. They may remove only Codex1-managed setup files and managed guidance blocks.

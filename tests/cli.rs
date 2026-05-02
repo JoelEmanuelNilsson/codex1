@@ -12,23 +12,9 @@ use tempfile::TempDir;
 
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
 
 fn bin() -> Command {
-    let mut command = Command::cargo_bin("codex1").unwrap();
-    let base = std::env::temp_dir().join(format!("codex1-test-home-{}", std::process::id()));
-    let home = base.join("home");
-    let codex_home = base.join("codex-home");
-    let codex1_home = base.join("codex1-home");
-    fs::create_dir_all(&home).unwrap();
-    fs::create_dir_all(&codex_home).unwrap();
-    fs::create_dir_all(&codex1_home).unwrap();
-    command
-        .env("HOME", home)
-        .env("CODEX_HOME", codex_home)
-        .env("CODEX1_HOME", codex1_home);
-    command
+    Command::cargo_bin("codex1").unwrap()
 }
 
 fn repo() -> TempDir {
@@ -37,53 +23,8 @@ fn repo() -> TempDir {
     dir
 }
 
-fn setup_env(command: &mut Command, home: &TempDir) {
-    let user_home = home.path().join("home");
-    let codex_home = home.path().join("codex-home");
-    let codex1_home = home.path().join("codex1-home");
-    fs::create_dir_all(&user_home).unwrap();
-    fs::create_dir_all(&codex_home).unwrap();
-    fs::create_dir_all(&codex1_home).unwrap();
-    command
-        .env("HOME", user_home)
-        .env("CODEX_HOME", codex_home)
-        .env("CODEX1_HOME", codex1_home);
-}
-
-fn setup_install_repo(repo: &TempDir, home: &TempDir) {
-    let mut command = bin();
-    setup_env(&mut command, home);
-    json_output(
-        command
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-}
-
 fn json_output(command: &mut Command) -> Value {
     let output = command.output().unwrap();
-    assert!(
-        output.status.success(),
-        "stdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    serde_json::from_slice(&output.stdout).unwrap()
-}
-
-fn json_output_with_stdin(command: &mut Command, stdin: String) -> Value {
-    let mut child = command
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(stdin.as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
     assert!(
         output.status.success(),
         "stdout: {}\nstderr: {}",
@@ -133,7 +74,7 @@ fn init_returns_success_envelope() {
     );
     assert_eq!(value["ok"], true);
     let descriptors = value["data"]["artifacts"].as_array().unwrap();
-    assert!(descriptors
+    assert!(!descriptors
         .iter()
         .any(|descriptor| descriptor["kind"] == "loop-state"));
     assert!(descriptors
@@ -143,6 +84,10 @@ fn init_returns_success_envelope() {
         .path()
         .join(".codex1/missions/alpha/SUBPLANS/ready")
         .is_dir());
+    assert!(!repo
+        .path()
+        .join(".codex1/missions/alpha/.codex1/LOOP.json")
+        .exists());
 }
 
 #[test]
@@ -215,2976 +160,6 @@ fn leading_hyphen_mission_id_is_rejected() {
         .assert()
         .failure()
         .stdout(predicate::str::contains("MISSION_PATH_ERROR"));
-}
-
-#[test]
-fn setup_status_reports_activation_only() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let mut command = bin();
-    setup_env(&mut command, &home);
-    let output = command
-        .args(["--json", "setup", "status", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let text = String::from_utf8(output.stdout).unwrap();
-    for forbidden in [
-        "next_action",
-        "task_status",
-        "review_passed",
-        "proof_sufficient",
-        "close_ready",
-        "prd_satisfied",
-    ] {
-        assert!(
-            !text.contains(forbidden),
-            "{forbidden} leaked into setup status"
-        );
-    }
-    let value: Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(value["ok"], true);
-    assert_eq!(value["data"]["status"]["effective_active"], false);
-    assert_eq!(
-        value["data"]["status"]["anti_oracle"],
-        "setup status reports activation/config only"
-    );
-}
-
-#[test]
-fn setup_status_requires_parseable_hook_config_before_reporting_active() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-    fs::write(
-        home.path().join("codex-home/config.toml"),
-        "# codex1-managed-ralph-start\n[[hooks.Stop]\n# codex1-managed-ralph-end\n",
-    )
-    .unwrap();
-
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["global_hook_installed"], false);
-    assert_eq!(value["data"]["status"]["effective_active"], false);
-}
-
-#[test]
-fn setup_status_requires_valid_bundle_before_reporting_active() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-    fs::write(repo.path().join(".codex1/setup-bundle.json"), "{not json").unwrap();
-
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["repo_bundle_materialized"], false);
-    assert_eq!(value["data"]["status"]["effective_active"], false);
-}
-
-#[test]
-fn setup_install_default_enables_only_target_repo_with_backups_and_bundle() {
-    let repo = repo();
-    let other_repo = crate::repo();
-    let home = tempfile::tempdir().unwrap();
-    let codex_home = home.path().join("codex-home");
-    fs::create_dir_all(&codex_home).unwrap();
-    fs::write(codex_home.join("config.toml"), "model = \"gpt-test\"\n").unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    let value = json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["ok"], true);
-    assert_eq!(value["data"]["activation_mode"], "allowlist");
-
-    let codex_config = fs::read_to_string(codex_home.join("config.toml")).unwrap();
-    assert!(codex_config.contains("model = \"gpt-test\""));
-    assert!(codex_config.contains("codex1-managed-ralph-start"));
-    assert!(codex_config.contains("ralph stop-hook"));
-
-    let codex1_config = fs::read_to_string(home.path().join("codex1-home/config.toml")).unwrap();
-    assert!(codex1_config.contains("mode = \"allowlist\""));
-    assert!(codex1_config.contains(&repo.path().canonicalize().unwrap().display().to_string()));
-    assert!(!codex1_config.contains(
-        &other_repo
-            .path()
-            .canonicalize()
-            .unwrap()
-            .display()
-            .to_string()
-    ));
-
-    assert!(repo.path().join(".agents/skills/codex1/SKILL.md").is_file());
-    assert!(repo.path().join("AGENTS.md").is_file());
-    assert!(repo.path().join(".codex1/setup-bundle.json").is_file());
-    assert!(home
-        .path()
-        .join("codex1-home/backups/manifest.json")
-        .is_file());
-
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let active = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(active["data"]["status"]["effective_active"], true);
-
-    let mut other_status = bin();
-    setup_env(&mut other_status, &home);
-    let inactive = json_output(
-        other_status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(other_repo.path()),
-    );
-    assert_eq!(inactive["data"]["status"]["repo_policy_enabled"], false);
-}
-
-#[test]
-fn setup_commands_honor_global_repo_root_flag() {
-    let repo = repo();
-    let other_repo = crate::repo();
-    let home = tempfile::tempdir().unwrap();
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args(["setup", "install"]),
-    );
-    assert!(repo.path().join(".agents/skills/codex1/SKILL.md").is_file());
-    assert!(!other_repo
-        .path()
-        .join(".agents/skills/codex1/SKILL.md")
-        .exists());
-
-    let codex1_config = fs::read_to_string(home.path().join("codex1-home/config.toml")).unwrap();
-    assert!(codex1_config.contains(&repo.path().canonicalize().unwrap().display().to_string()));
-    assert!(!codex1_config.contains(
-        &other_repo
-            .path()
-            .canonicalize()
-            .unwrap()
-            .display()
-            .to_string()
-    ));
-}
-
-#[test]
-fn setup_install_mode_all_overrides_disabled_repo_entry() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-    let mut disable = bin();
-    setup_env(&mut disable, &home);
-    json_output(
-        disable
-            .args(["--json", "setup", "disable", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut all = bin();
-    setup_env(&mut all, &home);
-    json_output(
-        all.args(["--json", "setup", "install", "--mode", "all", "--repo"])
-            .arg(repo.path()),
-    );
-    assert!(repo.path().join(".agents/skills/codex1/SKILL.md").is_file());
-
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["activation_mode"], "all");
-    assert_eq!(value["data"]["status"]["repo_policy_enabled"], true);
-}
-
-#[test]
-fn setup_install_mode_all_records_materialized_repo_for_off_cleanup() {
-    let repo = repo();
-    let other_repo = crate::repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut install_one = bin();
-    setup_env(&mut install_one, &home);
-    json_output(
-        install_one
-            .args(["--json", "setup", "install", "--mode", "all", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut install_other = bin();
-    setup_env(&mut install_other, &home);
-    json_output(
-        install_other
-            .args(["--json", "setup", "install", "--mode", "all", "--repo"])
-            .arg(other_repo.path()),
-    );
-    assert!(other_repo
-        .path()
-        .join(".agents/skills/codex1/SKILL.md")
-        .exists());
-
-    let mut off = bin();
-    setup_env(&mut off, &home);
-    json_output(
-        off.args(["--json", "setup", "install", "--mode", "off", "--repo"])
-            .arg(repo.path()),
-    );
-
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-    assert!(!other_repo
-        .path()
-        .join(".agents/skills/codex1/SKILL.md")
-        .exists());
-}
-
-#[test]
-fn setup_disable_overrides_all_mode_activation() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let mut all = bin();
-    setup_env(&mut all, &home);
-    json_output(
-        all.args(["--json", "setup", "install", "--mode", "all", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut disable = bin();
-    setup_env(&mut disable, &home);
-    json_output(
-        disable
-            .args(["--json", "setup", "disable", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["activation_mode"], "denylist");
-    assert_eq!(value["data"]["status"]["repo_policy_enabled"], false);
-    assert_eq!(value["data"]["status"]["effective_active"], false);
-}
-
-#[test]
-fn setup_install_does_not_leave_global_hook_when_policy_write_fails() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    let codex1_home = home.path().join("codex1-home");
-    fs::remove_dir_all(&codex1_home).unwrap();
-    fs::write(&codex1_home, "not a directory").unwrap();
-
-    let output = install
-        .args(["--json", "setup", "install", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    assert!(!home.path().join("codex-home/config.toml").exists());
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-    assert!(!repo.path().join("AGENTS.md").exists());
-}
-
-#[test]
-fn setup_install_does_not_leave_policy_when_global_hook_config_is_malformed() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let codex_config = home.path().join("codex-home/config.toml");
-    fs::create_dir_all(codex_config.parent().unwrap()).unwrap();
-    fs::write(&codex_config, "model = [nope\n").unwrap();
-
-    let mut command = bin();
-    setup_env(&mut command, &home);
-    let output = command
-        .args(["--json", "setup", "install", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["error"]["code"], "SETUP_CONFIG_PARSE_ERROR");
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-    assert!(!home.path().join("codex1-home/config.toml").exists());
-}
-
-#[test]
-fn setup_dry_run_does_not_write_files() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let mut command = bin();
-    setup_env(&mut command, &home);
-    let value = json_output(
-        command
-            .args(["--json", "setup", "install", "--dry-run", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["plan"]["dry_run"], true);
-    assert!(!home.path().join("codex-home/config.toml").exists());
-    assert!(!home.path().join("codex1-home/config.toml").exists());
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-}
-
-#[test]
-fn setup_enable_dry_run_bootstraps_same_plan_as_real_enable() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let mut command = bin();
-    setup_env(&mut command, &home);
-    let value = json_output(
-        command
-            .args(["--json", "setup", "enable", "--dry-run", "--repo"])
-            .arg(repo.path()),
-    );
-    let writes = value["data"]["plan"]["writes"].as_array().unwrap();
-    assert!(writes
-        .iter()
-        .any(|path| path.as_str().unwrap().ends_with("codex-home/config.toml")));
-    assert!(writes
-        .iter()
-        .any(|path| path.as_str().unwrap().ends_with("codex1-home/config.toml")));
-    assert!(!home.path().join("codex-home/config.toml").exists());
-}
-
-#[test]
-fn setup_install_off_does_not_materialize_repo_bundle() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let mut command = bin();
-    setup_env(&mut command, &home);
-    let value = json_output(
-        command
-            .args(["--json", "setup", "install", "--mode", "off", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["activation_mode"], "off");
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-    assert!(!repo.path().join("AGENTS.md").exists());
-}
-
-#[test]
-fn setup_install_off_removes_bundles_for_known_policy_repos() {
-    let repo = repo();
-    let other_repo = crate::repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut install_one = bin();
-    setup_env(&mut install_one, &home);
-    json_output(
-        install_one
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut enable_other = bin();
-    setup_env(&mut enable_other, &home);
-    json_output(
-        enable_other
-            .args(["--json", "setup", "enable", "--repo"])
-            .arg(other_repo.path()),
-    );
-    assert!(repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-    assert!(other_repo
-        .path()
-        .join(".agents/skills/codex1/SKILL.md")
-        .exists());
-
-    let mut off = bin();
-    setup_env(&mut off, &home);
-    json_output(
-        off.args(["--json", "setup", "install", "--mode", "off", "--repo"])
-            .arg(repo.path()),
-    );
-
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-    assert!(!other_repo
-        .path()
-        .join(".agents/skills/codex1/SKILL.md")
-        .exists());
-}
-
-#[test]
-fn setup_install_off_does_not_partially_remove_bundle_when_marker_is_reformatted() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-    fs::write(
-        repo.path().join(".codex1/setup-bundle.json"),
-        r#"{"managed_by":"codex1-managed","version":1,"files":[".agents/skills/codex1/SKILL.md","AGENTS.md"]}"#,
-    )
-    .unwrap();
-
-    let mut off = bin();
-    setup_env(&mut off, &home);
-    let output = off
-        .args(["--json", "setup", "install", "--mode", "off", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    assert!(repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-    assert!(repo.path().join("AGENTS.md").exists());
-}
-
-#[test]
-fn setup_install_off_does_not_remove_bundle_when_policy_backup_cannot_commit() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-    fs::write(
-        home.path().join("codex1-home/backups/manifest.json"),
-        "{not json",
-    )
-    .unwrap();
-
-    let mut off = bin();
-    setup_env(&mut off, &home);
-    let output = off
-        .args(["--json", "setup", "install", "--mode", "off", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    assert!(repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-    assert!(repo.path().join("AGENTS.md").exists());
-
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["repo_policy_enabled"], true);
-}
-
-#[cfg(unix)]
-#[test]
-fn setup_install_rolls_back_partial_bundle_when_guidance_write_fails() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let agents = repo.path().join("AGENTS.md");
-    fs::write(&agents, "human instructions\n").unwrap();
-    let mut permissions = fs::metadata(&agents).unwrap().permissions();
-    permissions.set_mode(0o444);
-    fs::set_permissions(&agents, permissions).unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    let output = install
-        .args(["--json", "setup", "install", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-}
-
-#[cfg(unix)]
-#[test]
-fn setup_enable_rolls_back_partial_bundle_when_guidance_write_fails() {
-    let repo = repo();
-    let other_repo = crate::repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut install_other = bin();
-    setup_env(&mut install_other, &home);
-    json_output(
-        install_other
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(other_repo.path()),
-    );
-
-    let agents = repo.path().join("AGENTS.md");
-    fs::write(&agents, "human instructions\n").unwrap();
-    let mut permissions = fs::metadata(&agents).unwrap().permissions();
-    permissions.set_mode(0o444);
-    fs::set_permissions(&agents, permissions).unwrap();
-
-    let mut enable = bin();
-    setup_env(&mut enable, &home);
-    let output = enable
-        .args(["--json", "setup", "enable", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["repo_policy_enabled"], false);
-}
-
-#[test]
-fn setup_install_off_removes_project_scoped_setup_for_target_repo() {
-    let project_repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    init(&project_repo, "alpha");
-
-    let mut project_install = bin();
-    setup_env(&mut project_install, &home);
-    json_output(
-        project_install
-            .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-            .arg(project_repo.path()),
-    );
-    assert!(project_repo
-        .path()
-        .join(".agents/skills/codex1/SKILL.md")
-        .exists());
-    assert!(
-        fs::read_to_string(project_repo.path().join(".codex/config.toml"))
-            .unwrap()
-            .contains("codex1-managed-ralph-start")
-    );
-
-    let mut off = bin();
-    setup_env(&mut off, &home);
-    json_output(
-        off.args(["--json", "setup", "install", "--mode", "off", "--repo"])
-            .arg(project_repo.path()),
-    );
-
-    assert!(!project_repo
-        .path()
-        .join(".agents/skills/codex1/SKILL.md")
-        .exists());
-    assert!(
-        !fs::read_to_string(project_repo.path().join(".codex/config.toml"))
-            .unwrap()
-            .contains("codex1-managed-ralph-start")
-    );
-
-    let mut start = bin();
-    setup_env(&mut start, &home);
-    json_output(
-        start
-            .args(["--json", "--repo-root"])
-            .arg(project_repo.path())
-            .args([
-                "--mission",
-                "alpha",
-                "loop",
-                "start",
-                "--mode",
-                "autopilot",
-                "--message",
-                "Keep going",
-            ]),
-    );
-
-    let mut ralph = bin();
-    setup_env(&mut ralph, &home);
-    let allowed = json_output_with_stdin(
-        ralph
-            .args(["--json", "--repo-root"])
-            .arg(project_repo.path())
-            .args([
-                "--mission",
-                "alpha",
-                "ralph",
-                "stop-hook",
-                "--scope",
-                "project",
-            ]),
-        "{}".to_string(),
-    );
-    assert!(allowed.get("decision").is_none());
-}
-
-#[test]
-fn setup_install_off_removes_project_scoped_repos_from_backup_manifest() {
-    let project_repo = repo();
-    let controller_repo = crate::repo();
-    let home = tempfile::tempdir().unwrap();
-    init(&project_repo, "alpha");
-
-    let mut project_install = bin();
-    setup_env(&mut project_install, &home);
-    json_output(
-        project_install
-            .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-            .arg(project_repo.path()),
-    );
-    assert!(project_repo
-        .path()
-        .join(".agents/skills/codex1/SKILL.md")
-        .exists());
-
-    let mut off = bin();
-    setup_env(&mut off, &home);
-    json_output(
-        off.args(["--json", "setup", "install", "--mode", "off", "--repo"])
-            .arg(controller_repo.path()),
-    );
-
-    assert!(!project_repo
-        .path()
-        .join(".agents/skills/codex1/SKILL.md")
-        .exists());
-    assert!(
-        !fs::read_to_string(project_repo.path().join(".codex/config.toml"))
-            .unwrap_or_default()
-            .contains("codex1-managed-ralph-start")
-    );
-}
-
-#[test]
-fn setup_project_install_rejects_mode_off() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let mut command = bin();
-    setup_env(&mut command, &home);
-    let output = command
-        .args([
-            "--json", "setup", "install", "--scope", "project", "--mode", "off", "--repo",
-        ])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["error"]["code"], "SETUP_ARGUMENT_ERROR");
-    assert!(!repo.path().join(".codex/config.toml").exists());
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-}
-
-#[test]
-fn setup_resolves_codex_homes_without_home() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let mut command = bin();
-    setup_env(&mut command, &home);
-    command.env_remove("HOME");
-    let value = json_output(
-        command
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["effective_active"], false);
-}
-
-#[cfg(unix)]
-#[test]
-fn setup_project_install_rejects_symlinked_project_config() {
-    let repo = repo();
-    let outside = tempfile::NamedTempFile::new().unwrap();
-    fs::write(outside.path(), "model = \"outside\"\n").unwrap();
-    fs::create_dir_all(repo.path().join(".codex")).unwrap();
-    symlink(outside.path(), repo.path().join(".codex/config.toml")).unwrap();
-
-    let home = tempfile::tempdir().unwrap();
-    let mut command = bin();
-    setup_env(&mut command, &home);
-    let output = command
-        .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["error"]["code"], "SETUP_CONFIG_WRITE_ERROR");
-    assert_eq!(
-        fs::read_to_string(outside.path()).unwrap(),
-        "model = \"outside\"\n"
-    );
-}
-
-#[cfg(unix)]
-#[test]
-fn setup_global_install_rejects_symlinked_global_config() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let codex_home = home.path().join("codex-home");
-    fs::create_dir_all(&codex_home).unwrap();
-    let outside = tempfile::NamedTempFile::new().unwrap();
-    fs::write(outside.path(), "model = \"outside\"\n").unwrap();
-    symlink(outside.path(), codex_home.join("config.toml")).unwrap();
-
-    let mut command = bin();
-    setup_env(&mut command, &home);
-    let output = command
-        .args(["--json", "setup", "install", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["error"]["code"], "SETUP_CONFIG_WRITE_ERROR");
-    assert_eq!(
-        fs::read_to_string(outside.path()).unwrap(),
-        "model = \"outside\"\n"
-    );
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-}
-
-#[cfg(unix)]
-#[test]
-fn setup_global_install_rejects_symlinked_policy_config() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let codex1_home = home.path().join("codex1-home");
-    fs::create_dir_all(&codex1_home).unwrap();
-    let outside = tempfile::NamedTempFile::new().unwrap();
-    fs::write(outside.path(), "mode = \"allowlist\"\n").unwrap();
-    symlink(outside.path(), codex1_home.join("config.toml")).unwrap();
-
-    let mut command = bin();
-    setup_env(&mut command, &home);
-    let output = command
-        .args(["--json", "setup", "install", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["error"]["code"], "SETUP_CONFIG_WRITE_ERROR");
-    assert_eq!(
-        fs::read_to_string(outside.path()).unwrap(),
-        "mode = \"allowlist\"\n"
-    );
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-}
-
-#[test]
-fn setup_project_install_rejects_malformed_config_before_bundle_write() {
-    let repo = repo();
-    fs::create_dir_all(repo.path().join(".codex")).unwrap();
-    fs::write(repo.path().join(".codex/config.toml"), "model = [nope\n").unwrap();
-
-    let home = tempfile::tempdir().unwrap();
-    let mut command = bin();
-    setup_env(&mut command, &home);
-    let output = command
-        .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["error"]["code"], "SETUP_CONFIG_PARSE_ERROR");
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-    assert!(!repo.path().join("AGENTS.md").exists());
-}
-
-#[test]
-fn setup_project_install_preflights_bundle_before_hook_write() {
-    let repo = repo();
-    fs::create_dir_all(repo.path().join(".agents/skills/codex1")).unwrap();
-    fs::write(
-        repo.path().join(".agents/skills/codex1/SKILL.md"),
-        "user-authored skill that says codex1-managed",
-    )
-    .unwrap();
-
-    let home = tempfile::tempdir().unwrap();
-    let mut command = bin();
-    setup_env(&mut command, &home);
-    let output = command
-        .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["error"]["code"], "SETUP_BUNDLE_ERROR");
-    assert!(!repo.path().join(".codex/config.toml").exists());
-    assert_eq!(
-        fs::read_to_string(repo.path().join(".agents/skills/codex1/SKILL.md")).unwrap(),
-        "user-authored skill that says codex1-managed"
-    );
-}
-
-#[test]
-fn setup_project_install_failure_preserves_global_activation() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut global_install = bin();
-    setup_env(&mut global_install, &home);
-    json_output(
-        global_install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-
-    fs::create_dir_all(repo.path().join(".codex")).unwrap();
-    fs::write(repo.path().join(".codex/config.toml"), "broken = [\n").unwrap();
-
-    let mut project_install = bin();
-    setup_env(&mut project_install, &home);
-    let output = project_install
-        .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["effective_active"], true);
-    assert_eq!(value["data"]["status"]["duplicate_hook_risk"], false);
-    assert!(
-        fs::read_to_string(home.path().join("codex1-home/config.toml"))
-            .unwrap()
-            .contains("enabled = true")
-    );
-}
-
-#[test]
-fn setup_project_install_does_not_touch_global_policy() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut project_install = bin();
-    setup_env(&mut project_install, &home);
-    json_output(
-        project_install
-            .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-            .arg(repo.path()),
-    );
-
-    assert!(!home.path().join("codex1-home/config.toml").exists());
-    assert!(home
-        .path()
-        .join("codex1-home/backups/manifest.json")
-        .exists());
-    assert!(repo.path().join(".codex/config.toml").exists());
-    assert!(repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-}
-
-#[test]
-fn setup_project_install_records_absence_backup_for_missing_config() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let project_config = repo.path().join(".codex/config.toml");
-
-    let mut project_install = bin();
-    setup_env(&mut project_install, &home);
-    json_output(
-        project_install
-            .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut list = bin();
-    setup_env(&mut list, &home);
-    let backups = json_output(list.args(["--json", "setup", "backups", "list"]));
-    let project_config_label = project_config.canonicalize().unwrap().display().to_string();
-    let id = backups["data"]["backups"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|record| record["target_path"] == project_config_label && record["existed"] == false)
-        .unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-
-    let mut restore = bin();
-    setup_env(&mut restore, &home);
-    json_output(
-        restore
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args(["setup", "backups", "restore", &id, "--force"]),
-    );
-    assert!(!project_config.exists());
-}
-
-#[test]
-fn setup_doctor_treats_project_hook_as_installed_hook() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut doctor = bin();
-    setup_env(&mut doctor, &home);
-    let value = json_output(
-        doctor
-            .args(["--json", "setup", "doctor", "--repo"])
-            .arg(repo.path()),
-    );
-    let check = value["data"]["checks"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|check| check["name"] == "global_hook_installed")
-        .unwrap();
-    assert_eq!(check["ok"], true);
-}
-
-#[test]
-fn setup_mutation_preserves_malformed_backup_manifest() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let manifest = home.path().join("codex1-home/backups/manifest.json");
-    fs::create_dir_all(manifest.parent().unwrap()).unwrap();
-    fs::write(&manifest, "{not json").unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    let output = install
-        .args(["--json", "setup", "install", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["error"]["code"], "SETUP_BACKUP_ERROR");
-    assert_eq!(fs::read_to_string(&manifest).unwrap(), "{not json");
-}
-
-#[test]
-fn setup_backups_list_reports_malformed_manifest() {
-    let home = tempfile::tempdir().unwrap();
-    let manifest = home.path().join("codex1-home/backups/manifest.json");
-    fs::create_dir_all(manifest.parent().unwrap()).unwrap();
-    fs::write(&manifest, "{not json").unwrap();
-
-    let mut list = bin();
-    setup_env(&mut list, &home);
-    let output = list
-        .args(["--json", "setup", "backups", "list"])
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["error"]["code"], "SETUP_BACKUP_ERROR");
-}
-
-#[test]
-fn setup_doctor_reports_malformed_backup_manifest() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let manifest = home.path().join("codex1-home/backups/manifest.json");
-    fs::create_dir_all(manifest.parent().unwrap()).unwrap();
-    fs::write(&manifest, "{not json").unwrap();
-
-    let mut doctor = bin();
-    setup_env(&mut doctor, &home);
-    let value = json_output(
-        doctor
-            .args(["--json", "setup", "doctor", "--repo"])
-            .arg(repo.path()),
-    );
-    let check = value["data"]["checks"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|check| check["name"] == "backup_manifest_parseable")
-        .unwrap();
-    assert_eq!(check["ok"], false);
-}
-
-#[test]
-fn setup_disable_removes_bundle_without_deleting_mission_artifacts() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    init(&repo, "alpha");
-    let mission_prd = repo.path().join(".codex1/missions/alpha/PRD.md");
-    fs::write(&mission_prd, "mission truth").unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut disable = bin();
-    setup_env(&mut disable, &home);
-    let value = json_output(
-        disable
-            .args(["--json", "setup", "disable", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["ok"], true);
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-    assert!(mission_prd.is_file());
-}
-
-#[test]
-fn setup_disable_removes_managed_bundle_files_when_marker_is_missing() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-    fs::remove_file(repo.path().join(".codex1/setup-bundle.json")).unwrap();
-
-    let mut disable = bin();
-    setup_env(&mut disable, &home);
-    json_output(
-        disable
-            .args(["--json", "setup", "disable", "--repo"])
-            .arg(repo.path()),
-    );
-
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-    assert!(!repo.path().join("AGENTS.md").exists());
-}
-
-#[test]
-fn setup_disable_rejects_tampered_bundle_marker_paths_outside_repo() {
-    let repo = repo();
-    let outside = tempfile::NamedTempFile::new().unwrap();
-    fs::write(outside.path(), "codex1-managed outside").unwrap();
-    fs::create_dir_all(repo.path().join(".codex1")).unwrap();
-    fs::write(
-        repo.path().join(".codex1/setup-bundle.json"),
-        format!(
-            r#"{{
-  "managed_by": "codex1-managed",
-  "version": 1,
-  "files": ["{}"]
-}}"#,
-            outside.path().display()
-        ),
-    )
-    .unwrap();
-    let home = tempfile::tempdir().unwrap();
-    let mut disable = bin();
-    setup_env(&mut disable, &home);
-    let output = disable
-        .args(["--json", "setup", "disable", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["error"]["code"], "SETUP_BUNDLE_ERROR");
-    assert!(outside.path().exists());
-}
-
-#[test]
-fn setup_disable_rejects_tampered_marker_for_unmanaged_repo_file() {
-    let repo = repo();
-    let user_file = repo.path().join("notes.md");
-    fs::write(&user_file, "user text mentioning codex1-managed").unwrap();
-    fs::create_dir_all(repo.path().join(".codex1")).unwrap();
-    fs::write(
-        repo.path().join(".codex1/setup-bundle.json"),
-        r#"{
-  "managed_by": "codex1-managed",
-  "version": 1,
-  "files": ["notes.md"]
-}"#,
-    )
-    .unwrap();
-    let home = tempfile::tempdir().unwrap();
-    let mut disable = bin();
-    setup_env(&mut disable, &home);
-    let output = disable
-        .args(["--json", "setup", "disable", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["error"]["code"], "SETUP_BUNDLE_ERROR");
-    assert!(user_file.exists());
-}
-
-#[test]
-fn setup_disable_does_not_change_policy_when_bundle_cleanup_fails() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-
-    fs::write(
-        repo.path().join(".codex1/setup-bundle.json"),
-        r#"{
-  "managed_by": "codex1-managed",
-  "version": 1,
-  "files": ["notes.md"]
-}"#,
-    )
-    .unwrap();
-
-    let mut disable = bin();
-    setup_env(&mut disable, &home);
-    let output = disable
-        .args(["--json", "setup", "disable", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["repo_policy_enabled"], true);
-}
-
-#[test]
-fn setup_disable_does_not_change_policy_when_owned_bundle_file_was_modified() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-    fs::write(
-        repo.path().join(".agents/skills/codex1/SKILL.md"),
-        "user replacement",
-    )
-    .unwrap();
-
-    let mut disable = bin();
-    setup_env(&mut disable, &home);
-    let output = disable
-        .args(["--json", "setup", "disable", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["repo_policy_enabled"], true);
-}
-
-#[cfg(unix)]
-#[test]
-fn setup_install_rejects_symlinked_repo_bundle_roots() {
-    let repo = repo();
-    let outside = tempfile::tempdir().unwrap();
-    symlink(outside.path(), repo.path().join(".agents")).unwrap();
-    let home = tempfile::tempdir().unwrap();
-    let mut command = bin();
-    setup_env(&mut command, &home);
-    let output = command
-        .args(["--json", "setup", "install", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["error"]["code"], "SETUP_BUNDLE_ERROR");
-    assert!(!outside.path().join("skills/codex1/SKILL.md").exists());
-}
-
-#[test]
-fn setup_install_preserves_existing_agents_md() {
-    let repo = repo();
-    fs::create_dir_all(repo.path().join(".codex1")).unwrap();
-    fs::write(
-        repo.path().join("AGENTS.md"),
-        "human note mentioning codex1-managed in passing",
-    )
-    .unwrap();
-    let home = tempfile::tempdir().unwrap();
-    let mut command = bin();
-    setup_env(&mut command, &home);
-    json_output(
-        command
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-    let agents = fs::read_to_string(repo.path().join("AGENTS.md")).unwrap();
-    assert!(agents.contains("human note mentioning codex1-managed in passing"));
-    assert!(agents.contains("codex1-managed setup guidance start"));
-
-    let mut disable = bin();
-    setup_env(&mut disable, &home);
-    json_output(
-        disable
-            .args(["--json", "setup", "disable", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(
-        fs::read_to_string(repo.path().join("AGENTS.md")).unwrap(),
-        "human note mentioning codex1-managed in passing"
-    );
-}
-
-#[test]
-fn setup_status_rejects_and_install_repairs_stale_guidance_block() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-    fs::write(
-        repo.path().join("AGENTS.md"),
-        r#"# Existing Instructions
-
-Keep this.
-
-<!-- codex1-managed setup guidance start -->
-# Old Codex1 Guidance
-
-codex1-managed
-<!-- codex1-managed setup guidance end -->
-"#,
-    )
-    .unwrap();
-
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["repo_bundle_materialized"], false);
-    assert_eq!(value["data"]["status"]["effective_active"], false);
-
-    let mut reinstall = bin();
-    setup_env(&mut reinstall, &home);
-    json_output(
-        reinstall
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-    let agents = fs::read_to_string(repo.path().join("AGENTS.md")).unwrap();
-    assert!(agents.contains("# Existing Instructions"));
-    assert!(agents.contains("Keep this."));
-    assert!(agents.contains("# Codex1 Setup Guidance"));
-    assert!(!agents.contains("# Old Codex1 Guidance"));
-}
-
-#[test]
-fn setup_enable_reinstalls_missing_global_hook_for_existing_policy() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut uninstall = bin();
-    setup_env(&mut uninstall, &home);
-    json_output(
-        uninstall
-            .args([
-                "--json",
-                "setup",
-                "uninstall",
-                "--scope",
-                "global",
-                "--repo",
-            ])
-            .arg(repo.path()),
-    );
-    assert!(
-        !fs::read_to_string(home.path().join("codex-home/config.toml"))
-            .unwrap()
-            .contains("codex1-managed-ralph-start")
-    );
-
-    let mut enable = bin();
-    setup_env(&mut enable, &home);
-    json_output(
-        enable
-            .args(["--json", "setup", "enable", "--repo"])
-            .arg(repo.path()),
-    );
-    assert!(
-        fs::read_to_string(home.path().join("codex-home/config.toml"))
-            .unwrap()
-            .contains("codex1-managed-ralph-start")
-    );
-}
-
-#[test]
-fn setup_backups_can_restore_existing_and_missing_config_states() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let codex_home = home.path().join("codex-home");
-    fs::create_dir_all(&codex_home).unwrap();
-    let config = codex_home.join("config.toml");
-    fs::write(&config, "model = \"before\"\n").unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut list = bin();
-    setup_env(&mut list, &home);
-    let backups = json_output(list.args(["--json", "setup", "backups", "list"]));
-    let id = backups["data"]["backups"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|record| record["target_path"] == config.display().to_string())
-        .unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-
-    let mut restore = bin();
-    setup_env(&mut restore, &home);
-    json_output(restore.args(["--json", "setup", "backups", "restore", &id, "--force"]));
-    assert_eq!(fs::read_to_string(&config).unwrap(), "model = \"before\"\n");
-}
-
-#[cfg(unix)]
-#[test]
-fn setup_backups_restore_rejects_symlinked_global_config_target() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let codex_home = home.path().join("codex-home");
-    fs::create_dir_all(&codex_home).unwrap();
-    let config = codex_home.join("config.toml");
-    fs::write(&config, "model = \"before\"\n").unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut list = bin();
-    setup_env(&mut list, &home);
-    let backups = json_output(list.args(["--json", "setup", "backups", "list"]));
-    let id = backups["data"]["backups"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|record| record["target_path"] == config.display().to_string())
-        .unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-
-    fs::remove_file(&config).unwrap();
-    let outside = tempfile::NamedTempFile::new().unwrap();
-    fs::write(outside.path(), "model = \"outside\"\n").unwrap();
-    symlink(outside.path(), &config).unwrap();
-
-    let mut restore = bin();
-    setup_env(&mut restore, &home);
-    let output = restore
-        .args(["--json", "setup", "backups", "restore", &id, "--force"])
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    assert_eq!(
-        fs::read_to_string(outside.path()).unwrap(),
-        "model = \"outside\"\n"
-    );
-}
-
-#[test]
-fn setup_backups_restore_rejects_manifest_paths_outside_setup_roots() {
-    let home = tempfile::tempdir().unwrap();
-    let outside_target = tempfile::NamedTempFile::new().unwrap();
-    fs::write(outside_target.path(), "do not overwrite").unwrap();
-    let backup_file = home.path().join("codex1-home/backups/tampered/config.toml");
-    fs::create_dir_all(backup_file.parent().unwrap()).unwrap();
-    fs::write(&backup_file, "owned by tampered manifest").unwrap();
-    let manifest = home.path().join("codex1-home/backups/manifest.json");
-    fs::write(
-        &manifest,
-        format!(
-            r#"{{
-  "version": 1,
-  "records": [
-    {{
-      "id": "tampered",
-      "timestamp": "2026-04-26T00:00:00Z",
-      "target_kind": "codex-config",
-      "target_path": "{}",
-      "target_path_label": "{}",
-      "backup_path": "{}",
-      "existed": true,
-      "reason": "tampered"
-    }}
-  ]
-}}"#,
-            outside_target.path().display(),
-            outside_target.path().display(),
-            backup_file.display()
-        ),
-    )
-    .unwrap();
-
-    let mut restore = bin();
-    setup_env(&mut restore, &home);
-    let output = restore
-        .args([
-            "--json", "setup", "backups", "restore", "tampered", "--force",
-        ])
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["error"]["code"], "SETUP_RESTORE_ERROR");
-    assert_eq!(
-        fs::read_to_string(outside_target.path()).unwrap(),
-        "do not overwrite"
-    );
-}
-
-#[test]
-fn setup_backups_restore_allows_project_config_backups() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    fs::create_dir_all(repo.path().join(".codex")).unwrap();
-    let project_config = repo.path().join(".codex/config.toml");
-    fs::write(&project_config, "model = \"before-project\"\n").unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut list = bin();
-    setup_env(&mut list, &home);
-    let backups = json_output(list.args(["--json", "setup", "backups", "list"]));
-    let project_config_label = project_config.canonicalize().unwrap().display().to_string();
-    let id = backups["data"]["backups"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|record| record["target_path"] == project_config_label)
-        .unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-
-    fs::write(&project_config, "model = \"after-project\"\n").unwrap();
-    let mut restore = bin();
-    setup_env(&mut restore, &home);
-    json_output(
-        restore
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args(["setup", "backups", "restore", &id, "--force"]),
-    );
-    assert_eq!(
-        fs::read_to_string(&project_config).unwrap(),
-        "model = \"before-project\"\n"
-    );
-}
-
-#[test]
-fn setup_backups_restore_rejects_other_repo_project_config_backup() {
-    let repo = repo();
-    let other_repo = crate::repo();
-    let home = tempfile::tempdir().unwrap();
-    let other_config = other_repo.path().join(".codex/config.toml");
-    fs::create_dir_all(other_config.parent().unwrap()).unwrap();
-    fs::write(&other_config, "other repo config").unwrap();
-    let backup_file = home.path().join("codex1-home/backups/tampered/config.toml");
-    fs::create_dir_all(backup_file.parent().unwrap()).unwrap();
-    fs::write(&backup_file, "tampered overwrite").unwrap();
-    let manifest = home.path().join("codex1-home/backups/manifest.json");
-    fs::write(
-        &manifest,
-        format!(
-            r#"{{
-  "version": 1,
-  "records": [
-    {{
-      "id": "other-project",
-      "timestamp": "2026-04-26T00:00:00Z",
-      "target_kind": "codex-config",
-      "target_path": "{}",
-      "target_path_label": "{}",
-      "backup_path": "{}",
-      "existed": true,
-      "reason": "tampered"
-    }}
-  ]
-}}"#,
-            other_config.display(),
-            other_config.display(),
-            backup_file.display()
-        ),
-    )
-    .unwrap();
-
-    let mut restore = bin();
-    setup_env(&mut restore, &home);
-    let output = restore
-        .args(["--json", "--repo-root"])
-        .arg(repo.path())
-        .args(["setup", "backups", "restore", "other-project", "--force"])
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["error"]["code"], "SETUP_RESTORE_ERROR");
-    assert_eq!(
-        fs::read_to_string(&other_config).unwrap(),
-        "other repo config"
-    );
-}
-
-#[test]
-fn setup_doctor_reports_stale_managed_hook_executable() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let codex_home = home.path().join("codex-home");
-    fs::create_dir_all(&codex_home).unwrap();
-    fs::write(
-        codex_home.join("config.toml"),
-        r#"# codex1-managed-ralph-start
-[[hooks.Stop]]
-
-[[hooks.Stop.hooks]]
-type = "command"
-command = "'/definitely/missing/codex1' ralph stop-hook --scope global"
-timeout = 10
-statusMessage = "Codex1 Ralph"
-# codex1-managed-ralph-end
-"#,
-    )
-    .unwrap();
-
-    let mut doctor = bin();
-    setup_env(&mut doctor, &home);
-    let value = json_output(
-        doctor
-            .args(["--json", "setup", "doctor", "--repo"])
-            .arg(repo.path()),
-    );
-    let check = value["data"]["checks"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|check| check["name"] == "managed_hook_executable")
-        .unwrap();
-    assert_eq!(check["ok"], false);
-}
-
-#[test]
-fn setup_status_treats_stale_global_hook_executable_as_inactive() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-    fs::write(
-        home.path().join("codex-home/config.toml"),
-        r#"# codex1-managed-ralph-start
-[[hooks.Stop]]
-
-[[hooks.Stop.hooks]]
-type = "command"
-command = "'/definitely/missing/codex1' ralph stop-hook --scope global"
-timeout = 10
-statusMessage = "Codex1 Ralph"
-# codex1-managed-ralph-end
-"#,
-    )
-    .unwrap();
-
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["global_hook_installed"], true);
-    assert_eq!(value["data"]["status"]["effective_active"], false);
-}
-
-#[test]
-fn setup_status_treats_wrong_managed_hook_command_as_inactive() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-    fs::write(
-        home.path().join("codex-home/config.toml"),
-        r#"# codex1-managed-ralph-start
-[[hooks.Stop]]
-
-[[hooks.Stop.hooks]]
-type = "command"
-command = "/bin/sh"
-timeout = 10
-statusMessage = "Codex1 Ralph"
-# codex1-managed-ralph-end
-"#,
-    )
-    .unwrap();
-
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["global_hook_installed"], true);
-    assert_eq!(value["data"]["status"]["effective_active"], false);
-
-    let mut doctor = bin();
-    setup_env(&mut doctor, &home);
-    let doctor_value = json_output(
-        doctor
-            .args(["--json", "setup", "doctor", "--repo"])
-            .arg(repo.path()),
-    );
-    let check = doctor_value["data"]["checks"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|check| check["name"] == "managed_hook_executable")
-        .unwrap();
-    assert_eq!(check["ok"], false);
-}
-
-#[cfg(unix)]
-#[test]
-fn setup_status_treats_non_executable_global_hook_as_inactive() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let fake_bin = home.path().join("not-executable-codex1");
-    fs::write(&fake_bin, "#!/bin/sh\nexit 0\n").unwrap();
-    let mut permissions = fs::metadata(&fake_bin).unwrap().permissions();
-    permissions.set_mode(0o644);
-    fs::set_permissions(&fake_bin, permissions).unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-    fs::write(
-        home.path().join("codex-home/config.toml"),
-        format!(
-            r#"# codex1-managed-ralph-start
-[[hooks.Stop]]
-
-[[hooks.Stop.hooks]]
-type = "command"
-command = "'{}' ralph stop-hook --scope global"
-timeout = 10
-statusMessage = "Codex1 Ralph"
-# codex1-managed-ralph-end
-"#,
-            fake_bin.display()
-        ),
-    )
-    .unwrap();
-
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["effective_active"], false);
-
-    let mut doctor = bin();
-    setup_env(&mut doctor, &home);
-    let doctor_value = json_output(
-        doctor
-            .args(["--json", "setup", "doctor", "--repo"])
-            .arg(repo.path()),
-    );
-    let check = doctor_value["data"]["checks"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|check| check["name"] == "managed_hook_executable")
-        .unwrap();
-    assert_eq!(check["ok"], false);
-}
-
-#[test]
-fn setup_doctor_reports_stale_project_hook_executable() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    fs::create_dir_all(repo.path().join(".codex")).unwrap();
-    fs::write(
-        repo.path().join(".codex/config.toml"),
-        r#"# codex1-managed-ralph-start
-[[hooks.Stop]]
-
-[[hooks.Stop.hooks]]
-type = "command"
-command = "'/definitely/missing/codex1' ralph stop-hook --scope project"
-timeout = 10
-statusMessage = "Codex1 Ralph"
-# codex1-managed-ralph-end
-"#,
-    )
-    .unwrap();
-
-    let mut doctor = bin();
-    setup_env(&mut doctor, &home);
-    let value = json_output(
-        doctor
-            .args(["--json", "setup", "doctor", "--repo"])
-            .arg(repo.path()),
-    );
-    let check = value["data"]["checks"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|check| check["name"] == "managed_hook_executable")
-        .unwrap();
-    assert_eq!(check["ok"], false);
-}
-
-#[test]
-fn ralph_obeys_setup_activation_policy_and_fails_open() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    init(&repo, "alpha");
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut start = bin();
-    setup_env(&mut start, &home);
-    json_output(
-        start
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args([
-                "--mission",
-                "alpha",
-                "loop",
-                "start",
-                "--mode",
-                "autopilot",
-                "--message",
-                "Keep going",
-            ]),
-    );
-
-    let mut ralph_block = bin();
-    setup_env(&mut ralph_block, &home);
-    let blocked = json_output_with_stdin(
-        ralph_block
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args(["--mission", "alpha", "ralph", "stop-hook"]),
-        "{}".to_string(),
-    );
-    assert_eq!(blocked["decision"], "block");
-
-    let mut disable = bin();
-    setup_env(&mut disable, &home);
-    json_output(
-        disable
-            .args(["--json", "setup", "disable", "--repo"])
-            .arg(repo.path()),
-    );
-    let mut ralph_disabled = bin();
-    setup_env(&mut ralph_disabled, &home);
-    let allowed = json_output_with_stdin(
-        ralph_disabled
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args(["--mission", "alpha", "ralph", "stop-hook"]),
-        "{}".to_string(),
-    );
-    assert!(allowed.get("decision").is_none());
-
-    fs::write(
-        home.path().join("codex1-home/config.toml"),
-        "mode = [nope\n",
-    )
-    .unwrap();
-    let mut ralph_malformed = bin();
-    setup_env(&mut ralph_malformed, &home);
-    let malformed_allowed = json_output_with_stdin(
-        ralph_malformed
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args(["--mission", "alpha", "ralph", "stop-hook"]),
-        "{}".to_string(),
-    );
-    assert!(malformed_allowed.get("decision").is_none());
-
-    fs::remove_file(home.path().join("codex1-home/config.toml")).unwrap();
-    let mut ralph_missing_policy = bin();
-    setup_env(&mut ralph_missing_policy, &home);
-    let missing_policy_allowed = json_output_with_stdin(
-        ralph_missing_policy
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args(["--mission", "alpha", "ralph", "stop-hook"]),
-        "{}".to_string(),
-    );
-    assert!(missing_policy_allowed.get("decision").is_none());
-}
-
-#[test]
-fn ralph_preserves_legacy_loop_checks_without_setup_policy() {
-    let repo = repo();
-    init(&repo, "alpha");
-
-    bin()
-        .args(["--json", "--repo-root"])
-        .arg(repo.path())
-        .args([
-            "--mission",
-            "alpha",
-            "loop",
-            "start",
-            "--mode",
-            "autopilot",
-            "--message",
-            "Legacy hook should still block.",
-        ])
-        .assert()
-        .success();
-
-    let block = json_output_with_stdin(
-        bin()
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args(["--mission", "alpha", "ralph", "stop-hook"]),
-        "{}".to_string(),
-    );
-    assert_eq!(block["decision"], "block");
-}
-
-#[test]
-fn global_all_and_denylist_modes_scan_repos_without_materialized_bundles() {
-    for mode in ["all", "denylist"] {
-        let setup_repo = repo();
-        let scanned_repo = crate::repo();
-        let home = tempfile::tempdir().unwrap();
-        init(&scanned_repo, "alpha");
-
-        let mut install = bin();
-        setup_env(&mut install, &home);
-        json_output(
-            install
-                .args(["--json", "setup", "install", "--mode", mode, "--repo"])
-                .arg(setup_repo.path()),
-        );
-        assert!(!scanned_repo
-            .path()
-            .join(".codex1/setup-bundle.json")
-            .exists());
-
-        let mut start = bin();
-        setup_env(&mut start, &home);
-        json_output(
-            start
-                .args(["--json", "--repo-root"])
-                .arg(scanned_repo.path())
-                .args([
-                    "--mission",
-                    "alpha",
-                    "loop",
-                    "start",
-                    "--mode",
-                    "autopilot",
-                    "--message",
-                    "Keep going",
-                ]),
-        );
-
-        let mut ralph = bin();
-        setup_env(&mut ralph, &home);
-        let value = json_output_with_stdin(
-            ralph
-                .args(["--json", "--repo-root"])
-                .arg(scanned_repo.path())
-                .args(["--mission", "alpha", "ralph", "stop-hook"]),
-            "{}".to_string(),
-        );
-        assert_eq!(value["decision"], "block", "mode={mode}");
-
-        let mut status = bin();
-        setup_env(&mut status, &home);
-        let status_value = json_output(
-            status
-                .args(["--json", "setup", "status", "--repo"])
-                .arg(scanned_repo.path()),
-        );
-        assert_eq!(
-            status_value["data"]["status"]["effective_active"], true,
-            "mode={mode}"
-        );
-    }
-}
-
-#[test]
-fn project_scoped_ralph_requires_materialized_bundle() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    init(&repo, "alpha");
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-            .arg(repo.path()),
-    );
-    fs::remove_file(repo.path().join(".agents/skills/codex1/SKILL.md")).unwrap();
-
-    let mut start = bin();
-    setup_env(&mut start, &home);
-    json_output(
-        start
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args([
-                "--mission",
-                "alpha",
-                "loop",
-                "start",
-                "--mode",
-                "autopilot",
-                "--message",
-                "Keep going",
-            ]),
-    );
-
-    let mut ralph = bin();
-    setup_env(&mut ralph, &home);
-    let value = json_output_with_stdin(
-        ralph
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args([
-                "--mission",
-                "alpha",
-                "ralph",
-                "stop-hook",
-                "--scope",
-                "project",
-            ]),
-        "{}".to_string(),
-    );
-    assert!(value.get("decision").is_none());
-}
-
-#[test]
-fn project_scoped_ralph_rejects_tampered_bundle_marker() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    init(&repo, "alpha");
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-            .arg(repo.path()),
-    );
-    fs::write(repo.path().join(".codex1/setup-bundle.json"), "{not json").unwrap();
-
-    let mut start = bin();
-    setup_env(&mut start, &home);
-    json_output(
-        start
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args([
-                "--mission",
-                "alpha",
-                "loop",
-                "start",
-                "--mode",
-                "autopilot",
-                "--message",
-                "Keep going",
-            ]),
-    );
-
-    let mut ralph = bin();
-    setup_env(&mut ralph, &home);
-    let value = json_output_with_stdin(
-        ralph
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args([
-                "--mission",
-                "alpha",
-                "ralph",
-                "stop-hook",
-                "--scope",
-                "project",
-            ]),
-        "{}".to_string(),
-    );
-    assert!(value.get("decision").is_none());
-}
-
-#[test]
-fn project_scoped_ralph_rejects_tampered_bundle_marker_metadata() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    init(&repo, "alpha");
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-            .arg(repo.path()),
-    );
-    fs::write(
-        repo.path().join(".codex1/setup-bundle.json"),
-        r#"{
-  "managed_by": "someone-else",
-  "version": 999,
-  "files": [".agents/skills/codex1/SKILL.md", "AGENTS.md"]
-}"#,
-    )
-    .unwrap();
-
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let status_value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(
-        status_value["data"]["status"]["repo_bundle_materialized"],
-        false
-    );
-    assert_eq!(status_value["data"]["status"]["effective_active"], false);
-
-    let mut start = bin();
-    setup_env(&mut start, &home);
-    json_output(
-        start
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args([
-                "--mission",
-                "alpha",
-                "loop",
-                "start",
-                "--mode",
-                "autopilot",
-                "--message",
-                "Keep going",
-            ]),
-    );
-
-    let mut ralph = bin();
-    setup_env(&mut ralph, &home);
-    let value = json_output_with_stdin(
-        ralph
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args([
-                "--mission",
-                "alpha",
-                "ralph",
-                "stop-hook",
-                "--scope",
-                "project",
-            ]),
-        "{}".to_string(),
-    );
-    assert!(value.get("decision").is_none());
-}
-
-#[test]
-fn project_scope_ralph_ignores_global_disable_after_migration() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    init(&repo, "alpha");
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut migrate = bin();
-    setup_env(&mut migrate, &home);
-    json_output(
-        migrate
-            .args(["--json", "setup", "migrate", "--to", "project", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut start = bin();
-    setup_env(&mut start, &home);
-    json_output(
-        start
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args([
-                "--mission",
-                "alpha",
-                "loop",
-                "start",
-                "--mode",
-                "autopilot",
-                "--message",
-                "Keep going",
-            ]),
-    );
-
-    let mut global_hook = bin();
-    setup_env(&mut global_hook, &home);
-    let global_allowed = json_output_with_stdin(
-        global_hook
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args([
-                "--mission",
-                "alpha",
-                "ralph",
-                "stop-hook",
-                "--scope",
-                "global",
-            ]),
-        "{}".to_string(),
-    );
-    assert!(global_allowed.get("decision").is_none());
-
-    let mut project_hook = bin();
-    setup_env(&mut project_hook, &home);
-    let project_blocked = json_output_with_stdin(
-        project_hook
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args([
-                "--mission",
-                "alpha",
-                "ralph",
-                "stop-hook",
-                "--scope",
-                "project",
-            ]),
-        "{}".to_string(),
-    );
-    assert_eq!(project_blocked["decision"], "block");
-}
-
-#[test]
-fn migrate_to_global_does_not_enable_global_hook_before_later_failures() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut project_install = bin();
-    setup_env(&mut project_install, &home);
-    json_output(
-        project_install
-            .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-            .arg(repo.path()),
-    );
-    fs::write(repo.path().join(".codex/config.toml"), "model = [nope\n").unwrap();
-
-    let mut migrate = bin();
-    setup_env(&mut migrate, &home);
-    let output = migrate
-        .args(["--json", "setup", "migrate", "--to", "global", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-
-    let global_config = home.path().join("codex-home/config.toml");
-    assert!(
-        !global_config.exists()
-            || !fs::read_to_string(global_config)
-                .unwrap()
-                .contains("codex1-managed-ralph-start")
-    );
-}
-
-#[test]
-fn migrate_to_project_keeps_global_policy_when_project_hook_install_fails() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-    fs::create_dir_all(repo.path().join(".codex")).unwrap();
-    fs::write(repo.path().join(".codex/config.toml"), "model = [nope\n").unwrap();
-
-    let mut migrate = bin();
-    setup_env(&mut migrate, &home);
-    let output = migrate
-        .args(["--json", "setup", "migrate", "--to", "project", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["repo_policy_enabled"], true);
-    assert_eq!(value["data"]["status"]["effective_active"], true);
-}
-
-#[test]
-fn migrate_to_global_keeps_project_hook_when_global_hook_install_fails() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-            .arg(repo.path()),
-    );
-    let global_config = home.path().join("codex-home/config.toml");
-    fs::write(&global_config, "model = [nope\n").unwrap();
-
-    let mut migrate = bin();
-    setup_env(&mut migrate, &home);
-    let output = migrate
-        .args(["--json", "setup", "migrate", "--to", "global", "--repo"])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-
-    assert!(fs::read_to_string(repo.path().join(".codex/config.toml"))
-        .unwrap()
-        .contains("codex1-managed-ralph-start"));
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["effective_active"], true);
-}
-
-#[test]
-fn setup_project_migrate_uninstall_and_enable_flows_are_reversible() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut project_install = bin();
-    setup_env(&mut project_install, &home);
-    json_output(
-        project_install
-            .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-            .arg(repo.path()),
-    );
-    let project_config = repo.path().join(".codex/config.toml");
-    assert!(fs::read_to_string(&project_config)
-        .unwrap()
-        .contains("codex1-managed-ralph-start"));
-    assert!(!home.path().join("codex-home/config.toml").exists());
-
-    let mut project_status = bin();
-    setup_env(&mut project_status, &home);
-    let status = json_output(
-        project_status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(status["data"]["status"]["effective_active"], true);
-    assert_eq!(status["data"]["status"]["project_trust_caveat"], true);
-
-    let mut migrate_global = bin();
-    setup_env(&mut migrate_global, &home);
-    json_output(
-        migrate_global
-            .args(["--json", "setup", "migrate", "--to", "global", "--repo"])
-            .arg(repo.path()),
-    );
-    assert!(!fs::read_to_string(&project_config)
-        .unwrap_or_default()
-        .contains("codex1-managed-ralph-start"));
-    assert!(
-        fs::read_to_string(home.path().join("codex-home/config.toml"))
-            .unwrap()
-            .contains("codex1-managed-ralph-start")
-    );
-
-    let mut uninstall_global = bin();
-    setup_env(&mut uninstall_global, &home);
-    json_output(
-        uninstall_global
-            .args([
-                "--json",
-                "setup",
-                "uninstall",
-                "--scope",
-                "global",
-                "--repo",
-            ])
-            .arg(repo.path()),
-    );
-    assert!(
-        !fs::read_to_string(home.path().join("codex-home/config.toml"))
-            .unwrap()
-            .contains("codex1-managed-ralph-start")
-    );
-
-    let mut disable = bin();
-    setup_env(&mut disable, &home);
-    json_output(
-        disable
-            .args(["--json", "setup", "disable", "--repo"])
-            .arg(repo.path()),
-    );
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-
-    let mut enable = bin();
-    setup_env(&mut enable, &home);
-    json_output(
-        enable
-            .args(["--json", "setup", "enable", "--repo"])
-            .arg(repo.path()),
-    );
-    assert!(repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-    assert!(
-        fs::read_to_string(home.path().join("codex1-home/config.toml"))
-            .unwrap()
-            .contains("enabled = true")
-    );
-}
-
-#[test]
-fn setup_uninstall_project_keeps_bundle_when_global_setup_remains() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut global_install = bin();
-    setup_env(&mut global_install, &home);
-    json_output(
-        global_install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-    let mut project_install = bin();
-    setup_env(&mut project_install, &home);
-    json_output(
-        project_install
-            .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-            .arg(repo.path()),
-    );
-    let policy_path = home.path().join("codex1-home/config.toml");
-    let policy = fs::read_to_string(&policy_path).unwrap();
-    fs::write(
-        &policy_path,
-        policy.replace("enabled = false", "enabled = true"),
-    )
-    .unwrap();
-
-    let mut uninstall = bin();
-    setup_env(&mut uninstall, &home);
-    json_output(
-        uninstall
-            .args([
-                "--json",
-                "setup",
-                "uninstall",
-                "--scope",
-                "project",
-                "--repo",
-            ])
-            .arg(repo.path()),
-    );
-
-    assert!(repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-    assert!(!fs::read_to_string(repo.path().join(".codex/config.toml"))
-        .unwrap_or_default()
-        .contains("codex1-managed-ralph-start"));
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["effective_active"], true);
-    assert_eq!(value["data"]["status"]["duplicate_hook_risk"], false);
-}
-
-#[test]
-fn setup_enable_preserves_project_local_activation_after_disable() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut project_install = bin();
-    setup_env(&mut project_install, &home);
-    json_output(
-        project_install
-            .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut disable = bin();
-    setup_env(&mut disable, &home);
-    json_output(
-        disable
-            .args(["--json", "setup", "disable", "--repo"])
-            .arg(repo.path()),
-    );
-    assert!(!home.path().join("codex1-home/config.toml").exists());
-    assert!(!fs::read_to_string(repo.path().join(".codex/config.toml"))
-        .unwrap_or_default()
-        .contains("codex1-managed-ralph-start"));
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-
-    let mut enable = bin();
-    setup_env(&mut enable, &home);
-    json_output(
-        enable
-            .args(["--json", "setup", "enable", "--repo"])
-            .arg(repo.path()),
-    );
-
-    assert!(!home.path().join("codex1-home/config.toml").exists());
-    assert!(!home.path().join("codex-home/config.toml").exists());
-    assert!(fs::read_to_string(repo.path().join(".codex/config.toml"))
-        .unwrap()
-        .contains("codex1-managed-ralph-start"));
-
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["effective_active"], true);
-    assert_eq!(value["data"]["status"]["global_hook_installed"], false);
-    assert_eq!(value["data"]["status"]["project_hook_installed"], true);
-    assert_eq!(value["data"]["status"]["duplicate_hook_risk"], false);
-}
-
-#[test]
-fn setup_project_install_disables_existing_global_activation() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut global_install = bin();
-    setup_env(&mut global_install, &home);
-    json_output(
-        global_install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut project_install = bin();
-    setup_env(&mut project_install, &home);
-    json_output(
-        project_install
-            .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["effective_active"], true);
-    assert_eq!(value["data"]["status"]["project_hook_installed"], true);
-    assert_eq!(value["data"]["status"]["repo_policy_enabled"], false);
-    assert_eq!(value["data"]["status"]["duplicate_hook_risk"], false);
-}
-
-#[test]
-fn setup_project_install_disables_stale_global_activation() {
-    let repo = repo();
-    let other_repo = crate::repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut global_install = bin();
-    setup_env(&mut global_install, &home);
-    json_output(
-        global_install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-    fs::write(
-        home.path().join("codex-home/config.toml"),
-        r#"# codex1-managed-ralph-start
-[[hooks.Stop]]
-
-[[hooks.Stop.hooks]]
-type = "command"
-command = "'/definitely/missing/codex1' ralph stop-hook --scope global"
-timeout = 10
-statusMessage = "Codex1 Ralph"
-# codex1-managed-ralph-end
-"#,
-    )
-    .unwrap();
-
-    let mut project_install = bin();
-    setup_env(&mut project_install, &home);
-    json_output(
-        project_install
-            .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut enable_other = bin();
-    setup_env(&mut enable_other, &home);
-    json_output(
-        enable_other
-            .args(["--json", "setup", "enable", "--repo"])
-            .arg(other_repo.path()),
-    );
-
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["effective_active"], true);
-    assert_eq!(value["data"]["status"]["global_hook_installed"], true);
-    assert_eq!(value["data"]["status"]["project_hook_installed"], true);
-    assert_eq!(value["data"]["status"]["repo_policy_enabled"], false);
-    assert_eq!(value["data"]["status"]["duplicate_hook_risk"], false);
-}
-
-#[test]
-fn setup_uninstall_global_removes_bundle_when_no_project_hook_remains() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut uninstall = bin();
-    setup_env(&mut uninstall, &home);
-    json_output(
-        uninstall
-            .args([
-                "--json",
-                "setup",
-                "uninstall",
-                "--scope",
-                "global",
-                "--repo",
-            ])
-            .arg(repo.path()),
-    );
-
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-    assert!(!fs::read_to_string(repo.path().join("AGENTS.md"))
-        .unwrap_or_default()
-        .contains("codex1-managed setup guidance start"));
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["repo_policy_enabled"], false);
-    assert_eq!(value["data"]["status"]["effective_active"], false);
-}
-
-#[test]
-fn setup_uninstall_global_keeps_shared_hook_for_other_enabled_repos() {
-    let repo = repo();
-    let other_repo = crate::repo();
-    let home = tempfile::tempdir().unwrap();
-    init(&other_repo, "alpha");
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut enable_other = bin();
-    setup_env(&mut enable_other, &home);
-    json_output(
-        enable_other
-            .args(["--json", "setup", "enable", "--repo"])
-            .arg(other_repo.path()),
-    );
-
-    let mut uninstall = bin();
-    setup_env(&mut uninstall, &home);
-    json_output(
-        uninstall
-            .args([
-                "--json",
-                "setup",
-                "uninstall",
-                "--scope",
-                "global",
-                "--repo",
-            ])
-            .arg(repo.path()),
-    );
-
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-    assert!(other_repo
-        .path()
-        .join(".agents/skills/codex1/SKILL.md")
-        .exists());
-    assert!(
-        fs::read_to_string(home.path().join("codex-home/config.toml"))
-            .unwrap()
-            .contains("codex1-managed-ralph-start")
-    );
-
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(other_repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["repo_policy_enabled"], true);
-    assert_eq!(value["data"]["status"]["effective_active"], true);
-
-    let mut start = bin();
-    setup_env(&mut start, &home);
-    json_output(
-        start
-            .args(["--json", "--repo-root"])
-            .arg(other_repo.path())
-            .args([
-                "--mission",
-                "alpha",
-                "loop",
-                "start",
-                "--mode",
-                "autopilot",
-                "--message",
-                "Keep going",
-            ]),
-    );
-    let mut ralph = bin();
-    setup_env(&mut ralph, &home);
-    let blocked = json_output_with_stdin(
-        ralph
-            .args(["--json", "--repo-root"])
-            .arg(other_repo.path())
-            .args(["--mission", "alpha", "ralph", "stop-hook"]),
-        "{}".to_string(),
-    );
-    assert_eq!(blocked["decision"], "block");
-}
-
-#[test]
-fn setup_uninstall_project_removes_bundle_when_global_hook_is_stale() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut global_install = bin();
-    setup_env(&mut global_install, &home);
-    json_output(
-        global_install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-    let mut project_install = bin();
-    setup_env(&mut project_install, &home);
-    json_output(
-        project_install
-            .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-            .arg(repo.path()),
-    );
-    fs::write(
-        home.path().join("codex-home/config.toml"),
-        r#"# codex1-managed-ralph-start
-[[hooks.Stop]]
-
-[[hooks.Stop.hooks]]
-type = "command"
-command = "'/definitely/missing/codex1' ralph stop-hook --scope global"
-timeout = 10
-statusMessage = "Codex1 Ralph"
-# codex1-managed-ralph-end
-"#,
-    )
-    .unwrap();
-
-    let mut uninstall = bin();
-    setup_env(&mut uninstall, &home);
-    json_output(
-        uninstall
-            .args([
-                "--json",
-                "setup",
-                "uninstall",
-                "--scope",
-                "project",
-                "--repo",
-            ])
-            .arg(repo.path()),
-    );
-
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-}
-
-#[test]
-fn setup_uninstall_project_keeps_hook_when_bundle_cleanup_fails() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut project_install = bin();
-    setup_env(&mut project_install, &home);
-    json_output(
-        project_install
-            .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-            .arg(repo.path()),
-    );
-    fs::write(
-        repo.path().join(".codex1/setup-bundle.json"),
-        r#"{
-  "managed_by": "codex1-managed",
-  "version": 1,
-  "files": ["notes.md"]
-}"#,
-    )
-    .unwrap();
-
-    let mut uninstall = bin();
-    setup_env(&mut uninstall, &home);
-    let output = uninstall
-        .args([
-            "--json",
-            "setup",
-            "uninstall",
-            "--scope",
-            "project",
-            "--repo",
-        ])
-        .arg(repo.path())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    assert!(fs::read_to_string(repo.path().join(".codex/config.toml"))
-        .unwrap()
-        .contains("codex1-managed-ralph-start"));
-}
-
-#[test]
-fn setup_install_global_removes_existing_project_hook() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-
-    let mut project_install = bin();
-    setup_env(&mut project_install, &home);
-    json_output(
-        project_install
-            .args(["--json", "setup", "install", "--scope", "project", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut global_install = bin();
-    setup_env(&mut global_install, &home);
-    json_output(
-        global_install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-
-    assert!(!fs::read_to_string(repo.path().join(".codex/config.toml"))
-        .unwrap_or_default()
-        .contains("codex1-managed-ralph-start"));
-    let mut status = bin();
-    setup_env(&mut status, &home);
-    let value = json_output(
-        status
-            .args(["--json", "setup", "status", "--repo"])
-            .arg(repo.path()),
-    );
-    assert_eq!(value["data"]["status"]["effective_active"], true);
-    assert_eq!(value["data"]["status"]["duplicate_hook_risk"], false);
-}
-
-#[test]
-fn setup_restore_can_restore_a_previously_missing_file_to_absence() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let codex1_config = home.path().join("codex1-home/config.toml");
-
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-    assert!(codex1_config.exists());
-
-    let mut list = bin();
-    setup_env(&mut list, &home);
-    let backups = json_output(list.args(["--json", "setup", "backups", "list"]));
-    let id = backups["data"]["backups"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|record| {
-            record["target_path"] == codex1_config.display().to_string()
-                && record["existed"] == false
-        })
-        .unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-
-    let mut restore = bin();
-    setup_env(&mut restore, &home);
-    json_output(restore.args(["--json", "setup", "backups", "restore", &id, "--force"]));
-    assert!(!codex1_config.exists());
 }
 
 #[test]
@@ -3342,53 +317,6 @@ fn successful_mutations_append_forensic_events_without_messages() {
         ])
         .assert()
         .success();
-    bin()
-        .args(["--repo-root"])
-        .arg(repo.path())
-        .args([
-            "--mission",
-            "alpha",
-            "loop",
-            "start",
-            "--mode",
-            "autopilot",
-            "--message",
-            "loop message must not leak",
-        ])
-        .assert()
-        .success();
-    bin()
-        .args(["--repo-root"])
-        .arg(repo.path())
-        .args([
-            "--mission",
-            "alpha",
-            "loop",
-            "pause",
-            "--reason",
-            "pause reason must not leak",
-        ])
-        .assert()
-        .success();
-    bin()
-        .args(["--repo-root"])
-        .arg(repo.path())
-        .args(["--mission", "alpha", "loop", "resume"])
-        .assert()
-        .success();
-    bin()
-        .args(["--repo-root"])
-        .arg(repo.path())
-        .args([
-            "--mission",
-            "alpha",
-            "loop",
-            "stop",
-            "--reason",
-            "stop reason must not leak",
-        ])
-        .assert()
-        .success();
 
     let events = read_events(&repo, "alpha");
     let kinds: Vec<_> = events
@@ -3397,10 +325,7 @@ fn successful_mutations_append_forensic_events_without_messages() {
         .collect();
     assert!(kinds.contains(&"subplan_moved"));
     assert!(kinds.contains(&"receipt_appended"));
-    assert!(kinds.contains(&"loop_started"));
-    assert!(kinds.contains(&"loop_paused"));
-    assert!(kinds.contains(&"loop_resumed"));
-    assert!(kinds.contains(&"loop_stopped"));
+    assert!(kinds.iter().all(|kind| !kind.starts_with("loop_")));
 
     let moved = events
         .iter()
@@ -3426,27 +351,8 @@ fn successful_mutations_append_forensic_events_without_messages() {
         ".codex1/receipts/receipts.jsonl"
     );
 
-    let started = events
-        .iter()
-        .find(|event| event["kind"] == "loop_started")
-        .unwrap();
-    assert_eq!(started["metadata"]["mode"], "autopilot");
-    assert_eq!(started["metadata"]["message_present"], true);
-
-    let paused = events
-        .iter()
-        .find(|event| event["kind"] == "loop_paused")
-        .unwrap();
-    assert_eq!(paused["metadata"]["reason_present"], true);
-
     let text = event_log_text(&repo, "alpha");
-    for private in [
-        "receipt text must not leak",
-        "loop message must not leak",
-        "pause reason must not leak",
-        "stop reason must not leak",
-        repo.path().to_str().unwrap(),
-    ] {
+    for private in ["receipt text must not leak", repo.path().to_str().unwrap()] {
         assert!(!text.contains(private));
     }
 }
@@ -3519,7 +425,6 @@ fn read_only_commands_do_not_append_events() {
     let repo = repo();
     init(&repo, "alpha");
     let before = event_log_text(&repo, "alpha");
-    let mission_dir = repo.path().join(".codex1/missions/alpha");
 
     bin()
         .args(["--json", "--repo-root"])
@@ -3545,19 +450,6 @@ fn read_only_commands_do_not_append_events() {
         .args(["doctor"])
         .assert()
         .success();
-    bin()
-        .args(["--json", "--repo-root"])
-        .arg(repo.path())
-        .args(["--mission", "alpha", "loop", "status"])
-        .assert()
-        .failure();
-    let _ = json_output_with_stdin(
-        bin()
-            .args(["--repo-root"])
-            .arg(repo.path())
-            .args(["ralph", "stop-hook"]),
-        format!(r#"{{"cwd":"{}"}}"#, mission_dir.display()),
-    );
 
     assert_eq!(event_log_text(&repo, "alpha"), before);
 }
@@ -3869,19 +761,10 @@ fn safe_mutation_failures_append_failure_events_without_hiding_errors() {
         .assert()
         .failure()
         .stdout(predicate::str::contains("ARTIFACT_VALIDATION_ERROR"));
-    bin()
-        .args(["--json", "--repo-root"])
-        .arg(repo.path())
-        .args(["--mission", "alpha", "loop", "pause"])
-        .assert()
-        .failure()
-        .stdout(predicate::str::contains("IO_ERROR"));
-
     let events = read_events(&repo, "alpha");
     for (kind, code) in [
         ("artifact_write_failed", "ARTIFACT_VALIDATION_ERROR"),
         ("subplan_move_failed", "ARTIFACT_VALIDATION_ERROR"),
-        ("loop_pause_failed", "IO_ERROR"),
     ] {
         let event = events
             .iter()
@@ -3990,260 +873,594 @@ fn inspect_is_inventory_only() {
 }
 
 #[test]
-fn loop_state_and_ralph_block_only_for_explicit_active_loop() {
+fn removed_loop_commands_fail_through_argument_parser() {
     let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    setup_install_repo(&repo, &home);
-    init(&repo, "alpha");
-    let mission_dir = repo.path().join(".codex1/missions/alpha");
 
-    let mut allow_command = bin();
-    setup_env(&mut allow_command, &home);
-    allow_command
-        .args(["--repo-root"])
+    let output = bin()
+        .args(["--json", "--repo-root"])
         .arg(repo.path())
-        .args(["ralph", "stop-hook"]);
-    let allow = json_output_with_stdin(
-        &mut allow_command,
-        format!(r#"{{"cwd":"{}"}}"#, mission_dir.display()),
-    );
-    assert!(allow.as_object().unwrap().get("decision").is_none());
+        .args(["--mission", "typo", "loop", "status"])
+        .output()
+        .unwrap();
 
-    bin()
-        .args(["--repo-root"])
-        .arg(repo.path())
-        .args([
-            "--mission",
-            "alpha",
-            "loop",
-            "start",
-            "--mode",
-            "autopilot",
-            "--message",
-            "Continue the mission.",
-        ])
-        .assert()
-        .success();
-
-    let mut block_command = bin();
-    setup_env(&mut block_command, &home);
-    block_command
-        .args(["--repo-root"])
-        .arg(repo.path())
-        .args(["ralph", "stop-hook"]);
-    let block = json_output_with_stdin(
-        &mut block_command,
-        format!(r#"{{"cwd":"{}"}}"#, mission_dir.display()),
-    );
-    assert_eq!(block["decision"], "block");
-    assert!(block["reason"]
+    assert_eq!(output.status.code(), Some(2));
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "ARGUMENT_ERROR");
+    assert!(value["error"]["message"]
         .as_str()
         .unwrap()
-        .contains("Continue the mission."));
-
-    let mut active_hook_command = bin();
-    setup_env(&mut active_hook_command, &home);
-    active_hook_command
-        .args(["--repo-root"])
-        .arg(repo.path())
-        .args(["ralph", "stop-hook"]);
-    let allow_active_hook = json_output_with_stdin(
-        &mut active_hook_command,
-        format!(
-            r#"{{"cwd":"{}","stop_hook_active":true}}"#,
-            mission_dir.display()
-        ),
-    );
-    assert!(allow_active_hook
-        .as_object()
-        .unwrap()
-        .get("decision")
-        .is_none());
+        .contains("unrecognized subcommand 'loop'"));
+    assert!(!repo.path().join(".codex1/missions/typo").exists());
 }
 
 #[test]
-fn ralph_resolves_repo_root_from_hook_cwd_when_invoked_elsewhere() {
+fn removed_ralph_commands_fail_through_argument_parser() {
     let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    setup_install_repo(&repo, &home);
-    let outside = tempfile::tempdir().unwrap();
-    init(&repo, "alpha");
-    let mission_dir = repo.path().join(".codex1/missions/alpha");
 
-    bin()
-        .args(["--repo-root"])
+    let output = bin()
+        .args(["--json", "--repo-root"])
         .arg(repo.path())
-        .args([
-            "--mission",
-            "alpha",
-            "loop",
-            "start",
-            "--mode",
-            "autopilot",
-            "--message",
-            "Continue from cwd.",
-        ])
-        .assert()
-        .success();
+        .args(["ralph", "stop-hook"])
+        .output()
+        .unwrap();
 
-    let mut command = bin();
-    setup_env(&mut command, &home);
-    command
-        .current_dir(outside.path())
-        .args(["ralph", "stop-hook"]);
-    let block = json_output_with_stdin(
-        &mut command,
-        format!(r#"{{"cwd":"{}"}}"#, mission_dir.display()),
-    );
-    assert_eq!(block["decision"], "block");
-    assert!(block["reason"]
+    assert_eq!(output.status.code(), Some(2));
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "ARGUMENT_ERROR");
+    assert!(value["error"]["message"]
         .as_str()
         .unwrap()
-        .contains("Continue from cwd."));
+        .contains("unrecognized subcommand 'ralph'"));
 }
 
 #[test]
-fn ralph_blocks_from_normal_repo_cwd_for_single_active_loop() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    setup_install_repo(&repo, &home);
-    init(&repo, "alpha");
+fn help_does_not_advertise_removed_continuation_commands() {
+    let output = bin().arg("--help").output().unwrap();
 
-    bin()
-        .args(["--repo-root"])
-        .arg(repo.path())
-        .args([
-            "--mission",
-            "alpha",
-            "loop",
-            "start",
-            "--mode",
-            "autopilot",
-            "--message",
-            "Continue from repo cwd.",
-        ])
-        .assert()
-        .success();
-
-    let mut command = bin();
-    setup_env(&mut command, &home);
-    command
-        .current_dir(repo.path())
-        .args(["ralph", "stop-hook"]);
-    let block = json_output_with_stdin(
-        &mut command,
-        format!(r#"{{"cwd":"{}"}}"#, repo.path().display()),
-    );
-    assert_eq!(block["decision"], "block");
-    let reason = block["reason"].as_str().unwrap();
-    assert!(reason.contains("Continue from repo cwd."));
-    assert!(reason.contains("codex1 --mission=alpha loop pause"));
-    assert!(reason.contains("codex1 --mission=alpha loop stop"));
+    assert!(output.status.success());
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(!text.contains("loop"));
+    assert!(!text.contains("ralph"));
 }
 
 #[test]
-fn ralph_blocks_with_deterministic_guidance_for_multiple_active_loops() {
+fn setup_install_materializes_repo_scoped_guidance_without_hooks() {
     let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    setup_install_repo(&repo, &home);
-    init(&repo, "beta");
-    init(&repo, "alpha");
 
-    for (mission, message) in [("beta", "Continue beta."), ("alpha", "Continue alpha.")] {
+    let value = json_output(
         bin()
-            .args(["--repo-root"])
+            .args(["--json", "--repo-root"])
             .arg(repo.path())
-            .args([
-                "--mission",
-                mission,
-                "loop",
-                "start",
-                "--mode",
-                "autopilot",
-                "--message",
-                message,
-            ])
-            .assert()
-            .success();
+            .args(["setup", "install"]),
+    );
+
+    assert_eq!(value["ok"], true);
+    assert!(repo.path().join(".agents/skills/codex1/SKILL.md").is_file());
+    assert!(repo.path().join("AGENTS.md").is_file());
+    assert!(repo.path().join(".codex1/setup-bundle.json").is_file());
+
+    let skill = fs::read_to_string(repo.path().join(".agents/skills/codex1/SKILL.md")).unwrap();
+    let guidance = fs::read_to_string(repo.path().join("AGENTS.md")).unwrap();
+    let combined = format!("{skill}\n{guidance}");
+    assert!(combined.contains("native `/goal`"));
+    for forbidden in [
+        "ralph",
+        "stop-hook",
+        "hooks.stop",
+        "loop start",
+        "loop_error",
+    ] {
+        assert!(!combined.to_lowercase().contains(forbidden), "{forbidden}");
     }
+    assert!(!repo.path().join(".codex/config.toml").exists());
+}
 
-    let mut command = bin();
-    setup_env(&mut command, &home);
-    command
-        .current_dir(repo.path())
-        .args(["ralph", "stop-hook"]);
-    let block = json_output_with_stdin(
-        &mut command,
-        format!(r#"{{"cwd":"{}"}}"#, repo.path().display()),
+#[test]
+fn setup_status_reports_bundle_state_only() {
+    let repo = repo();
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install"]),
     );
-    assert_eq!(block["decision"], "block");
-    let reason = block["reason"].as_str().unwrap();
-    assert!(reason.contains("Multiple active Codex1 loops exist"));
-    assert!(reason.find("- alpha:").unwrap() < reason.find("- beta:").unwrap());
-    assert!(reason.contains("codex1 --mission=alpha loop pause"));
-    assert!(reason.contains("codex1 --mission=beta loop stop"));
+
+    let value = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "status"]),
+    );
+
+    assert_eq!(value["ok"], true);
+    let status = &value["data"]["status"];
+    assert_eq!(status["repo_bundle_materialized"], true);
+    assert_eq!(status["marker"], "current");
+    assert_eq!(status["skill"], "current");
+    assert_eq!(status["guidance"], "current");
+    assert!(status.get("global_hook_installed").is_none());
+    assert!(status.get("project_hook_installed").is_none());
+    assert!(status.get("duplicate_hook_risk").is_none());
+    assert!(!value.to_string().contains("native_goal_state"));
+}
+
+#[test]
+fn setup_doctor_reports_malformed_backup_manifest() {
+    let repo = repo();
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install"]),
+    );
+    fs::write(
+        repo.path().join(".codex1/setup-backups/manifest.json"),
+        "not json\n",
+    )
+    .unwrap();
+
+    let value = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "doctor"]),
+    );
+
+    assert_eq!(value["ok"], true);
+    let backup_manifest = value["data"]["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|check| check["name"] == "backup_manifest")
+        .unwrap();
+    assert_eq!(backup_manifest["ok"], false);
+    assert!(backup_manifest["error"]
+        .as_str()
+        .unwrap()
+        .contains("failed to parse backup manifest"));
+}
+
+#[test]
+fn setup_install_dry_run_does_not_materialize_files() {
+    let repo = repo();
+
+    let value = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install", "--dry-run"]),
+    );
+
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["data"]["plan"]["dry_run"], true);
+    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
+    assert!(!repo.path().join("AGENTS.md").exists());
+    assert!(!repo.path().join(".codex1/setup-bundle.json").exists());
+    assert!(!repo
+        .path()
+        .join(".codex1/setup-backups/manifest.json")
+        .exists());
+}
+
+#[test]
+fn setup_disable_and_enable_preserve_user_guidance_and_missions() {
+    let repo = repo();
+    fs::write(
+        repo.path().join("AGENTS.md"),
+        "# Local Rules\n\nKeep this.\n",
+    )
+    .unwrap();
+    init(&repo, "alpha");
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install"]),
+    );
+
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "disable"]),
+    );
+
+    let agents = fs::read_to_string(repo.path().join("AGENTS.md")).unwrap();
+    assert!(agents.contains("Keep this."));
+    assert!(!agents.contains("codex1-managed setup guidance start"));
+    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
+    assert!(repo.path().join(".codex1/missions/alpha").is_dir());
+
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "enable"]),
+    );
+    let restored = fs::read_to_string(repo.path().join("AGENTS.md")).unwrap();
+    assert!(restored.contains("Keep this."));
+    assert!(restored.contains("codex1-managed setup guidance start"));
+}
+
+#[test]
+fn setup_uninstall_without_marker_preserves_unmanaged_repo_files() {
+    let repo = repo();
+    fs::create_dir_all(repo.path().join(".agents/skills/codex1")).unwrap();
+    fs::write(
+        repo.path().join(".agents/skills/codex1/SKILL.md"),
+        "# User skill\n",
+    )
+    .unwrap();
+    fs::write(repo.path().join("AGENTS.md"), "# Local Rules\n").unwrap();
+    init(&repo, "alpha");
+
+    let value = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "uninstall"]),
+    );
+
+    assert_eq!(value["ok"], true);
+    assert_eq!(
+        fs::read_to_string(repo.path().join(".agents/skills/codex1/SKILL.md")).unwrap(),
+        "# User skill\n"
+    );
+    assert_eq!(
+        fs::read_to_string(repo.path().join("AGENTS.md")).unwrap(),
+        "# Local Rules\n"
+    );
+    assert!(repo.path().join(".codex1/missions/alpha").is_dir());
+}
+
+#[test]
+fn setup_enable_repairs_stale_managed_skill_and_marker() {
+    let repo = repo();
+    fs::create_dir_all(repo.path().join(".agents/skills/codex1")).unwrap();
+    fs::create_dir_all(repo.path().join(".codex1")).unwrap();
+    fs::write(
+        repo.path().join(".agents/skills/codex1/SKILL.md"),
+        "# Old managed skill\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join(".codex1/setup-bundle.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "managed_by": "codex1-managed",
+            "version": 0,
+            "files": [".agents/skills/codex1/SKILL.md", "AGENTS.md"]
+        }))
+        .unwrap()
+            + "\n",
+    )
+    .unwrap();
+
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "enable"]),
+    );
+
+    let skill = fs::read_to_string(repo.path().join(".agents/skills/codex1/SKILL.md")).unwrap();
+    let marker = fs::read_to_string(repo.path().join(".codex1/setup-bundle.json")).unwrap();
+    assert!(skill.contains("Native Codex `/goal` owns persistent objectives"));
+    assert!(marker.contains(r#""version": 1"#));
+}
+
+#[test]
+fn setup_install_refuses_unmanaged_skill_without_marker() {
+    let repo = repo();
+    fs::create_dir_all(repo.path().join(".agents/skills/codex1")).unwrap();
+    fs::write(
+        repo.path().join(".agents/skills/codex1/SKILL.md"),
+        "# User skill\n",
+    )
+    .unwrap();
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["setup", "install"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("SETUP_BUNDLE_ERROR"));
+
+    assert_eq!(
+        fs::read_to_string(repo.path().join(".agents/skills/codex1/SKILL.md")).unwrap(),
+        "# User skill\n"
+    );
+}
+
+#[test]
+fn setup_backups_restore_previous_absence() {
+    let repo = repo();
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install"]),
+    );
+    let backups = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "backups", "list"]),
+    );
+    let id = backups["data"]["backups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|record| {
+            record["target_path_label"]
+                .as_str()
+                .unwrap()
+                .ends_with("AGENTS.md")
+        })
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "backups", "restore", &id, "--force"]),
+    );
+
+    assert!(!repo.path().join("AGENTS.md").exists());
+}
+
+#[test]
+fn setup_backups_restore_absence_preserves_later_user_guidance() {
+    let repo = repo();
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install"]),
+    );
+    let backups = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "backups", "list"]),
+    );
+    let id = backups["data"]["backups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|record| {
+            record["target_path_label"]
+                .as_str()
+                .unwrap()
+                .ends_with("AGENTS.md")
+        })
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    fs::write(repo.path().join("AGENTS.md"), "# User guidance\n").unwrap();
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["setup", "backups", "restore", &id, "--force"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("SETUP_RESTORE_ERROR"));
+
+    assert_eq!(
+        fs::read_to_string(repo.path().join("AGENTS.md")).unwrap(),
+        "# User guidance\n"
+    );
+}
+
+#[test]
+fn setup_backups_restore_absence_dry_run_validates_user_guidance() {
+    let repo = repo();
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install"]),
+    );
+    let backups = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "backups", "list"]),
+    );
+    let id = backups["data"]["backups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|record| {
+            record["target_path_label"]
+                .as_str()
+                .unwrap()
+                .ends_with("AGENTS.md")
+        })
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    fs::write(repo.path().join("AGENTS.md"), "# User guidance\n").unwrap();
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["setup", "backups", "restore", &id, "--dry-run"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("SETUP_RESTORE_ERROR"));
+
+    assert_eq!(
+        fs::read_to_string(repo.path().join("AGENTS.md")).unwrap(),
+        "# User guidance\n"
+    );
+}
+
+#[test]
+fn setup_backups_restore_absence_removes_managed_block_only() {
+    let repo = repo();
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install"]),
+    );
+    let backups = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "backups", "list"]),
+    );
+    let id = backups["data"]["backups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|record| {
+            record["target_path_label"]
+                .as_str()
+                .unwrap()
+                .ends_with("AGENTS.md")
+        })
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let managed_guidance = fs::read_to_string(repo.path().join("AGENTS.md")).unwrap();
+    fs::write(
+        repo.path().join("AGENTS.md"),
+        format!("# User guidance\n\n{managed_guidance}\n# Keep this too\n"),
+    )
+    .unwrap();
+
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "backups", "restore", &id, "--force"]),
+    );
+
+    let guidance = fs::read_to_string(repo.path().join("AGENTS.md")).unwrap();
+    assert!(guidance.contains("# User guidance"));
+    assert!(guidance.contains("# Keep this too"));
+    assert!(!guidance.contains("codex1-managed setup guidance start"));
+}
+
+#[test]
+fn setup_backups_restore_rejects_non_setup_targets() {
+    let repo = repo();
+    fs::create_dir_all(repo.path().join(".codex1/setup-backups/files/tampered")).unwrap();
+    fs::write(
+        repo.path()
+            .join(".codex1/setup-backups/files/tampered/PRD.md"),
+        "# Backup\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join(".codex1/setup-backups/manifest.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "version": 1,
+            "records": [{
+                "id": "tampered",
+                "timestamp": "2026-05-02T00:00:00Z",
+                "target_kind": "repo-setup",
+                "target_path": repo.path().join(".codex1/missions/alpha/PRD.md"),
+                "target_path_label": "PRD.md",
+                "backup_path": repo.path().join(".codex1/setup-backups/files/tampered/PRD.md"),
+                "existed": true,
+                "reason": "tampered"
+            }]
+        }))
+        .unwrap()
+            + "\n",
+    )
+    .unwrap();
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["setup", "backups", "restore", "tampered", "--force"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("SETUP_RESTORE_ERROR"));
+
+    assert!(!repo.path().join(".codex1/missions/alpha/PRD.md").exists());
+}
+
+#[test]
+fn setup_backups_restore_rejects_escaping_backup_path() {
+    let repo = repo();
+    let target = repo.path().join(".agents/skills/codex1/SKILL.md");
+    fs::create_dir_all(target.parent().unwrap()).unwrap();
+    fs::write(&target, "# Current skill\n").unwrap();
+    fs::create_dir_all(repo.path().join(".codex1/setup-backups/files/tampered")).unwrap();
+    fs::write(repo.path().join("AGENTS.md"), "# Not a backup\n").unwrap();
+    fs::write(
+        repo.path().join(".codex1/setup-backups/manifest.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "version": 1,
+            "records": [{
+                "id": "tampered",
+                "timestamp": "2026-05-02T00:00:00Z",
+                "target_kind": "repo-setup",
+                "target_path": target,
+                "target_path_label": ".agents/skills/codex1/SKILL.md",
+                "backup_path": repo.path().join(".codex1/setup-backups/files/tampered/../../../../AGENTS.md"),
+                "existed": true,
+                "reason": "tampered"
+            }]
+        }))
+        .unwrap()
+            + "\n",
+    )
+    .unwrap();
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["setup", "backups", "restore", "tampered", "--force"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("SETUP_RESTORE_ERROR"));
+
+    assert_eq!(fs::read_to_string(target).unwrap(), "# Current skill\n");
+}
+
+#[test]
+fn removed_setup_hook_options_fail_through_argument_parser() {
+    let repo = repo();
+
+    for args in [
+        vec!["setup", "migrate", "--to", "project"],
+        vec!["setup", "install", "--scope", "project"],
+        vec!["setup", "install", "--mode", "all"],
+    ] {
+        let output = bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(args)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(value["ok"], false);
+        assert_eq!(value["error"]["code"], "ARGUMENT_ERROR");
+    }
 }
 
 #[cfg(unix)]
 #[test]
-fn ralph_fails_open_for_symlinked_loop_state() {
+fn symlinked_mission_root_is_rejected_before_inspect_reads() {
     let repo = repo();
     let external = tempfile::tempdir().unwrap();
     init(&repo, "alpha");
-    let mission_dir = repo.path().join(".codex1/missions/alpha");
-    fs::write(
-        external.path().join("LOOP.json"),
-        r#"{
-          "version": 1,
-          "active": true,
-          "paused": false,
-          "mode": "autopilot",
-          "message": "External loop should not block.",
-          "pause_command": "codex1 --mission=alpha loop pause --reason <reason>",
-          "stop_command": "codex1 --mission=alpha loop stop --reason <reason>",
-          "updated_at": "2026-04-26T00:00:00Z"
-        }"#,
-    )
-    .unwrap();
-    symlink(
-        external.path().join("LOOP.json"),
-        mission_dir.join(".codex1/LOOP.json"),
-    )
-    .unwrap();
-
-    let allow = json_output_with_stdin(
-        bin().args(["--repo-root"]).arg(repo.path()).args([
-            "--mission",
-            "alpha",
-            "ralph",
-            "stop-hook",
-        ]),
-        "{}".to_string(),
-    );
-    assert!(allow.as_object().unwrap().get("decision").is_none());
-}
-
-#[cfg(unix)]
-#[test]
-fn symlinked_mission_root_is_rejected_before_reads() {
-    let repo = repo();
-    let external = tempfile::tempdir().unwrap();
-    init(&repo, "alpha");
-    fs::create_dir_all(external.path().join(".codex1")).unwrap();
-    fs::write(
-        external.path().join(".codex1/LOOP.json"),
-        r#"{
-          "version": 1,
-          "active": true,
-          "paused": false,
-          "mode": "autopilot",
-          "message": "External mission should not be trusted.",
-          "pause_command": "codex1 --mission=alpha loop pause --reason <reason>",
-          "stop_command": "codex1 --mission=alpha loop stop --reason <reason>",
-          "updated_at": "2026-04-26T00:00:00Z"
-        }"#,
-    )
-    .unwrap();
     let mission_dir = repo.path().join(".codex1/missions/alpha");
     fs::remove_dir_all(&mission_dir).unwrap();
     symlink(external.path(), &mission_dir).unwrap();
@@ -4251,44 +1468,18 @@ fn symlinked_mission_root_is_rejected_before_reads() {
     bin()
         .args(["--json", "--repo-root"])
         .arg(repo.path())
-        .args(["--mission", "alpha", "loop", "status"])
+        .args(["--mission", "alpha", "inspect"])
         .assert()
         .failure()
         .stdout(predicate::str::contains("MISSION_PATH_ERROR"));
-
-    let allow = json_output_with_stdin(
-        bin().args(["--repo-root"]).arg(repo.path()).args([
-            "--mission",
-            "alpha",
-            "ralph",
-            "stop-hook",
-        ]),
-        "{}".to_string(),
-    );
-    assert!(allow.as_object().unwrap().get("decision").is_none());
 }
 
 #[cfg(unix)]
 #[test]
-fn symlinked_missions_directory_is_not_scanned_by_ralph() {
+fn symlinked_missions_directory_is_rejected_before_reads() {
     let repo = repo();
     let external = tempfile::tempdir().unwrap();
     init(&repo, "alpha");
-    fs::create_dir_all(external.path().join("alpha/.codex1")).unwrap();
-    fs::write(
-        external.path().join("alpha/.codex1/LOOP.json"),
-        r#"{
-          "version": 1,
-          "active": true,
-          "paused": false,
-          "mode": "autopilot",
-          "message": "External missions directory should not be scanned.",
-          "pause_command": "codex1 --mission=alpha loop pause --reason <reason>",
-          "stop_command": "codex1 --mission=alpha loop stop --reason <reason>",
-          "updated_at": "2026-04-26T00:00:00Z"
-        }"#,
-    )
-    .unwrap();
     let missions_dir = repo.path().join(".codex1/missions");
     fs::remove_dir_all(&missions_dir).unwrap();
     symlink(external.path(), &missions_dir).unwrap();
@@ -4296,20 +1487,10 @@ fn symlinked_missions_directory_is_not_scanned_by_ralph() {
     bin()
         .args(["--json", "--repo-root"])
         .arg(repo.path())
-        .args(["--mission", "alpha", "loop", "status"])
+        .args(["--mission", "alpha", "inspect"])
         .assert()
         .failure()
         .stdout(predicate::str::contains("MISSION_PATH_ERROR"));
-
-    let mut command = bin();
-    command
-        .current_dir(repo.path())
-        .args(["ralph", "stop-hook"]);
-    let allow = json_output_with_stdin(
-        &mut command,
-        format!(r#"{{"cwd":"{}"}}"#, repo.path().display()),
-    );
-    assert!(allow.as_object().unwrap().get("decision").is_none());
 }
 
 #[test]
@@ -4341,76 +1522,15 @@ fn repeatable_answers_file_sections_must_be_arrays() {
 }
 
 #[test]
-fn loop_status_does_not_create_missing_mission() {
-    let repo = repo();
-    bin()
-        .args(["--json", "--repo-root"])
-        .arg(repo.path())
-        .args(["--mission", "typo", "loop", "status"])
-        .assert()
-        .failure();
-
-    assert!(!repo.path().join(".codex1/missions/typo").exists());
-}
-
-#[test]
-fn doctor_runs_installed_command_and_loop_smoke() {
+fn doctor_runs_installed_command_smoke() {
     let value = json_output(bin().args(["--json", "doctor"]));
     assert_eq!(value["ok"], true);
     assert_eq!(
         value["data"]["installed_command"]["json_error_envelope"],
         true
     );
-    assert_eq!(value["data"]["loop_ralph_smoke"]["blocked"], true);
-}
-
-#[test]
-fn doctor_ralph_smoke_ignores_setup_allowlist_policy() {
-    let repo = repo();
-    let home = tempfile::tempdir().unwrap();
-    let mut install = bin();
-    setup_env(&mut install, &home);
-    json_output(
-        install
-            .args(["--json", "setup", "install", "--repo"])
-            .arg(repo.path()),
-    );
-
-    let mut doctor = bin();
-    setup_env(&mut doctor, &home);
-    let value = json_output(doctor.args(["--json", "doctor"]));
-    assert_eq!(value["data"]["loop_ralph_smoke"]["blocked"], true);
-}
-
-#[cfg(unix)]
-#[test]
-fn loop_state_write_rejects_symlinked_meta_directory() {
-    let repo = repo();
-    let external = tempfile::tempdir().unwrap();
-    init(&repo, "alpha");
-    let mission_dir = repo.path().join(".codex1/missions/alpha");
-    let meta_dir = mission_dir.join(".codex1");
-    fs::remove_dir_all(&meta_dir).unwrap();
-    symlink(external.path(), &meta_dir).unwrap();
-
-    bin()
-        .args(["--json", "--repo-root"])
-        .arg(repo.path())
-        .args([
-            "--mission",
-            "alpha",
-            "loop",
-            "start",
-            "--mode",
-            "autopilot",
-            "--message",
-            "Do not write outside.",
-        ])
-        .assert()
-        .failure()
-        .stdout(predicate::str::contains("MISSION_PATH_ERROR"));
-
-    assert!(!external.path().join("LOOP.json").exists());
+    assert!(value["data"].get("loop_schema_version").is_none());
+    assert!(value["data"].get("loop_ralph_smoke").is_none());
 }
 
 #[cfg(unix)]
@@ -4504,26 +1624,6 @@ fn writes_reject_dangling_symlink_targets() {
         .failure()
         .stdout(predicate::str::contains("target must not be a symlink"));
     assert!(!outside_prd.exists());
-
-    let outside_loop = external.path().join("outside-loop.json");
-    symlink(&outside_loop, mission_dir.join(".codex1/LOOP.json")).unwrap();
-    bin()
-        .args(["--json", "--repo-root"])
-        .arg(repo.path())
-        .args([
-            "--mission",
-            "alpha",
-            "loop",
-            "start",
-            "--mode",
-            "autopilot",
-            "--message",
-            "do not follow",
-        ])
-        .assert()
-        .failure()
-        .stdout(predicate::str::contains("target must not be a symlink"));
-    assert!(!outside_loop.exists());
 
     let outside_receipt = external.path().join("outside-receipts.jsonl");
     symlink(
