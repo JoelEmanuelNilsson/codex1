@@ -31,8 +31,11 @@ It creates and manages:
 - mechanical event logs;
 - inventory-only inspection;
 - doctor diagnostics for the remaining CLI surface.
+- repo-scoped setup guidance for the artifact workflow.
 
 It does not create, store, mirror, continue, pause, resume, budget, or complete native goals. It does not inspect native goal state. It does not infer readiness, completion, review cleanliness, proof sufficiency, close safety, or next action.
+
+Setup is limited to repo-scoped Codex1 skill and guidance materialization with reversible backups. It does not install hooks, maintain global activation policy, migrate hook scopes, or control continuation.
 
 ## User Stories
 
@@ -51,6 +54,8 @@ It does not create, store, mirror, continue, pause, resume, budget, or complete 
 13. As a maintainer, I want path containment protections to remain deep and well tested, so that artifact writes stay safe.
 14. As a maintainer, I want event-log privacy guarantees to remain tested, so that answer payloads, receipt text, and local paths do not leak.
 15. As a future Codex session, I want workflow notes to tell me to use native goal tools for goal state, so that I do not search Codex1 artifacts for continuation truth.
+16. As a Codex1 user, I want setup to materialize repo-local artifact guidance, so that Codex can discover Codex1 conventions in enabled repos.
+17. As a Codex1 user, I want setup to avoid hooks and global continuation policy, so that setup cannot conflict with native goals.
 
 ## Implementation Decisions
 
@@ -62,6 +67,7 @@ It does not create, store, mirror, continue, pause, resume, budget, or complete 
 - Keep template rendering deterministic and versioned.
 - Keep subplan lifecycle folders visible and file-based.
 - Keep receipts separate from events.
+- Keep setup scoped to repo-local managed skill and guidance files.
 - Remove Codex1-owned continuation state, hook adapters, continuation event kinds, continuation-specific error codes, and diagnostics for deleted behavior.
 - Do not add compatibility shims for removed commands.
 - Do not migrate legacy continuation files.
@@ -83,6 +89,7 @@ Good tests assert external behavior:
 - inspect reports inventory and mechanical warnings only;
 - path-safety tests continue for mission roots, artifacts, receipts, subplans, metadata, and event logs;
 - docs searches catch stale command instructions.
+- setup tests cover repo-local materialization, status, disable/enable, backups, and removed hook options.
 
 ## Out of Scope
 

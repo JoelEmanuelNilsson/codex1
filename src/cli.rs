@@ -43,6 +43,10 @@ pub enum Commands {
         #[command(subcommand)]
         command: ReceiptCommand,
     },
+    Setup {
+        #[command(subcommand)]
+        command: SetupCommand,
+    },
     Doctor,
 }
 
@@ -77,6 +81,51 @@ pub enum ReceiptCommand {
         #[arg(long)]
         message: String,
     },
+}
+
+#[derive(Clone, Debug, Subcommand)]
+pub enum SetupCommand {
+    Install(SetupRepoArgs),
+    Enable(SetupRepoArgs),
+    Disable(SetupRepoArgs),
+    Uninstall(SetupRepoArgs),
+    Status(SetupStatusArgs),
+    Doctor(SetupStatusArgs),
+    Backups {
+        #[command(subcommand)]
+        command: SetupBackupsCommand,
+    },
+}
+
+#[derive(Clone, Debug, Args)]
+pub struct SetupRepoArgs {
+    #[arg(long, value_name = "PATH")]
+    pub repo: Option<PathBuf>,
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Clone, Debug, Args)]
+pub struct SetupStatusArgs {
+    #[arg(long, value_name = "PATH")]
+    pub repo: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Subcommand)]
+pub enum SetupBackupsCommand {
+    List,
+    Restore(SetupBackupRestoreArgs),
+}
+
+#[derive(Clone, Debug, Args)]
+pub struct SetupBackupRestoreArgs {
+    pub id: String,
+    #[arg(long)]
+    pub repo: Option<PathBuf>,
+    #[arg(long)]
+    pub force: bool,
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Clone, Debug, ValueEnum)]

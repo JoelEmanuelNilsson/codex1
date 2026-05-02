@@ -8,6 +8,10 @@ Use native `/goal` only when the user explicitly asks for a persistent objective
 
 Codex1 skills must not create native goals for ordinary one-turn work. When a native goal is active, proofs and closeout artifacts remain durable evidence; the native goal should be completed only after the objective is genuinely achieved and the evidence has been audited.
 
+## Setup
+
+`codex1 setup` only materializes repo-scoped Codex1 artifact workflow guidance. It does not install hooks, manage continuation, create native goals, or report mission status.
+
 ## Clarify
 
 Clarify gathers enough user intent to write `PRD.md` through `codex1 interview prd`. Codex decides how much detail the mission needs.

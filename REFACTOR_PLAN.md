@@ -17,7 +17,7 @@ The refactor goal is to make Codex1 smaller and clearer:
 
 ## Solution
 
-Remove Codex1-owned continuation behavior and update code, tests, and docs around the native-goals boundary.
+Remove Codex1-owned continuation behavior and update code, tests, and docs around the native-goals boundary. Preserve setup only as repo-scoped Codex1 skill/guidance materialization with backups and mechanical status.
 
 The CLI should expose only current mechanical commands:
 
@@ -28,6 +28,7 @@ The CLI should expose only current mechanical commands:
 - `subplan move`;
 - `receipt append`;
 - `inspect`;
+- `setup install`, `setup enable`, `setup disable`, `setup uninstall`, `setup status`, `setup doctor`, and setup backups;
 - `doctor`.
 
 Removed command surfaces should fail through the normal argument parser. There should be no compatibility wrappers and no replacement continuation subsystem.
@@ -47,17 +48,19 @@ Removed command surfaces should fail through the normal argument parser. There s
 11. Remove continuation state descriptors and layout helpers.
 12. Simplify doctor diagnostics to current CLI mechanics.
 13. Remove dead helpers revealed by doctor simplification.
-14. Add or update CLI rejection tests for removed command surfaces.
-15. Update initialization tests so new missions have no continuation descriptor or state file.
-16. Update inspect tests to preserve inventory-only behavior without continuation output.
-17. Update event-log tests to cover remaining mutation families only.
-18. Update read-only command tests to cover current read-only commands.
-19. Preserve path-safety tests for remaining writable surfaces.
-20. Update README, CLI contract, artifact model, skill workflow notes, PRD, and planning docs.
-21. Run formatting.
-22. Run the full test suite.
-23. Run a final stale-reference search for removed command instructions, legacy state filename, removed event kinds, and removed error code.
-24. Manually smoke the remaining CLI surface.
+14. Reduce setup to repo-local skill/guidance materialization and remove all hook/Ralph/global-policy/migration behavior.
+15. Add or update CLI rejection tests for removed command surfaces.
+16. Update initialization tests so new missions have no continuation descriptor or state file.
+17. Update inspect tests to preserve inventory-only behavior without continuation output.
+18. Update event-log tests to cover remaining mutation families only.
+19. Update read-only command tests to cover current read-only commands.
+20. Preserve path-safety tests for remaining writable surfaces.
+21. Add setup tests for install/status/disable/enable/backups and removed hook options.
+22. Update README, CLI contract, artifact model, skill workflow notes, PRD, and planning docs.
+23. Run formatting.
+24. Run the full test suite.
+25. Run a final stale-reference search for removed command instructions, legacy state filename, removed event kinds, removed error code, and setup hook language.
+26. Manually smoke the remaining CLI surface.
 
 ## Decision Document
 
@@ -72,7 +75,7 @@ Removed command surfaces should fail through the normal argument parser. There s
 - Legacy `.codex1/LOOP.json` files may remain on disk in old missions, but Codex1 no longer reads, writes, scans, blocks on, or migrates them.
 - Removed commands fail through the standard CLI argument parser.
 - Documentation teaches `/goal` for persistent objective tracking and Codex1 artifacts for structure, evidence, and handoff.
-- Future setup work, if any, should focus on artifact workflow guidance and skill materialization, not continuation hooks.
+- Setup focuses on artifact workflow guidance and skill materialization, not continuation hooks.
 
 ## Testing Decisions
 

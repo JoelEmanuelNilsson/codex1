@@ -8,6 +8,7 @@ mod interview;
 mod layout;
 mod paths;
 mod render;
+mod setup;
 mod template;
 
 use std::process::ExitCode;

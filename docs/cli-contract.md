@@ -43,7 +43,7 @@ Errors use:
 }
 ```
 
-Error codes are mechanical: `ARGUMENT_ERROR`, `MISSION_PATH_ERROR`, `ARTIFACT_VALIDATION_ERROR`, `IO_ERROR`, `TEMPLATE_ERROR`, and `INTERVIEW_ERROR`.
+Error codes are mechanical: `ARGUMENT_ERROR`, `MISSION_PATH_ERROR`, `ARTIFACT_VALIDATION_ERROR`, `IO_ERROR`, `TEMPLATE_ERROR`, `INTERVIEW_ERROR`, `SETUP_BACKUP_ERROR`, `SETUP_RESTORE_ERROR`, and `SETUP_BUNDLE_ERROR`.
 
 ## Commands
 
@@ -57,6 +57,14 @@ Error codes are mechanical: `ARGUMENT_ERROR`, `MISSION_PATH_ERROR`, `ARTIFACT_VA
 
 `receipt append --message <text>` appends an optional JSONL receipt.
 
+`setup install` and `setup enable` materialize or repair repo-scoped Codex1 skill and guidance files. `--dry-run` reports planned writes, removals, backups, and materialized files without changing repo files.
+
+`setup disable` and `setup uninstall` remove only Codex1-managed setup files and managed guidance blocks. They do not delete mission artifacts, user-authored guidance, user skills, native goal state, or legacy continuation files.
+
+`setup status` reports mechanical repo bundle state: managed marker, managed skill, managed guidance, bundle materialization, backup count, warnings, and anti-oracle language. It does not report hook state, native goal state, readiness, review state, proof sufficiency, or close safety.
+
+`setup doctor` diagnoses repo guidance mechanics only. `setup backups list` and `setup backups restore <id> --force` list and restore setup backups for repo-scoped setup targets.
+
 `inspect` reports artifact inventory and mechanical warnings only.
 
 `doctor` runs fast diagnostics for template registration, mission id validation, the installed-command JSON envelope, and the anti-oracle posture.
@@ -69,7 +77,7 @@ Codex1 keeps a mission-local forensic event log at `.codex1/events.jsonl` inside
 
 The log is append-only, best-effort, and non-authoritative. If appending an event fails after the real mutation succeeds, the command still succeeds and reports a warning in JSON mode or stderr in human mode. If a mutating command fails after a safe mission layout was resolved, Codex1 may append a small failure event and still returns the original command error.
 
-Read-only commands do not append events: `template list`, `template show`, `inspect`, and `doctor` stay read-only.
+Read-only commands do not append events: `template list`, `template show`, `inspect`, `doctor`, and setup status/doctor stay read-only.
 
 Event records contain small mechanical metadata: schema version, timestamp, mission id, command name, event kind, result, optional duration, artifact kind, template version, overwrite flag, lifecycle folders, error code, and mission-relative paths. They do not contain raw argv, absolute paths, answer payloads, artifact body text, receipt messages, review finding text, stdout, stderr, sequence numbers, native goal state, or semantic status fields.
 

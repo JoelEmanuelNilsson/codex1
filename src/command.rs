@@ -23,6 +23,7 @@ use crate::paths::{
     ensure_existing_contained, safe_join, slug, validate_mission_id,
 };
 use crate::render::{render_markdown, render_template_outline, AnswerValue, Answers};
+use crate::setup;
 use crate::template;
 
 pub fn run() -> ExitCode {
@@ -69,6 +70,7 @@ fn run_cli(cli: Cli) -> Result<()> {
         Commands::Inspect => cmd_inspect(&cli),
         Commands::Subplan { command } => cmd_subplan(&cli, command),
         Commands::Receipt { command } => cmd_receipt(&cli, command),
+        Commands::Setup { command } => setup::run(cli.json, cli.repo_root.clone(), command),
         Commands::Doctor => cmd_doctor(&cli),
     }
 }

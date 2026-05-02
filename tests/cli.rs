@@ -925,6 +925,263 @@ fn help_does_not_advertise_removed_continuation_commands() {
     assert!(!text.contains("ralph"));
 }
 
+#[test]
+fn setup_install_materializes_repo_scoped_guidance_without_hooks() {
+    let repo = repo();
+
+    let value = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install"]),
+    );
+
+    assert_eq!(value["ok"], true);
+    assert!(repo.path().join(".agents/skills/codex1/SKILL.md").is_file());
+    assert!(repo.path().join("AGENTS.md").is_file());
+    assert!(repo.path().join(".codex1/setup-bundle.json").is_file());
+
+    let skill = fs::read_to_string(repo.path().join(".agents/skills/codex1/SKILL.md")).unwrap();
+    let guidance = fs::read_to_string(repo.path().join("AGENTS.md")).unwrap();
+    let combined = format!("{skill}\n{guidance}");
+    assert!(combined.contains("native `/goal`"));
+    for forbidden in [
+        "ralph",
+        "stop-hook",
+        "hooks.stop",
+        "loop start",
+        "loop_error",
+    ] {
+        assert!(!combined.to_lowercase().contains(forbidden), "{forbidden}");
+    }
+    assert!(!repo.path().join(".codex/config.toml").exists());
+}
+
+#[test]
+fn setup_status_reports_bundle_state_only() {
+    let repo = repo();
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install"]),
+    );
+
+    let value = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "status"]),
+    );
+
+    assert_eq!(value["ok"], true);
+    let status = &value["data"]["status"];
+    assert_eq!(status["repo_bundle_materialized"], true);
+    assert_eq!(status["marker"], "current");
+    assert_eq!(status["skill"], "current");
+    assert_eq!(status["guidance"], "current");
+    assert!(status.get("global_hook_installed").is_none());
+    assert!(status.get("project_hook_installed").is_none());
+    assert!(status.get("duplicate_hook_risk").is_none());
+    assert!(!value.to_string().contains("native_goal_state"));
+}
+
+#[test]
+fn setup_install_dry_run_does_not_materialize_files() {
+    let repo = repo();
+
+    let value = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install", "--dry-run"]),
+    );
+
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["data"]["plan"]["dry_run"], true);
+    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
+    assert!(!repo.path().join("AGENTS.md").exists());
+    assert!(!repo.path().join(".codex1/setup-bundle.json").exists());
+    assert!(!repo
+        .path()
+        .join(".codex1/setup-backups/manifest.json")
+        .exists());
+}
+
+#[test]
+fn setup_disable_and_enable_preserve_user_guidance_and_missions() {
+    let repo = repo();
+    fs::write(
+        repo.path().join("AGENTS.md"),
+        "# Local Rules\n\nKeep this.\n",
+    )
+    .unwrap();
+    init(&repo, "alpha");
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install"]),
+    );
+
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "disable"]),
+    );
+
+    let agents = fs::read_to_string(repo.path().join("AGENTS.md")).unwrap();
+    assert!(agents.contains("Keep this."));
+    assert!(!agents.contains("codex1-managed setup guidance start"));
+    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
+    assert!(repo.path().join(".codex1/missions/alpha").is_dir());
+
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "enable"]),
+    );
+    let restored = fs::read_to_string(repo.path().join("AGENTS.md")).unwrap();
+    assert!(restored.contains("Keep this."));
+    assert!(restored.contains("codex1-managed setup guidance start"));
+}
+
+#[test]
+fn setup_uninstall_without_marker_preserves_unmanaged_repo_files() {
+    let repo = repo();
+    fs::create_dir_all(repo.path().join(".agents/skills/codex1")).unwrap();
+    fs::write(
+        repo.path().join(".agents/skills/codex1/SKILL.md"),
+        "# User skill\n",
+    )
+    .unwrap();
+    fs::write(repo.path().join("AGENTS.md"), "# Local Rules\n").unwrap();
+    init(&repo, "alpha");
+
+    let value = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "uninstall"]),
+    );
+
+    assert_eq!(value["ok"], true);
+    assert_eq!(
+        fs::read_to_string(repo.path().join(".agents/skills/codex1/SKILL.md")).unwrap(),
+        "# User skill\n"
+    );
+    assert_eq!(
+        fs::read_to_string(repo.path().join("AGENTS.md")).unwrap(),
+        "# Local Rules\n"
+    );
+    assert!(repo.path().join(".codex1/missions/alpha").is_dir());
+}
+
+#[test]
+fn setup_backups_restore_previous_absence() {
+    let repo = repo();
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install"]),
+    );
+    let backups = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "backups", "list"]),
+    );
+    let id = backups["data"]["backups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|record| {
+            record["target_path_label"]
+                .as_str()
+                .unwrap()
+                .ends_with("AGENTS.md")
+        })
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "backups", "restore", &id, "--force"]),
+    );
+
+    assert!(!repo.path().join("AGENTS.md").exists());
+}
+
+#[test]
+fn setup_backups_restore_rejects_non_setup_targets() {
+    let repo = repo();
+    fs::create_dir_all(repo.path().join(".codex1/setup-backups/files/tampered")).unwrap();
+    fs::write(
+        repo.path()
+            .join(".codex1/setup-backups/files/tampered/PRD.md"),
+        "# Backup\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join(".codex1/setup-backups/manifest.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "version": 1,
+            "records": [{
+                "id": "tampered",
+                "timestamp": "2026-05-02T00:00:00Z",
+                "target_kind": "repo-setup",
+                "target_path": repo.path().join(".codex1/missions/alpha/PRD.md"),
+                "target_path_label": "PRD.md",
+                "backup_path": repo.path().join(".codex1/setup-backups/files/tampered/PRD.md"),
+                "existed": true,
+                "reason": "tampered"
+            }]
+        }))
+        .unwrap()
+            + "\n",
+    )
+    .unwrap();
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["setup", "backups", "restore", "tampered", "--force"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("SETUP_RESTORE_ERROR"));
+
+    assert!(!repo.path().join(".codex1/missions/alpha/PRD.md").exists());
+}
+
+#[test]
+fn removed_setup_hook_options_fail_through_argument_parser() {
+    let repo = repo();
+
+    for args in [
+        vec!["setup", "migrate", "--to", "project"],
+        vec!["setup", "install", "--scope", "project"],
+        vec!["setup", "install", "--mode", "all"],
+    ] {
+        let output = bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(args)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(value["ok"], false);
+        assert_eq!(value["error"]["code"], "ARGUMENT_ERROR");
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn symlinked_mission_root_is_rejected_before_inspect_reads() {

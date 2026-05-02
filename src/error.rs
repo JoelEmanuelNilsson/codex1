@@ -10,6 +10,9 @@ pub enum ErrorCode {
     Io,
     Template,
     Interview,
+    SetupBackup,
+    SetupRestore,
+    SetupBundle,
 }
 
 impl ErrorCode {
@@ -21,6 +24,9 @@ impl ErrorCode {
             Self::Io => "IO_ERROR",
             Self::Template => "TEMPLATE_ERROR",
             Self::Interview => "INTERVIEW_ERROR",
+            Self::SetupBackup => "SETUP_BACKUP_ERROR",
+            Self::SetupRestore => "SETUP_RESTORE_ERROR",
+            Self::SetupBundle => "SETUP_BUNDLE_ERROR",
         }
     }
 }
@@ -37,6 +43,12 @@ pub enum Codex1Error {
     Template(String),
     #[error("{0}")]
     Interview(String),
+    #[error("{0}")]
+    SetupBackup(String),
+    #[error("{0}")]
+    SetupRestore(String),
+    #[error("{0}")]
+    SetupBundle(String),
     #[error("{context}: {source}")]
     Io {
         context: String,
@@ -59,6 +71,9 @@ impl Codex1Error {
             Self::ArtifactValidation(_) => ErrorCode::ArtifactValidation,
             Self::Template(_) => ErrorCode::Template,
             Self::Interview(_) | Self::Json { .. } => ErrorCode::Interview,
+            Self::SetupBackup(_) => ErrorCode::SetupBackup,
+            Self::SetupRestore(_) => ErrorCode::SetupRestore,
+            Self::SetupBundle(_) => ErrorCode::SetupBundle,
             Self::Io { .. } => ErrorCode::Io,
         }
     }

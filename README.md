@@ -8,6 +8,18 @@ Long-running objective tracking belongs to native Codex goals. Use Codex's `/goa
 
 ## Quickstart
 
+To activate the Codex1 bundle for the current repository:
+
+```sh
+codex1 setup install
+codex1 setup status
+codex1 setup disable
+codex1 setup enable
+codex1 setup backups list
+```
+
+`setup install` materializes repo-scoped Codex1 skill and guidance files. It writes backups before changing managed repo guidance and never installs continuation hooks, edits global activation policy, or deletes mission artifacts.
+
 ```sh
 cargo run -- --mission demo init
 cargo run -- --mission demo template list
@@ -94,7 +106,7 @@ Use native Codex goals for continuation discipline:
 
 Codex can use mission artifacts to clarify and prove the work, but the active objective, continuation, pause/resume, accounting, budget limiting, and completion discipline live in Codex itself. Codex1 does not create, mirror, or complete native goals.
 
-Legacy missions may contain old `.codex1/LOOP.json` files from the removed continuation system. Current Codex1 ignores those files and does not migrate them.
+Legacy missions may contain old `.codex1/LOOP.json` files from the removed continuation system. Current Codex1 ignores those files and does not migrate them. Setup does not read, write, restore, or remove them.
 
 ## Anti-Oracle Rule
 
