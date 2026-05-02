@@ -298,13 +298,25 @@ fn materialize_bundle(repo: &Path, plan: &mut SetupPlan, dry_run: bool) -> Resul
     let skill = setup_target(repo, BUNDLE_SKILL)?;
     let guidance = setup_target(repo, BUNDLE_GUIDANCE)?;
     let marker = setup_target(repo, BUNDLE_MARKER)?;
+    let managed_marker = read_bundle_marker(&marker)?
+        .as_ref()
+        .is_some_and(is_managed_marker);
 
-    write_owned_file(repo, &skill, skill_body(), "managed skill", plan, dry_run)?;
+    write_owned_file(
+        repo,
+        &skill,
+        skill_body(),
+        managed_marker,
+        "managed skill",
+        plan,
+        dry_run,
+    )?;
     write_guidance_file(repo, &guidance, plan, dry_run)?;
     write_owned_file(
         repo,
         &marker,
         &bundle_marker_body(),
+        managed_marker,
         "bundle marker",
         plan,
         dry_run,
@@ -344,6 +356,7 @@ fn write_owned_file(
     repo: &Path,
     path: &Path,
     body: &str,
+    allow_repair: bool,
     reason: &str,
     plan: &mut SetupPlan,
     dry_run: bool,
@@ -351,12 +364,13 @@ fn write_owned_file(
     ensure_setup_target(repo, path)?;
     match fs::read_to_string(path) {
         Ok(existing) if existing == body => return Ok(()),
-        Ok(_) => {
+        Ok(_) if !allow_repair => {
             return Err(Codex1Error::SetupBundle(format!(
                 "refusing to overwrite non-managed file {}",
                 path.display()
             )))
         }
+        Ok(_) => {}
         Err(error) if error.kind() == ErrorKind::NotFound => {}
         Err(error) => {
             return Err(Codex1Error::SetupBundle(format!(
@@ -720,7 +734,7 @@ fn read_bundle_marker(path: &Path) -> Result<Option<BundleMarker>> {
 }
 
 fn validate_marker(marker: &BundleMarker) -> Result<()> {
-    if marker.managed_by != "codex1-managed" || marker.version != BUNDLE_VERSION {
+    if !is_managed_marker(marker) || marker.version != BUNDLE_VERSION {
         return Err(Codex1Error::SetupBundle(
             "invalid Codex1 setup bundle marker".into(),
         ));
@@ -731,6 +745,10 @@ fn validate_marker(marker: &BundleMarker) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+fn is_managed_marker(marker: &BundleMarker) -> bool {
+    marker.managed_by == "codex1-managed" && marker.files == MANAGED_BUNDLE_FILES.map(String::from)
 }
 
 fn expected_body(relative: &str) -> String {

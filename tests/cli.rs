@@ -1080,6 +1080,65 @@ fn setup_uninstall_without_marker_preserves_unmanaged_repo_files() {
 }
 
 #[test]
+fn setup_enable_repairs_stale_managed_skill_and_marker() {
+    let repo = repo();
+    fs::create_dir_all(repo.path().join(".agents/skills/codex1")).unwrap();
+    fs::create_dir_all(repo.path().join(".codex1")).unwrap();
+    fs::write(
+        repo.path().join(".agents/skills/codex1/SKILL.md"),
+        "# Old managed skill\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join(".codex1/setup-bundle.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "managed_by": "codex1-managed",
+            "version": 0,
+            "files": [".agents/skills/codex1/SKILL.md", "AGENTS.md"]
+        }))
+        .unwrap()
+            + "\n",
+    )
+    .unwrap();
+
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "enable"]),
+    );
+
+    let skill = fs::read_to_string(repo.path().join(".agents/skills/codex1/SKILL.md")).unwrap();
+    let marker = fs::read_to_string(repo.path().join(".codex1/setup-bundle.json")).unwrap();
+    assert!(skill.contains("Native Codex `/goal` owns persistent objectives"));
+    assert!(marker.contains(r#""version": 1"#));
+}
+
+#[test]
+fn setup_install_refuses_unmanaged_skill_without_marker() {
+    let repo = repo();
+    fs::create_dir_all(repo.path().join(".agents/skills/codex1")).unwrap();
+    fs::write(
+        repo.path().join(".agents/skills/codex1/SKILL.md"),
+        "# User skill\n",
+    )
+    .unwrap();
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["setup", "install"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("SETUP_BUNDLE_ERROR"));
+
+    assert_eq!(
+        fs::read_to_string(repo.path().join(".agents/skills/codex1/SKILL.md")).unwrap(),
+        "# User skill\n"
+    );
+}
+
+#[test]
 fn setup_backups_restore_previous_absence() {
     let repo = repo();
     json_output(
