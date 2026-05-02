@@ -1179,6 +1179,145 @@ fn setup_backups_restore_previous_absence() {
 }
 
 #[test]
+fn setup_backups_restore_absence_preserves_later_user_guidance() {
+    let repo = repo();
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install"]),
+    );
+    let backups = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "backups", "list"]),
+    );
+    let id = backups["data"]["backups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|record| {
+            record["target_path_label"]
+                .as_str()
+                .unwrap()
+                .ends_with("AGENTS.md")
+        })
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    fs::write(repo.path().join("AGENTS.md"), "# User guidance\n").unwrap();
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["setup", "backups", "restore", &id, "--force"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("SETUP_RESTORE_ERROR"));
+
+    assert_eq!(
+        fs::read_to_string(repo.path().join("AGENTS.md")).unwrap(),
+        "# User guidance\n"
+    );
+}
+
+#[test]
+fn setup_backups_restore_absence_dry_run_validates_user_guidance() {
+    let repo = repo();
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install"]),
+    );
+    let backups = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "backups", "list"]),
+    );
+    let id = backups["data"]["backups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|record| {
+            record["target_path_label"]
+                .as_str()
+                .unwrap()
+                .ends_with("AGENTS.md")
+        })
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    fs::write(repo.path().join("AGENTS.md"), "# User guidance\n").unwrap();
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["setup", "backups", "restore", &id, "--dry-run"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("SETUP_RESTORE_ERROR"));
+
+    assert_eq!(
+        fs::read_to_string(repo.path().join("AGENTS.md")).unwrap(),
+        "# User guidance\n"
+    );
+}
+
+#[test]
+fn setup_backups_restore_absence_removes_managed_block_only() {
+    let repo = repo();
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install"]),
+    );
+    let backups = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "backups", "list"]),
+    );
+    let id = backups["data"]["backups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|record| {
+            record["target_path_label"]
+                .as_str()
+                .unwrap()
+                .ends_with("AGENTS.md")
+        })
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let managed_guidance = fs::read_to_string(repo.path().join("AGENTS.md")).unwrap();
+    fs::write(
+        repo.path().join("AGENTS.md"),
+        format!("# User guidance\n\n{managed_guidance}\n# Keep this too\n"),
+    )
+    .unwrap();
+
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "backups", "restore", &id, "--force"]),
+    );
+
+    let guidance = fs::read_to_string(repo.path().join("AGENTS.md")).unwrap();
+    assert!(guidance.contains("# User guidance"));
+    assert!(guidance.contains("# Keep this too"));
+    assert!(!guidance.contains("codex1-managed setup guidance start"));
+}
+
+#[test]
 fn setup_backups_restore_rejects_non_setup_targets() {
     let repo = repo();
     fs::create_dir_all(repo.path().join(".codex1/setup-backups/files/tampered")).unwrap();

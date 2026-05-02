@@ -255,18 +255,7 @@ fn backups_restore(args: SetupBackupRestoreArgs) -> Result<serde_json::Value> {
         }
     } else {
         plan.removes.push(record.target_path.clone());
-        if !args.dry_run {
-            match fs::remove_file(&record.target_path) {
-                Ok(()) => {}
-                Err(error) if error.kind() == ErrorKind::NotFound => {}
-                Err(error) => {
-                    return Err(Codex1Error::SetupRestore(format!(
-                        "failed to remove {}: {error}",
-                        record.target_path.display()
-                    )))
-                }
-            }
-        }
+        restore_absence(&repo, &record.target_path, args.dry_run)?;
     }
     Ok(json!({
         "summary": "setup backup restored",
@@ -673,6 +662,83 @@ fn ensure_backup_file(repo: &Path, path: &Path) -> Result<()> {
             "backup file is outside setup backups: {}",
             path.display()
         )))
+    }
+}
+
+fn restore_absence(repo: &Path, path: &Path, dry_run: bool) -> Result<()> {
+    if path == setup_target(repo, BUNDLE_GUIDANCE)? {
+        return restore_guidance_absence(path, dry_run);
+    }
+    let expected = if path == setup_target(repo, BUNDLE_SKILL)? {
+        expected_body(BUNDLE_SKILL)
+    } else if path == setup_target(repo, BUNDLE_MARKER)? {
+        expected_body(BUNDLE_MARKER)
+    } else {
+        return Err(Codex1Error::SetupRestore(format!(
+            "backup target is not a managed setup file: {}",
+            path.display()
+        )));
+    };
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(Codex1Error::SetupRestore(format!(
+                "failed to read {}: {error}",
+                path.display()
+            )))
+        }
+    };
+    if text != expected {
+        return Err(Codex1Error::SetupRestore(format!(
+            "refusing to remove non-managed setup file {}",
+            path.display()
+        )));
+    }
+    if dry_run {
+        return Ok(());
+    }
+    fs::remove_file(path).map_err(|source| {
+        Codex1Error::SetupRestore(format!("failed to remove {}: {source}", path.display()))
+    })
+}
+
+fn restore_guidance_absence(path: &Path, dry_run: bool) -> Result<()> {
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(Codex1Error::SetupRestore(format!(
+                "failed to read {}: {error}",
+                path.display()
+            )))
+        }
+    };
+    if text == guidance_body() || text == managed_guidance_block() {
+        if dry_run {
+            return Ok(());
+        }
+        return fs::remove_file(path).map_err(|source| {
+            Codex1Error::SetupRestore(format!("failed to remove {}: {source}", path.display()))
+        });
+    }
+    let Some(edited) = remove_guidance_block(&text) else {
+        return Err(Codex1Error::SetupRestore(format!(
+            "refusing to remove non-managed guidance file {}",
+            path.display()
+        )));
+    };
+    if dry_run {
+        return Ok(());
+    }
+    if edited.trim().is_empty() {
+        fs::remove_file(path).map_err(|source| {
+            Codex1Error::SetupRestore(format!("failed to remove {}: {source}", path.display()))
+        })
+    } else {
+        fs::write(path, edited).map_err(|source| {
+            Codex1Error::SetupRestore(format!("failed to write {}: {source}", path.display()))
+        })
     }
 }
 
