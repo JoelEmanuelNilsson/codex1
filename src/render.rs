@@ -123,7 +123,15 @@ pub fn render_markdown(template: &Template, answers: &Answers) -> Result<String>
         out.push_str(&format!("## {}\n\n", section.heading));
         match answers.get(section.id) {
             Some(AnswerValue::Text(text)) if !text.trim().is_empty() => {
-                out.push_str(text.trim());
+                if template.kind == crate::layout::ArtifactKind::ExecutionPrompt
+                    && section.id == "goal_prompt"
+                {
+                    out.push_str("<!-- codex1-goal-prompt:start -->\n");
+                    out.push_str(text.trim());
+                    out.push_str("\n<!-- codex1-goal-prompt:end -->");
+                } else {
+                    out.push_str(text.trim());
+                }
                 out.push_str("\n\n");
             }
             Some(AnswerValue::List(values)) => {
@@ -201,5 +209,27 @@ mod tests {
         let template = template::get(ArtifactKind::Plan);
         let answers = Answers::new();
         assert!(render_markdown(&template, &answers).is_err());
+    }
+
+    #[test]
+    fn wraps_execution_prompt_goal_prompt_with_copy_markers() {
+        let template = template::get(ArtifactKind::ExecutionPrompt);
+        let answers = answers_from_json(serde_json::json!({
+            "title": "Execute Alpha",
+            "goal_prompt": "Execute the mission at `.codex1/missions/alpha`.",
+            "mission_path": ".codex1/missions/alpha",
+            "primary_artifacts": ["PRD.md", "PLAN.md"],
+            "execution_order": ["Pick one ready subplan at a time"],
+            "subplan_selection": ["Prefer dependency-free ready subplans"],
+            "editable_scope": ["Edit implementation files and assigned artifacts"],
+            "proof_rules": ["Write a proof after each completed slice"],
+            "closeout_rules": ["Write closeout only after auditing evidence"],
+            "prohibited_actions": ["Do not treat inspect as completion proof"]
+        }))
+        .unwrap();
+        let rendered = render_markdown(&template, &answers).unwrap();
+        assert!(rendered.contains("<!-- codex1-goal-prompt:start -->"));
+        assert!(rendered.contains("Execute the mission at `.codex1/missions/alpha`."));
+        assert!(rendered.contains("<!-- codex1-goal-prompt:end -->"));
     }
 }

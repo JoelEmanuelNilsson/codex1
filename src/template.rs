@@ -219,6 +219,81 @@ const RESEARCH_PLAN: &[Section] = &[
     ),
 ];
 
+const EXECUTION_PROMPT: &[Section] = &[
+    section!(
+        "title",
+        "Title",
+        required,
+        "What is the execution prompt title?"
+    ),
+    section!(
+        "goal_prompt",
+        "Native Goal Prompt",
+        required,
+        "What should the user paste into native /goal?"
+    ),
+    section!(
+        "mission_path",
+        "Mission Path",
+        required,
+        "Which mission path should execution use?"
+    ),
+    section!(
+        "primary_artifacts",
+        "Primary Artifacts To Read",
+        required_list,
+        "Which artifacts must Codex read before executing?"
+    ),
+    section!(
+        "execution_order",
+        "Execution Order",
+        required_list,
+        "What execution order should Codex follow?"
+    ),
+    section!(
+        "subplan_selection",
+        "Subplan Selection",
+        required_list,
+        "How should Codex pick subplans?"
+    ),
+    section!(
+        "worker_rules",
+        "Worker And Subagent Rules",
+        optional_list,
+        "What rules apply to workers or subagents?"
+    ),
+    section!(
+        "editable_scope",
+        "Editable Scope",
+        required_list,
+        "What may Codex and workers edit?"
+    ),
+    section!(
+        "proof_rules",
+        "Proof Recording",
+        required_list,
+        "How should proof artifacts be recorded?"
+    ),
+    section!(
+        "review_triage_rules",
+        "Review And Triage",
+        optional_list,
+        "How should reviews and triage be recorded?"
+    ),
+    section!(
+        "closeout_rules",
+        "Closeout",
+        required_list,
+        "What does closeout mean?"
+    ),
+    section!(
+        "prohibited_actions",
+        "What Not To Do",
+        required_list,
+        "What must Codex not do?"
+    ),
+];
+
 const RESEARCH: &[Section] = &[
     section!(
         "title",
@@ -650,6 +725,7 @@ pub fn get(kind: ArtifactKind) -> Template {
         ArtifactKind::Prd => PRD,
         ArtifactKind::Plan => PLAN,
         ArtifactKind::ResearchPlan => RESEARCH_PLAN,
+        ArtifactKind::ExecutionPrompt => EXECUTION_PROMPT,
         ArtifactKind::Research => RESEARCH,
         ArtifactKind::Spec => SPEC,
         ArtifactKind::Subplan => SUBPLAN,

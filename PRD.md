@@ -21,6 +21,7 @@ It creates and manages:
 - PRDs;
 - plans;
 - research plans and research records;
+- pasteable native goal execution prompts;
 - specs;
 - visible subplan lifecycle folders;
 - ADRs;
@@ -56,6 +57,8 @@ Setup is limited to repo-scoped Codex1 skill and guidance materialization with r
 15. As a future Codex session, I want workflow notes to tell me to use native goal tools for goal state, so that I do not search Codex1 artifacts for continuation truth.
 16. As a Codex1 user, I want setup to materialize repo-local artifact guidance, so that Codex can discover Codex1 conventions in enabled repos.
 17. As a Codex1 user, I want setup to avoid hooks and global continuation policy, so that setup cannot conflict with native goals.
+18. As a Codex1 user, I want planning to produce a pasteable native goal prompt, so that I keep an explicit go moment before execution starts.
+19. As a Codex1 user, I want the execution prompt to describe what Codex should read, execute, record, and avoid, so that native goal execution begins with durable mission context.
 
 ## Implementation Decisions
 
@@ -66,6 +69,7 @@ Setup is limited to repo-scoped Codex1 skill and guidance materialization with r
 - Keep path safety as a deep module around contained writes and safe joins.
 - Keep template rendering deterministic and versioned.
 - Keep subplan lifecycle folders visible and file-based.
+- Keep execution prompt generation as a bridge into native `/goal`, not as a Codex1 execution trigger.
 - Keep receipts separate from events.
 - Keep setup scoped to repo-local managed skill and guidance files.
 - Remove Codex1-owned continuation state, hook adapters, continuation event kinds, continuation-specific error codes, and diagnostics for deleted behavior.
@@ -81,6 +85,7 @@ Good tests assert external behavior:
 - removed continuation commands fail through the normal argument parser;
 - help output does not advertise removed continuation commands;
 - `init --json` reports the current artifact tree and no continuation descriptor;
+- execution prompt interviews render a copyable native goal prompt block;
 - new missions do not create legacy continuation files;
 - doctor reports only current diagnostics;
 - event logs cover initialization, artifact writes, subplan moves, receipts, and safe-layout failures;

@@ -6,6 +6,8 @@ It does not decide whether work is ready, reviewed, correct, or done. Codex rema
 
 Long-running objective tracking belongs to native Codex goals. Use Codex's `/goal` flow to create, inspect, and complete an active goal; Codex1 only stores mission artifacts that can support that work.
 
+For execution, Codex1 plans up to a pasteable `EXECUTION_PROMPT.md`. The user keeps the explicit go moment by copying that prompt into native `/goal`; Codex1 does not auto-start execution.
+
 ## Quickstart
 
 To activate the Codex1 bundle for the current repository:
@@ -43,6 +45,7 @@ The mission ID is intentionally boring: ASCII letters, digits, `-`, and `_` only
   PRD.md
   PLAN.md
   RESEARCH_PLAN.md
+  EXECUTION_PROMPT.md
   CLOSEOUT.md
   RESEARCH/
   SPECS/
@@ -105,6 +108,8 @@ Use native Codex goals for continuation discipline:
 ```
 
 Codex can use mission artifacts to clarify and prove the work, but the active objective, continuation, pause/resume, accounting, budget limiting, and completion discipline live in Codex itself. Codex1 does not create, mirror, or complete native goals.
+
+When `$plan` or an equivalent planning workflow prepares execution, it writes `EXECUTION_PROMPT.md` as the text the user can paste after `/goal`. The prompt should describe the mission, artifacts to read, subplan order, worker rules, proof/review/triage expectations, closeout criteria, and prohibited actions.
 
 Legacy missions may contain old `.codex1/LOOP.json` files from the removed continuation system. Current Codex1 ignores those files and does not migrate them. Setup does not read, write, restore, or remove them.
 

@@ -228,6 +228,10 @@ fn cmd_inspect(cli: &Cli) -> Result<()> {
         println!("  prd: {}", inventory.artifacts.prd);
         println!("  plan: {}", inventory.artifacts.plan);
         println!("  research_plan: {}", inventory.artifacts.research_plan);
+        println!(
+            "  execution_prompt: {}",
+            inventory.artifacts.execution_prompt
+        );
         println!("  research: {}", inventory.artifacts.research);
         println!("  specs: {}", inventory.artifacts.specs);
         println!("  subplans: {}", inventory.artifacts.subplans);

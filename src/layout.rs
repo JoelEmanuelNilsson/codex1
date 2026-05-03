@@ -15,6 +15,7 @@ pub enum ArtifactKind {
     Prd,
     Plan,
     ResearchPlan,
+    ExecutionPrompt,
     Research,
     Spec,
     Subplan,
@@ -26,10 +27,11 @@ pub enum ArtifactKind {
 }
 
 impl ArtifactKind {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::Prd,
         Self::Plan,
         Self::ResearchPlan,
+        Self::ExecutionPrompt,
         Self::Research,
         Self::Spec,
         Self::Subplan,
@@ -45,6 +47,7 @@ impl ArtifactKind {
             Self::Prd => "prd",
             Self::Plan => "plan",
             Self::ResearchPlan => "research-plan",
+            Self::ExecutionPrompt => "execution-prompt",
             Self::Research => "research",
             Self::Spec => "spec",
             Self::Subplan => "subplan",
@@ -61,6 +64,7 @@ impl ArtifactKind {
             Self::Prd => "PRD",
             Self::Plan => "Plan",
             Self::ResearchPlan => "Research Plan",
+            Self::ExecutionPrompt => "Execution Prompt",
             Self::Research => "Research Record",
             Self::Spec => "Spec",
             Self::Subplan => "Subplan",
@@ -75,7 +79,7 @@ impl ArtifactKind {
     pub fn is_singleton(self) -> bool {
         matches!(
             self,
-            Self::Prd | Self::Plan | Self::ResearchPlan | Self::Closeout
+            Self::Prd | Self::Plan | Self::ResearchPlan | Self::ExecutionPrompt | Self::Closeout
         )
     }
 }
@@ -234,6 +238,7 @@ impl MissionLayout {
             ArtifactKind::Prd => safe_join(&self.mission_dir, "PRD.md"),
             ArtifactKind::Plan => safe_join(&self.mission_dir, "PLAN.md"),
             ArtifactKind::ResearchPlan => safe_join(&self.mission_dir, "RESEARCH_PLAN.md"),
+            ArtifactKind::ExecutionPrompt => safe_join(&self.mission_dir, "EXECUTION_PROMPT.md"),
             ArtifactKind::Closeout => safe_join(&self.mission_dir, "CLOSEOUT.md"),
             _ => Err(Codex1Error::Argument(format!(
                 "{kind} is not a singleton artifact"

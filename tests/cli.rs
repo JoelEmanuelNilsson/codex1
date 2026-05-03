@@ -80,10 +80,17 @@ fn init_returns_success_envelope() {
     assert!(descriptors
         .iter()
         .any(|descriptor| descriptor["kind"] == "receipts"));
+    assert!(descriptors
+        .iter()
+        .any(|descriptor| descriptor["kind"] == "execution-prompt"));
     assert!(repo
         .path()
         .join(".codex1/missions/alpha/SUBPLANS/ready")
         .is_dir());
+    assert!(!repo
+        .path()
+        .join(".codex1/missions/alpha/EXECUTION_PROMPT.md")
+        .exists());
     assert!(!repo
         .path()
         .join(".codex1/missions/alpha/.codex1/LOOP.json")
@@ -1758,6 +1765,53 @@ fn review_template_accepts_structured_finding_fields() {
     assert!(rendered.contains("<!-- codex1-section: finding_priorities -->"));
     assert!(rendered.contains("<!-- codex1-section: finding_locations -->"));
     assert!(rendered.contains("<!-- codex1-section: finding_rationales -->"));
+}
+
+#[test]
+fn execution_prompt_interview_writes_copyable_native_goal_prompt() {
+    let repo = repo();
+    init(&repo, "alpha");
+    let answers = repo.path().join("execution-prompt.json");
+    fs::write(
+        &answers,
+        r#"{
+          "title": "Execute Alpha",
+          "goal_prompt": "Execute the Codex1 mission at `.codex1/missions/alpha`.\n\nUse `PRD.md` as the outcome contract and complete the native goal only after evidence is audited.",
+          "mission_path": ".codex1/missions/alpha",
+          "primary_artifacts": ["PRD.md", "PLAN.md", "SPECS/", "SUBPLANS/ready/"],
+          "execution_order": ["Select one ready subplan", "Implement it", "Record proof"],
+          "subplan_selection": ["Prefer dependency-free ready subplans"],
+          "editable_scope": ["Implementation files", "Assigned mission artifacts"],
+          "proof_rules": ["Write a proof after each completed slice"],
+          "closeout_rules": ["Write CLOSEOUT.md only after PRD satisfaction is audited"],
+          "prohibited_actions": ["Do not treat inspect, events, receipts, or folder placement as completion proof"]
+        }"#,
+    )
+    .unwrap();
+
+    bin()
+        .args(["--repo-root"])
+        .arg(repo.path())
+        .args([
+            "--mission",
+            "alpha",
+            "interview",
+            "execution-prompt",
+            "--answers",
+        ])
+        .arg(&answers)
+        .assert()
+        .success();
+
+    let rendered = fs::read_to_string(
+        repo.path()
+            .join(".codex1/missions/alpha/EXECUTION_PROMPT.md"),
+    )
+    .unwrap();
+    assert!(rendered.contains("<!-- codex1-goal-prompt:start -->"));
+    assert!(rendered.contains("Execute the Codex1 mission at `.codex1/missions/alpha`."));
+    assert!(rendered.contains("<!-- codex1-goal-prompt:end -->"));
+    assert!(!rendered.contains("Read `EXECUTION_PROMPT.md`"));
 }
 
 #[test]

@@ -20,7 +20,7 @@ Clarify gathers enough user intent to write `PRD.md` through `codex1 interview p
 
 Plan reads the PRD and decides whether research is needed. For substantial uncertainty, it creates `RESEARCH_PLAN.md`, writes `RESEARCH/` records, and then writes or updates `PLAN.md`.
 
-Plan may also create specs and ready subplans when that makes the execution route clearer.
+Plan may also create specs and ready subplans when that makes the execution route clearer. The final planning output for executable work is `EXECUTION_PROMPT.md`: a pasteable native `/goal` prompt that preserves the user's explicit go moment.
 
 In Plan mode, native goal continuation is suppressed by Codex itself. Codex1 should still only write artifacts the user requested or the plan clearly needs.
 
@@ -46,4 +46,4 @@ Closeout summarizes the real state, including completed, superseded, paused, and
 
 Interrupt and resume behavior belongs to native Codex, not Codex1. If a persistent objective should continue after interruption, use the official goal UI or goal tools. Do not create Codex1 files to simulate continuation.
 
-Autonomous execution should clarify first, then plan, execute slices, record reviews and triage when useful, write proofs, and close out when Codex judges the PRD is satisfied. It should only open a PR when PR intent is part of the PRD.
+Autonomous execution should clarify first, then plan, ask the user to paste the generated execution prompt into native `/goal`, execute slices, record reviews and triage when useful, write proofs, and close out when Codex judges the PRD is satisfied. It should only open a PR when PR intent is part of the PRD.

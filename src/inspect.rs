@@ -21,6 +21,7 @@ pub struct ArtifactCounts {
     pub prd: usize,
     pub plan: usize,
     pub research_plan: usize,
+    pub execution_prompt: usize,
     pub research: usize,
     pub specs: usize,
     pub subplans: usize,
@@ -81,6 +82,13 @@ pub fn inspect(layout: &MissionLayout) -> Result<Inventory> {
     counts.research_plan = exists(
         layout,
         layout.singleton_path(ArtifactKind::ResearchPlan)?.as_path(),
+        &mut warnings,
+    )?;
+    counts.execution_prompt = exists(
+        layout,
+        layout
+            .singleton_path(ArtifactKind::ExecutionPrompt)?
+            .as_path(),
         &mut warnings,
     )?;
     counts.closeout = exists(
@@ -153,6 +161,7 @@ fn singleton_files(layout: &MissionLayout) -> Result<Vec<std::path::PathBuf>> {
         layout.singleton_path(ArtifactKind::Prd)?,
         layout.singleton_path(ArtifactKind::Plan)?,
         layout.singleton_path(ArtifactKind::ResearchPlan)?,
+        layout.singleton_path(ArtifactKind::ExecutionPrompt)?,
         layout.singleton_path(ArtifactKind::Closeout)?,
     ])
 }
