@@ -1,0 +1,14 @@
+{
+  "managed_by": "codex1-managed",
+  "version": 3,
+  "files": [
+    ".agents/skills/codex1/SKILL.md",
+    ".agents/skills/clarify/SKILL.md",
+    ".agents/skills/create-prd/SKILL.md",
+    ".agents/skills/plan/SKILL.md",
+    "docs/agents/codex1-workflow.md",
+    "docs/agents/codex1-domain.md",
+    "docs/agents/codex1-artifact-briefs.md",
+    "AGENTS.md"
+  ]
+}

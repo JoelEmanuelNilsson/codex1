@@ -70,16 +70,40 @@ const PRD: &[Section] = &[
         "What did the user ask for?"
     ),
     section!(
+        "problem_statement",
+        "Problem Statement",
+        optional,
+        "What problem is the user facing?"
+    ),
+    section!(
+        "solution",
+        "Solution",
+        optional,
+        "What solution should the user experience?"
+    ),
+    section!(
         "interpreted_destination",
         "Interpreted Destination",
         required,
         "What destination should Codex aim for?"
     ),
     section!(
+        "user_stories",
+        "User Stories",
+        optional,
+        "What numbered user stories describe the feature?"
+    ),
+    section!(
         "success_criteria",
         "Success Criteria",
         required_list,
         "What must be true?"
+    ),
+    section!(
+        "module_sketch",
+        "Module Sketch",
+        optional_list,
+        "What modules, interfaces, or deep-module opportunities are likely?"
     ),
     section!(
         "non_goals",
@@ -112,6 +136,18 @@ const PRD: &[Section] = &[
         "What questions were resolved?"
     ),
     section!(
+        "implementation_decisions",
+        "Implementation Decisions",
+        optional_list,
+        "What implementation decisions were made?"
+    ),
+    section!(
+        "testing_decisions",
+        "Testing Decisions",
+        optional_list,
+        "What testing decisions were made?"
+    ),
+    section!(
         "proof_expectations",
         "Proof Expectations",
         required_list,
@@ -122,6 +158,12 @@ const PRD: &[Section] = &[
         "Review Expectations",
         optional_list,
         "What review is expected?"
+    ),
+    section!(
+        "further_notes",
+        "Further Notes",
+        optional_list,
+        "What else should planners know?"
     ),
     section!("pr_intent", "PR Intent", required, "Should a PR be opened?"),
 ];
@@ -421,6 +463,12 @@ const SUBPLAN: &[Section] = &[
     section!("title", "Title", required, "What is the subplan title?"),
     section!("goal", "Goal", required, "What is the slice goal?"),
     section!(
+        "slice_type",
+        "Slice Type",
+        required,
+        "Is this AFK or HITL, and why?"
+    ),
+    section!(
         "linked_prd",
         "Linked PRD",
         required,
@@ -439,7 +487,31 @@ const SUBPLAN: &[Section] = &[
         "Which specs are linked?"
     ),
     section!("owner", "Owner", required, "Who owns this slice?"),
+    section!(
+        "current_behavior",
+        "Current Behavior",
+        required,
+        "What happens now?"
+    ),
+    section!(
+        "desired_behavior",
+        "Desired Behavior",
+        required,
+        "What should happen after this slice?"
+    ),
+    section!(
+        "key_interfaces",
+        "Key Interfaces",
+        optional_list,
+        "What stable interfaces, contracts, commands, or artifacts matter?"
+    ),
     section!("scope", "Scope", required_list, "What is in scope?"),
+    section!(
+        "out_of_scope",
+        "Out Of Scope",
+        required_list,
+        "What must not be changed?"
+    ),
     section!(
         "steps",
         "Steps",
@@ -451,6 +523,18 @@ const SUBPLAN: &[Section] = &[
         "Dependencies",
         optional_list,
         "What dependencies exist?"
+    ),
+    section!(
+        "blocked_by",
+        "Blocked By",
+        optional_list,
+        "What blocks this slice?"
+    ),
+    section!(
+        "acceptance_criteria",
+        "Acceptance Criteria",
+        required_list,
+        "What concrete criteria prove this slice is complete?"
     ),
     section!(
         "expected_proof",
@@ -474,7 +558,7 @@ const SUBPLAN: &[Section] = &[
 
 const ADR: &[Section] = &[
     section!("title", "Title", required, "What is the ADR title?"),
-    section!("status", "Status", required, "What is the ADR status?"),
+    section!("status", "Status", optional, "What is the ADR status?"),
     section!(
         "context",
         "Context",
@@ -485,19 +569,19 @@ const ADR: &[Section] = &[
     section!(
         "options_considered",
         "Options Considered",
-        required_list,
+        optional_list,
         "What options were considered?"
     ),
     section!(
         "tradeoffs",
         "Tradeoffs",
-        required_list,
+        optional_list,
         "What tradeoffs exist?"
     ),
     section!(
         "consequences",
         "Consequences",
-        required_list,
+        optional_list,
         "What follows from this decision?"
     ),
     section!(

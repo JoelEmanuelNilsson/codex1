@@ -19,6 +19,11 @@ const MANAGED_SKILLS: [&str; 4] = [
     ".agents/skills/create-prd/SKILL.md",
     ".agents/skills/plan/SKILL.md",
 ];
+const MANAGED_SUPPORTING_DOCS: [&str; 3] = [
+    "docs/agents/codex1-workflow.md",
+    "docs/agents/codex1-domain.md",
+    "docs/agents/codex1-artifact-briefs.md",
+];
 
 fn bin() -> Command {
     Command::cargo_bin("codex1").unwrap()
@@ -285,11 +290,16 @@ fn successful_mutations_append_forensic_events_without_messages() {
         r#"{
           "title": "Move Me",
           "goal": "Create a subplan",
+          "slice_type": "AFK - executable from artifacts",
           "linked_prd": "PRD.md",
           "linked_plan": "PLAN.md",
           "owner": "main",
+          "current_behavior": "No slice exists",
+          "desired_behavior": "A durable slice exists",
           "scope": ["CLI"],
+          "out_of_scope": ["Unrelated behavior"],
           "steps": ["write file"],
+          "acceptance_criteria": ["subplan exists"],
           "expected_proof": ["test"],
           "exit_criteria": ["done"]
         }"#,
@@ -801,11 +811,16 @@ fn collection_artifacts_get_unique_names_and_subplans_can_move() {
         r#"{
           "title": "First Slice",
           "goal": "Do the first slice",
+          "slice_type": "AFK - executable from artifacts",
           "linked_prd": "PRD.md",
           "linked_plan": "PLAN.md",
           "owner": "main",
+          "current_behavior": "No slice exists",
+          "desired_behavior": "A durable slice exists",
           "scope": ["CLI"],
+          "out_of_scope": ["Unrelated behavior"],
           "steps": ["write file"],
+          "acceptance_criteria": ["subplan exists"],
           "expected_proof": ["test"],
           "exit_criteria": ["done"]
         }"#,
@@ -954,6 +969,9 @@ fn setup_install_materializes_repo_scoped_guidance_without_hooks() {
     for skill in MANAGED_SKILLS {
         assert!(repo.path().join(skill).is_file(), "{skill}");
     }
+    for doc in MANAGED_SUPPORTING_DOCS {
+        assert!(repo.path().join(doc).is_file(), "{doc}");
+    }
     assert!(repo.path().join("AGENTS.md").is_file());
     assert!(repo.path().join(".codex1/setup-bundle.json").is_file());
 
@@ -962,14 +980,38 @@ fn setup_install_materializes_repo_scoped_guidance_without_hooks() {
         .map(|skill| fs::read_to_string(repo.path().join(skill)).unwrap())
         .collect::<Vec<_>>()
         .join("\n");
+    let docs = MANAGED_SUPPORTING_DOCS
+        .iter()
+        .map(|doc| fs::read_to_string(repo.path().join(doc)).unwrap())
+        .collect::<Vec<_>>()
+        .join("\n");
     let guidance = fs::read_to_string(repo.path().join("AGENTS.md")).unwrap();
-    let combined = format!("{skill}\n{guidance}");
+    let combined = format!("{skill}\n{docs}\n{guidance}");
     assert!(combined.contains("$clarify"));
     assert!(combined.contains("$create-prd"));
     assert!(combined.contains("$plan"));
     assert!(combined.contains("Do not interview the user by default"));
     assert!(combined.contains("questions are still allowed"));
+    assert!(combined.contains("Ask exactly one question at a time"));
+    assert!(combined.contains("Cross-check claims against the code"));
+    assert!(combined.contains("update `CONTEXT.md` inline"));
+    assert!(combined.contains("Hard to reverse"));
+    assert!(combined.contains("Problem Statement"));
+    assert!(combined.contains("User Stories"));
+    assert!(combined.contains("Module Sketch"));
+    assert!(combined.contains("Implementation Decisions"));
+    assert!(combined.contains("Testing Decisions"));
+    assert!(combined.contains("deep modules"));
+    assert!(combined.contains("do not include brittle file paths"));
+    assert!(combined.contains("tracer-bullet vertical slices"));
+    assert!(combined.contains("Subplans As Agent Briefs"));
+    assert!(combined.contains("AFK"));
+    assert!(combined.contains("HITL"));
+    assert!(combined.contains("ADRS/"));
+    assert!(combined.contains("Do not create issue-tracker tickets"));
     assert!(combined.contains("explicit completion criteria"));
+    assert!(combined.contains("Do not put pause, escalation"));
+    assert!(combined.contains("must not say to read `EXECUTION_PROMPT.md`"));
     assert!(combined.contains("native `/goal`"));
     for forbidden in [
         "ralph",
@@ -1005,11 +1047,17 @@ fn setup_status_reports_bundle_state_only() {
     assert_eq!(status["repo_bundle_materialized"], true);
     assert_eq!(status["marker"], "current");
     assert_eq!(status["skill"], "current");
+    assert_eq!(status["supporting_doc"], "current");
     assert_eq!(status["guidance"], "current");
     let skills = status["skills"].as_array().unwrap();
     assert_eq!(skills.len(), MANAGED_SKILLS.len());
     for skill in skills {
         assert_eq!(skill["state"], "current");
+    }
+    let docs = status["supporting_docs"].as_array().unwrap();
+    assert_eq!(docs.len(), MANAGED_SUPPORTING_DOCS.len());
+    for doc in docs {
+        assert_eq!(doc["state"], "current");
     }
     assert!(status.get("global_hook_installed").is_none());
     assert!(status.get("project_hook_installed").is_none());
@@ -1069,6 +1117,9 @@ fn setup_install_dry_run_does_not_materialize_files() {
     for skill in MANAGED_SKILLS {
         assert!(!repo.path().join(skill).exists(), "{skill}");
     }
+    for doc in MANAGED_SUPPORTING_DOCS {
+        assert!(!repo.path().join(doc).exists(), "{doc}");
+    }
     assert!(!repo.path().join("AGENTS.md").exists());
     assert!(!repo.path().join(".codex1/setup-bundle.json").exists());
     assert!(!repo
@@ -1105,6 +1156,9 @@ fn setup_disable_and_enable_preserve_user_guidance_and_missions() {
     assert!(!agents.contains("codex1-managed setup guidance start"));
     for skill in MANAGED_SKILLS {
         assert!(!repo.path().join(skill).exists(), "{skill}");
+    }
+    for doc in MANAGED_SUPPORTING_DOCS {
+        assert!(!repo.path().join(doc).exists(), "{doc}");
     }
     assert!(repo.path().join(".codex1/missions/alpha").is_dir());
 
@@ -1171,6 +1225,9 @@ fn setup_uninstall_removes_expanded_managed_skill_bundle() {
     for skill in MANAGED_SKILLS {
         assert!(!repo.path().join(skill).exists(), "{skill}");
     }
+    for doc in MANAGED_SUPPORTING_DOCS {
+        assert!(!repo.path().join(doc).exists(), "{doc}");
+    }
     assert!(!repo.path().join("AGENTS.md").exists());
     assert!(!repo.path().join(".codex1/setup-bundle.json").exists());
     assert!(repo.path().join(".codex1/missions/alpha").is_dir());
@@ -1217,7 +1274,7 @@ fn setup_enable_repairs_stale_managed_skill_and_marker() {
         .join(".agents/skills/create-prd/SKILL.md")
         .is_file());
     assert!(repo.path().join(".agents/skills/plan/SKILL.md").is_file());
-    assert!(marker.contains(r#""version": 2"#));
+    assert!(marker.contains(r#""version": 3"#));
 }
 
 #[test]
@@ -1261,6 +1318,26 @@ fn setup_install_refuses_unmanaged_workflow_skills_without_marker() {
             .stdout(predicate::str::contains("SETUP_BUNDLE_ERROR"));
 
         assert_eq!(fs::read_to_string(path).unwrap(), "# User skill\n");
+    }
+}
+
+#[test]
+fn setup_install_refuses_unmanaged_supporting_docs_without_marker() {
+    for doc in MANAGED_SUPPORTING_DOCS {
+        let repo = repo();
+        let path = repo.path().join(doc);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "# User doc\n").unwrap();
+
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install"])
+            .assert()
+            .failure()
+            .stdout(predicate::str::contains("SETUP_BUNDLE_ERROR"));
+
+        assert_eq!(fs::read_to_string(path).unwrap(), "# User doc\n");
     }
 }
 
@@ -1353,6 +1430,43 @@ fn setup_backups_restore_previous_absence() {
     );
 
     assert!(!repo.path().join("AGENTS.md").exists());
+}
+
+#[test]
+fn setup_backups_restore_supporting_doc_previous_absence() {
+    let repo = repo();
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install"]),
+    );
+    let doc = "docs/agents/codex1-workflow.md";
+    assert!(repo.path().join(doc).is_file());
+    let backups = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "backups", "list"]),
+    );
+    let id = backups["data"]["backups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|record| record["target_path_label"].as_str().unwrap().ends_with(doc))
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "backups", "restore", &id, "--force"]),
+    );
+
+    assert!(!repo.path().join(doc).exists());
 }
 
 #[test]
@@ -2014,11 +2128,16 @@ fn subplan_ids_stay_unique_across_lifecycle_folders() {
         r#"{
           "title": "Repeat Slice",
           "goal": "Do the repeated slice",
+          "slice_type": "AFK - executable from artifacts",
           "linked_prd": "PRD.md",
           "linked_plan": "PLAN.md",
           "owner": "main",
+          "current_behavior": "No slice exists",
+          "desired_behavior": "A durable slice exists",
           "scope": ["CLI"],
+          "out_of_scope": ["Unrelated behavior"],
           "steps": ["write file"],
+          "acceptance_criteria": ["subplan exists"],
           "expected_proof": ["test"],
           "exit_criteria": ["done"]
         }"#,

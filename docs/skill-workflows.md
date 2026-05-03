@@ -14,7 +14,7 @@ Codex1 skills must not create native goals for ordinary one-turn work. When a na
 
 ## Clarify
 
-Clarify is the "write me docs" style discovery skill. It gathers the user's intent, asks or resolves planning-relevant ambiguity while questions are still allowed, and preserves the understood context. It should not start execution.
+Clarify is the "write me docs" / `grill-with-docs` style discovery skill. It gathers the user's intent, asks or resolves planning-relevant ambiguity while questions are still allowed, and preserves the understood context. It asks one question at a time, explains why the question matters, recommends an answer, inspects the repo instead of asking code-answerable questions, challenges vague terms until they become concrete behavior, updates `CONTEXT.md` lazily when language crystallizes, and offers ADRs only for durable, surprising tradeoffs. It should not start execution.
 
 Clarify may create durable notes or feed the later PRD answers, but it is not the same skill as PRD synthesis.
 
@@ -22,13 +22,17 @@ Clarify may create durable notes or feed the later PRD answers, but it is not th
 
 Create PRD synthesizes everything Codex already knows from the conversation, clarification output, repo inspection, and user-provided references into `PRD.md` through `codex1 interview prd`. It should not re-interview the user by default; it should write the best PRD from available context.
 
+The PRD should carry the same information quality as the reference PRD workflow: problem statement, solution, extensive user stories, module sketch, implementation decisions, testing decisions, out-of-scope work, proof expectations, review expectations, and PR intent. It stays local and does not create issue-tracker tickets.
+
 ## Plan
 
 Plan reads the PRD and decides whether research is needed. For substantial uncertainty, it creates `RESEARCH_PLAN.md`, writes `RESEARCH/` records, and then writes or updates `PLAN.md`.
 
-Plan may also create specs and ready subplans when that makes the execution route clearer. The final planning output for executable work is `EXECUTION_PROMPT.md`: a pasteable native `/goal` objective that preserves the user's explicit go moment.
+Plan may also create ADRs, specs, and ready subplans when that makes the execution route clearer. ADRs are for durable architecture decisions and rejected alternatives with load-bearing reasons, not tiny implementation notes. Ready subplans should be tracer-bullet vertical slices and durable agent briefs with current/desired behavior, key interfaces, scope, out-of-scope work, dependencies, acceptance criteria, proof, ownership rules, and exit criteria.
 
-The execution prompt is not a file-loading instruction. It is the objective text the user may review, edit, and manually paste into a new Codex CLI session after typing `/goal`.
+The final planning output for executable work is `EXECUTION_PROMPT.md`: a pasteable native `/goal` objective that preserves the user's explicit go moment.
+
+The execution prompt is not a file-loading instruction. It is the objective text the user may review, edit, and manually paste into a new Codex CLI session after typing `/goal`. It should not tell Codex to read `EXECUTION_PROMPT.md`; the user has already copied the prompt from that file.
 
 In Plan mode, native goal continuation is suppressed by Codex itself. Codex1 should still only write artifacts the user requested or the plan clearly needs.
 

@@ -8,7 +8,7 @@ Native Codex goals are external thread state. Codex1 artifacts provide context, 
 
 Clarification artifacts or notes capture the user's raw intent, open questions, constraints, and resolved understanding before PRD synthesis. They are inputs to PRD creation, not execution contracts.
 
-`PRD.md` captures the mission goal, interpreted destination, success criteria, constraints, assumptions, proof expectations, review expectations, and PR intent. It is the anchor for durable work.
+`PRD.md` captures the mission goal, problem statement, solution, user stories, interpreted destination, success criteria, module sketch, constraints, assumptions, implementation and testing decisions, proof expectations, review expectations, and PR intent. It is the anchor for durable work.
 
 `PLAN.md` is the living strategy map. It describes workstreams, phases, risks, research posture, artifact links, review posture, and recommended slices. It is not a status dashboard or proof ledger.
 
@@ -24,9 +24,9 @@ Clarification artifacts or notes capture the user's raw intent, open questions, 
 
 `SPECS/` stores bounded implementation contracts. Specs describe responsibility, PRD relevance, scope, expected behavior, interfaces, proof expectations, and risks.
 
-`SUBPLANS/` stores executable slices in visible lifecycle folders. Folder placement is a cue for humans and Codex, not a CLI state machine. Multiple files may be in `active/`.
+`SUBPLANS/` stores tracer-bullet slices in visible lifecycle folders. Ready subplans act as durable agent briefs: slice type, current and desired behavior, stable interfaces, scope, out-of-scope work, dependencies, acceptance criteria, proof, and exit criteria. Folder placement is a cue for humans and Codex, not a CLI state machine. Multiple files may be in `active/`.
 
-`ADRS/` stores durable architecture decisions and tradeoffs.
+`ADRS/` stores durable architecture decisions and tradeoffs. ADRs should stay lightweight unless extra structure adds real value.
 
 `REVIEWS/` stores reviewer opinions. Reviews do not mutate mission truth.
 
