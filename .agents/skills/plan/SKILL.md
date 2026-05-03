@@ -7,7 +7,7 @@ description: Design an executable Codex1 mission from PRD.md, including research
 
 Use this after `PRD.md` exists. Planning designs the mission; it is not execution. Questions are allowed during planning when they improve the plan, but the generated `/goal` objective must not ask questions.
 
-Read `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, and `docs/agents/codex1-artifact-briefs.md` if present.
+Read `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, and `docs/agents/codex1-artifact-briefs.md` if present. Read [ADR-FORMAT.md](ADR-FORMAT.md) before writing ADRs, [SUBPLAN-BRIEF.md](SUBPLAN-BRIEF.md) before writing ready subplans, and [EXECUTION-PROMPT-FORMAT.md](EXECUTION-PROMPT-FORMAT.md) before writing `EXECUTION_PROMPT.md`.
 
 ## Process
 
@@ -16,7 +16,7 @@ Read `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, and `docs
 3. Restate the outcome contract: success criteria, non-goals, proof expectations, review expectations, PR intent, and assumptions.
 4. Decide whether research is needed. If uncertainty affects architecture, product behavior, verification, or external APIs, create `RESEARCH_PLAN.md` and record research before finalizing the plan.
 5. Identify workstreams, risks, dependencies, existing patterns, and likely deep modules.
-6. Create ADRs in `ADRS/` when planning makes or preserves a durable architecture decision, chooses between plausible alternatives, rejects a tempting approach for a load-bearing reason, or changes a previous architectural direction. Keep ADRs lightweight unless the decision needs structure.
+6. Create ADRs in `ADRS/` when planning makes or preserves a durable architecture decision, chooses between plausible alternatives, rejects a tempting approach for a load-bearing reason, or changes a previous architectural direction. Use [ADR-FORMAT.md](ADR-FORMAT.md) and keep ADRs lightweight unless the decision needs structure.
 7. Create specs for bounded contracts where implementation needs more precision than the PRD.
 8. Break work into tracer-bullet vertical slices. Each slice cuts end-to-end through the smallest behavior path that can be reviewed, tested, and proven independently.
 9. Mark each slice as `AFK` or `HITL`. `AFK` means an agent can execute from artifacts without more human decisions. `HITL` means a human decision, design review, credential, or manual judgment is still required.
@@ -37,7 +37,7 @@ Read `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, and `docs
 
 ## Subplan Quality Bar
 
-Every ready subplan is an agent brief. It must be durable even if files move, and must include:
+Every ready subplan is an agent brief. Use [SUBPLAN-BRIEF.md](SUBPLAN-BRIEF.md). It must be durable even if files move, and must include:
 
 - slice type: AFK unless already resolved HITL work has become executable
 - current behavior or current repo state
@@ -54,7 +54,7 @@ Do not reference line numbers. Avoid file paths unless they name stable artifact
 
 ## Execution Objective Requirements
 
-The goal prompt is the pasteable objective text, not a file-loading instruction and not a wrapper around another prompt. It must not say to read `EXECUTION_PROMPT.md`; the user is copying from that file into `/goal`.
+Use [EXECUTION-PROMPT-FORMAT.md](EXECUTION-PROMPT-FORMAT.md). The goal prompt is the pasteable objective text, not a file-loading instruction and not a wrapper around another prompt. It must not say to read `EXECUTION_PROMPT.md`; the user is copying from that file into `/goal`.
 
 - mission path
 - primary artifacts to read

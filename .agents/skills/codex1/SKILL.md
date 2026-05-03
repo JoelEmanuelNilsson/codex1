@@ -13,6 +13,12 @@ Repo-local consumer docs installed by setup:
 - `docs/agents/codex1-domain.md`: domain glossary and ADR consumption/production rules.
 - `docs/agents/codex1-artifact-briefs.md`: PRD, subplan, execution prompt, proof, review, and closeout quality bars.
 
+Skill-local references installed by setup:
+
+- `$clarify`: `ADR-FORMAT.md` and `CONTEXT-FORMAT.md`.
+- `$create-prd`: `PRD-FORMAT.md`.
+- `$plan`: `ADR-FORMAT.md`, `SUBPLAN-BRIEF.md`, and `EXECUTION-PROMPT-FORMAT.md`.
+
 Preferred UX:
 
 - Use `$clarify` to gather and preserve user intent while questions are still allowed.

@@ -11,9 +11,10 @@ Clarify is Codex1's `grill-with-docs`: a relentless discovery session that makes
 
 1. Read the conversation and user-provided references.
 2. Read `docs/agents/codex1-workflow.md` and `docs/agents/codex1-domain.md` if present.
-3. Inspect context that can reduce questioning: existing Codex1 mission artifacts, `AGENTS.md`, `CONTEXT.md` or `CONTEXT-MAP.md`, repo ADRs, mission `ADRS/`, tests, and relevant source.
-4. State the current understanding briefly when it helps the user see what you inferred.
-5. Ask the highest-leverage unresolved question first.
+3. For exact producer formats, read [CONTEXT-FORMAT.md](CONTEXT-FORMAT.md) before updating glossary docs and [ADR-FORMAT.md](ADR-FORMAT.md) before offering or writing ADRs.
+4. Inspect context that can reduce questioning: existing Codex1 mission artifacts, `AGENTS.md`, `CONTEXT.md` or `CONTEXT-MAP.md`, repo ADRs, mission `ADRS/`, tests, and relevant source.
+5. State the current understanding briefly when it helps the user see what you inferred.
+6. Ask the highest-leverage unresolved question first.
 
 Proceed silently if the docs or glossary do not exist. Create/update domain docs lazily only when the session resolves real language or decisions.
 
@@ -31,7 +32,7 @@ Proceed silently if the docs or glossary do not exist. Create/update domain docs
 
 ## Domain Side Effects
 
-When a domain term is resolved, update `CONTEXT.md` inline. If `CONTEXT-MAP.md` exists, update the relevant context file. Use tight definitions, avoided aliases, relationships, example dialogue, and flagged ambiguities. Do not add generic programming terms.
+When a domain term is resolved, update `CONTEXT.md` inline. If `CONTEXT-MAP.md` exists, update the relevant context file. Use [CONTEXT-FORMAT.md](CONTEXT-FORMAT.md) for exact structure and rules. Do not add generic programming terms.
 
 Offer an ADR only when all three are true:
 
@@ -39,7 +40,7 @@ Offer an ADR only when all three are true:
 - Surprising without context: a future reader would wonder why.
 - Real trade-off: plausible alternatives existed and one was chosen for a reason.
 
-If an ADR is warranted, keep it lightweight unless the decision truly needs more structure. For repo-wide decisions, prefer `docs/adr/`. For mission-specific execution decisions, prefer `.codex1/missions/<id>/ADRS/`.
+If an ADR is warranted, use [ADR-FORMAT.md](ADR-FORMAT.md). Keep it lightweight unless the decision truly needs more structure. For repo-wide decisions, prefer `docs/adr/`. For mission-specific execution decisions, prefer `.codex1/missions/<id>/ADRS/`.
 
 ## Interview Map
 

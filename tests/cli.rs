@@ -19,7 +19,13 @@ const MANAGED_SKILLS: [&str; 4] = [
     ".agents/skills/create-prd/SKILL.md",
     ".agents/skills/plan/SKILL.md",
 ];
-const MANAGED_SUPPORTING_DOCS: [&str; 3] = [
+const MANAGED_SUPPORTING_DOCS: [&str; 9] = [
+    ".agents/skills/clarify/ADR-FORMAT.md",
+    ".agents/skills/clarify/CONTEXT-FORMAT.md",
+    ".agents/skills/create-prd/PRD-FORMAT.md",
+    ".agents/skills/plan/ADR-FORMAT.md",
+    ".agents/skills/plan/SUBPLAN-BRIEF.md",
+    ".agents/skills/plan/EXECUTION-PROMPT-FORMAT.md",
     "docs/agents/codex1-workflow.md",
     "docs/agents/codex1-domain.md",
     "docs/agents/codex1-artifact-briefs.md",
@@ -995,8 +1001,12 @@ fn setup_install_materializes_repo_scoped_guidance_without_hooks() {
     assert!(combined.contains("Ask exactly one question at a time"));
     assert!(combined.contains("Cross-check claims against the code"));
     assert!(combined.contains("update `CONTEXT.md` inline"));
+    assert!(combined.contains("CONTEXT.md Format"));
+    assert!(combined.contains("ADR Format"));
     assert!(combined.contains("Hard to reverse"));
+    assert!(combined.contains("Create context files lazily"));
     assert!(combined.contains("Problem Statement"));
+    assert!(combined.contains("PRD Format"));
     assert!(combined.contains("User Stories"));
     assert!(combined.contains("Module Sketch"));
     assert!(combined.contains("Implementation Decisions"));
@@ -1005,6 +1015,8 @@ fn setup_install_materializes_repo_scoped_guidance_without_hooks() {
     assert!(combined.contains("do not include brittle file paths"));
     assert!(combined.contains("tracer-bullet vertical slices"));
     assert!(combined.contains("Subplans As Agent Briefs"));
+    assert!(combined.contains("Subplan Brief Format"));
+    assert!(combined.contains("Execution Prompt Format"));
     assert!(combined.contains("AFK"));
     assert!(combined.contains("HITL"));
     assert!(combined.contains("ADRS/"));
@@ -1274,7 +1286,7 @@ fn setup_enable_repairs_stale_managed_skill_and_marker() {
         .join(".agents/skills/create-prd/SKILL.md")
         .is_file());
     assert!(repo.path().join(".agents/skills/plan/SKILL.md").is_file());
-    assert!(marker.contains(r#""version": 3"#));
+    assert!(marker.contains(r#""version": 4"#));
 }
 
 #[test]
@@ -1441,32 +1453,37 @@ fn setup_backups_restore_supporting_doc_previous_absence() {
             .arg(repo.path())
             .args(["setup", "install"]),
     );
-    let doc = "docs/agents/codex1-workflow.md";
-    assert!(repo.path().join(doc).is_file());
     let backups = json_output(
         bin()
             .args(["--json", "--repo-root"])
             .arg(repo.path())
             .args(["setup", "backups", "list"]),
     );
-    let id = backups["data"]["backups"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|record| record["target_path_label"].as_str().unwrap().ends_with(doc))
-        .unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_string();
 
-    json_output(
-        bin()
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args(["setup", "backups", "restore", &id, "--force"]),
-    );
+    for doc in [
+        "docs/agents/codex1-workflow.md",
+        ".agents/skills/clarify/ADR-FORMAT.md",
+    ] {
+        assert!(repo.path().join(doc).is_file());
+        let id = backups["data"]["backups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|record| record["target_path_label"].as_str().unwrap().ends_with(doc))
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
 
-    assert!(!repo.path().join(doc).exists());
+        json_output(
+            bin()
+                .args(["--json", "--repo-root"])
+                .arg(repo.path())
+                .args(["setup", "backups", "restore", &id, "--force"]),
+        );
+
+        assert!(!repo.path().join(doc).exists());
+    }
 }
 
 #[test]

@@ -1,11 +1,17 @@
 {
   "managed_by": "codex1-managed",
-  "version": 3,
+  "version": 4,
   "files": [
     ".agents/skills/codex1/SKILL.md",
     ".agents/skills/clarify/SKILL.md",
+    ".agents/skills/clarify/ADR-FORMAT.md",
+    ".agents/skills/clarify/CONTEXT-FORMAT.md",
     ".agents/skills/create-prd/SKILL.md",
+    ".agents/skills/create-prd/PRD-FORMAT.md",
     ".agents/skills/plan/SKILL.md",
+    ".agents/skills/plan/ADR-FORMAT.md",
+    ".agents/skills/plan/SUBPLAN-BRIEF.md",
+    ".agents/skills/plan/EXECUTION-PROMPT-FORMAT.md",
     "docs/agents/codex1-workflow.md",
     "docs/agents/codex1-domain.md",
     "docs/agents/codex1-artifact-briefs.md",
