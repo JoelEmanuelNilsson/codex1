@@ -53,7 +53,7 @@ Error codes are mechanical: `ARGUMENT_ERROR`, `MISSION_PATH_ERROR`, `ARTIFACT_VA
 
 `interview <kind> --answers <file>` validates answers and writes an artifact. Singleton artifacts fail on collision unless `--overwrite` is passed. Collection artifacts allocate unique numbered filenames. JSON mode requires `--answers` so stdout remains a parseable envelope.
 
-`interview execution-prompt --answers <file>` writes `EXECUTION_PROMPT.md`, a pasteable native `/goal` prompt artifact. It may contain a `codex1-goal-prompt` marker block for the exact text the user should copy into native goal creation. The CLI does not paste it, submit it, or start execution.
+`interview execution-prompt --answers <file>` writes `EXECUTION_PROMPT.md`, a pasteable native `/goal` objective artifact. It may contain a `codex1-goal-prompt` marker block for the exact objective text the user should copy into native goal creation. The CLI does not paste it, submit it, or start execution.
 
 `subplan move --id <id> --to <state>` safely moves one subplan file between lifecycle folders. It does not enforce one active subplan.
 

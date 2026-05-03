@@ -1783,6 +1783,8 @@ fn execution_prompt_interview_writes_copyable_native_goal_prompt() {
           "subplan_selection": ["Prefer dependency-free ready subplans"],
           "editable_scope": ["Implementation files", "Assigned mission artifacts"],
           "proof_rules": ["Write a proof after each completed slice"],
+          "completion_criteria": ["All required ready subplans are complete or explicitly triaged as not applicable"],
+          "non_completion_behavior": ["If completion cannot be reached from artifacts, record why and do not ask questions"],
           "closeout_rules": ["Write CLOSEOUT.md only after PRD satisfaction is audited"],
           "prohibited_actions": ["Do not treat inspect, events, receipts, or folder placement as completion proof"]
         }"#,

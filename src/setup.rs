@@ -862,7 +862,9 @@ description: Repo-scoped Codex1 artifact workflow guidance.
 
 # Codex1
 
-Use Codex1 as a deterministic artifact helper for PRD, PLAN, SPEC, SUBPLAN, REVIEW, TRIAGE, PROOF, CLOSEOUT, receipts, and inventory inspection.
+Use Codex1 as a deterministic artifact helper for clarification context, PRD, PLAN, EXECUTION_PROMPT, SPEC, SUBPLAN, REVIEW, TRIAGE, PROOF, CLOSEOUT, receipts, and inventory inspection.
+
+Preferred UX: clarify first, synthesize the PRD from known context, plan the mission and execution objective, then let the user manually start a new Codex CLI session, type `/goal`, and paste the generated objective. The execution objective must include explicit completion criteria and non-completion recording rules.
 
 Native Codex `/goal` owns persistent objectives, continuation, pause/resume, accounting, budgets, and completion. Create or complete native goals only through the official Codex goal flow when the user explicitly wants a persistent objective.
 
@@ -875,7 +877,7 @@ fn guidance_body() -> &'static str {
 
 codex1-managed
 
-Codex1 is enabled in this repository as a local artifact workflow convention. Use `codex1` for durable mission artifacts and mechanical evidence. Use native `/goal` for persistent objectives and continuation.
+Codex1 is enabled in this repository as a local artifact workflow convention. Use `codex1` for durable mission artifacts and mechanical evidence. Use native `/goal` for persistent objectives and continuation. The preferred flow is clarify, create PRD, plan, then manually paste the generated execution objective after `/goal`.
 
 Codex remains the semantic judge. Codex1 inspect, setup status, events, and receipts are not readiness, completion, review, proof, closeout, or native goal state.
 "#

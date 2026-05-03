@@ -6,13 +6,15 @@ Native Codex goals are external thread state. Codex1 artifacts provide context, 
 
 ## Mission Artifacts
 
+Clarification artifacts or notes capture the user's raw intent, open questions, constraints, and resolved understanding before PRD synthesis. They are inputs to PRD creation, not execution contracts.
+
 `PRD.md` captures the mission goal, interpreted destination, success criteria, constraints, assumptions, proof expectations, review expectations, and PR intent. It is the anchor for durable work.
 
 `PLAN.md` is the living strategy map. It describes workstreams, phases, risks, research posture, artifact links, review posture, and recommended slices. It is not a status dashboard or proof ledger.
 
 `RESEARCH_PLAN.md` is optional. Codex writes it when research is substantial enough to need durable structure.
 
-`EXECUTION_PROMPT.md` is the pasteable native goal launch prompt produced by planning. It tells the next Codex turn what mission to execute, which artifacts to read, how to select subplans, how workers may be used, what may be edited, how proofs/reviews/triage should be recorded, what closeout means, and what not to do. It is not an execution trigger by itself.
+`EXECUTION_PROMPT.md` is the pasteable native goal objective produced by planning. It tells the next Codex turn what mission to execute, which artifacts to read, how to select subplans, how workers may be used, what may be edited, how proofs/reviews/triage should be recorded, what completion means, what to record if completion cannot be reached, what closeout means, and what not to do. It is not an execution trigger by itself.
 
 `CLOSEOUT.md` summarizes how Codex judges the PRD was satisfied, including completed, superseded, paused, or deferred work and remaining risks. It is durable evidence, not native goal completion state.
 

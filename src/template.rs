@@ -228,9 +228,9 @@ const EXECUTION_PROMPT: &[Section] = &[
     ),
     section!(
         "goal_prompt",
-        "Native Goal Prompt",
+        "Native Goal Objective",
         required,
-        "What should the user paste into native /goal?"
+        "What objective should the user paste after native /goal?"
     ),
     section!(
         "mission_path",
@@ -279,6 +279,18 @@ const EXECUTION_PROMPT: &[Section] = &[
         "Review And Triage",
         optional_list,
         "How should reviews and triage be recorded?"
+    ),
+    section!(
+        "completion_criteria",
+        "Completion Criteria",
+        required_list,
+        "When is the native goal objectively complete?"
+    ),
+    section!(
+        "non_completion_behavior",
+        "If Completion Cannot Be Reached",
+        required_list,
+        "What should Codex record instead of asking questions?"
     ),
     section!(
         "closeout_rules",

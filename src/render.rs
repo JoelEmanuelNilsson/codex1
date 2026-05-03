@@ -223,6 +223,8 @@ mod tests {
             "subplan_selection": ["Prefer dependency-free ready subplans"],
             "editable_scope": ["Edit implementation files and assigned artifacts"],
             "proof_rules": ["Write a proof after each completed slice"],
+            "completion_criteria": ["All required ready subplans are complete or triaged not applicable"],
+            "non_completion_behavior": ["Record the blocker in closeout and triage without asking questions"],
             "closeout_rules": ["Write closeout only after auditing evidence"],
             "prohibited_actions": ["Do not treat inspect as completion proof"]
         }))

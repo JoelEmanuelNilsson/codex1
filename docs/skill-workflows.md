@@ -14,13 +14,21 @@ Codex1 skills must not create native goals for ordinary one-turn work. When a na
 
 ## Clarify
 
-Clarify gathers enough user intent to write `PRD.md` through `codex1 interview prd`. Codex decides how much detail the mission needs.
+Clarify is the "write me docs" style discovery skill. It gathers the user's intent, asks or resolves planning-relevant ambiguity while questions are still allowed, and preserves the understood context. It should not start execution.
+
+Clarify may create durable notes or feed the later PRD answers, but it is not the same skill as PRD synthesis.
+
+## Create PRD
+
+Create PRD synthesizes everything Codex already knows from the conversation, clarification output, repo inspection, and user-provided references into `PRD.md` through `codex1 interview prd`. It should not re-interview the user by default; it should write the best PRD from available context.
 
 ## Plan
 
 Plan reads the PRD and decides whether research is needed. For substantial uncertainty, it creates `RESEARCH_PLAN.md`, writes `RESEARCH/` records, and then writes or updates `PLAN.md`.
 
-Plan may also create specs and ready subplans when that makes the execution route clearer. The final planning output for executable work is `EXECUTION_PROMPT.md`: a pasteable native `/goal` prompt that preserves the user's explicit go moment.
+Plan may also create specs and ready subplans when that makes the execution route clearer. The final planning output for executable work is `EXECUTION_PROMPT.md`: a pasteable native `/goal` objective that preserves the user's explicit go moment.
+
+The execution prompt is not a file-loading instruction. It is the objective text the user may review, edit, and manually paste into a new Codex CLI session after typing `/goal`.
 
 In Plan mode, native goal continuation is suppressed by Codex itself. Codex1 should still only write artifacts the user requested or the plan clearly needs.
 
@@ -46,4 +54,4 @@ Closeout summarizes the real state, including completed, superseded, paused, and
 
 Interrupt and resume behavior belongs to native Codex, not Codex1. If a persistent objective should continue after interruption, use the official goal UI or goal tools. Do not create Codex1 files to simulate continuation.
 
-Autonomous execution should clarify first, then plan, ask the user to paste the generated execution prompt into native `/goal`, execute slices, record reviews and triage when useful, write proofs, and close out when Codex judges the PRD is satisfied. It should only open a PR when PR intent is part of the PRD.
+Autonomous execution should clarify first, create the PRD, plan, ask the user to paste or modify the generated execution objective into native `/goal`, execute slices, record reviews and triage when useful, write proofs, and close out when explicit completion criteria are satisfied. It should only open a PR when PR intent is part of the PRD.
