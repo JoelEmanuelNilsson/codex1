@@ -36,7 +36,7 @@ It creates and manages:
 
 It does not create, store, mirror, continue, pause, resume, budget, or complete native goals. It does not inspect native goal state. It does not infer readiness, completion, review cleanliness, proof sufficiency, close safety, or next action.
 
-Setup is limited to repo-scoped Codex1 skill and guidance materialization with reversible backups. It does not install hooks, maintain global activation policy, migrate hook scopes, or control continuation.
+Setup is limited to repo-scoped Codex1 skill and guidance materialization with reversible backups. It materializes a small overview skill plus clarify, create-PRD, and plan workflow skills. It does not install hooks, maintain global activation policy, migrate hook scopes, or control continuation.
 
 ## User Stories
 
@@ -75,7 +75,7 @@ Setup is limited to repo-scoped Codex1 skill and guidance materialization with r
 - Keep clarify, create-PRD, plan, and `/goal` as distinct user-facing phases.
 - Keep the pasteable native goal prompt framed as the objective the user manually pastes after `/goal`.
 - Keep receipts separate from events.
-- Keep setup scoped to repo-local managed skill and guidance files.
+- Keep setup scoped to repo-local managed skills and guidance files.
 - Remove Codex1-owned continuation state, hook adapters, continuation event kinds, continuation-specific error codes, and diagnostics for deleted behavior.
 - Do not add compatibility shims for removed commands.
 - Do not migrate legacy continuation files.
@@ -99,7 +99,7 @@ Good tests assert external behavior:
 - inspect reports inventory and mechanical warnings only;
 - path-safety tests continue for mission roots, artifacts, receipts, subplans, metadata, and event logs;
 - docs searches catch stale command instructions.
-- setup tests cover repo-local materialization, status, disable/enable, backups, and removed hook options.
+- setup tests cover repo-local skill materialization, status, disable/enable, backups, and removed hook options.
 
 ## Out of Scope
 

@@ -13,6 +13,13 @@ use tempfile::TempDir;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 
+const MANAGED_SKILLS: [&str; 4] = [
+    ".agents/skills/codex1/SKILL.md",
+    ".agents/skills/clarify/SKILL.md",
+    ".agents/skills/create-prd/SKILL.md",
+    ".agents/skills/plan/SKILL.md",
+];
+
 fn bin() -> Command {
     Command::cargo_bin("codex1").unwrap()
 }
@@ -944,13 +951,25 @@ fn setup_install_materializes_repo_scoped_guidance_without_hooks() {
     );
 
     assert_eq!(value["ok"], true);
-    assert!(repo.path().join(".agents/skills/codex1/SKILL.md").is_file());
+    for skill in MANAGED_SKILLS {
+        assert!(repo.path().join(skill).is_file(), "{skill}");
+    }
     assert!(repo.path().join("AGENTS.md").is_file());
     assert!(repo.path().join(".codex1/setup-bundle.json").is_file());
 
-    let skill = fs::read_to_string(repo.path().join(".agents/skills/codex1/SKILL.md")).unwrap();
+    let skill = MANAGED_SKILLS
+        .iter()
+        .map(|skill| fs::read_to_string(repo.path().join(skill)).unwrap())
+        .collect::<Vec<_>>()
+        .join("\n");
     let guidance = fs::read_to_string(repo.path().join("AGENTS.md")).unwrap();
     let combined = format!("{skill}\n{guidance}");
+    assert!(combined.contains("$clarify"));
+    assert!(combined.contains("$create-prd"));
+    assert!(combined.contains("$plan"));
+    assert!(combined.contains("Do not interview the user by default"));
+    assert!(combined.contains("questions are still allowed"));
+    assert!(combined.contains("explicit completion criteria"));
     assert!(combined.contains("native `/goal`"));
     for forbidden in [
         "ralph",
@@ -987,6 +1006,11 @@ fn setup_status_reports_bundle_state_only() {
     assert_eq!(status["marker"], "current");
     assert_eq!(status["skill"], "current");
     assert_eq!(status["guidance"], "current");
+    let skills = status["skills"].as_array().unwrap();
+    assert_eq!(skills.len(), MANAGED_SKILLS.len());
+    for skill in skills {
+        assert_eq!(skill["state"], "current");
+    }
     assert!(status.get("global_hook_installed").is_none());
     assert!(status.get("project_hook_installed").is_none());
     assert!(status.get("duplicate_hook_risk").is_none());
@@ -1042,7 +1066,9 @@ fn setup_install_dry_run_does_not_materialize_files() {
 
     assert_eq!(value["ok"], true);
     assert_eq!(value["data"]["plan"]["dry_run"], true);
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
+    for skill in MANAGED_SKILLS {
+        assert!(!repo.path().join(skill).exists(), "{skill}");
+    }
     assert!(!repo.path().join("AGENTS.md").exists());
     assert!(!repo.path().join(".codex1/setup-bundle.json").exists());
     assert!(!repo
@@ -1077,7 +1103,9 @@ fn setup_disable_and_enable_preserve_user_guidance_and_missions() {
     let agents = fs::read_to_string(repo.path().join("AGENTS.md")).unwrap();
     assert!(agents.contains("Keep this."));
     assert!(!agents.contains("codex1-managed setup guidance start"));
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
+    for skill in MANAGED_SKILLS {
+        assert!(!repo.path().join(skill).exists(), "{skill}");
+    }
     assert!(repo.path().join(".codex1/missions/alpha").is_dir());
 
     json_output(
@@ -1123,6 +1151,32 @@ fn setup_uninstall_without_marker_preserves_unmanaged_repo_files() {
 }
 
 #[test]
+fn setup_uninstall_removes_expanded_managed_skill_bundle() {
+    let repo = repo();
+    init(&repo, "alpha");
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install"]),
+    );
+
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "uninstall"]),
+    );
+
+    for skill in MANAGED_SKILLS {
+        assert!(!repo.path().join(skill).exists(), "{skill}");
+    }
+    assert!(!repo.path().join("AGENTS.md").exists());
+    assert!(!repo.path().join(".codex1/setup-bundle.json").exists());
+    assert!(repo.path().join(".codex1/missions/alpha").is_dir());
+}
+
+#[test]
 fn setup_enable_repairs_stale_managed_skill_and_marker() {
     let repo = repo();
     fs::create_dir_all(repo.path().join(".agents/skills/codex1")).unwrap();
@@ -1153,8 +1207,17 @@ fn setup_enable_repairs_stale_managed_skill_and_marker() {
 
     let skill = fs::read_to_string(repo.path().join(".agents/skills/codex1/SKILL.md")).unwrap();
     let marker = fs::read_to_string(repo.path().join(".codex1/setup-bundle.json")).unwrap();
-    assert!(skill.contains("Native Codex `/goal` owns persistent objectives"));
-    assert!(marker.contains(r#""version": 1"#));
+    assert!(skill.contains("$clarify"));
+    assert!(repo
+        .path()
+        .join(".agents/skills/clarify/SKILL.md")
+        .is_file());
+    assert!(repo
+        .path()
+        .join(".agents/skills/create-prd/SKILL.md")
+        .is_file());
+    assert!(repo.path().join(".agents/skills/plan/SKILL.md").is_file());
+    assert!(marker.contains(r#""version": 2"#));
 }
 
 #[test]
@@ -1179,6 +1242,77 @@ fn setup_install_refuses_unmanaged_skill_without_marker() {
         fs::read_to_string(repo.path().join(".agents/skills/codex1/SKILL.md")).unwrap(),
         "# User skill\n"
     );
+}
+
+#[test]
+fn setup_install_refuses_unmanaged_workflow_skills_without_marker() {
+    for skill in MANAGED_SKILLS {
+        let repo = repo();
+        let path = repo.path().join(skill);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "# User skill\n").unwrap();
+
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install"])
+            .assert()
+            .failure()
+            .stdout(predicate::str::contains("SETUP_BUNDLE_ERROR"));
+
+        assert_eq!(fs::read_to_string(path).unwrap(), "# User skill\n");
+    }
+}
+
+#[test]
+fn setup_enable_with_legacy_marker_refuses_unmanaged_new_skill_without_partial_install() {
+    let repo = repo();
+    fs::create_dir_all(repo.path().join(".agents/skills/codex1")).unwrap();
+    fs::create_dir_all(repo.path().join(".agents/skills/plan")).unwrap();
+    fs::create_dir_all(repo.path().join(".codex1")).unwrap();
+    fs::write(
+        repo.path().join(".agents/skills/codex1/SKILL.md"),
+        "# Old managed skill\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join(".agents/skills/plan/SKILL.md"),
+        "# User plan skill\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join(".codex1/setup-bundle.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "managed_by": "codex1-managed",
+            "version": 1,
+            "files": [".agents/skills/codex1/SKILL.md", "AGENTS.md"]
+        }))
+        .unwrap()
+            + "\n",
+    )
+    .unwrap();
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["setup", "enable"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("SETUP_BUNDLE_ERROR"));
+
+    assert_eq!(
+        fs::read_to_string(repo.path().join(".agents/skills/codex1/SKILL.md")).unwrap(),
+        "# Old managed skill\n"
+    );
+    assert_eq!(
+        fs::read_to_string(repo.path().join(".agents/skills/plan/SKILL.md")).unwrap(),
+        "# User plan skill\n"
+    );
+    assert!(!repo.path().join(".agents/skills/clarify/SKILL.md").exists());
+    assert!(!repo
+        .path()
+        .join(".agents/skills/create-prd/SKILL.md")
+        .exists());
 }
 
 #[test]

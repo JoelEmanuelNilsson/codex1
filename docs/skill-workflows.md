@@ -10,7 +10,7 @@ Codex1 skills must not create native goals for ordinary one-turn work. When a na
 
 ## Setup
 
-`codex1 setup` only materializes repo-scoped Codex1 artifact workflow guidance. It does not install hooks, manage continuation, create native goals, or report mission status.
+`codex1 setup` materializes repo-scoped Codex1 artifact workflow guidance: a small overview skill plus `$clarify`, `$create-prd`, and `$plan`. It does not install hooks, manage continuation, create native goals, or report mission status.
 
 ## Clarify
 

@@ -14,15 +14,27 @@ use crate::error::{Codex1Error, Result};
 use crate::paths::{create_dir_all_contained, discover_repo_root, ensure_contained_for_write};
 
 const BACKUP_MANIFEST_VERSION: u32 = 1;
-const BUNDLE_VERSION: u32 = 1;
+const BUNDLE_VERSION: u32 = 2;
 const MANAGED_GUIDANCE_START: &str = "<!-- codex1-managed setup guidance start -->";
 const MANAGED_GUIDANCE_END: &str = "<!-- codex1-managed setup guidance end -->";
-const BUNDLE_SKILL: &str = ".agents/skills/codex1/SKILL.md";
+const OVERVIEW_SKILL: &str = ".agents/skills/codex1/SKILL.md";
+const CLARIFY_SKILL: &str = ".agents/skills/clarify/SKILL.md";
+const CREATE_PRD_SKILL: &str = ".agents/skills/create-prd/SKILL.md";
+const PLAN_SKILL: &str = ".agents/skills/plan/SKILL.md";
 const BUNDLE_GUIDANCE: &str = "AGENTS.md";
 const BUNDLE_MARKER: &str = ".codex1/setup-bundle.json";
 const BACKUP_MANIFEST: &str = ".codex1/setup-backups/manifest.json";
 const BACKUP_DIR: &str = ".codex1/setup-backups/files";
-const MANAGED_BUNDLE_FILES: [&str; 2] = [BUNDLE_SKILL, BUNDLE_GUIDANCE];
+const MANAGED_SKILL_FILES: [&str; 4] =
+    [OVERVIEW_SKILL, CLARIFY_SKILL, CREATE_PRD_SKILL, PLAN_SKILL];
+const MANAGED_BUNDLE_FILES: [&str; 5] = [
+    OVERVIEW_SKILL,
+    CLARIFY_SKILL,
+    CREATE_PRD_SKILL,
+    PLAN_SKILL,
+    BUNDLE_GUIDANCE,
+];
+const LEGACY_BUNDLE_FILES_V1: [&str; 2] = [OVERVIEW_SKILL, BUNDLE_GUIDANCE];
 
 #[derive(Clone, Debug, Serialize)]
 pub struct SetupPlan {
@@ -50,11 +62,18 @@ pub struct SetupStatus {
     pub repo: PathBuf,
     pub marker: SetupFileState,
     pub skill: SetupFileState,
+    pub skills: Vec<SetupManagedSkill>,
     pub guidance: SetupFileState,
     pub repo_bundle_materialized: bool,
     pub backups_available: usize,
     pub warnings: Vec<String>,
     pub anti_oracle: &'static str,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SetupManagedSkill {
+    pub path: &'static str,
+    pub state: SetupFileState,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -172,12 +191,19 @@ fn doctor(args: SetupStatusArgs) -> Result<serde_json::Value> {
             json!({"name": "backup_manifest", "ok": false, "error": error.to_string()})
         }
     };
-    let checks = vec![
+    let mut checks = vec![
         json!({"name": "bundle_marker", "ok": status.marker == SetupFileState::Current}),
         json!({"name": "managed_skill", "ok": status.skill == SetupFileState::Current}),
         json!({"name": "managed_guidance", "ok": status.guidance == SetupFileState::Current}),
         backup_manifest,
     ];
+    checks.extend(status.skills.iter().map(|skill| {
+        json!({
+            "name": "managed_skill_file",
+            "path": skill.path,
+            "ok": skill.state == SetupFileState::Current,
+        })
+    }));
     Ok(json!({
         "summary": "setup doctor complete",
         "checks": checks,
@@ -189,7 +215,14 @@ fn doctor(args: SetupStatusArgs) -> Result<serde_json::Value> {
 fn status(repo_arg: Option<PathBuf>) -> Result<SetupStatus> {
     let repo = resolve_repo(repo_arg)?;
     let marker = marker_state(&repo);
-    let skill = owned_file_state(&repo, BUNDLE_SKILL);
+    let skills: Vec<_> = MANAGED_SKILL_FILES
+        .iter()
+        .map(|path| SetupManagedSkill {
+            path,
+            state: owned_file_state(&repo, path),
+        })
+        .collect();
+    let skill = aggregate_states(skills.iter().map(|skill| skill.state));
     let guidance = guidance_state(&repo);
     let mut warnings = Vec::new();
     for (name, state) in [("marker", marker), ("skill", skill), ("guidance", guidance)] {
@@ -206,6 +239,7 @@ fn status(repo_arg: Option<PathBuf>) -> Result<SetupStatus> {
         repo,
         marker,
         skill,
+        skills,
         guidance,
         repo_bundle_materialized: marker == SetupFileState::Current
             && skill == SetupFileState::Current
@@ -290,28 +324,45 @@ fn resolve_repo(repo_arg: Option<PathBuf>) -> Result<PathBuf> {
 }
 
 fn materialize_bundle(repo: &Path, plan: &mut SetupPlan, dry_run: bool) -> Result<()> {
-    let skill = setup_target(repo, BUNDLE_SKILL)?;
     let guidance = setup_target(repo, BUNDLE_GUIDANCE)?;
     let marker = setup_target(repo, BUNDLE_MARKER)?;
-    let managed_marker = read_bundle_marker(&marker)?
+    let marker_data = read_bundle_marker(&marker)?;
+    if marker_data
         .as_ref()
-        .is_some_and(is_managed_marker);
+        .is_some_and(|marker| !is_known_managed_marker(marker))
+    {
+        return Err(Codex1Error::SetupBundle(
+            "invalid Codex1 setup bundle marker".into(),
+        ));
+    }
 
-    write_owned_file(
-        repo,
-        &skill,
-        skill_body(),
-        managed_marker,
-        "managed skill",
-        plan,
-        dry_run,
-    )?;
+    for relative in MANAGED_SKILL_FILES {
+        let skill = setup_target(repo, relative)?;
+        ensure_owned_file_writable(
+            &skill,
+            &expected_body(relative),
+            marker_allows_file_repair(marker_data.as_ref(), relative),
+        )?;
+    }
+
+    for relative in MANAGED_SKILL_FILES {
+        let skill = setup_target(repo, relative)?;
+        write_owned_file(
+            repo,
+            &skill,
+            &expected_body(relative),
+            marker_allows_file_repair(marker_data.as_ref(), relative),
+            "managed skill",
+            plan,
+            dry_run,
+        )?;
+    }
     write_guidance_file(repo, &guidance, plan, dry_run)?;
     write_owned_file(
         repo,
         &marker,
         &bundle_marker_body(),
-        managed_marker,
+        marker_data.as_ref().is_some_and(is_known_managed_marker),
         "bundle marker",
         plan,
         dry_run,
@@ -319,11 +370,31 @@ fn materialize_bundle(repo: &Path, plan: &mut SetupPlan, dry_run: bool) -> Resul
     Ok(())
 }
 
+fn ensure_owned_file_writable(path: &Path, body: &str, allow_repair: bool) -> Result<()> {
+    match fs::read_to_string(path) {
+        Ok(existing) if existing == body => Ok(()),
+        Ok(_) if !allow_repair => Err(Codex1Error::SetupBundle(format!(
+            "refusing to overwrite non-managed file {}",
+            path.display()
+        ))),
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(Codex1Error::SetupBundle(format!(
+            "failed to read {}: {error}",
+            path.display()
+        ))),
+    }
+}
+
 fn remove_bundle(repo: &Path, plan: &mut SetupPlan, dry_run: bool) -> Result<()> {
     let marker = setup_target(repo, BUNDLE_MARKER)?;
     let (files, strict) = match read_bundle_marker(&marker)? {
         Some(marker_data) => {
-            validate_marker(&marker_data)?;
+            if !is_known_managed_marker(&marker_data) {
+                return Err(Codex1Error::SetupBundle(
+                    "invalid Codex1 setup bundle marker".into(),
+                ));
+            }
             (marker_data.files, true)
         }
         None => (MANAGED_BUNDLE_FILES.map(String::from).to_vec(), false),
@@ -343,7 +414,7 @@ fn remove_bundle(repo: &Path, plan: &mut SetupPlan, dry_run: bool) -> Result<()>
             )?;
         }
     }
-    remove_owned_file(repo, &marker, &bundle_marker_body(), true, plan, dry_run)?;
+    remove_bundle_marker_file(repo, &marker, plan, dry_run)?;
     Ok(())
 }
 
@@ -528,6 +599,42 @@ fn remove_guidance_if_owned(
     Ok(())
 }
 
+fn remove_bundle_marker_file(
+    repo: &Path,
+    path: &Path,
+    plan: &mut SetupPlan,
+    dry_run: bool,
+) -> Result<()> {
+    ensure_setup_target(repo, path)?;
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(Codex1Error::SetupBundle(format!(
+                "failed to read {}: {error}",
+                path.display()
+            )))
+        }
+    };
+    let marker: BundleMarker = serde_json::from_str(&text).map_err(|source| {
+        Codex1Error::SetupBundle(format!("failed to parse {}: {source}", path.display()))
+    })?;
+    if !is_known_managed_marker(&marker) {
+        return Err(Codex1Error::SetupBundle(format!(
+            "refusing to remove non-managed marker {}",
+            path.display()
+        )));
+    }
+    backup_target(repo, path, "remove managed setup marker", plan, dry_run)?;
+    plan.removes.push(path.to_path_buf());
+    if !dry_run {
+        fs::remove_file(path).map_err(|source| {
+            Codex1Error::SetupBundle(format!("failed to remove {}: {source}", path.display()))
+        })?;
+    }
+    Ok(())
+}
+
 fn backup_target(
     repo: &Path,
     target: &Path,
@@ -645,7 +752,7 @@ fn ensure_restore_target(repo: &Path, path: &Path) -> Result<()> {
             path.display()
         ))
     })?;
-    for relative in [BUNDLE_SKILL, BUNDLE_GUIDANCE, BUNDLE_MARKER] {
+    for relative in managed_restore_files() {
         if path == setup_target(repo, relative)? {
             return Ok(());
         }
@@ -687,8 +794,8 @@ fn restore_absence(repo: &Path, path: &Path, dry_run: bool) -> Result<()> {
     if path == setup_target(repo, BUNDLE_GUIDANCE)? {
         return restore_guidance_absence(path, dry_run);
     }
-    let expected = if path == setup_target(repo, BUNDLE_SKILL)? {
-        expected_body(BUNDLE_SKILL)
+    let expected = if let Some(relative) = managed_skill_relative_for_path(repo, path)? {
+        expected_body(relative)
     } else if path == setup_target(repo, BUNDLE_MARKER)? {
         expected_body(BUNDLE_MARKER)
     } else {
@@ -818,57 +925,168 @@ fn read_bundle_marker(path: &Path) -> Result<Option<BundleMarker>> {
 }
 
 fn validate_marker(marker: &BundleMarker) -> Result<()> {
-    if !is_managed_marker(marker) || marker.version != BUNDLE_VERSION {
+    if !is_current_marker(marker) {
         return Err(Codex1Error::SetupBundle(
             "invalid Codex1 setup bundle marker".into(),
-        ));
-    }
-    if marker.files != MANAGED_BUNDLE_FILES.map(String::from) {
-        return Err(Codex1Error::SetupBundle(
-            "setup bundle marker has unexpected files".into(),
         ));
     }
     Ok(())
 }
 
-fn is_managed_marker(marker: &BundleMarker) -> bool {
-    marker.managed_by == "codex1-managed" && marker.files == MANAGED_BUNDLE_FILES.map(String::from)
+fn is_current_marker(marker: &BundleMarker) -> bool {
+    marker.managed_by == "codex1-managed"
+        && marker.version == BUNDLE_VERSION
+        && marker.files == bundle_files(MANAGED_BUNDLE_FILES)
+}
+
+fn is_known_managed_marker(marker: &BundleMarker) -> bool {
+    marker.managed_by == "codex1-managed"
+        && (marker.files == bundle_files(MANAGED_BUNDLE_FILES)
+            || marker.files == bundle_files(LEGACY_BUNDLE_FILES_V1))
+}
+
+fn marker_allows_file_repair(marker: Option<&BundleMarker>, relative: &str) -> bool {
+    marker.is_some_and(|marker| {
+        is_known_managed_marker(marker) && marker.files.iter().any(|file| file == relative)
+    })
+}
+
+fn aggregate_states(states: impl IntoIterator<Item = SetupFileState>) -> SetupFileState {
+    let states: Vec<_> = states.into_iter().collect();
+    if states.iter().all(|state| *state == SetupFileState::Current) {
+        SetupFileState::Current
+    } else if states.iter().any(|state| *state == SetupFileState::Invalid) {
+        SetupFileState::Invalid
+    } else if states.iter().all(|state| *state == SetupFileState::Missing) {
+        SetupFileState::Missing
+    } else {
+        SetupFileState::Stale
+    }
 }
 
 fn expected_body(relative: &str) -> String {
     match relative {
-        BUNDLE_SKILL => skill_body().to_string(),
+        OVERVIEW_SKILL => overview_skill_body().to_string(),
+        CLARIFY_SKILL => clarify_skill_body().to_string(),
+        CREATE_PRD_SKILL => create_prd_skill_body().to_string(),
+        PLAN_SKILL => plan_skill_body().to_string(),
         BUNDLE_GUIDANCE => guidance_body().to_string(),
         BUNDLE_MARKER => bundle_marker_body(),
         _ => String::new(),
     }
 }
 
+fn managed_restore_files() -> Vec<&'static str> {
+    let mut files = MANAGED_BUNDLE_FILES.to_vec();
+    files.push(BUNDLE_MARKER);
+    files
+}
+
+fn managed_skill_relative_for_path(repo: &Path, path: &Path) -> Result<Option<&'static str>> {
+    for &relative in &MANAGED_SKILL_FILES {
+        if path == setup_target(repo, relative)? {
+            return Ok(Some(relative));
+        }
+    }
+    Ok(None)
+}
+
+fn bundle_files<const N: usize>(files: [&str; N]) -> Vec<String> {
+    files.map(String::from).to_vec()
+}
+
 fn bundle_marker_body() -> String {
     serde_json::to_string_pretty(&BundleMarker {
         managed_by: "codex1-managed".into(),
         version: BUNDLE_VERSION,
-        files: MANAGED_BUNDLE_FILES.map(String::from).to_vec(),
+        files: bundle_files(MANAGED_BUNDLE_FILES),
     })
     .unwrap()
         + "\n"
 }
 
-fn skill_body() -> &'static str {
+fn overview_skill_body() -> &'static str {
     r#"---
 name: codex1
-description: Repo-scoped Codex1 artifact workflow guidance.
+description: Repo-scoped Codex1 artifact workflow overview. Use as a router to the clarify, create-prd, and plan skills, and as a reminder of the native /goal boundary.
 ---
 
 # Codex1
 
-Use Codex1 as a deterministic artifact helper for clarification context, PRD, PLAN, EXECUTION_PROMPT, SPEC, SUBPLAN, REVIEW, TRIAGE, PROOF, CLOSEOUT, receipts, and inventory inspection.
+Codex1 is a deterministic artifact helper for clarification context, PRD, PLAN, EXECUTION_PROMPT, SPEC, SUBPLAN, REVIEW, TRIAGE, PROOF, CLOSEOUT, receipts, and inventory inspection.
 
-Preferred UX: clarify first, synthesize the PRD from known context, plan the mission and execution objective, then let the user manually start a new Codex CLI session, type `/goal`, and paste the generated objective. The execution objective must include explicit completion criteria and non-completion recording rules.
+Preferred UX:
 
-Native Codex `/goal` owns persistent objectives, continuation, pause/resume, accounting, budgets, and completion. Create or complete native goals only through the official Codex goal flow when the user explicitly wants a persistent objective.
+- Use `$clarify` to gather and preserve user intent while questions are still allowed.
+- Use `$create-prd` to synthesize known context into `PRD.md`.
+- Use `$plan` to design the mission and write `EXECUTION_PROMPT.md`.
+- The user manually starts a new Codex CLI session, types `/goal`, and pastes the generated objective.
+
+Native Codex `/goal` owns persistent objectives, continuation, pause/resume, accounting, budgets, and completion. Codex1 must not create, mirror, inspect, or complete native goals.
 
 Codex1 setup is mechanical repo guidance. It is not mission truth, task readiness, review pass/fail, proof sufficiency, close safety, or native goal state.
+"#
+}
+
+fn clarify_skill_body() -> &'static str {
+    r#"---
+name: clarify
+description: Gather and preserve the user's intent for a Codex1 mission before PRD synthesis. Use when the user wants to explore, clarify, or write-me-docs for a future mission.
+---
+
+# Clarify
+
+Use this skill before PRD creation. Your job is to turn rough intent into clear context, not to execute.
+
+Ask questions when ambiguity matters. Challenge assumptions when the user's idea is underspecified. Preserve the resolved understanding, constraints, open questions, examples, references, desired outcomes, non-goals, and proof expectations.
+
+Do not start implementation. Do not create or complete native `/goal` state. Do not treat clarification notes as mission truth; they are inputs for `$create-prd`.
+
+When enough context is available, summarize it in a durable shape that `$create-prd` can synthesize into `PRD.md`.
+"#
+}
+
+fn create_prd_skill_body() -> &'static str {
+    r#"---
+name: create-prd
+description: Synthesize the current conversation, clarification output, repo context, and user references into a Codex1 PRD artifact without re-interviewing by default.
+---
+
+# Create PRD
+
+Use this skill after clarification or whenever the user asks Codex to create a PRD from known context.
+
+Do not interview the user by default. Read the available conversation context, clarification notes, repo context, and user-provided references. Inspect the repository when it helps ground the PRD.
+
+Write `PRD.md` through the Codex1 PRD artifact workflow. The PRD should capture the original request, interpreted destination, success criteria, non-goals, constraints, verified context, assumptions, resolved questions, proof expectations, review expectations, and PR intent.
+
+Do not start implementation. Do not create or complete native `/goal` state. If important information is missing, record the assumption or open question in the PRD instead of blocking.
+"#
+}
+
+fn plan_skill_body() -> &'static str {
+    r#"---
+name: plan
+description: Design a Codex1 mission from PRD.md, create planning artifacts, and write the pasteable native /goal objective in EXECUTION_PROMPT.md.
+---
+
+# Plan
+
+Use this skill after `PRD.md` exists. Read the PRD first, then inspect the repository and existing mission artifacts as needed.
+
+Create or update planning artifacts through Codex1's deterministic artifact workflow:
+
+- `PLAN.md` for strategy, workstreams, phases, risks, and recommended slices.
+- `RESEARCH_PLAN.md` and `RESEARCH/` records when uncertainty needs durable research.
+- `SPECS/` for bounded implementation contracts.
+- `SUBPLANS/ready/` for executable slices.
+- `EXECUTION_PROMPT.md` for the native `/goal` objective the user may review, edit, and paste.
+
+The execution prompt is the objective text, not a file-loading instruction. It must tell Codex the mission path, primary artifacts to read, execution order, subplan selection rules, worker/subagent rules when useful, editable scope, proof rules, review/triage rules, explicit completion criteria, non-completion behavior, closeout rules, and prohibited actions.
+
+The `/goal` execution phase may not ask questions. Clarification belongs before PRD creation and planning. If completion cannot be reached from the artifacts, the objective should instruct Codex to record non-completion rather than invent scope or ask the user.
+
+Do not create, inspect, or complete native goal state. The user keeps the go moment by manually starting a new Codex CLI session, typing `/goal`, and pasting the generated objective.
 "#
 }
 
@@ -877,7 +1095,7 @@ fn guidance_body() -> &'static str {
 
 codex1-managed
 
-Codex1 is enabled in this repository as a local artifact workflow convention. Use `codex1` for durable mission artifacts and mechanical evidence. Use native `/goal` for persistent objectives and continuation. The preferred flow is clarify, create PRD, plan, then manually paste the generated execution objective after `/goal`.
+Codex1 is enabled in this repository as a local artifact workflow convention. Use `$clarify`, `$create-prd`, and `$plan` for the mission workflow. Use `codex1` for durable mission artifacts and mechanical evidence. Use native `/goal` for persistent objectives and continuation. The preferred flow is clarify, create PRD, plan, then manually paste the generated execution objective after `/goal`.
 
 Codex remains the semantic judge. Codex1 inspect, setup status, events, and receipts are not readiness, completion, review, proof, closeout, or native goal state.
 "#
@@ -962,6 +1180,7 @@ mod tests {
     fn marker_body_matches_expected_files() {
         let marker: BundleMarker = serde_json::from_str(&bundle_marker_body()).unwrap();
         validate_marker(&marker).unwrap();
-        assert_eq!(marker.files, vec![BUNDLE_SKILL, BUNDLE_GUIDANCE]);
+        assert_eq!(marker.version, BUNDLE_VERSION);
+        assert_eq!(marker.files, bundle_files(MANAGED_BUNDLE_FILES));
     }
 }

@@ -59,11 +59,11 @@ Error codes are mechanical: `ARGUMENT_ERROR`, `MISSION_PATH_ERROR`, `ARTIFACT_VA
 
 `receipt append --message <text>` appends an optional JSONL receipt.
 
-`setup install` and `setup enable` materialize or repair repo-scoped Codex1 skill and guidance files. `--dry-run` reports planned writes, removals, backups, and materialized files without changing repo files.
+`setup install` and `setup enable` materialize or repair repo-scoped Codex1 skills and guidance files. The managed skills are the overview `codex1` skill plus `clarify`, `create-prd`, and `plan`. `--dry-run` reports planned writes, removals, backups, and materialized files without changing repo files.
 
 `setup disable` and `setup uninstall` remove only Codex1-managed setup files and managed guidance blocks. They do not delete mission artifacts, user-authored guidance, user skills, native goal state, or legacy continuation files.
 
-`setup status` reports mechanical repo bundle state: managed marker, managed skill, managed guidance, bundle materialization, backup count, warnings, and anti-oracle language. It does not report hook state, native goal state, readiness, review state, proof sufficiency, or close safety.
+`setup status` reports mechanical repo bundle state: managed marker, aggregate managed skill state, per-skill managed states, managed guidance, bundle materialization, backup count, warnings, and anti-oracle language. It does not report hook state, native goal state, readiness, review state, proof sufficiency, or close safety.
 
 `setup doctor` diagnoses repo guidance mechanics only. `setup backups list` and `setup backups restore <id> --force` list and restore setup backups for repo-scoped setup targets.
 

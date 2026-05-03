@@ -20,7 +20,16 @@ codex1 setup enable
 codex1 setup backups list
 ```
 
-`setup install` materializes repo-scoped Codex1 skill and guidance files. It writes backups before changing managed repo guidance and never installs continuation hooks, edits global activation policy, or deletes mission artifacts.
+`setup install` materializes repo-scoped Codex1 skills and guidance files. It writes backups before changing managed repo guidance and never installs continuation hooks, edits global activation policy, or deletes mission artifacts.
+
+The installed skills expose the intended UX:
+
+```text
+$clarify     -> gather mission context while questions are allowed
+$create-prd  -> synthesize known context into PRD.md
+$plan        -> create planning artifacts and EXECUTION_PROMPT.md
+/goal        -> user manually pastes the generated objective in a new Codex CLI session
+```
 
 ```sh
 cargo run -- --mission demo init
@@ -109,7 +118,7 @@ Use native Codex goals for continuation discipline:
 
 Codex can use mission artifacts to clarify and prove the work, but the active objective, continuation, pause/resume, accounting, budget limiting, and completion discipline live in Codex itself. Codex1 does not create, mirror, or complete native goals.
 
-When `$plan` or an equivalent planning workflow prepares execution, it writes `EXECUTION_PROMPT.md` as the objective text the user can paste after `/goal`. The prompt should describe the mission, artifacts to read, subplan order, worker rules, proof/review/triage expectations, explicit completion criteria, non-completion behavior, closeout criteria, and prohibited actions.
+When `$plan` or an equivalent planning workflow prepares execution, it writes `EXECUTION_PROMPT.md` as the objective text the user can paste after `/goal`. The user can review or modify that text before pasting it. The prompt should describe the mission, artifacts to read, subplan order, worker rules, proof/review/triage expectations, explicit completion criteria, non-completion behavior, closeout criteria, and prohibited actions.
 
 Legacy missions may contain old `.codex1/LOOP.json` files from the removed continuation system. Current Codex1 ignores those files and does not migrate them. Setup does not read, write, restore, or remove them.
 

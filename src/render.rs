@@ -234,4 +234,23 @@ mod tests {
         assert!(rendered.contains("Execute the mission at `.codex1/missions/alpha`."));
         assert!(rendered.contains("<!-- codex1-goal-prompt:end -->"));
     }
+
+    #[test]
+    fn execution_prompt_requires_completion_and_non_completion_rules() {
+        let template = template::get(ArtifactKind::ExecutionPrompt);
+        let answers = answers_from_json(serde_json::json!({
+            "title": "Execute Alpha",
+            "goal_prompt": "Execute the mission at `.codex1/missions/alpha`.",
+            "mission_path": ".codex1/missions/alpha",
+            "primary_artifacts": ["PRD.md", "PLAN.md"],
+            "execution_order": ["Pick one ready subplan at a time"],
+            "subplan_selection": ["Prefer dependency-free ready subplans"],
+            "editable_scope": ["Edit implementation files and assigned artifacts"],
+            "proof_rules": ["Write a proof after each completed slice"],
+            "closeout_rules": ["Write closeout only after auditing evidence"],
+            "prohibited_actions": ["Do not treat inspect as completion proof"]
+        }))
+        .unwrap();
+        assert!(render_markdown(&template, &answers).is_err());
+    }
 }
