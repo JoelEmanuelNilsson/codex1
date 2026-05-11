@@ -12,7 +12,7 @@ The refactor goal is to make Codex1 smaller and clearer:
 
 - native `/goal` owns persistent objectives, continuation, pause/resume, accounting, budgets, and completion;
 - Codex1 owns durable artifacts, receipts, inspection, doctor diagnostics, and mechanical event logs;
-- Codex1 may generate pasteable execution prompts for native `/goal`, but does not start execution itself;
+- Codex1 may generate native goal briefs for native `/goal`, but does not start execution itself;
 - Codex remains the semantic judge;
 - legacy continuation files are ignored, not migrated.
 
@@ -26,7 +26,7 @@ The CLI should expose only current mechanical commands:
 - `template list`;
 - `template show`;
 - `interview`;
-- `interview execution-prompt` for generating the pasteable native goal prompt artifact;
+- `interview goal-brief` for generating the native goal brief artifact;
 - `subplan move`;
 - `receipt append`;
 - `inspect`;
@@ -71,7 +71,7 @@ Removed command surfaces should fail through the normal argument parser. There s
 - Codex1 will not reimplement official goal persistence, runtime accounting, automatic continuation, token budgets, pause/resume behavior, or completion semantics.
 - Codex1 will not call official goal RPCs in this refactor.
 - Codex1 remains a deterministic artifact helper.
-- `EXECUTION_PROMPT.md` is a bridge artifact for manual native goal launch, not continuation state.
+- `GOAL_BRIEF.md` is a bridge artifact for native goal creation, not continuation state.
 - Mission-local event logs remain mechanical observability only.
 - Event logs do not record continuation state because Codex1 no longer mutates it.
 - Doctor tests remaining Codex1 mechanics, not native Codex goal behavior.

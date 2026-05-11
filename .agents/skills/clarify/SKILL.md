@@ -3,81 +3,99 @@ name: clarify
 description: Relentlessly clarify a future Codex1 mission before PRD synthesis. Use when the user wants write-me-docs/grill-me style discovery, to stress-test an idea, resolve ambiguity, or prepare context for create-prd.
 ---
 
-# Clarify
+<codex1-local>
 
-Clarify is Codex1's `grill-with-docs`: a relentless discovery session that makes the future PRD obvious, sharpens project language, and records durable decisions as they crystallize. Do not implement, plan, write `PRD.md`, or start native `/goal` unless the user explicitly switches workflows.
+Before asking questions, read repo-local Codex1 workflow docs and existing mission artifacts if present:
 
-## Warm Start
+- `docs/agents/codex1-workflow.md`
+- `docs/agents/codex1-domain.md`
+- `docs/agents/codex1-artifact-briefs.md`
+- `.codex1/missions/<id>/`
 
-1. Read the conversation and user-provided references.
-2. Read `docs/agents/codex1-workflow.md` and `docs/agents/codex1-domain.md` if present.
-3. For exact producer formats, read [CONTEXT-FORMAT.md](CONTEXT-FORMAT.md) before updating glossary docs and [ADR-FORMAT.md](ADR-FORMAT.md) before offering or writing ADRs.
-4. Inspect context that can reduce questioning: existing Codex1 mission artifacts, `AGENTS.md`, `CONTEXT.md` or `CONTEXT-MAP.md`, repo ADRs, mission `ADRS/`, tests, and relevant source.
-5. State the current understanding briefly when it helps the user see what you inferred.
-6. Ask the highest-leverage unresolved question first.
+Clarify prepares context for `$create-prd`. Do not write `PRD.md`, write `PLAN.md`, create issue-tracker tickets, or create/complete native `/goal` state unless the user explicitly switches workflows.
 
-Proceed silently if the docs or glossary do not exist. Create/update domain docs lazily only when the session resolves real language or decisions.
+</codex1-local>
 
-## Hard Rules
+<what-to-do>
 
-- Ask exactly one question at a time, waiting for feedback before continuing.
-- Every question must include why it matters and your recommended answer.
-- If repo inspection can answer the question, inspect first and do not ask.
-- Walk each branch of the decision tree; do not settle for vibes.
-- Challenge vague or overloaded words until they become concrete behavior, artifacts, or constraints.
-- Cross-check claims against the code, docs, ADRs, and prior artifacts before treating them as resolved.
-- Push back when the user's model conflicts with verified context.
-- Keep a running decision ledger in the conversation.
-- Do not create issue-tracker tickets, start implementation, write `PRD.md`, write `PLAN.md`, or create/complete native `/goal` state.
+Interview me relentlessly about every aspect of this plan until we reach a shared understanding. Walk down each branch of the design tree, resolving dependencies between decisions one-by-one. For each question, provide your recommended answer.
 
-## Domain Side Effects
+Ask the questions one at a time, waiting for feedback on each question before continuing.
 
-When a domain term is resolved, update `CONTEXT.md` inline. If `CONTEXT-MAP.md` exists, update the relevant context file. Use [CONTEXT-FORMAT.md](CONTEXT-FORMAT.md) for exact structure and rules. Do not add generic programming terms.
+If a question can be answered by exploring the codebase, explore the codebase instead.
 
-Offer an ADR only when all three are true:
+</what-to-do>
 
-- Hard to reverse: changing later would be meaningfully costly.
-- Surprising without context: a future reader would wonder why.
-- Real trade-off: plausible alternatives existed and one was chosen for a reason.
+<supporting-info>
 
-If an ADR is warranted, use [ADR-FORMAT.md](ADR-FORMAT.md). Keep it lightweight unless the decision truly needs more structure. For repo-wide decisions, prefer `docs/adr/`. For mission-specific execution decisions, prefer `.codex1/missions/<id>/ADRS/`.
+## Domain awareness
 
-## Interview Map
+During codebase exploration, also look for existing documentation:
 
-- Problem: what pain exists, who feels it, and what changes when solved.
-- Destination: finished user/developer experience.
-- Actors: human users, Codex, workers/subagents, maintainers, reviewers, CI, external systems.
-- Scope: success criteria, non-goals, migration boundaries, compatibility promises, PR intent.
-- UX: command flow, copy/paste moments, prompts, inspected artifacts, failure messages.
-- Data and state: durable artifacts, native Codex state, receipts, logs, cache, issue trackers, and explicit non-state.
-- Architecture: deep modules, interfaces, invariants, integration boundaries, ADR constraints.
-- Proof: tests, commands, screenshots, manual checks, review, triage, closeout evidence.
-- Completion: what makes a later `/goal` objectively done, not paused and not waiting for a question.
+### File structure
 
-## Question Shape
+Most repos have a single context:
 
 ```
-Question: ...
-Why it matters: ...
-My recommendation: ...
+/
+├── CONTEXT.md
+├── docs/
+│   └── adr/
+│       ├── 0001-event-sourced-orders.md
+│       └── 0002-postgres-for-write-model.md
+└── src/
 ```
 
-Concrete options are useful when they clarify tradeoffs. If the user proposes a weak answer, say so and explain the failure mode.
+If a `CONTEXT-MAP.md` exists at the root, the repo has multiple contexts. The map points to where each one lives:
 
-## Stop Condition
+```
+/
+├── CONTEXT-MAP.md
+├── docs/
+│   └── adr/                          ← system-wide decisions
+├── src/
+│   ├── ordering/
+│   │   ├── CONTEXT.md
+│   │   └── docs/adr/                 ← context-specific decisions
+│   └── billing/
+│       ├── CONTEXT.md
+│       └── docs/adr/
+```
 
-Stop when `$create-prd` can write without guessing:
+Create files lazily — only when you have something to write. If no `CONTEXT.md` exists, create one when the first term is resolved. If no `docs/adr/` exists, create it when the first ADR is needed.
 
-- problem and destination
-- intended UX and actors
-- success criteria and non-goals
-- constraints and state boundaries
-- domain terms and ADRs affected
-- implementation decision territory
-- proof and review expectations
-- PR intent
-- remaining assumptions acceptable to record
+## During the session
 
-End with a PRD-ready clarification brief covering original request, interpreted destination, target actors, intended UX, success criteria, non-goals, constraints, verified context, domain/ADR updates, implementation decision territory, resolved questions, remaining assumptions, proof/review expectations, risks, and PR intent.
+### Challenge against the glossary
 
-Clarification notes are inputs for `$create-prd`, not mission truth and not execution instructions.
+When the user uses a term that conflicts with the existing language in `CONTEXT.md`, call it out immediately. "Your glossary defines 'cancellation' as X, but you seem to mean Y — which is it?"
+
+### Sharpen fuzzy language
+
+When the user uses vague or overloaded terms, propose a precise canonical term. "You're saying 'account' — do you mean the Customer or the User? Those are different things."
+
+### Discuss concrete scenarios
+
+When domain relationships are being discussed, stress-test them with specific scenarios. Invent scenarios that probe edge cases and force the user to be precise about the boundaries between concepts.
+
+### Cross-reference with code
+
+When the user states how something works, check whether the code agrees. If you find a contradiction, surface it: "Your code cancels entire Orders, but you just said partial cancellation is possible — which is right?"
+
+### Update CONTEXT.md inline
+
+When a term is resolved, update `CONTEXT.md` right there. Don't batch these up — capture them as they happen. Use the format in [CONTEXT-FORMAT.md](./CONTEXT-FORMAT.md).
+
+Don't couple `CONTEXT.md` to implementation details. Only include terms that are meaningful to domain experts.
+
+### Offer ADRs sparingly
+
+Only offer to create an ADR when all three are true:
+
+1. **Hard to reverse** — the cost of changing your mind later is meaningful
+2. **Surprising without context** — a future reader will wonder "why did they do it this way?"
+3. **The result of a real trade-off** — there were genuine alternatives and you picked one for specific reasons
+
+If any of the three is missing, skip the ADR. Use the format in [ADR-FORMAT.md](./ADR-FORMAT.md).
+
+</supporting-info>

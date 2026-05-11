@@ -21,7 +21,7 @@ It creates and manages:
 - clarification notes and PRDs;
 - plans;
 - research plans and research records;
-- pasteable native goal execution prompts;
+- native goal briefs;
 - specs;
 - visible subplan lifecycle folders;
 - ADRs;
@@ -59,8 +59,8 @@ Setup is limited to repo-scoped Codex1 skill and guidance materialization with r
 17. As a Codex1 user, I want setup to avoid hooks and global continuation policy, so that setup cannot conflict with native goals.
 18. As a Codex1 user, I want clarification to gather and preserve the user's intent before PRD synthesis, so that PRD creation is based on understood context.
 19. As a Codex1 user, I want a create-PRD step to synthesize everything Codex knows into `PRD.md`, so that PRD creation is distinct from clarification.
-20. As a Codex1 user, I want planning to produce a pasteable native goal objective prompt, so that I keep an explicit go moment before execution starts.
-21. As a Codex1 user, I want the execution prompt to describe what Codex should read, execute, record, avoid, and use as completion criteria, so that native goal execution begins with durable mission context.
+20. As a Codex1 user, I want planning to produce a native goal brief, so that I keep an explicit go moment before execution starts.
+21. As a Codex1 user, I want the goal brief to describe what Codex should read, execute, record, avoid, and use as completion criteria, so that native goal execution begins with durable mission context.
 
 ## Implementation Decisions
 
@@ -71,9 +71,9 @@ Setup is limited to repo-scoped Codex1 skill and guidance materialization with r
 - Keep path safety as a deep module around contained writes and safe joins.
 - Keep template rendering deterministic and versioned.
 - Keep subplan lifecycle folders visible and file-based.
-- Keep execution prompt generation as a bridge into native `/goal`, not as a Codex1 execution trigger.
+- Keep goal brief generation as a bridge into native `/goal`, not as a Codex1 execution trigger.
 - Keep clarify, create-PRD, plan, and `/goal` as distinct user-facing phases.
-- Keep the pasteable native goal prompt framed as the objective the user manually pastes after `/goal`.
+- Keep the native goal brief framed as context for creating or refining the real `/goal`.
 - Keep receipts separate from events.
 - Keep setup scoped to repo-local managed skills and guidance files.
 - Remove Codex1-owned continuation state, hook adapters, continuation event kinds, continuation-specific error codes, and diagnostics for deleted behavior.
@@ -89,8 +89,8 @@ Good tests assert external behavior:
 - removed continuation commands fail through the normal argument parser;
 - help output does not advertise removed continuation commands;
 - `init --json` reports the current artifact tree and no continuation descriptor;
-- execution prompt interviews render a copyable native goal prompt block;
-- execution prompt templates require explicit completion criteria and non-completion behavior;
+- goal brief interviews render a native goal brief;
+- goal brief templates require explicit completion criteria and non-completion behavior;
 - new missions do not create legacy continuation files;
 - doctor reports only current diagnostics;
 - event logs cover initialization, artifact writes, subplan moves, receipts, and safe-layout failures;

@@ -25,7 +25,7 @@ const MANAGED_SUPPORTING_DOCS: [&str; 9] = [
     ".agents/skills/create-prd/PRD-FORMAT.md",
     ".agents/skills/plan/ADR-FORMAT.md",
     ".agents/skills/plan/SUBPLAN-BRIEF.md",
-    ".agents/skills/plan/EXECUTION-PROMPT-FORMAT.md",
+    ".agents/skills/plan/GOAL-BRIEF-FORMAT.md",
     "docs/agents/codex1-workflow.md",
     "docs/agents/codex1-domain.md",
     "docs/agents/codex1-artifact-briefs.md",
@@ -100,6 +100,9 @@ fn init_returns_success_envelope() {
         .any(|descriptor| descriptor["kind"] == "receipts"));
     assert!(descriptors
         .iter()
+        .any(|descriptor| descriptor["kind"] == "goal-brief"));
+    assert!(!descriptors
+        .iter()
         .any(|descriptor| descriptor["kind"] == "execution-prompt"));
     assert!(repo
         .path()
@@ -107,7 +110,7 @@ fn init_returns_success_envelope() {
         .is_dir());
     assert!(!repo
         .path()
-        .join(".codex1/missions/alpha/EXECUTION_PROMPT.md")
+        .join(".codex1/missions/alpha/GOAL_BRIEF.md")
         .exists());
     assert!(!repo
         .path()
@@ -482,6 +485,68 @@ fn read_only_commands_do_not_append_events() {
         .success();
 
     assert_eq!(event_log_text(&repo, "alpha"), before);
+}
+
+#[test]
+fn template_list_and_show_expose_goal_brief() {
+    let list = json_output(bin().args(["--json", "template", "list"]));
+    let templates = list["data"].as_array().unwrap();
+    assert!(templates
+        .iter()
+        .any(|template| template["kind"] == "goal-brief" && template["name"] == "Goal Brief"));
+    assert!(!templates
+        .iter()
+        .any(|template| template["kind"] == "execution-prompt"));
+
+    let show = json_output(bin().args(["--json", "template", "show", "goal-brief"]));
+    assert_eq!(show["data"]["kind"], "goal-brief");
+    assert_eq!(show["data"]["name"], "Goal Brief");
+    let sections = show["data"]["sections"].as_array().unwrap();
+    assert!(sections
+        .iter()
+        .any(|section| section["id"] == "suggested_goal_request"
+            && section["heading"] == "Suggested Goal Request"));
+}
+
+#[test]
+fn plan_template_is_execution_route_not_project_management() {
+    let show = json_output(bin().args(["--json", "template", "show", "plan"]));
+    let sections = show["data"]["sections"].as_array().unwrap();
+    let ids: Vec<_> = sections
+        .iter()
+        .map(|section| section["id"].as_str().unwrap())
+        .collect();
+
+    assert!(ids.contains(&"outcome_contract"));
+    assert!(ids.contains(&"implementation_shape"));
+    assert!(ids.contains(&"execution_order"));
+    assert!(ids.contains(&"parallelization_notes"));
+    assert!(ids.contains(&"ready_subplans"));
+    assert!(ids.contains(&"proof_strategy"));
+    assert!(ids.contains(&"human_decisions"));
+    assert!(!ids.contains(&"workstreams"));
+    assert!(!ids.contains(&"phases"));
+}
+
+#[test]
+fn removed_execution_prompt_command_fails_through_argument_parser() {
+    let repo = repo();
+    init(&repo, "alpha");
+    let output = bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["--mission", "alpha", "interview", "execution-prompt"])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "ARGUMENT_ERROR");
+    assert!(!repo
+        .path()
+        .join(".codex1/missions/alpha/EXECUTION_PROMPT.md")
+        .exists());
 }
 
 #[test]
@@ -905,6 +970,8 @@ fn inspect_is_inventory_only() {
     let value: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(value["ok"], true);
     assert!(value["data"]["artifacts"].is_object());
+    assert_eq!(value["data"]["artifacts"]["goal_brief"], 0);
+    assert!(value["data"]["artifacts"].get("execution_prompt").is_none());
 }
 
 #[test]
@@ -996,15 +1063,19 @@ fn setup_install_materializes_repo_scoped_guidance_without_hooks() {
     assert!(combined.contains("$clarify"));
     assert!(combined.contains("$create-prd"));
     assert!(combined.contains("$plan"));
-    assert!(combined.contains("Do not interview the user by default"));
+    assert!(combined.contains("Do NOT interview the user"));
+    assert!(combined.contains("Codex1-local change"));
+    assert!(combined.contains("Interview me relentlessly"));
     assert!(combined.contains("questions are still allowed"));
-    assert!(combined.contains("Ask exactly one question at a time"));
-    assert!(combined.contains("Cross-check claims against the code"));
-    assert!(combined.contains("update `CONTEXT.md` inline"));
+    assert!(combined.contains("Ask the questions one at a time"));
+    assert!(combined.contains("Walk down each branch of the design tree"));
+    assert!(combined.contains("Discuss concrete scenarios"));
+    assert!(combined.contains("Cross-reference with code"));
+    assert!(combined.contains("update `CONTEXT.md` right there"));
     assert!(combined.contains("CONTEXT.md Format"));
     assert!(combined.contains("ADR Format"));
     assert!(combined.contains("Hard to reverse"));
-    assert!(combined.contains("Create context files lazily"));
+    assert!(combined.contains("Create files lazily"));
     assert!(combined.contains("Problem Statement"));
     assert!(combined.contains("PRD Format"));
     assert!(combined.contains("User Stories"));
@@ -1012,19 +1083,25 @@ fn setup_install_materializes_repo_scoped_guidance_without_hooks() {
     assert!(combined.contains("Implementation Decisions"));
     assert!(combined.contains("Testing Decisions"));
     assert!(combined.contains("deep modules"));
-    assert!(combined.contains("do not include brittle file paths"));
+    assert!(combined.contains("Do NOT include specific file paths"));
     assert!(combined.contains("tracer-bullet vertical slices"));
+    assert!(combined.contains("simple serial order by default"));
+    assert!(combined.contains("not a dependency graph engine"));
     assert!(combined.contains("Subplans As Agent Briefs"));
     assert!(combined.contains("Subplan Brief Format"));
-    assert!(combined.contains("Execution Prompt Format"));
+    assert!(combined.contains("Goal Brief Format"));
     assert!(combined.contains("AFK"));
     assert!(combined.contains("HITL"));
     assert!(combined.contains("ADRS/"));
     assert!(combined.contains("Do not create issue-tracker tickets"));
     assert!(combined.contains("explicit completion criteria"));
     assert!(combined.contains("Do not put pause, escalation"));
-    assert!(combined.contains("must not say to read `EXECUTION_PROMPT.md`"));
+    assert!(combined.contains("GOAL_BRIEF.md"));
+    assert!(combined.contains("native goal brief"));
+    assert!(combined.contains("must not say to read `GOAL_BRIEF.md`"));
     assert!(combined.contains("native `/goal`"));
+    assert!(!combined.contains("Execution Prompt Format"));
+    assert!(!combined.contains("EXECUTION_PROMPT.md as the current artifact"));
     for forbidden in [
         "ralph",
         "stop-hook",
@@ -1075,6 +1152,58 @@ fn setup_status_reports_bundle_state_only() {
     assert!(status.get("project_hook_installed").is_none());
     assert!(status.get("duplicate_hook_risk").is_none());
     assert!(!value.to_string().contains("native_goal_state"));
+}
+
+#[test]
+fn checked_in_docs_mark_execution_prompt_mentions_as_legacy_only() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let files = [
+        "README.md",
+        "AGENTS.md",
+        "docs/agents/codex1-workflow.md",
+        "docs/agents/codex1-artifact-briefs.md",
+        "docs/agents/codex1-domain.md",
+        "docs/artifact-model.md",
+        "docs/cli-contract.md",
+        "docs/skill-workflows.md",
+        ".agents/skills/codex1/SKILL.md",
+        ".agents/skills/clarify/SKILL.md",
+        ".agents/skills/create-prd/SKILL.md",
+        ".agents/skills/plan/SKILL.md",
+        ".agents/skills/plan/GOAL-BRIEF-FORMAT.md",
+    ];
+    for file in files {
+        let text = fs::read_to_string(root.join(file)).unwrap();
+        assert!(
+            !text.contains("EXECUTION-PROMPT-FORMAT.md"),
+            "{file} mentions the old format file"
+        );
+        let lines: Vec<_> = text.lines().collect();
+        for (index, line) in lines.iter().enumerate() {
+            let mentions_old = line.contains("EXECUTION_PROMPT")
+                || line.contains("execution-prompt")
+                || line.contains("Execution Prompt")
+                || line.contains("execution prompt");
+            if !mentions_old {
+                continue;
+            }
+            let context = [
+                index.checked_sub(1).and_then(|i| lines.get(i)).copied(),
+                Some(*line),
+                lines.get(index + 1).copied(),
+            ]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join("\n")
+            .to_lowercase();
+            assert!(
+                context.contains("legacy"),
+                "{file}:{} mentions old execution-prompt wording outside legacy guidance",
+                index + 1
+            );
+        }
+    }
 }
 
 #[test]
@@ -1286,7 +1415,7 @@ fn setup_enable_repairs_stale_managed_skill_and_marker() {
         .join(".agents/skills/create-prd/SKILL.md")
         .is_file());
     assert!(repo.path().join(".agents/skills/plan/SKILL.md").is_file());
-    assert!(marker.contains(r#""version": 4"#));
+    assert!(marker.contains(r#""version": 5"#));
 }
 
 #[test]
@@ -2033,15 +2162,16 @@ fn review_template_accepts_structured_finding_fields() {
 }
 
 #[test]
-fn execution_prompt_interview_writes_copyable_native_goal_prompt() {
+fn goal_brief_interview_writes_native_goal_brief() {
     let repo = repo();
     init(&repo, "alpha");
-    let answers = repo.path().join("execution-prompt.json");
+    let answers = repo.path().join("goal-brief.json");
     fs::write(
         &answers,
         r#"{
           "title": "Execute Alpha",
-          "goal_prompt": "Execute the Codex1 mission at `.codex1/missions/alpha`.\n\nUse `PRD.md` as the outcome contract and complete the native goal only after evidence is audited.",
+          "purpose": "Use this brief to create or refine a native Codex mission goal for `.codex1/missions/alpha`.",
+          "suggested_goal_request": "Execute the Codex1 mission at `.codex1/missions/alpha`.\n\nUse `PRD.md` as the outcome contract and complete the native goal only after evidence is audited.",
           "mission_path": ".codex1/missions/alpha",
           "primary_artifacts": ["PRD.md", "PLAN.md", "SPECS/", "SUBPLANS/ready/"],
           "execution_order": ["Select one ready subplan", "Implement it", "Record proof"],
@@ -2059,26 +2189,26 @@ fn execution_prompt_interview_writes_copyable_native_goal_prompt() {
     bin()
         .args(["--repo-root"])
         .arg(repo.path())
-        .args([
-            "--mission",
-            "alpha",
-            "interview",
-            "execution-prompt",
-            "--answers",
-        ])
+        .args(["--mission", "alpha", "interview", "goal-brief", "--answers"])
         .arg(&answers)
         .assert()
         .success();
 
-    let rendered = fs::read_to_string(
-        repo.path()
-            .join(".codex1/missions/alpha/EXECUTION_PROMPT.md"),
-    )
-    .unwrap();
-    assert!(rendered.contains("<!-- codex1-goal-prompt:start -->"));
+    let rendered =
+        fs::read_to_string(repo.path().join(".codex1/missions/alpha/GOAL_BRIEF.md")).unwrap();
+    assert!(rendered.contains("codex1_template: goal-brief"));
+    assert!(rendered.contains("<!-- codex1-section: suggested_goal_request -->"));
     assert!(rendered.contains("Execute the Codex1 mission at `.codex1/missions/alpha`."));
-    assert!(rendered.contains("<!-- codex1-goal-prompt:end -->"));
-    assert!(!rendered.contains("Read `EXECUTION_PROMPT.md`"));
+    assert!(rendered.contains("<!-- codex1-section: completion_criteria -->"));
+    assert!(!rendered.contains("Read `GOAL_BRIEF.md`"));
+    assert!(!repo
+        .path()
+        .join(".codex1/missions/alpha/EXECUTION_PROMPT.md")
+        .exists());
+
+    let events = read_events(&repo, "alpha");
+    let event = events.last().unwrap();
+    assert_eq!(event["metadata"]["artifact_kind"], "goal-brief");
 }
 
 #[test]

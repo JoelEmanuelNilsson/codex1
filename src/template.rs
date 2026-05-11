@@ -177,42 +177,64 @@ const PLAN: &[Section] = &[
         "Which PRD does this plan serve?"
     ),
     section!(
-        "strategy_thesis",
-        "Strategy Thesis",
+        "outcome_contract",
+        "Outcome Contract",
         required,
-        "What is the strategy?"
+        "What must be true when the mission is done?"
     ),
     section!(
-        "workstreams",
-        "Workstreams",
+        "implementation_shape",
+        "Implementation Shape",
         required_list,
-        "What are the workstreams?"
+        "What modules, contracts, or areas shape the work?"
     ),
-    section!("phases", "Phases", required_list, "What are the phases?"),
     section!(
         "research_posture",
         "Research Posture",
         optional,
         "What research is needed?"
     ),
-    section!("risk_map", "Risk Map", optional_list, "What risks matter?"),
     section!(
-        "artifact_index",
-        "Artifact Index",
+        "decision_artifacts",
+        "Decision Artifacts",
         optional_list,
-        "Which artifacts matter?"
+        "Which specs, ADRs, or research records matter?"
     ),
     section!(
-        "review_posture",
-        "Review Posture",
-        optional,
-        "What review posture applies?"
-    ),
-    section!(
-        "recommended_next_slices",
-        "Recommended Next Slices",
+        "execution_order",
+        "Execution Order",
         required_list,
-        "What slices are next?"
+        "What is the execution order?"
+    ),
+    section!(
+        "parallelization_notes",
+        "Parallelization Notes",
+        optional_list,
+        "What, if anything, can safely run in parallel?"
+    ),
+    section!(
+        "ready_subplans",
+        "Ready Subplans",
+        required_list,
+        "Which subplans are ready for AFK execution?"
+    ),
+    section!(
+        "proof_strategy",
+        "Proof Strategy",
+        required_list,
+        "What proof should execution collect?"
+    ),
+    section!(
+        "risks_and_non_goals",
+        "Risks And Non-Goals",
+        optional_list,
+        "What risks and non-goals must execution preserve?"
+    ),
+    section!(
+        "human_decisions",
+        "Human Decisions",
+        optional_list,
+        "What unresolved HITL decisions remain?"
     ),
 ];
 
@@ -261,18 +283,19 @@ const RESEARCH_PLAN: &[Section] = &[
     ),
 ];
 
-const EXECUTION_PROMPT: &[Section] = &[
+const GOAL_BRIEF: &[Section] = &[
+    section!("title", "Title", required, "What is the goal brief title?"),
     section!(
-        "title",
-        "Title",
+        "purpose",
+        "Purpose",
         required,
-        "What is the execution prompt title?"
+        "How should Codex use this native goal brief?"
     ),
     section!(
-        "goal_prompt",
-        "Native Goal Objective",
+        "suggested_goal_request",
+        "Suggested Goal Request",
         required,
-        "What objective should the user paste after native /goal?"
+        "What request should Codex use to create or refine the native goal?"
     ),
     section!(
         "mission_path",
@@ -821,7 +844,7 @@ pub fn get(kind: ArtifactKind) -> Template {
         ArtifactKind::Prd => PRD,
         ArtifactKind::Plan => PLAN,
         ArtifactKind::ResearchPlan => RESEARCH_PLAN,
-        ArtifactKind::ExecutionPrompt => EXECUTION_PROMPT,
+        ArtifactKind::GoalBrief => GOAL_BRIEF,
         ArtifactKind::Research => RESEARCH,
         ArtifactKind::Spec => SPEC,
         ArtifactKind::Subplan => SUBPLAN,

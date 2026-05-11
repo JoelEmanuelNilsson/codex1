@@ -1,41 +1,76 @@
 ---
 name: create-prd
-description: Synthesize known context into a Codex1 PRD artifact. Use when the user wants a PRD from the current conversation, clarification output, repo context, and references; do not publish to an issue tracker.
+description: Synthesize known context into a local Codex1 PRD artifact. Use when the user wants a PRD from the current conversation, clarification output, repo context, and references; do not publish to an issue tracker.
 ---
 
-# Create PRD
+This skill takes the current conversation context and codebase understanding and produces a PRD. Do NOT interview the user — just synthesize what you already know.
 
-Use this after `$clarify` or whenever the user asks for a PRD from known context. This is the local Codex1 version of the reference `to-prd` workflow: same synthesis quality, no issue tracker.
-
-Do not interview the user by default. Synthesize what is already known. If important information is missing, record an assumption, risk, or open question in the PRD instead of blocking. Only ask when the user explicitly wants to co-author, when two authoritative sources contradict each other, or when the module/test choices are load-bearing and the user is clearly still in the loop.
+Codex1-local change: write `PRD.md` locally through the Codex1 artifact workflow. Do not publish to GitHub Issues, Linear, Jira, GitLab, or any issue tracker. Do not apply triage labels.
 
 ## Process
 
-1. Read [PRD-FORMAT.md](PRD-FORMAT.md) for the exact output contract.
-2. Explore the repo enough to understand the current state before writing. Read the conversation, clarification brief, existing mission artifacts, `AGENTS.md`, `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, `docs/agents/codex1-artifact-briefs.md`, `CONTEXT.md` or `CONTEXT-MAP.md`, ADRs, tests, and relevant source.
-3. Write from the user's perspective first: problem, solution, actors, user stories, and externally visible outcomes.
-4. Use the codebase's own language. Prefer terms from docs, source, tests, and ADRs over invented vocabulary.
-5. Sketch the major modules or areas likely to be built or modified. Actively look for deep modules: simple interfaces that hide meaningful complexity and can be tested in isolation.
-6. If the module sketch or test focus is uncertain and important, briefly check with the user exactly like the reference PRD skill. If the user is not available or did not ask for interaction, proceed and record assumptions.
-7. Capture implementation decisions: module boundaries, interface changes, architectural decisions, schema changes, API contracts, integrations, state ownership, and specific interactions.
-8. Capture testing decisions: what external behavior proves success, which modules deserve direct tests, prior art in the existing test suite, and what not to test because it is implementation detail.
-9. Write `PRD.md` locally through the Codex1 PRD artifact workflow. Do not publish it anywhere.
+1. Explore the repo to understand the current state of the codebase, if you haven't already. Use the project's domain glossary vocabulary throughout the PRD, and respect any ADRs in the area you're touching. If Codex1 workflow docs or mission artifacts exist, use them as local context.
 
-## PRD Shape
+2. Sketch out the major modules you will need to build or modify to complete the implementation. Actively look for opportunities to extract deep modules that can be tested in isolation.
 
-The PRD must be good enough that `$plan` can design execution without reconstructing the product intent. Use [PRD-FORMAT.md](PRD-FORMAT.md). In short, include:
+A deep module (as opposed to a shallow module) is one which encapsulates a lot of functionality in a simple, testable interface which rarely changes.
 
-- Problem Statement: the problem from the user's perspective.
-- Solution: the solution from the user's perspective.
-- User Stories: a long numbered list covering the whole feature, in "As an <actor>, I want <feature>, so that <benefit>" form.
-- Success Criteria: observable facts that make the PRD satisfied.
-- Module Sketch: likely modules, interfaces, and deep-module opportunities, using stable names rather than brittle paths.
-- Implementation Decisions: modules, interfaces, architecture, schemas, API contracts, state boundaries, integrations, and clarified interactions.
-- Testing Decisions: external behavior to test, modules to test directly, prior test patterns, and testing non-goals.
-- Out of Scope: what this PRD intentionally does not include.
-- Constraints, verified context, assumptions, resolved questions, proof expectations, review expectations, and PR intent.
-- Further Notes when useful.
+Check with the user that these modules match their expectations. Check with the user which modules they want tests written for.
 
-Do not include code snippets that will go stale quickly, and do not include brittle file paths; brittle paths make the PRD age badly. It is fine to mention stable module names, artifact names, commands, and durable concepts.
+3. Write the PRD using the template below, then write it locally as `PRD.md` through the Codex1 artifact workflow. Do not publish it anywhere.
 
-Do not publish to GitHub Issues, Linear, Jira, or any issue tracker. Codex1 PRDs stay in the mission artifact tree. Do not start implementation, create `PLAN.md`, or create/complete native `/goal` state.
+<prd-template>
+
+## Problem Statement
+
+The problem that the user is facing, from the user's perspective.
+
+## Solution
+
+The solution to the problem, from the user's perspective.
+
+## User Stories
+
+A LONG, numbered list of user stories. Each user story should be in the format of:
+
+1. As an <actor>, I want a <feature>, so that <benefit>
+
+<user-story-example>
+1. As a mobile bank customer, I want to see balance on my accounts, so that I can make better informed decisions about my spending
+</user-story-example>
+
+This list of user stories should be extremely extensive and cover all aspects of the feature.
+
+## Implementation Decisions
+
+A list of implementation decisions that were made. This can include:
+
+- The modules that will be built/modified
+- The interfaces of those modules that will be modified
+- Technical clarifications from the developer
+- Architectural decisions
+- Schema changes
+- API contracts
+- Specific interactions
+
+Do NOT include specific file paths or code snippets. They may end up being outdated very quickly.
+
+Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it within the relevant decision and note briefly that it came from a prototype. Trim to the decision-rich parts — not a working demo, just the important bits.
+
+## Testing Decisions
+
+A list of testing decisions that were made. Include:
+
+- A description of what makes a good test (only test external behavior, not implementation details)
+- Which modules will be tested
+- Prior art for the tests (i.e. similar types of tests in the codebase)
+
+## Out of Scope
+
+A description of the things that are out of scope for this PRD.
+
+## Further Notes
+
+Any further notes about the feature.
+
+</prd-template>

@@ -24,9 +24,9 @@ Ready subplans are contracts for future Codex work. Each ready subplan should in
 
 Write subplans as tracer bullets: thin vertical slices that deliver a complete, independently verifiable path through the system.
 
-## Execution Prompt
+## Goal Brief
 
-`EXECUTION_PROMPT.md` contains the native `/goal` objective the user copies. The objective must include mission path, primary artifacts to read, execution order, subplan selection, worker rules, editable scope, proof rules, review/triage rules, completion criteria, non-completion behavior, closeout, and prohibited actions.
+`GOAL_BRIEF.md` helps Codex create or refine the native `/goal` objective. The brief must include purpose, suggested goal request, mission path, primary artifacts to read, execution order, subplan selection, worker rules, editable scope, proof rules, review/triage rules, completion criteria, non-completion behavior, closeout, and prohibited actions.
 
 Execution may not ask the user questions. If completion cannot be reached from artifacts, record non-completion evidence, accepted risks, or deferred work.
 

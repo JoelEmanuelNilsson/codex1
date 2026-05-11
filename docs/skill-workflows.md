@@ -26,13 +26,13 @@ The PRD should carry the same information quality as the reference PRD workflow:
 
 ## Plan
 
-Plan reads the PRD and decides whether research is needed. For substantial uncertainty, it creates `RESEARCH_PLAN.md`, writes `RESEARCH/` records, and then writes or updates `PLAN.md`.
+Plan reads the PRD and turns it into an executable route. For substantial uncertainty, it creates `RESEARCH_PLAN.md`, writes `RESEARCH/` records, and then writes or updates `PLAN.md`.
 
-Plan may also create ADRs, specs, and ready subplans when that makes the execution route clearer. ADRs are for durable architecture decisions and rejected alternatives with load-bearing reasons, not tiny implementation notes. Ready subplans should be tracer-bullet vertical slices and durable agent briefs with current/desired behavior, key interfaces, scope, out-of-scope work, dependencies, acceptance criteria, proof, ownership rules, and exit criteria.
+Plan may also create ADRs, specs, and ready subplans when that makes the execution route clearer. ADRs are for durable architecture decisions and rejected alternatives with load-bearing reasons, not tiny implementation notes. Architecture work can be a planning lens or its own refactor mission. Ready subplans should be tracer-bullet vertical slices and durable agent briefs with current/desired behavior, key interfaces, scope, out-of-scope work, dependencies, acceptance criteria, proof, ownership rules, and exit criteria. The planner decides technical ordering and parallel-safe work; ask the user only for missing product, scope, UX, credential, or human-judgment decisions.
 
-The final planning output for executable work is `EXECUTION_PROMPT.md`: a pasteable native `/goal` objective that preserves the user's explicit go moment.
+The final planning output for executable work is `GOAL_BRIEF.md`: a native goal brief that preserves the user's explicit go moment without pretending Codex1 owns the goal.
 
-The execution prompt is not a file-loading instruction. It is the objective text the user may review, edit, and manually paste into a new Codex CLI session after typing `/goal`. It should not tell Codex to read `EXECUTION_PROMPT.md`; the user has already copied the prompt from that file.
+The goal brief is not native goal state, not a file-loading instruction, and not a sacred final prompt. It should give Codex enough context to create or refine a whole-mission `/goal`, and it must not tell Codex to read `GOAL_BRIEF.md` as the first execution step.
 
 In Plan mode, native goal continuation is suppressed by Codex itself. Codex1 should still only write artifacts the user requested or the plan clearly needs.
 
@@ -58,4 +58,4 @@ Closeout summarizes the real state, including completed, superseded, paused, and
 
 Interrupt and resume behavior belongs to native Codex, not Codex1. If a persistent objective should continue after interruption, use the official goal UI or goal tools. Do not create Codex1 files to simulate continuation.
 
-Autonomous execution should clarify first, create the PRD, plan, ask the user to paste or modify the generated execution objective into native `/goal`, execute slices, record reviews and triage when useful, write proofs, and close out when explicit completion criteria are satisfied. It should only open a PR when PR intent is part of the PRD.
+Autonomous execution should clarify first, create the PRD, plan, create or refine the native `/goal` from `GOAL_BRIEF.md`, execute slices, record reviews and triage when useful, write proofs, and close out when explicit completion criteria are satisfied. It should only open a PR when PR intent is part of the PRD.

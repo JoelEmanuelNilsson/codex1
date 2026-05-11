@@ -15,7 +15,7 @@ pub enum ArtifactKind {
     Prd,
     Plan,
     ResearchPlan,
-    ExecutionPrompt,
+    GoalBrief,
     Research,
     Spec,
     Subplan,
@@ -31,7 +31,7 @@ impl ArtifactKind {
         Self::Prd,
         Self::Plan,
         Self::ResearchPlan,
-        Self::ExecutionPrompt,
+        Self::GoalBrief,
         Self::Research,
         Self::Spec,
         Self::Subplan,
@@ -47,7 +47,7 @@ impl ArtifactKind {
             Self::Prd => "prd",
             Self::Plan => "plan",
             Self::ResearchPlan => "research-plan",
-            Self::ExecutionPrompt => "execution-prompt",
+            Self::GoalBrief => "goal-brief",
             Self::Research => "research",
             Self::Spec => "spec",
             Self::Subplan => "subplan",
@@ -64,7 +64,7 @@ impl ArtifactKind {
             Self::Prd => "PRD",
             Self::Plan => "Plan",
             Self::ResearchPlan => "Research Plan",
-            Self::ExecutionPrompt => "Execution Prompt",
+            Self::GoalBrief => "Goal Brief",
             Self::Research => "Research Record",
             Self::Spec => "Spec",
             Self::Subplan => "Subplan",
@@ -79,7 +79,7 @@ impl ArtifactKind {
     pub fn is_singleton(self) -> bool {
         matches!(
             self,
-            Self::Prd | Self::Plan | Self::ResearchPlan | Self::ExecutionPrompt | Self::Closeout
+            Self::Prd | Self::Plan | Self::ResearchPlan | Self::GoalBrief | Self::Closeout
         )
     }
 }
@@ -238,7 +238,7 @@ impl MissionLayout {
             ArtifactKind::Prd => safe_join(&self.mission_dir, "PRD.md"),
             ArtifactKind::Plan => safe_join(&self.mission_dir, "PLAN.md"),
             ArtifactKind::ResearchPlan => safe_join(&self.mission_dir, "RESEARCH_PLAN.md"),
-            ArtifactKind::ExecutionPrompt => safe_join(&self.mission_dir, "EXECUTION_PROMPT.md"),
+            ArtifactKind::GoalBrief => safe_join(&self.mission_dir, "GOAL_BRIEF.md"),
             ArtifactKind::Closeout => safe_join(&self.mission_dir, "CLOSEOUT.md"),
             _ => Err(Codex1Error::Argument(format!(
                 "{kind} is not a singleton artifact"

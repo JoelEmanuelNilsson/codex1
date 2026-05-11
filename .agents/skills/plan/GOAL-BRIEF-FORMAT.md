@@ -1,11 +1,13 @@
-# Execution Prompt Format
+# Goal Brief Format
 
-`EXECUTION_PROMPT.md` contains the objective text the user copies after typing native `/goal`.
+`GOAL_BRIEF.md` helps Codex create or refine the native `/goal` objective for the whole mission.
 
-It is a copy source. The prompt must not tell Codex to read `EXECUTION_PROMPT.md`; the user has already copied from it.
+It is a brief, not native goal state and not the final authority. The brief must not tell Codex to read `GOAL_BRIEF.md` as the first execution step.
 
-## Native Goal Objective Must Include
+## Goal Brief Must Include
 
+- Purpose
+- Suggested goal request
 - Mission path
 - Primary artifacts to read
 - Execution order
@@ -45,4 +47,4 @@ Always prohibit:
 - Creating, inspecting, or completing native goal state from Codex1.
 - Treating `codex1 inspect`, setup status, events, or receipts as completion proof.
 - Creating issue-tracker tickets.
-- Reading `EXECUTION_PROMPT.md` as the first step of the pasted objective.
+- Reading `GOAL_BRIEF.md` as the first step of the native goal.

@@ -123,15 +123,7 @@ pub fn render_markdown(template: &Template, answers: &Answers) -> Result<String>
         out.push_str(&format!("## {}\n\n", section.heading));
         match answers.get(section.id) {
             Some(AnswerValue::Text(text)) if !text.trim().is_empty() => {
-                if template.kind == crate::layout::ArtifactKind::ExecutionPrompt
-                    && section.id == "goal_prompt"
-                {
-                    out.push_str("<!-- codex1-goal-prompt:start -->\n");
-                    out.push_str(text.trim());
-                    out.push_str("\n<!-- codex1-goal-prompt:end -->");
-                } else {
-                    out.push_str(text.trim());
-                }
+                out.push_str(text.trim());
                 out.push_str("\n\n");
             }
             Some(AnswerValue::List(values)) => {
@@ -212,11 +204,12 @@ mod tests {
     }
 
     #[test]
-    fn wraps_execution_prompt_goal_prompt_with_copy_markers() {
-        let template = template::get(ArtifactKind::ExecutionPrompt);
+    fn renders_goal_brief_suggested_goal_request() {
+        let template = template::get(ArtifactKind::GoalBrief);
         let answers = answers_from_json(serde_json::json!({
             "title": "Execute Alpha",
-            "goal_prompt": "Execute the mission at `.codex1/missions/alpha`.",
+            "purpose": "Use this brief to create or refine a native Codex mission goal.",
+            "suggested_goal_request": "Execute the mission at `.codex1/missions/alpha`.",
             "mission_path": ".codex1/missions/alpha",
             "primary_artifacts": ["PRD.md", "PLAN.md"],
             "execution_order": ["Pick one ready subplan at a time"],
@@ -230,17 +223,19 @@ mod tests {
         }))
         .unwrap();
         let rendered = render_markdown(&template, &answers).unwrap();
-        assert!(rendered.contains("<!-- codex1-goal-prompt:start -->"));
+        assert!(rendered.contains("codex1_template: goal-brief"));
+        assert!(rendered.contains("<!-- codex1-section: suggested_goal_request -->"));
         assert!(rendered.contains("Execute the mission at `.codex1/missions/alpha`."));
-        assert!(rendered.contains("<!-- codex1-goal-prompt:end -->"));
+        assert!(!rendered.contains("codex1-goal-prompt"));
     }
 
     #[test]
-    fn execution_prompt_requires_completion_and_non_completion_rules() {
-        let template = template::get(ArtifactKind::ExecutionPrompt);
+    fn goal_brief_requires_completion_and_non_completion_rules() {
+        let template = template::get(ArtifactKind::GoalBrief);
         let answers = answers_from_json(serde_json::json!({
             "title": "Execute Alpha",
-            "goal_prompt": "Execute the mission at `.codex1/missions/alpha`.",
+            "purpose": "Use this brief to create or refine a native Codex mission goal.",
+            "suggested_goal_request": "Execute the mission at `.codex1/missions/alpha`.",
             "mission_path": ".codex1/missions/alpha",
             "primary_artifacts": ["PRD.md", "PLAN.md"],
             "execution_order": ["Pick one ready subplan at a time"],

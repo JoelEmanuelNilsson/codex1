@@ -10,11 +10,13 @@ Clarification artifacts or notes capture the user's raw intent, open questions, 
 
 `PRD.md` captures the mission goal, problem statement, solution, user stories, interpreted destination, success criteria, module sketch, constraints, assumptions, implementation and testing decisions, proof expectations, review expectations, and PR intent. It is the anchor for durable work.
 
-`PLAN.md` is the living strategy map. It describes workstreams, phases, risks, research posture, artifact links, review posture, and recommended slices. It is not a status dashboard or proof ledger.
+`PLAN.md` is the executable route map. It describes the outcome contract, implementation shape, execution order, useful parallelization notes, ready subplans, proof strategy, risks, non-goals, and unresolved human decisions if any. It is not a status dashboard, dependency graph engine, or proof ledger.
 
 `RESEARCH_PLAN.md` is optional. Codex writes it when research is substantial enough to need durable structure.
 
-`EXECUTION_PROMPT.md` is the pasteable native goal objective produced by planning. It tells the next Codex turn what mission to execute, which artifacts to read, how to select subplans, how workers may be used, what may be edited, how proofs/reviews/triage should be recorded, what completion means, what to record if completion cannot be reached, what closeout means, and what not to do. It is not an execution trigger by itself.
+`GOAL_BRIEF.md` is the native goal brief produced by planning. It helps Codex create or refine the real native `/goal` for the whole mission. It tells Codex what mission to execute, which artifacts to read, how to select subplans, how workers may be used, what may be edited, how proofs/reviews/triage should be recorded, what completion means, what to record if completion cannot be reached, what closeout means, and what not to do. It is not an execution trigger or native goal state by itself.
+
+Legacy missions may contain `EXECUTION_PROMPT.md`. Treat that file as old reading guidance only; it is not a current generated artifact.
 
 `CLOSEOUT.md` summarizes how Codex judges the PRD was satisfied, including completed, superseded, paused, or deferred work and remaining risks. It is durable evidence, not native goal completion state.
 

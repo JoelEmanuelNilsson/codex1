@@ -6,10 +6,10 @@ Codex1 is a local artifact workflow, not an issue tracker and not native goal st
 
 1. `$clarify` sharpens intent while questions are allowed.
 2. `$create-prd` synthesizes known context into `PRD.md`.
-3. `$plan` designs research, specs, ADRs, vertical subplans, and `EXECUTION_PROMPT.md`.
-4. The user manually starts a new Codex CLI session, types `/goal`, and pastes the objective from `EXECUTION_PROMPT.md`.
+3. `$plan` designs research, specs, ADRs, vertical subplans, and `GOAL_BRIEF.md`.
+4. The user asks Codex to create or refine a native `/goal` from `GOAL_BRIEF.md`.
 
-`EXECUTION_PROMPT.md` is a copy source. It should not instruct Codex to read itself.
+`GOAL_BRIEF.md` is a native goal brief. It should not instruct Codex to read itself as the first execution step.
 
 ## No Issue Tracker
 

@@ -14,7 +14,7 @@ use crate::error::{Codex1Error, Result};
 use crate::paths::{create_dir_all_contained, discover_repo_root, ensure_contained_for_write};
 
 const BACKUP_MANIFEST_VERSION: u32 = 1;
-const BUNDLE_VERSION: u32 = 4;
+const BUNDLE_VERSION: u32 = 5;
 const MANAGED_GUIDANCE_START: &str = "<!-- codex1-managed setup guidance start -->";
 const MANAGED_GUIDANCE_END: &str = "<!-- codex1-managed setup guidance end -->";
 const OVERVIEW_SKILL: &str = ".agents/skills/codex1/SKILL.md";
@@ -26,7 +26,8 @@ const CREATE_PRD_FORMAT: &str = ".agents/skills/create-prd/PRD-FORMAT.md";
 const PLAN_SKILL: &str = ".agents/skills/plan/SKILL.md";
 const PLAN_ADR_FORMAT: &str = ".agents/skills/plan/ADR-FORMAT.md";
 const PLAN_SUBPLAN_BRIEF: &str = ".agents/skills/plan/SUBPLAN-BRIEF.md";
-const PLAN_EXECUTION_PROMPT_FORMAT: &str = ".agents/skills/plan/EXECUTION-PROMPT-FORMAT.md";
+const PLAN_GOAL_BRIEF_FORMAT: &str = ".agents/skills/plan/GOAL-BRIEF-FORMAT.md";
+const LEGACY_PLAN_EXECUTION_PROMPT_FORMAT: &str = ".agents/skills/plan/EXECUTION-PROMPT-FORMAT.md";
 const WORKFLOW_DOC: &str = "docs/agents/codex1-workflow.md";
 const DOMAIN_DOC: &str = "docs/agents/codex1-domain.md";
 const ARTIFACT_BRIEFS_DOC: &str = "docs/agents/codex1-artifact-briefs.md";
@@ -42,7 +43,7 @@ const MANAGED_SUPPORTING_DOC_FILES: [&str; 9] = [
     CREATE_PRD_FORMAT,
     PLAN_ADR_FORMAT,
     PLAN_SUBPLAN_BRIEF,
-    PLAN_EXECUTION_PROMPT_FORMAT,
+    PLAN_GOAL_BRIEF_FORMAT,
     WORKFLOW_DOC,
     DOMAIN_DOC,
     ARTIFACT_BRIEFS_DOC,
@@ -57,7 +58,23 @@ const MANAGED_BUNDLE_FILES: [&str; 14] = [
     PLAN_SKILL,
     PLAN_ADR_FORMAT,
     PLAN_SUBPLAN_BRIEF,
-    PLAN_EXECUTION_PROMPT_FORMAT,
+    PLAN_GOAL_BRIEF_FORMAT,
+    WORKFLOW_DOC,
+    DOMAIN_DOC,
+    ARTIFACT_BRIEFS_DOC,
+    BUNDLE_GUIDANCE,
+];
+const LEGACY_BUNDLE_FILES_V4: [&str; 14] = [
+    OVERVIEW_SKILL,
+    CLARIFY_SKILL,
+    CLARIFY_ADR_FORMAT,
+    CLARIFY_CONTEXT_FORMAT,
+    CREATE_PRD_SKILL,
+    CREATE_PRD_FORMAT,
+    PLAN_SKILL,
+    PLAN_ADR_FORMAT,
+    PLAN_SUBPLAN_BRIEF,
+    LEGACY_PLAN_EXECUTION_PROMPT_FORMAT,
     WORKFLOW_DOC,
     DOMAIN_DOC,
     ARTIFACT_BRIEFS_DOC,
@@ -455,6 +472,7 @@ fn materialize_bundle(repo: &Path, plan: &mut SetupPlan, dry_run: bool) -> Resul
             dry_run,
         )?;
     }
+    remove_legacy_bundle_files_not_current(repo, marker_data.as_ref(), plan, dry_run)?;
     write_guidance_file(repo, &guidance, plan, dry_run)?;
     write_owned_file(
         repo,
@@ -465,6 +483,57 @@ fn materialize_bundle(repo: &Path, plan: &mut SetupPlan, dry_run: bool) -> Resul
         plan,
         dry_run,
     )?;
+    Ok(())
+}
+
+fn remove_legacy_bundle_files_not_current(
+    repo: &Path,
+    marker: Option<&BundleMarker>,
+    plan: &mut SetupPlan,
+    dry_run: bool,
+) -> Result<()> {
+    let Some(marker) = marker.filter(|marker| is_known_managed_marker(marker)) else {
+        return Ok(());
+    };
+    let current = bundle_files(MANAGED_BUNDLE_FILES);
+    for relative in &marker.files {
+        if current.iter().any(|current| current == relative) || relative == BUNDLE_GUIDANCE {
+            continue;
+        }
+        let expected = expected_body(relative);
+        if expected.is_empty() {
+            continue;
+        }
+        let path = setup_target(repo, relative)?;
+        match fs::read_to_string(&path) {
+            Ok(text) if text == expected => {
+                backup_target(
+                    repo,
+                    &path,
+                    "remove legacy managed setup file",
+                    plan,
+                    dry_run,
+                )?;
+                plan.removes.push(path.clone());
+                if !dry_run {
+                    fs::remove_file(&path).map_err(|source| {
+                        Codex1Error::SetupBundle(format!(
+                            "failed to remove {}: {source}",
+                            path.display()
+                        ))
+                    })?;
+                }
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(Codex1Error::SetupBundle(format!(
+                    "failed to read {}: {error}",
+                    path.display()
+                )))
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1040,6 +1109,7 @@ fn is_current_marker(marker: &BundleMarker) -> bool {
 fn is_known_managed_marker(marker: &BundleMarker) -> bool {
     marker.managed_by == "codex1-managed"
         && (marker.files == bundle_files(MANAGED_BUNDLE_FILES)
+            || marker.files == bundle_files(LEGACY_BUNDLE_FILES_V4)
             || marker.files == bundle_files(LEGACY_BUNDLE_FILES_V3)
             || marker.files == bundle_files(LEGACY_BUNDLE_FILES_V2)
             || marker.files == bundle_files(LEGACY_BUNDLE_FILES_V1))
@@ -1055,7 +1125,7 @@ fn aggregate_states(states: impl IntoIterator<Item = SetupFileState>) -> SetupFi
     let states: Vec<_> = states.into_iter().collect();
     if states.iter().all(|state| *state == SetupFileState::Current) {
         SetupFileState::Current
-    } else if states.iter().any(|state| *state == SetupFileState::Invalid) {
+    } else if states.contains(&SetupFileState::Invalid) {
         SetupFileState::Invalid
     } else if states.iter().all(|state| *state == SetupFileState::Missing) {
         SetupFileState::Missing
@@ -1075,7 +1145,8 @@ fn expected_body(relative: &str) -> String {
         PLAN_SKILL => plan_skill_body().to_string(),
         PLAN_ADR_FORMAT => adr_format_body().to_string(),
         PLAN_SUBPLAN_BRIEF => subplan_brief_body().to_string(),
-        PLAN_EXECUTION_PROMPT_FORMAT => execution_prompt_format_body().to_string(),
+        PLAN_GOAL_BRIEF_FORMAT => goal_brief_format_body().to_string(),
+        LEGACY_PLAN_EXECUTION_PROMPT_FORMAT => legacy_execution_prompt_format_body().to_string(),
         WORKFLOW_DOC => workflow_doc_body().to_string(),
         DOMAIN_DOC => domain_doc_body().to_string(),
         ARTIFACT_BRIEFS_DOC => artifact_briefs_doc_body().to_string(),
@@ -1125,26 +1196,26 @@ description: Repo-scoped Codex1 artifact workflow overview. Use as a router to t
 
 # Codex1
 
-Codex1 is a deterministic artifact helper for clarification context, PRD, PLAN, EXECUTION_PROMPT, SPEC, SUBPLAN, REVIEW, TRIAGE, PROOF, CLOSEOUT, receipts, and inventory inspection.
+Codex1 is a deterministic artifact helper for clarification context, PRD, PLAN, GOAL_BRIEF, SPEC, SUBPLAN, REVIEW, TRIAGE, PROOF, CLOSEOUT, receipts, and inventory inspection.
 
 Repo-local consumer docs installed by setup:
 
 - `docs/agents/codex1-workflow.md`: the user-facing flow and native `/goal` boundary.
 - `docs/agents/codex1-domain.md`: domain glossary and ADR consumption/production rules.
-- `docs/agents/codex1-artifact-briefs.md`: PRD, subplan, execution prompt, proof, review, and closeout quality bars.
+- `docs/agents/codex1-artifact-briefs.md`: PRD, subplan, goal brief, proof, review, and closeout quality bars.
 
 Skill-local references installed by setup:
 
 - `$clarify`: `ADR-FORMAT.md` and `CONTEXT-FORMAT.md`.
 - `$create-prd`: `PRD-FORMAT.md`.
-- `$plan`: `ADR-FORMAT.md`, `SUBPLAN-BRIEF.md`, and `EXECUTION-PROMPT-FORMAT.md`.
+- `$plan`: `ADR-FORMAT.md`, `SUBPLAN-BRIEF.md`, and `GOAL-BRIEF-FORMAT.md`.
 
 Preferred UX:
 
 - Use `$clarify` to gather and preserve user intent while questions are still allowed.
 - Use `$create-prd` to synthesize known context into `PRD.md`.
-- Use `$plan` to design the mission and write `EXECUTION_PROMPT.md`.
-- The user manually starts a new Codex CLI session, types `/goal`, and pastes the generated objective.
+- Use `$plan` to design the mission and write `GOAL_BRIEF.md`.
+- The user asks Codex to create or refine a native goal from the generated goal brief.
 
 Native Codex `/goal` owns persistent objectives, continuation, pause/resume, accounting, budgets, and completion. Codex1 must not create, mirror, inspect, or complete native goals.
 
@@ -1158,169 +1229,224 @@ name: clarify
 description: Relentlessly clarify a future Codex1 mission before PRD synthesis. Use when the user wants write-me-docs/grill-me style discovery, to stress-test an idea, resolve ambiguity, or prepare context for create-prd.
 ---
 
-# Clarify
+<codex1-local>
 
-Clarify is Codex1's `grill-with-docs`: a relentless discovery session that makes the future PRD obvious, sharpens project language, and records durable decisions as they crystallize. Do not implement, plan, write `PRD.md`, or start native `/goal` unless the user explicitly switches workflows.
+Before asking questions, read repo-local Codex1 workflow docs and existing mission artifacts if present:
 
-## Warm Start
+- `docs/agents/codex1-workflow.md`
+- `docs/agents/codex1-domain.md`
+- `docs/agents/codex1-artifact-briefs.md`
+- `.codex1/missions/<id>/`
 
-1. Read the conversation and user-provided references.
-2. Read `docs/agents/codex1-workflow.md` and `docs/agents/codex1-domain.md` if present.
-3. For exact producer formats, read [CONTEXT-FORMAT.md](CONTEXT-FORMAT.md) before updating glossary docs and [ADR-FORMAT.md](ADR-FORMAT.md) before offering or writing ADRs.
-4. Inspect context that can reduce questioning: existing Codex1 mission artifacts, `AGENTS.md`, `CONTEXT.md` or `CONTEXT-MAP.md`, repo ADRs, mission `ADRS/`, tests, and relevant source.
-5. State the current understanding briefly when it helps the user see what you inferred.
-6. Ask the highest-leverage unresolved question first.
+Clarify prepares context for `$create-prd`. Do not write `PRD.md`, write `PLAN.md`, create issue-tracker tickets, or create/complete native `/goal` state unless the user explicitly switches workflows.
 
-Proceed silently if the docs or glossary do not exist. Create/update domain docs lazily only when the session resolves real language or decisions.
+</codex1-local>
 
-## Hard Rules
+<what-to-do>
 
-- Ask exactly one question at a time, waiting for feedback before continuing.
-- Every question must include why it matters and your recommended answer.
-- If repo inspection can answer the question, inspect first and do not ask.
-- Walk each branch of the decision tree; do not settle for vibes.
-- Challenge vague or overloaded words until they become concrete behavior, artifacts, or constraints.
-- Cross-check claims against the code, docs, ADRs, and prior artifacts before treating them as resolved.
-- Push back when the user's model conflicts with verified context.
-- Keep a running decision ledger in the conversation.
-- Do not create issue-tracker tickets, start implementation, write `PRD.md`, write `PLAN.md`, or create/complete native `/goal` state.
+Interview me relentlessly about every aspect of this plan until we reach a shared understanding. Walk down each branch of the design tree, resolving dependencies between decisions one-by-one. For each question, provide your recommended answer.
 
-## Domain Side Effects
+Ask the questions one at a time, waiting for feedback on each question before continuing.
 
-When a domain term is resolved, update `CONTEXT.md` inline. If `CONTEXT-MAP.md` exists, update the relevant context file. Use [CONTEXT-FORMAT.md](CONTEXT-FORMAT.md) for exact structure and rules. Do not add generic programming terms.
+If a question can be answered by exploring the codebase, explore the codebase instead.
 
-Offer an ADR only when all three are true:
+</what-to-do>
 
-- Hard to reverse: changing later would be meaningfully costly.
-- Surprising without context: a future reader would wonder why.
-- Real trade-off: plausible alternatives existed and one was chosen for a reason.
+<supporting-info>
 
-If an ADR is warranted, use [ADR-FORMAT.md](ADR-FORMAT.md). Keep it lightweight unless the decision truly needs more structure. For repo-wide decisions, prefer `docs/adr/`. For mission-specific execution decisions, prefer `.codex1/missions/<id>/ADRS/`.
+## Domain awareness
 
-## Interview Map
+During codebase exploration, also look for existing documentation:
 
-- Problem: what pain exists, who feels it, and what changes when solved.
-- Destination: finished user/developer experience.
-- Actors: human users, Codex, workers/subagents, maintainers, reviewers, CI, external systems.
-- Scope: success criteria, non-goals, migration boundaries, compatibility promises, PR intent.
-- UX: command flow, copy/paste moments, prompts, inspected artifacts, failure messages.
-- Data and state: durable artifacts, native Codex state, receipts, logs, cache, issue trackers, and explicit non-state.
-- Architecture: deep modules, interfaces, invariants, integration boundaries, ADR constraints.
-- Proof: tests, commands, screenshots, manual checks, review, triage, closeout evidence.
-- Completion: what makes a later `/goal` objectively done, not paused and not waiting for a question.
+### File structure
 
-## Question Shape
+Most repos have a single context:
 
 ```
-Question: ...
-Why it matters: ...
-My recommendation: ...
+/
+├── CONTEXT.md
+├── docs/
+│   └── adr/
+│       ├── 0001-event-sourced-orders.md
+│       └── 0002-postgres-for-write-model.md
+└── src/
 ```
 
-Concrete options are useful when they clarify tradeoffs. If the user proposes a weak answer, say so and explain the failure mode.
+If a `CONTEXT-MAP.md` exists at the root, the repo has multiple contexts. The map points to where each one lives:
 
-## Stop Condition
+```
+/
+├── CONTEXT-MAP.md
+├── docs/
+│   └── adr/                          ← system-wide decisions
+├── src/
+│   ├── ordering/
+│   │   ├── CONTEXT.md
+│   │   └── docs/adr/                 ← context-specific decisions
+│   └── billing/
+│       ├── CONTEXT.md
+│       └── docs/adr/
+```
 
-Stop when `$create-prd` can write without guessing:
+Create files lazily — only when you have something to write. If no `CONTEXT.md` exists, create one when the first term is resolved. If no `docs/adr/` exists, create it when the first ADR is needed.
 
-- problem and destination
-- intended UX and actors
-- success criteria and non-goals
-- constraints and state boundaries
-- domain terms and ADRs affected
-- implementation decision territory
-- proof and review expectations
-- PR intent
-- remaining assumptions acceptable to record
+## During the session
 
-End with a PRD-ready clarification brief covering original request, interpreted destination, target actors, intended UX, success criteria, non-goals, constraints, verified context, domain/ADR updates, implementation decision territory, resolved questions, remaining assumptions, proof/review expectations, risks, and PR intent.
+### Challenge against the glossary
 
-Clarification notes are inputs for `$create-prd`, not mission truth and not execution instructions.
+When the user uses a term that conflicts with the existing language in `CONTEXT.md`, call it out immediately. "Your glossary defines 'cancellation' as X, but you seem to mean Y — which is it?"
+
+### Sharpen fuzzy language
+
+When the user uses vague or overloaded terms, propose a precise canonical term. "You're saying 'account' — do you mean the Customer or the User? Those are different things."
+
+### Discuss concrete scenarios
+
+When domain relationships are being discussed, stress-test them with specific scenarios. Invent scenarios that probe edge cases and force the user to be precise about the boundaries between concepts.
+
+### Cross-reference with code
+
+When the user states how something works, check whether the code agrees. If you find a contradiction, surface it: "Your code cancels entire Orders, but you just said partial cancellation is possible — which is right?"
+
+### Update CONTEXT.md inline
+
+When a term is resolved, update `CONTEXT.md` right there. Don't batch these up — capture them as they happen. Use the format in [CONTEXT-FORMAT.md](./CONTEXT-FORMAT.md).
+
+Don't couple `CONTEXT.md` to implementation details. Only include terms that are meaningful to domain experts.
+
+### Offer ADRs sparingly
+
+Only offer to create an ADR when all three are true:
+
+1. **Hard to reverse** — the cost of changing your mind later is meaningful
+2. **Surprising without context** — a future reader will wonder "why did they do it this way?"
+3. **The result of a real trade-off** — there were genuine alternatives and you picked one for specific reasons
+
+If any of the three is missing, skip the ADR. Use the format in [ADR-FORMAT.md](./ADR-FORMAT.md).
+
+</supporting-info>
 "#
 }
 
 fn create_prd_skill_body() -> &'static str {
     r#"---
 name: create-prd
-description: Synthesize known context into a Codex1 PRD artifact. Use when the user wants a PRD from the current conversation, clarification output, repo context, and references; do not publish to an issue tracker.
+description: Synthesize known context into a local Codex1 PRD artifact. Use when the user wants a PRD from the current conversation, clarification output, repo context, and references; do not publish to an issue tracker.
 ---
 
-# Create PRD
+This skill takes the current conversation context and codebase understanding and produces a PRD. Do NOT interview the user — just synthesize what you already know.
 
-Use this after `$clarify` or whenever the user asks for a PRD from known context. This is the local Codex1 version of the reference `to-prd` workflow: same synthesis quality, no issue tracker.
-
-Do not interview the user by default. Synthesize what is already known. If important information is missing, record an assumption, risk, or open question in the PRD instead of blocking. Only ask when the user explicitly wants to co-author, when two authoritative sources contradict each other, or when the module/test choices are load-bearing and the user is clearly still in the loop.
+Codex1-local change: write `PRD.md` locally through the Codex1 artifact workflow. Do not publish to GitHub Issues, Linear, Jira, GitLab, or any issue tracker. Do not apply triage labels.
 
 ## Process
 
-1. Read [PRD-FORMAT.md](PRD-FORMAT.md) for the exact output contract.
-2. Explore the repo enough to understand the current state before writing. Read the conversation, clarification brief, existing mission artifacts, `AGENTS.md`, `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, `docs/agents/codex1-artifact-briefs.md`, `CONTEXT.md` or `CONTEXT-MAP.md`, ADRs, tests, and relevant source.
-3. Write from the user's perspective first: problem, solution, actors, user stories, and externally visible outcomes.
-4. Use the codebase's own language. Prefer terms from docs, source, tests, and ADRs over invented vocabulary.
-5. Sketch the major modules or areas likely to be built or modified. Actively look for deep modules: simple interfaces that hide meaningful complexity and can be tested in isolation.
-6. If the module sketch or test focus is uncertain and important, briefly check with the user exactly like the reference PRD skill. If the user is not available or did not ask for interaction, proceed and record assumptions.
-7. Capture implementation decisions: module boundaries, interface changes, architectural decisions, schema changes, API contracts, integrations, state ownership, and specific interactions.
-8. Capture testing decisions: what external behavior proves success, which modules deserve direct tests, prior art in the existing test suite, and what not to test because it is implementation detail.
-9. Write `PRD.md` locally through the Codex1 PRD artifact workflow. Do not publish it anywhere.
+1. Explore the repo to understand the current state of the codebase, if you haven't already. Use the project's domain glossary vocabulary throughout the PRD, and respect any ADRs in the area you're touching. If Codex1 workflow docs or mission artifacts exist, use them as local context.
 
-## PRD Shape
+2. Sketch out the major modules you will need to build or modify to complete the implementation. Actively look for opportunities to extract deep modules that can be tested in isolation.
 
-The PRD must be good enough that `$plan` can design execution without reconstructing the product intent. Use [PRD-FORMAT.md](PRD-FORMAT.md). In short, include:
+A deep module (as opposed to a shallow module) is one which encapsulates a lot of functionality in a simple, testable interface which rarely changes.
 
-- Problem Statement: the problem from the user's perspective.
-- Solution: the solution from the user's perspective.
-- User Stories: a long numbered list covering the whole feature, in "As an <actor>, I want <feature>, so that <benefit>" form.
-- Success Criteria: observable facts that make the PRD satisfied.
-- Module Sketch: likely modules, interfaces, and deep-module opportunities, using stable names rather than brittle paths.
-- Implementation Decisions: modules, interfaces, architecture, schemas, API contracts, state boundaries, integrations, and clarified interactions.
-- Testing Decisions: external behavior to test, modules to test directly, prior test patterns, and testing non-goals.
-- Out of Scope: what this PRD intentionally does not include.
-- Constraints, verified context, assumptions, resolved questions, proof expectations, review expectations, and PR intent.
-- Further Notes when useful.
+Check with the user that these modules match their expectations. Check with the user which modules they want tests written for.
 
-Do not include code snippets that will go stale quickly, and do not include brittle file paths; brittle paths make the PRD age badly. It is fine to mention stable module names, artifact names, commands, and durable concepts.
+3. Write the PRD using the template below, then write it locally as `PRD.md` through the Codex1 artifact workflow. Do not publish it anywhere.
 
-Do not publish to GitHub Issues, Linear, Jira, or any issue tracker. Codex1 PRDs stay in the mission artifact tree. Do not start implementation, create `PLAN.md`, or create/complete native `/goal` state.
+<prd-template>
+
+## Problem Statement
+
+The problem that the user is facing, from the user's perspective.
+
+## Solution
+
+The solution to the problem, from the user's perspective.
+
+## User Stories
+
+A LONG, numbered list of user stories. Each user story should be in the format of:
+
+1. As an <actor>, I want a <feature>, so that <benefit>
+
+<user-story-example>
+1. As a mobile bank customer, I want to see balance on my accounts, so that I can make better informed decisions about my spending
+</user-story-example>
+
+This list of user stories should be extremely extensive and cover all aspects of the feature.
+
+## Implementation Decisions
+
+A list of implementation decisions that were made. This can include:
+
+- The modules that will be built/modified
+- The interfaces of those modules that will be modified
+- Technical clarifications from the developer
+- Architectural decisions
+- Schema changes
+- API contracts
+- Specific interactions
+
+Do NOT include specific file paths or code snippets. They may end up being outdated very quickly.
+
+Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it within the relevant decision and note briefly that it came from a prototype. Trim to the decision-rich parts — not a working demo, just the important bits.
+
+## Testing Decisions
+
+A list of testing decisions that were made. Include:
+
+- A description of what makes a good test (only test external behavior, not implementation details)
+- Which modules will be tested
+- Prior art for the tests (i.e. similar types of tests in the codebase)
+
+## Out of Scope
+
+A description of the things that are out of scope for this PRD.
+
+## Further Notes
+
+Any further notes about the feature.
+
+</prd-template>
 "#
 }
 
 fn plan_skill_body() -> &'static str {
     r#"---
 name: plan
-description: Design an executable Codex1 mission from PRD.md, including research, specs, vertical subplans, and the pasteable native /goal objective. Use after create-prd; do not create issue-tracker tickets.
+description: Design an executable Codex1 mission from PRD.md, including research, specs, vertical subplans, and a native goal brief. Use after create-prd; do not create issue-tracker tickets.
 ---
 
 # Plan
 
-Use this after `PRD.md` exists. Planning designs the mission; it is not execution. Questions are allowed during planning when they improve the plan, but the generated `/goal` objective must not ask questions.
+Use this after `PRD.md` exists. Planning turns the PRD into an executable route. It is not execution and not a project-management exercise.
 
-Read `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, and `docs/agents/codex1-artifact-briefs.md` if present. Read [ADR-FORMAT.md](ADR-FORMAT.md) before writing ADRs, [SUBPLAN-BRIEF.md](SUBPLAN-BRIEF.md) before writing ready subplans, and [EXECUTION-PROMPT-FORMAT.md](EXECUTION-PROMPT-FORMAT.md) before writing `EXECUTION_PROMPT.md`.
+Ask the user only when a product, scope, UX, credential, or human-judgment decision is missing. Do not ask the user to decide technical dependency ordering, slice granularity, parallelization, test placement, or other planning mechanics that Codex can infer from the repo.
+
+Read `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, and `docs/agents/codex1-artifact-briefs.md` if present. Read [ADR-FORMAT.md](ADR-FORMAT.md) before writing ADRs, [SUBPLAN-BRIEF.md](SUBPLAN-BRIEF.md) before writing ready subplans, and [GOAL-BRIEF-FORMAT.md](GOAL-BRIEF-FORMAT.md) before writing `GOAL_BRIEF.md`.
 
 ## Process
 
 1. Read `PRD.md` first. Treat it as the outcome contract.
 2. Inspect repo context before planning: tests, docs, domain glossary, ADRs, prior mission artifacts, and relevant code.
-3. Restate the outcome contract: success criteria, non-goals, proof expectations, review expectations, PR intent, and assumptions.
+3. Restate the outcome contract: what must be true, what is out of scope, and what proof will matter.
 4. Decide whether research is needed. If uncertainty affects architecture, product behavior, verification, or external APIs, create `RESEARCH_PLAN.md` and record research before finalizing the plan.
-5. Identify workstreams, risks, dependencies, existing patterns, and likely deep modules.
+5. Identify the implementation shape: existing patterns, likely deep modules, needed contracts, risk areas, and whether architecture thinking is only a planning lens or a dedicated refactor mission.
 6. Create ADRs in `ADRS/` when planning makes or preserves a durable architecture decision, chooses between plausible alternatives, rejects a tempting approach for a load-bearing reason, or changes a previous architectural direction. Use [ADR-FORMAT.md](ADR-FORMAT.md) and keep ADRs lightweight unless the decision needs structure.
 7. Create specs for bounded contracts where implementation needs more precision than the PRD.
 8. Break work into tracer-bullet vertical slices. Each slice cuts end-to-end through the smallest behavior path that can be reviewed, tested, and proven independently.
-9. Mark each slice as `AFK` or `HITL`. `AFK` means an agent can execute from artifacts without more human decisions. `HITL` means a human decision, design review, credential, or manual judgment is still required.
-10. Quiz the user on the proposed breakdown when practical: granularity, dependency relationships, HITL/AFK labels, merge/split choices, and user stories covered. Iterate if they answer. If the user is absent, record assumptions and continue.
-11. Put only fully specified AFK slices in `SUBPLANS/ready/`. Keep HITL work in `PLAN.md` or move it to `SUBPLANS/paused/` if it needs a durable placeholder.
+9. Write the execution order. Use simple serial order by default. Add parallel-safe groups only when they are obvious and useful. This is guidance, not a dependency graph engine.
+10. Mark each slice as `AFK` or `HITL`. `AFK` means an agent can execute from artifacts without more human decisions. `HITL` means a human decision, design review, credential, or manual judgment is still required.
+11. Put only fully specified AFK slices in `SUBPLANS/ready/`. Keep HITL work out of ready execution; use `SUBPLANS/paused/` only when a durable placeholder is useful.
 12. Define proof for every executable slice: tests, commands, screenshots, logs, manual checks, review evidence, or accepted-risk records.
-13. Write `EXECUTION_PROMPT.md` with a pasteable native `/goal` objective.
+13. Write `GOAL_BRIEF.md` as a native goal brief that helps Codex create or refine the actual `/goal` objective.
 
 ## Artifacts
 
-- `PLAN.md`: strategy thesis, workstreams, phases, risk map, artifact index, review posture, and recommended next slices.
+- `PLAN.md`: outcome contract, implementation shape, execution order, parallelization notes when useful, ready subplans, proof strategy, risks, and human decisions if any.
 - `RESEARCH_PLAN.md`: research questions, sources, experiments, expected outputs, stopping criteria, and how findings affect the plan.
 - `RESEARCH/`: durable research records with sources, facts, experiments, uncertainty, options, and recommendations.
 - `ADRS/`: durable architecture decisions with context, decision, options considered, tradeoffs, consequences, and links to PRD/plan/specs.
 - `SPECS/`: implementation contracts for bounded areas.
 - `SUBPLANS/ready/`: executable vertical slices that require no further user decisions.
-- `EXECUTION_PROMPT.md`: the objective the user may review, edit, and paste after `/goal`.
+- `GOAL_BRIEF.md`: a native goal brief the user or Codex may use to create or refine the real `/goal` objective.
 
 ## Subplan Quality Bar
 
@@ -1339,9 +1465,9 @@ Every ready subplan is an agent brief. Use [SUBPLAN-BRIEF.md](SUBPLAN-BRIEF.md).
 
 Do not reference line numbers. Avoid file paths unless they name stable artifacts such as `PRD.md`, `PLAN.md`, or `SUBPLANS/ready/`. Prefer behavior and interfaces over procedural instructions.
 
-## Execution Objective Requirements
+## Goal Brief Requirements
 
-Use [EXECUTION-PROMPT-FORMAT.md](EXECUTION-PROMPT-FORMAT.md). The goal prompt is the pasteable objective text, not a file-loading instruction and not a wrapper around another prompt. It must not say to read `EXECUTION_PROMPT.md`; the user is copying from that file into `/goal`.
+Use [GOAL-BRIEF-FORMAT.md](GOAL-BRIEF-FORMAT.md). The goal brief is not native goal state, not a file-loading instruction, and not a sacred final prompt. It must not say to read `GOAL_BRIEF.md` as the first execution step. It should give Codex enough context to create or refine a strong whole-mission native goal.
 
 - mission path
 - primary artifacts to read
@@ -1358,7 +1484,7 @@ Use [EXECUTION-PROMPT-FORMAT.md](EXECUTION-PROMPT-FORMAT.md). The goal prompt is
 
 Completion criteria are only completion criteria. Do not put pause, escalation, or "ask the user" criteria under completion. The `/goal` execution phase may not ask questions. If completion cannot be reached from the artifacts, the objective should instruct Codex to record non-completion evidence, accepted risks, or deferred work instead of inventing scope or asking the user.
 
-Do not create issue-tracker tickets. Do not create, inspect, or complete native goal state. Do not treat Codex1 inspect/status/events/receipts as proof of readiness or completion. The user keeps the go moment by manually starting a new Codex CLI session, typing `/goal`, and pasting the generated objective.
+Do not create issue-tracker tickets. Do not create, inspect, or complete native goal state. Do not treat Codex1 inspect/status/events/receipts as proof of readiness or completion. The user keeps the go moment by asking Codex to create a native goal from `GOAL_BRIEF.md` or by editing the brief before `/goal`.
 "#
 }
 
@@ -1637,7 +1763,61 @@ Each subplan should deliver the thinnest complete vertical path through the syst
 "#
 }
 
-fn execution_prompt_format_body() -> &'static str {
+fn goal_brief_format_body() -> &'static str {
+    r#"# Goal Brief Format
+
+`GOAL_BRIEF.md` helps Codex create or refine the native `/goal` objective for the whole mission.
+
+It is a brief, not native goal state and not the final authority. The brief must not tell Codex to read `GOAL_BRIEF.md` as the first execution step.
+
+## Goal Brief Must Include
+
+- Purpose
+- Suggested goal request
+- Mission path
+- Primary artifacts to read
+- Execution order
+- Subplan selection rules
+- Worker/subagent rules when useful
+- Editable scope
+- Proof recording rules
+- Review and triage rules
+- Explicit completion criteria
+- If completion cannot be reached
+- Closeout rules
+- Prohibited actions
+
+## Completion Criteria
+
+Completion criteria are only completion criteria. Do not include pause, escalation, "ask the user", or "wait for clarification" criteria.
+
+Good completion criteria are observable:
+
+- Required ready subplans are complete or explicitly triaged not applicable.
+- Required proofs exist and were audited.
+- PRD success criteria are satisfied or recorded as deferred with reason.
+- Closeout summarizes completed, superseded, paused, deferred, and risky work.
+
+## No-question Execution
+
+The `/goal` execution phase may not ask questions. If artifacts are insufficient, Codex should record non-completion evidence, blockers, accepted risks, or deferred work rather than inventing scope or asking the user.
+
+## Worker Rules
+
+When using workers, give each worker explicit ownership, relevant artifacts, editable scope, proof expectations, and non-goals. Workers should not edit mission-level artifacts unless assigned.
+
+## Prohibited Actions
+
+Always prohibit:
+
+- Creating, inspecting, or completing native goal state from Codex1.
+- Treating `codex1 inspect`, setup status, events, or receipts as completion proof.
+- Creating issue-tracker tickets.
+- Reading `GOAL_BRIEF.md` as the first step of the native goal.
+"#
+}
+
+fn legacy_execution_prompt_format_body() -> &'static str {
     r#"# Execution Prompt Format
 
 `EXECUTION_PROMPT.md` contains the objective text the user copies after typing native `/goal`.
@@ -1698,10 +1878,10 @@ Codex1 is a local artifact workflow, not an issue tracker and not native goal st
 
 1. `$clarify` sharpens intent while questions are allowed.
 2. `$create-prd` synthesizes known context into `PRD.md`.
-3. `$plan` designs research, specs, ADRs, vertical subplans, and `EXECUTION_PROMPT.md`.
-4. The user manually starts a new Codex CLI session, types `/goal`, and pastes the objective from `EXECUTION_PROMPT.md`.
+3. `$plan` designs research, specs, ADRs, vertical subplans, and `GOAL_BRIEF.md`.
+4. The user asks Codex to create or refine a native `/goal` from `GOAL_BRIEF.md`.
 
-`EXECUTION_PROMPT.md` is a copy source. It should not instruct Codex to read itself.
+`GOAL_BRIEF.md` is a native goal brief. It should not instruct Codex to read itself as the first execution step.
 
 ## No Issue Tracker
 
@@ -1787,9 +1967,9 @@ Ready subplans are contracts for future Codex work. Each ready subplan should in
 
 Write subplans as tracer bullets: thin vertical slices that deliver a complete, independently verifiable path through the system.
 
-## Execution Prompt
+## Goal Brief
 
-`EXECUTION_PROMPT.md` contains the native `/goal` objective the user copies. The objective must include mission path, primary artifacts to read, execution order, subplan selection, worker rules, editable scope, proof rules, review/triage rules, completion criteria, non-completion behavior, closeout, and prohibited actions.
+`GOAL_BRIEF.md` helps Codex create or refine the native `/goal` objective. The brief must include purpose, suggested goal request, mission path, primary artifacts to read, execution order, subplan selection, worker rules, editable scope, proof rules, review/triage rules, completion criteria, non-completion behavior, closeout, and prohibited actions.
 
 Execution may not ask the user questions. If completion cannot be reached from artifacts, record non-completion evidence, accepted risks, or deferred work.
 
@@ -1804,7 +1984,7 @@ fn guidance_body() -> &'static str {
 
 codex1-managed
 
-Codex1 is enabled in this repository as a local artifact workflow convention. Use `$clarify`, `$create-prd`, and `$plan` for the mission workflow. Read `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, and `docs/agents/codex1-artifact-briefs.md` for the repo-local workflow, domain, ADR, and artifact rules. Use `codex1` for durable mission artifacts and mechanical evidence. Use native `/goal` for persistent objectives and continuation. The preferred flow is clarify, create PRD, plan, then manually paste the generated execution objective after `/goal`.
+Codex1 is enabled in this repository as a local artifact workflow convention. Use `$clarify`, `$create-prd`, and `$plan` for the mission workflow. Read `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, and `docs/agents/codex1-artifact-briefs.md` for the repo-local workflow, domain, ADR, and artifact rules. Use `codex1` for durable mission artifacts and mechanical evidence. Use native `/goal` for persistent objectives and continuation. The preferred flow is clarify, create PRD, plan, then create or refine the native goal from `GOAL_BRIEF.md`.
 
 Codex remains the semantic judge. Codex1 inspect, setup status, events, and receipts are not readiness, completion, review, proof, closeout, or native goal state.
 "#
