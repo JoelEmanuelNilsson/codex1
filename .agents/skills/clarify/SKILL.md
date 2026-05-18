@@ -12,7 +12,7 @@ Before asking questions, read repo-local Codex1 workflow docs and existing missi
 - `docs/agents/codex1-artifact-briefs.md`
 - `.codex1/missions/<id>/`
 
-Clarify prepares context for `$create-prd`. Do not write `PRD.md`, write `PLAN.md`, create issue-tracker tickets, or create/complete native `/goal` state unless the user explicitly switches workflows.
+Clarify prepares context for `$create-prd`. Do not write `PRD.md` or `PLAN.md`, create issue-tracker tickets, or create/complete native `/goal` state unless the user explicitly switches workflows.
 
 </codex1-local>
 

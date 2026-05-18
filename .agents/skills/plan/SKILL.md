@@ -9,6 +9,8 @@ Use this after `PRD.md` exists. Planning turns the PRD into an executable route.
 
 Ask the user only when a product, scope, UX, credential, or human-judgment decision is missing. Do not ask the user to decide technical dependency ordering, slice granularity, parallelization, test placement, or other planning mechanics that Codex can infer from the repo.
 
+Do not stop at phases, waves, or workstreams. `PLAN.md` must preserve the execution spine: outcome contract, implementation shape, execution order, ready subplans, proof strategy, risks/non-goals, and unresolved human decisions if any.
+
 Read `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, and `docs/agents/codex1-artifact-briefs.md` if present. Read [ADR-FORMAT.md](ADR-FORMAT.md) before writing ADRs, [SUBPLAN-BRIEF.md](SUBPLAN-BRIEF.md) before writing ready subplans, and [GOAL-BRIEF-FORMAT.md](GOAL-BRIEF-FORMAT.md) before writing `GOAL_BRIEF.md`.
 
 ## Process

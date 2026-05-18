@@ -30,6 +30,8 @@ Plan reads the PRD and turns it into an executable route. For substantial uncert
 
 Plan may also create ADRs, specs, and ready subplans when that makes the execution route clearer. ADRs are for durable architecture decisions and rejected alternatives with load-bearing reasons, not tiny implementation notes. Architecture work can be a planning lens or its own refactor mission. Ready subplans should be tracer-bullet vertical slices and durable agent briefs with current/desired behavior, key interfaces, scope, out-of-scope work, dependencies, acceptance criteria, proof, ownership rules, and exit criteria. The planner decides technical ordering and parallel-safe work; ask the user only for missing product, scope, UX, credential, or human-judgment decisions.
 
+`PLAN.md` should not stop at phases, waves, or workstreams. It should preserve the execution spine: outcome contract, implementation shape, execution order, ready subplans, proof strategy, risks/non-goals, and unresolved human decisions if any.
+
 The final planning output for executable work is `GOAL_BRIEF.md`: a native goal brief that preserves the user's explicit go moment without pretending Codex1 owns the goal.
 
 The goal brief is not native goal state, not a file-loading instruction, and not a sacred final prompt. It should give Codex enough context to create or refine a whole-mission `/goal`, and it must not tell Codex to read `GOAL_BRIEF.md` as the first execution step.
