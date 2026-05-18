@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create PRD"
+  short_description: "Create a local Codex1 PRD artifact"
+  default_prompt: "Use $create-prd to create a local Codex1 PRD from the known context."

@@ -23,11 +23,12 @@ Read `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, and `docs
 6. Create ADRs in `ADRS/` when planning makes or preserves a durable architecture decision, chooses between plausible alternatives, rejects a tempting approach for a load-bearing reason, or changes a previous architectural direction. Use [ADR-FORMAT.md](ADR-FORMAT.md) and keep ADRs lightweight unless the decision needs structure.
 7. Create specs for bounded contracts where implementation needs more precision than the PRD.
 8. Break work into tracer-bullet vertical slices. Each slice cuts end-to-end through the smallest behavior path that can be reviewed, tested, and proven independently.
-9. Write the execution order. Use simple serial order by default. Add parallel-safe groups only when they are obvious and useful. This is guidance, not a dependency graph engine.
-10. Mark each slice as `AFK` or `HITL`. `AFK` means an agent can execute from artifacts without more human decisions. `HITL` means a human decision, design review, credential, or manual judgment is still required.
-11. Put only fully specified AFK slices in `SUBPLANS/ready/`. Keep HITL work out of ready execution; use `SUBPLANS/paused/` only when a durable placeholder is useful.
-12. Define proof for every executable slice: tests, commands, screenshots, logs, manual checks, review evidence, or accepted-risk records.
-13. Write `GOAL_BRIEF.md` as a native goal brief that helps Codex create or refine the actual `/goal` objective.
+9. Assign an `Execution Lane` to every ready subplan: `tdd`, `diagnose`, `improve-codebase-architecture`, `prototype`, `proof-qa`, or `standard`. Use `standard` for docs, simple config, mechanical updates, low-risk chores, and work where a specialist lane would be artificial.
+10. Write the execution order. Use simple serial order by default. Add parallel-safe groups only when they are obvious and useful. This is guidance, not a dependency graph engine.
+11. Mark each slice as `AFK` or `HITL`. `AFK` means an agent can execute from artifacts without more human decisions. `HITL` means a human decision, design review, credential, or manual judgment is still required.
+12. Put only fully specified AFK slices in `SUBPLANS/ready/`. Keep HITL work out of ready execution; use `SUBPLANS/paused/` only when a durable placeholder is useful.
+13. Define proof for every executable slice: tests, commands, screenshots, logs, manual checks, review evidence, or accepted-risk records.
+14. Write `GOAL_BRIEF.md` as a native goal brief that helps Codex create or refine the actual `/goal` objective.
 
 ## Artifacts
 
@@ -44,6 +45,7 @@ Read `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, and `docs
 Every ready subplan is an agent brief. Use [SUBPLAN-BRIEF.md](SUBPLAN-BRIEF.md). It must be durable even if files move, and must include:
 
 - slice type: AFK unless already resolved HITL work has become executable
+- execution lane: one of `tdd`, `diagnose`, `improve-codebase-architecture`, `prototype`, `proof-qa`, or `standard`
 - current behavior or current repo state
 - desired behavior after the slice
 - key interfaces, stable types, commands, artifacts, or contracts

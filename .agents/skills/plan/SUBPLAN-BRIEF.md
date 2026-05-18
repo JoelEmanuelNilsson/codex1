@@ -18,12 +18,29 @@ Avoid line numbers. Avoid file paths unless they name stable artifacts such as `
 
 Only fully specified AFK work belongs in `SUBPLANS/ready/`.
 
+## Execution Lanes
+
+Every ready subplan must include `Execution Lane` with one allowed value:
+
+- `tdd`: behavior-changing code that should use red-green-refactor through public interfaces
+- `diagnose`: hard bug or regression work that needs a reproduce-first loop
+- `improve-codebase-architecture`: architecture deepening work using modules, interfaces, seams, adapters, depth, leverage, and locality
+- `prototype`: throwaway work that answers a named design, state, or UI question
+- `proof-qa`: mission-scoped acceptance proof, Browser checks, screenshots, logs, manual checks, review evidence, closeout, or accepted-risk records
+- `standard`: docs, simple config, mechanical updates, low-risk chores, and work where a specialist lane would be artificial
+
+`$plan` assigns the lane. Native `/goal` executes from the subplans.
+
 ## Template
 
 ```md
 ## Slice Type
 
 AFK or HITL, with one sentence explaining why.
+
+## Execution Lane
+
+One of `tdd`, `diagnose`, `improve-codebase-architecture`, `prototype`, `proof-qa`, or `standard`.
 
 ## Current Behavior
 

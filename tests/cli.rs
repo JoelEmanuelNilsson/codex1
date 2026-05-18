@@ -13,19 +13,42 @@ use tempfile::TempDir;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 
-const MANAGED_SKILLS: [&str; 4] = [
+const MANAGED_SKILLS: [&str; 8] = [
     ".agents/skills/codex1/SKILL.md",
     ".agents/skills/clarify/SKILL.md",
     ".agents/skills/create-prd/SKILL.md",
     ".agents/skills/plan/SKILL.md",
+    ".agents/skills/tdd/SKILL.md",
+    ".agents/skills/diagnose/SKILL.md",
+    ".agents/skills/improve-codebase-architecture/SKILL.md",
+    ".agents/skills/prototype/SKILL.md",
 ];
-const MANAGED_SUPPORTING_DOCS: [&str; 9] = [
+const MANAGED_SUPPORTING_DOCS: [&str; 28] = [
+    ".agents/skills/codex1/agents/openai.yaml",
+    ".agents/skills/clarify/agents/openai.yaml",
     ".agents/skills/clarify/ADR-FORMAT.md",
     ".agents/skills/clarify/CONTEXT-FORMAT.md",
+    ".agents/skills/create-prd/agents/openai.yaml",
     ".agents/skills/create-prd/PRD-FORMAT.md",
+    ".agents/skills/plan/agents/openai.yaml",
     ".agents/skills/plan/ADR-FORMAT.md",
     ".agents/skills/plan/SUBPLAN-BRIEF.md",
     ".agents/skills/plan/GOAL-BRIEF-FORMAT.md",
+    ".agents/skills/tdd/agents/openai.yaml",
+    ".agents/skills/tdd/tests.md",
+    ".agents/skills/tdd/mocking.md",
+    ".agents/skills/tdd/deep-modules.md",
+    ".agents/skills/tdd/interface-design.md",
+    ".agents/skills/tdd/refactoring.md",
+    ".agents/skills/diagnose/agents/openai.yaml",
+    ".agents/skills/diagnose/scripts/hitl-loop.template.sh",
+    ".agents/skills/improve-codebase-architecture/agents/openai.yaml",
+    ".agents/skills/improve-codebase-architecture/LANGUAGE.md",
+    ".agents/skills/improve-codebase-architecture/INTERFACE-DESIGN.md",
+    ".agents/skills/improve-codebase-architecture/DEEPENING.md",
+    ".agents/skills/prototype/agents/openai.yaml",
+    ".agents/skills/prototype/LOGIC.md",
+    ".agents/skills/prototype/UI.md",
     "docs/agents/codex1-workflow.md",
     "docs/agents/codex1-domain.md",
     "docs/agents/codex1-artifact-briefs.md",
@@ -1063,6 +1086,21 @@ fn setup_install_materializes_repo_scoped_guidance_without_hooks() {
     assert!(combined.contains("$clarify"));
     assert!(combined.contains("$create-prd"));
     assert!(combined.contains("$plan"));
+    assert!(combined.contains("$tdd"));
+    assert!(combined.contains("$diagnose"));
+    assert!(combined.contains("$improve-codebase-architecture"));
+    assert!(combined.contains("$prototype"));
+    assert!(combined.contains("Codex1 Local Use"));
+    assert!(combined.contains("red-green-refactor"));
+    assert!(combined.contains("Build a feedback loop"));
+    assert!(combined.contains("Improve Codebase Architecture"));
+    assert!(combined.contains("throwaway code that answers a question"));
+    assert!(combined.contains("Execution Lane"));
+    assert!(combined.contains("proof-qa"));
+    assert!(combined.contains("standard"));
+    assert!(combined.contains("default_prompt"));
+    assert!(combined.contains("mission-scoped"));
+    assert!(combined.contains("not a broad default dogfood audit"));
     assert!(combined.contains("Do NOT interview the user"));
     assert!(combined.contains("Codex1-local change"));
     assert!(combined.contains("Interview me relentlessly"));
@@ -1171,6 +1209,11 @@ fn checked_in_docs_mark_execution_prompt_mentions_as_legacy_only() {
         ".agents/skills/create-prd/SKILL.md",
         ".agents/skills/plan/SKILL.md",
         ".agents/skills/plan/GOAL-BRIEF-FORMAT.md",
+        ".agents/skills/plan/SUBPLAN-BRIEF.md",
+        ".agents/skills/tdd/SKILL.md",
+        ".agents/skills/diagnose/SKILL.md",
+        ".agents/skills/improve-codebase-architecture/SKILL.md",
+        ".agents/skills/prototype/SKILL.md",
     ];
     for file in files {
         let text = fs::read_to_string(root.join(file)).unwrap();
@@ -1415,7 +1458,7 @@ fn setup_enable_repairs_stale_managed_skill_and_marker() {
         .join(".agents/skills/create-prd/SKILL.md")
         .is_file());
     assert!(repo.path().join(".agents/skills/plan/SKILL.md").is_file());
-    assert!(marker.contains(r#""version": 5"#));
+    assert!(marker.contains(r#""version": 6"#));
 }
 
 #[test]

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Plan"
+  short_description: "Create an executable Codex1 plan pack"
+  default_prompt: "Use $plan to create an executable Codex1 mission plan pack."

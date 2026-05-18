@@ -18,6 +18,10 @@ Skill-local references installed by setup:
 - `$clarify`: `ADR-FORMAT.md` and `CONTEXT-FORMAT.md`.
 - `$create-prd`: `PRD-FORMAT.md`.
 - `$plan`: `ADR-FORMAT.md`, `SUBPLAN-BRIEF.md`, and `GOAL-BRIEF-FORMAT.md`.
+- `$tdd`: red-green-refactor guidance plus testing, mocking, interface, deep-module, and refactoring references.
+- `$diagnose`: reproduce-first debugging guidance plus the HITL loop template.
+- `$improve-codebase-architecture`: deep-module architecture guidance and interface references.
+- `$prototype`: throwaway logic and UI prototype guidance.
 
 Preferred UX:
 
@@ -25,6 +29,8 @@ Preferred UX:
 - Use `$create-prd` to synthesize known context into `PRD.md`.
 - Use `$plan` to design the mission and write `GOAL_BRIEF.md`.
 - The user asks Codex to create or refine a native goal from the generated goal brief.
+
+During execution, ready subplans may name an `Execution Lane`: `tdd`, `diagnose`, `improve-codebase-architecture`, `prototype`, `proof-qa`, or `standard`. `$plan` assigns lanes; native `/goal` executes them.
 
 Native Codex `/goal` owns persistent objectives, continuation, pause/resume, accounting, budgets, and completion. Codex1 must not create, mirror, inspect, or complete native goals.
 

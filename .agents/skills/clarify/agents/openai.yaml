@@ -1,0 +1,4 @@
+interface:
+  display_name: "Clarify"
+  short_description: "Clarify a Codex1 mission before PRD"
+  default_prompt: "Use $clarify to clarify this Codex1 mission before PRD."

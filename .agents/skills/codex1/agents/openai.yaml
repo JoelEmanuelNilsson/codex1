@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex1"
+  short_description: "Repo-local mission workflow router"
+  default_prompt: "Use $codex1 to orient this repo-local mission workflow."
