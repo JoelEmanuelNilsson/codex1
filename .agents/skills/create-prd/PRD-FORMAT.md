@@ -1,6 +1,6 @@
 # PRD Format
 
-Use this when `$create-prd` writes `PRD.md`. This is adapted from the reference `to-prd` format, but Codex1 keeps the PRD local and does not publish to an issue tracker.
+Use this when `$create-prd` writes `PRD.md`.
 
 ## Required Quality Bar
 
@@ -73,6 +73,6 @@ Reviewer posture, review artifacts, triage expectations, or explicit "no special
 Any useful context that does not fit above.
 ```
 
-## Local-only Rule
+## Write Location
 
-Do not publish this PRD to GitHub Issues, Linear, Jira, GitLab, or another tracker. Write it into the Codex1 mission artifact tree.
+Write `PRD.md` into the Codex1 mission artifact tree.

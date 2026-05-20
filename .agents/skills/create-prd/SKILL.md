@@ -1,11 +1,11 @@
 ---
 name: create-prd
-description: Synthesize known context into a local Codex1 PRD artifact. Use when the user wants a PRD from the current conversation, clarification output, repo context, and references; do not publish to an issue tracker.
+description: Synthesize known context into a local Codex1 PRD artifact. Use when the user wants a PRD from the current conversation, clarification output, repo context, and references.
 ---
 
 This skill takes the current conversation context and codebase understanding and produces a PRD. Do NOT interview the user — just synthesize what you already know.
 
-Codex1-local change: write `PRD.md` locally through the Codex1 artifact workflow. Do not publish to GitHub Issues, Linear, Jira, GitLab, or any issue tracker. Do not apply triage labels.
+Write `PRD.md` as a Codex1 mission artifact.
 
 ## Process
 
@@ -15,9 +15,9 @@ Codex1-local change: write `PRD.md` locally through the Codex1 artifact workflow
 
 A deep module (as opposed to a shallow module) is one which encapsulates a lot of functionality in a simple, testable interface which rarely changes.
 
-Check with the user that these modules match their expectations. Check with the user which modules they want tests written for.
+Capture the likely modules and test seams in the PRD. If a product, scope, UX, credential, or human-judgment decision is truly missing and the user is actively collaborating, ask. Otherwise record the assumption or unresolved question instead of restarting clarification.
 
-3. Write the PRD using the template below, then write it locally as `PRD.md` through the Codex1 artifact workflow. Do not publish it anywhere.
+3. Write the PRD using the template below, then write it as `PRD.md` in the Codex1 mission artifact tree.
 
 <prd-template>
 

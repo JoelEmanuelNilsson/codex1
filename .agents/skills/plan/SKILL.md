@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Design an executable Codex1 mission from PRD.md, including research, specs, vertical subplans, and a native goal brief. Use after create-prd; do not create issue-tracker tickets.
+description: Design an executable Codex1 mission from PRD.md, including research, specs, vertical subplans, and a native goal brief. Use after create-prd.
 ---
 
 # Plan
@@ -77,4 +77,4 @@ Use [GOAL-BRIEF-FORMAT.md](GOAL-BRIEF-FORMAT.md). The goal brief is not native g
 
 Completion criteria are only completion criteria. Do not put pause, escalation, or "ask the user" criteria under completion. The `/goal` execution phase may not ask questions. If completion cannot be reached from the artifacts, the objective should instruct Codex to record non-completion evidence, accepted risks, or deferred work instead of inventing scope or asking the user.
 
-Do not create issue-tracker tickets. Do not create, inspect, or complete native goal state. Do not treat Codex1 inspect/status/events/receipts as proof of readiness or completion. The user keeps the go moment by asking Codex to create a native goal from `GOAL_BRIEF.md` or by editing the brief before `/goal`.
+Do not create, inspect, or complete native goal state. Do not treat Codex1 inspect/status/events/receipts as proof of readiness or completion. The user keeps the go moment by asking Codex to create a native goal from `GOAL_BRIEF.md` or by editing the brief before `/goal`.

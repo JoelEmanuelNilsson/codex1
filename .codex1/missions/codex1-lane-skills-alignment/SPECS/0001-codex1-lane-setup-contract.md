@@ -26,7 +26,7 @@ Each lane skill is a full local file. It must not depend on `/Users/joel/.agents
 
 ## Skill Content Contract
 
-- Preserve each original skill as close to word-for-word as practical.
+- Preserve each lane's execution discipline as closely as practical.
 - Add only small Codex1-local guidance where needed.
 - Codex1-local guidance may mention mission artifacts, ready subplans, proof recording, closeout evidence, and the native `/goal` boundary.
 - `SKILL.md` is the source of truth.

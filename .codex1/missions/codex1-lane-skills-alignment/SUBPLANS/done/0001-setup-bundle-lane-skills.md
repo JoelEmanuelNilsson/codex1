@@ -35,7 +35,7 @@ Codex1 setup installs the core workflow skills plus full repo-local lane skills 
 
 - Editing global skill directories.
 - Creating a dogfood replacement skill.
-- Adding issue tracker integration.
+- Adding unrelated external workflow integration.
 - Changing native `/goal` behavior.
 - Rewriting setup into a new architecture.
 

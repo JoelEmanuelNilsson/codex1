@@ -37,7 +37,7 @@ Satisfied:
 ## Out Of Scope Preserved
 
 - Did not edit global skill directories.
-- Did not add issue tracker integration.
+- Did not add unrelated external workflow integration.
 - Did not create a mega skill.
 - Did not create a new dogfood replacement skill.
 - Did not change native `/goal` behavior.

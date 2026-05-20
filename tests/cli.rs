@@ -1102,7 +1102,7 @@ fn setup_install_materializes_repo_scoped_guidance_without_hooks() {
     assert!(combined.contains("mission-scoped"));
     assert!(combined.contains("not a broad default dogfood audit"));
     assert!(combined.contains("Do NOT interview the user"));
-    assert!(combined.contains("Codex1-local change"));
+    assert!(combined.contains("Write `PRD.md` as a Codex1 mission artifact"));
     assert!(combined.contains("Interview me relentlessly"));
     assert!(combined.contains("questions are still allowed"));
     assert!(combined.contains("Ask the questions one at a time"));
@@ -1131,7 +1131,7 @@ fn setup_install_materializes_repo_scoped_guidance_without_hooks() {
     assert!(combined.contains("AFK"));
     assert!(combined.contains("HITL"));
     assert!(combined.contains("ADRS/"));
-    assert!(combined.contains("Do not create issue-tracker tickets"));
+    assert!(combined.contains("Write `PRD.md` into the Codex1 mission artifact tree"));
     assert!(combined.contains("explicit completion criteria"));
     assert!(combined.contains("Do not put pause, escalation"));
     assert!(combined.contains("GOAL_BRIEF.md"));

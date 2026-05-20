@@ -47,10 +47,10 @@ Skip ADRs for easy-to-reverse choices, obvious implementation details, and decis
 
 ## What Qualifies
 
-- Architectural shape
-- Integration patterns between contexts
-- Technology choices with lock-in
-- Ownership and state boundaries
-- Deliberate deviations from the obvious path
-- Durable constraints not visible in code
-- Non-obvious rejected alternatives
+- Architectural shape, such as the main data-flow or module shape.
+- Integration patterns between contexts, such as events instead of synchronous calls.
+- Technology choices with lock-in, such as database, message bus, auth provider, or deployment target. Not every library deserves an ADR.
+- Ownership and state boundaries. Explicit no's can be as useful as yes's.
+- Deliberate deviations from the obvious path, so future agents do not "fix" something intentional.
+- Durable constraints not visible in code, such as compliance, latency, or partner API constraints.
+- Non-obvious rejected alternatives that future agents would otherwise suggest again.

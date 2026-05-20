@@ -19,6 +19,10 @@ _Avoid_: Purchase, transaction
 A request for payment sent to a customer after delivery.
 _Avoid_: Bill, payment request
 
+**Customer**:
+A person or organization that places orders.
+_Avoid_: Client, buyer, account
+
 ## Relationships
 
 - An **Order** produces one or more **Invoices**
@@ -37,10 +41,10 @@ _Avoid_: Bill, payment request
 ## Rules
 
 - Be opinionated. Pick one canonical term and list aliases to avoid.
-- Flag conflicts explicitly.
+- Flag conflicts explicitly with the resolution, not just the conflict.
 - Keep definitions tight: one sentence, defining what the term is.
 - Show relationships and cardinality where obvious.
-- Include only domain terms, not generic programming concepts.
+- Include only domain terms, not generic programming concepts. Before adding a term, ask whether a domain expert would need it to describe the product. If it is a code pattern, library, helper, error type, timeout, or utility concern, skip it.
 - Group terms under headings when natural clusters emerge.
 - Write example dialogue when it clarifies boundaries.
 
@@ -48,6 +52,19 @@ _Avoid_: Bill, payment request
 
 Single context: one root `CONTEXT.md`.
 
-Multi-context: root `CONTEXT-MAP.md` points to per-context `CONTEXT.md` files. If `CONTEXT-MAP.md` exists, read it and update the relevant context. If unclear, ask only when the context changes the mission.
+Multi-context: root `CONTEXT-MAP.md` points to per-context `CONTEXT.md` files and explains how the contexts relate.
 
-Create context files lazily. If no `CONTEXT.md` exists, create one only when the first term is resolved.
+```md
+# Context Map
+
+## Contexts
+
+- [Ordering](./src/ordering/CONTEXT.md) - receives and tracks orders
+- [Billing](./src/billing/CONTEXT.md) - generates invoices and processes payments
+
+## Relationships
+
+- **Ordering -> Billing**: Ordering emits order events; Billing consumes them to create invoices
+```
+
+If `CONTEXT-MAP.md` exists, read it before choosing where to write. If the relevant context is unclear and the answer changes the mission, ask. If no context files exist, create a root `CONTEXT.md` lazily when the first term is resolved.

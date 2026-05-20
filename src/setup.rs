@@ -1385,7 +1385,7 @@ Before asking questions, read repo-local Codex1 workflow docs and existing missi
 - `docs/agents/codex1-artifact-briefs.md`
 - `.codex1/missions/<id>/`
 
-Clarify prepares context for `$create-prd`. Do not write `PRD.md` or `PLAN.md`, create issue-tracker tickets, or create/complete native `/goal` state unless the user explicitly switches workflows.
+Clarify prepares context for `$create-prd`. Do not write `PRD.md` or `PLAN.md`, or create/complete native `/goal` state unless the user explicitly switches workflows.
 
 </codex1-local>
 
@@ -1478,12 +1478,12 @@ If any of the three is missing, skip the ADR. Use the format in [ADR-FORMAT.md](
 fn create_prd_skill_body() -> &'static str {
     r#"---
 name: create-prd
-description: Synthesize known context into a local Codex1 PRD artifact. Use when the user wants a PRD from the current conversation, clarification output, repo context, and references; do not publish to an issue tracker.
+description: Synthesize known context into a local Codex1 PRD artifact. Use when the user wants a PRD from the current conversation, clarification output, repo context, and references.
 ---
 
 This skill takes the current conversation context and codebase understanding and produces a PRD. Do NOT interview the user — just synthesize what you already know.
 
-Codex1-local change: write `PRD.md` locally through the Codex1 artifact workflow. Do not publish to GitHub Issues, Linear, Jira, GitLab, or any issue tracker. Do not apply triage labels.
+Write `PRD.md` as a Codex1 mission artifact.
 
 ## Process
 
@@ -1493,9 +1493,9 @@ Codex1-local change: write `PRD.md` locally through the Codex1 artifact workflow
 
 A deep module (as opposed to a shallow module) is one which encapsulates a lot of functionality in a simple, testable interface which rarely changes.
 
-Check with the user that these modules match their expectations. Check with the user which modules they want tests written for.
+Capture the likely modules and test seams in the PRD. If a product, scope, UX, credential, or human-judgment decision is truly missing and the user is actively collaborating, ask. Otherwise record the assumption or unresolved question instead of restarting clarification.
 
-3. Write the PRD using the template below, then write it locally as `PRD.md` through the Codex1 artifact workflow. Do not publish it anywhere.
+3. Write the PRD using the template below, then write it as `PRD.md` in the Codex1 mission artifact tree.
 
 <prd-template>
 
@@ -1558,7 +1558,7 @@ Any further notes about the feature.
 fn plan_skill_body() -> &'static str {
     r#"---
 name: plan
-description: Design an executable Codex1 mission from PRD.md, including research, specs, vertical subplans, and a native goal brief. Use after create-prd; do not create issue-tracker tickets.
+description: Design an executable Codex1 mission from PRD.md, including research, specs, vertical subplans, and a native goal brief. Use after create-prd.
 ---
 
 # Plan
@@ -1635,7 +1635,7 @@ Use [GOAL-BRIEF-FORMAT.md](GOAL-BRIEF-FORMAT.md). The goal brief is not native g
 
 Completion criteria are only completion criteria. Do not put pause, escalation, or "ask the user" criteria under completion. The `/goal` execution phase may not ask questions. If completion cannot be reached from the artifacts, the objective should instruct Codex to record non-completion evidence, accepted risks, or deferred work instead of inventing scope or asking the user.
 
-Do not create issue-tracker tickets. Do not create, inspect, or complete native goal state. Do not treat Codex1 inspect/status/events/receipts as proof of readiness or completion. The user keeps the go moment by asking Codex to create a native goal from `GOAL_BRIEF.md` or by editing the brief before `/goal`.
+Do not create, inspect, or complete native goal state. Do not treat Codex1 inspect/status/events/receipts as proof of readiness or completion. The user keeps the go moment by asking Codex to create a native goal from `GOAL_BRIEF.md` or by editing the brief before `/goal`.
 "#
 }
 
@@ -1689,13 +1689,13 @@ Skip ADRs for easy-to-reverse choices, obvious implementation details, and decis
 
 ## What Qualifies
 
-- Architectural shape
-- Integration patterns between contexts
-- Technology choices with lock-in
-- Ownership and state boundaries
-- Deliberate deviations from the obvious path
-- Durable constraints not visible in code
-- Non-obvious rejected alternatives
+- Architectural shape, such as the main data-flow or module shape.
+- Integration patterns between contexts, such as events instead of synchronous calls.
+- Technology choices with lock-in, such as database, message bus, auth provider, or deployment target. Not every library deserves an ADR.
+- Ownership and state boundaries. Explicit no's can be as useful as yes's.
+- Deliberate deviations from the obvious path, so future agents do not "fix" something intentional.
+- Durable constraints not visible in code, such as compliance, latency, or partner API constraints.
+- Non-obvious rejected alternatives that future agents would otherwise suggest again.
 "#
 }
 
@@ -1721,6 +1721,10 @@ _Avoid_: Purchase, transaction
 A request for payment sent to a customer after delivery.
 _Avoid_: Bill, payment request
 
+**Customer**:
+A person or organization that places orders.
+_Avoid_: Client, buyer, account
+
 ## Relationships
 
 - An **Order** produces one or more **Invoices**
@@ -1739,10 +1743,10 @@ _Avoid_: Bill, payment request
 ## Rules
 
 - Be opinionated. Pick one canonical term and list aliases to avoid.
-- Flag conflicts explicitly.
+- Flag conflicts explicitly with the resolution, not just the conflict.
 - Keep definitions tight: one sentence, defining what the term is.
 - Show relationships and cardinality where obvious.
-- Include only domain terms, not generic programming concepts.
+- Include only domain terms, not generic programming concepts. Before adding a term, ask whether a domain expert would need it to describe the product. If it is a code pattern, library, helper, error type, timeout, or utility concern, skip it.
 - Group terms under headings when natural clusters emerge.
 - Write example dialogue when it clarifies boundaries.
 
@@ -1750,16 +1754,29 @@ _Avoid_: Bill, payment request
 
 Single context: one root `CONTEXT.md`.
 
-Multi-context: root `CONTEXT-MAP.md` points to per-context `CONTEXT.md` files. If `CONTEXT-MAP.md` exists, read it and update the relevant context. If unclear, ask only when the context changes the mission.
+Multi-context: root `CONTEXT-MAP.md` points to per-context `CONTEXT.md` files and explains how the contexts relate.
 
-Create context files lazily. If no `CONTEXT.md` exists, create one only when the first term is resolved.
+```md
+# Context Map
+
+## Contexts
+
+- [Ordering](./src/ordering/CONTEXT.md) - receives and tracks orders
+- [Billing](./src/billing/CONTEXT.md) - generates invoices and processes payments
+
+## Relationships
+
+- **Ordering -> Billing**: Ordering emits order events; Billing consumes them to create invoices
+```
+
+If `CONTEXT-MAP.md` exists, read it before choosing where to write. If the relevant context is unclear and the answer changes the mission, ask. If no context files exist, create a root `CONTEXT.md` lazily when the first term is resolved.
 "#
 }
 
 fn prd_format_body() -> &'static str {
     r#"# PRD Format
 
-Use this when `$create-prd` writes `PRD.md`. This is adapted from the reference `to-prd` format, but Codex1 keeps the PRD local and does not publish to an issue tracker.
+Use this when `$create-prd` writes `PRD.md`.
 
 ## Required Quality Bar
 
@@ -1832,9 +1849,9 @@ Reviewer posture, review artifacts, triage expectations, or explicit "no special
 Any useful context that does not fit above.
 ```
 
-## Local-only Rule
+## Write Location
 
-Do not publish this PRD to GitHub Issues, Linear, Jira, GitLab, or another tracker. Write it into the Codex1 mission artifact tree.
+Write `PRD.md` into the Codex1 mission artifact tree.
 "#
 }
 
@@ -1980,7 +1997,6 @@ Always prohibit:
 
 - Creating, inspecting, or completing native goal state from Codex1.
 - Treating `codex1 inspect`, setup status, events, or receipts as completion proof.
-- Creating issue-tracker tickets.
 - Reading `GOAL_BRIEF.md` as the first step of the native goal.
 "#
 }
@@ -2032,7 +2048,6 @@ Always prohibit:
 
 - Creating, inspecting, or completing native goal state from Codex1.
 - Treating `codex1 inspect`, setup status, events, or receipts as completion proof.
-- Creating issue-tracker tickets.
 - Reading `EXECUTION_PROMPT.md` as the first step of the pasted objective.
 "#
 }
@@ -2040,7 +2055,7 @@ Always prohibit:
 fn workflow_doc_body() -> &'static str {
     r#"# Codex1 Workflow
 
-Codex1 is a local artifact workflow, not an issue tracker and not native goal state.
+Codex1 is a local artifact workflow, not native goal state.
 
 ## Flow
 
@@ -2056,10 +2071,6 @@ Codex1 is a local artifact workflow, not an issue tracker and not native goal st
 Core skills shape the mission: `$codex1`, `$clarify`, `$create-prd`, and `$plan`.
 
 Lane skills guide execution inside ready subplans: `$tdd`, `$diagnose`, `$improve-codebase-architecture`, and `$prototype`. `$plan` assigns the lane; native `/goal` executes. Use `standard` for docs, simple config, mechanical updates, low-risk chores, and work where a specialist lane would be fake ceremony.
-
-## No Issue Tracker
-
-Codex1 does not publish PRDs, issues, or plans to GitHub Issues, Linear, Jira, GitLab, or any other tracker. Durable work lives in `.codex1/missions/<id>/`.
 
 ## Native Goal Boundary
 

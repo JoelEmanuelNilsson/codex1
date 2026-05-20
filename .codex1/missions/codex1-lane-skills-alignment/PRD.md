@@ -6,7 +6,7 @@ Codex1 is becoming the local-first mission workflow for Codex work, but its curr
 
 That makes the workflow feel split. A Codex1 plan can say that a slice should use TDD or diagnosis, but the repo-local workflow does not fully carry those instructions. If global skills are removed, renamed, or changed, a repo with Codex1 installed may lose the execution guidance that the mission plan expects.
 
-The user wants Codex1 to become the default local mission operating system while staying light, adaptable, and not overly opinionated. Codex1 should absorb the useful Matt Pocock-style workflow without losing its core behavior, and should avoid turning every mission into a bulky ceremony.
+The user wants Codex1 to become the default local mission operating system while staying light, adaptable, and not overly opinionated. Codex1 should include useful execution disciplines without losing its core behavior, and should avoid turning every mission into a bulky ceremony.
 
 ## Solution
 
@@ -26,11 +26,11 @@ The new Codex1 lane skills are:
 3. `$improve-codebase-architecture`
 4. `$prototype`
 
-Each lane skill should be copied as close to word-for-word from the existing original skill as possible. Codex1 should add only a tiny local wrapper where needed, so the skill understands mission artifacts, ready subplans, proof recording, and the native `/goal` boundary.
+Each lane skill should preserve its execution discipline as closely as possible. Codex1 should add only a tiny local wrapper where needed, so the skill understands mission artifacts, ready subplans, proof recording, and the native `/goal` boundary.
 
 Codex1 should not create one mega skill. `$codex1` remains a thin overview/router. The separate skills keep context small and trigger only when relevant.
 
-Codex1 should not revive or depend on removed unrelated skills such as `linear`, `builderjsonraw-replica`, `spec-replica-orchestrator`, or the old standalone `dogfood` skill. Instead, Codex1 should include lightweight proof/QA guidance for mission closeout, using tests, Browser, logs, screenshots, manual checks, and proof artifacts where appropriate.
+Codex1 should not revive or depend on removed unrelated skills. Instead, Codex1 should include lightweight proof/QA guidance for mission closeout, using tests, Browser, logs, screenshots, manual checks, and proof artifacts where appropriate.
 
 ## User Stories
 
@@ -55,7 +55,7 @@ Codex1 should not revive or depend on removed unrelated skills such as `linear`,
 19. As Joel, I want `agents/openai.yaml` metadata installed when practical, so that Codex1 skills are nicer in the UI without making metadata the source of truth.
 20. As Joel, I want `GOAL_BRIEF.md` to remain the bridge into native `/goal`, so that Codex1 does not become a goal engine.
 21. As a future Codex agent, I want each repo-local skill to include enough local mission context, so that I can execute a mission even if global skills are absent.
-22. As a future Codex agent, I want the original skill behavior preserved, so that the Codex1 versions do not drift into vague or weaker copies.
+22. As a future Codex agent, I want the lane behavior preserved, so that the Codex1 versions do not drift into vague or weaker guidance.
 23. As a maintainer, I want tests proving setup installs the expanded bundle, so that the lane skills do not silently disappear.
 24. As a maintainer, I want stale setup bundles to report accurately, so that repos can be refreshed when the managed skill set changes.
 25. As a maintainer, I want the docs to explain the relationship between Codex1 core skills and lane skills, so that users do not have to remember the whole conversation.
@@ -64,7 +64,7 @@ Codex1 should not revive or depend on removed unrelated skills such as `linear`,
 
 - Codex1 setup should install repo-local lane skills in `.agents/skills/` for `tdd`, `diagnose`, `improve-codebase-architecture`, and `prototype`.
 - The lane skills should be full local files, not references to global skills. Local-first repos should still work if global skills are removed.
-- Each lane skill should preserve the original skill body as closely as possible. Codex1-specific changes should be small, explicit wrappers or minimal local edits.
+- Each lane skill should preserve its behavior as closely as possible. Codex1-specific changes should be small, explicit wrappers or minimal local edits.
 - `$tdd` should keep the red-green-refactor workflow, public-interface testing principle, anti-horizontal-slice warning, and refactor-after-green rule.
 - `$diagnose` should keep the reproduce-first loop: feedback loop, reproduce, hypotheses, instrumentation, fix plus regression test, cleanup, and post-mortem.
 - `$improve-codebase-architecture` should keep the deep-module vocabulary and deepening-opportunity flow.
@@ -77,7 +77,7 @@ Codex1 should not revive or depend on removed unrelated skills such as `linear`,
 - Prototype work should be allowed before PRD, during planning, or during `/goal` execution, but every prototype must answer a named question and produce a durable answer.
 - Repo-wide domain language and durable architecture decisions should remain in `CONTEXT.md` and `docs/adr/`.
 - Mission-specific decisions, proof, triage, and closeout should remain in `.codex1/missions/<mission-id>/`.
-- Codex1 should not depend on `linear`, `builderjsonraw-replica`, `spec-replica-orchestrator`, or old standalone `dogfood`.
+- Codex1 should not depend on removed unrelated global skills.
 - The old dogfood concept should be replaced in Codex1 by lightweight mission proof/QA guidance, not a broad exploratory QA requirement.
 - `plan-codex-goal` and `write-codex-goal` should be left alone as optional global helper skills. Codex1 should not depend on them.
 - Setup should remain repo-local and should not edit `/Users/joel/.agents/skills` or `/Users/joel/.codex/skills`.
@@ -102,7 +102,7 @@ Codex1 should not revive or depend on removed unrelated skills such as `linear`,
 
 - Do not implement a new full dogfood replacement skill in this mission.
 - Do not install or remove global skills automatically.
-- Do not integrate Linear, GitHub Issues, Jira, or any other issue tracker.
+- Do not integrate unrelated external workflow tools.
 - Do not create a mega skill that loads every Codex1 instruction at once.
 - Do not make TDD mandatory for docs-only, mechanical, prototype, or no-meaningful-seam work.
 - Do not make Browser QA a broad exploratory app audit by default.
@@ -114,7 +114,6 @@ Codex1 should not revive or depend on removed unrelated skills such as `linear`,
 
 - The main user-facing model should remain short: `$clarify`, `$create-prd`, `$plan`, then create a native `/goal` from the Codex1 mission.
 - Advanced usage should be optional: use `$prototype` for uncertainty, `$diagnose` for hard bugs, `$improve-codebase-architecture` for architecture work, and `$tdd` for behavior-changing code slices.
-- Proof/QA should be scoped to mission acceptance criteria. It should prove the mission, not wander the entire app looking for unrelated issues.
+- Proof/QA should be scoped to mission acceptance criteria. It should prove the mission, not wander the entire app looking for unrelated findings.
 - Codex1 should stay adaptable. The plan should guide Codex execution without turning into a project-management machine.
 - The expanded setup bundle should make future repos self-contained enough that Codex can understand and execute Codex1 missions without relying on the user's old global skill set.
-

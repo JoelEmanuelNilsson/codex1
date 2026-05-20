@@ -46,5 +46,4 @@ Always prohibit:
 
 - Creating, inspecting, or completing native goal state from Codex1.
 - Treating `codex1 inspect`, setup status, events, or receipts as completion proof.
-- Creating issue-tracker tickets.
 - Reading `GOAL_BRIEF.md` as the first step of the native goal.

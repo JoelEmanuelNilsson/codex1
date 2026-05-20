@@ -10,11 +10,11 @@ Codex1 skills must not create native goals for ordinary one-turn work. When a na
 
 ## Setup
 
-`codex1 setup` materializes repo-scoped Codex1 artifact workflow guidance: a small overview skill plus `$clarify`, `$create-prd`, and `$plan`. It does not install hooks, manage continuation, create native goals, or report mission status.
+`codex1 setup` materializes repo-scoped Codex1 artifact workflow guidance: a small overview skill, core workflow skills (`$clarify`, `$create-prd`, `$plan`), and repo-local lane skills (`$tdd`, `$diagnose`, `$improve-codebase-architecture`, `$prototype`). It does not install hooks, manage continuation, create native goals, or report mission status.
 
 ## Clarify
 
-Clarify is the "write me docs" / `grill-with-docs` style discovery skill. It gathers the user's intent, asks or resolves planning-relevant ambiguity while questions are still allowed, and preserves the understood context. It asks one question at a time, explains why the question matters, recommends an answer, inspects the repo instead of asking code-answerable questions, challenges vague terms until they become concrete behavior, updates `CONTEXT.md` lazily when language crystallizes, and offers ADRs only for durable, surprising tradeoffs. It should not start execution.
+Clarify is the Codex1 discovery skill. It gathers the user's intent, asks or resolves planning-relevant ambiguity while questions are still allowed, and preserves the understood context. It asks one question at a time, explains why the question matters, recommends an answer, inspects the repo instead of asking code-answerable questions, challenges vague terms until they become concrete behavior, updates `CONTEXT.md` lazily when language crystallizes, and offers ADRs only for durable, surprising tradeoffs. It should not start execution.
 
 Clarify may create durable notes or feed the later PRD answers, but it is not the same skill as PRD synthesis.
 
@@ -22,7 +22,7 @@ Clarify may create durable notes or feed the later PRD answers, but it is not th
 
 Create PRD synthesizes everything Codex already knows from the conversation, clarification output, repo inspection, and user-provided references into `PRD.md` through `codex1 interview prd`. It should not re-interview the user by default; it should write the best PRD from available context.
 
-The PRD should carry the same information quality as the reference PRD workflow: problem statement, solution, extensive user stories, module sketch, implementation decisions, testing decisions, out-of-scope work, proof expectations, review expectations, and PR intent. It stays local and does not create issue-tracker tickets.
+The PRD should carry enough product and implementation context for `$plan`: problem statement, solution, extensive user stories, module sketch, implementation decisions, testing decisions, out-of-scope work, proof expectations, review expectations, and PR intent. It stays inside the Codex1 mission artifact tree.
 
 ## Plan
 

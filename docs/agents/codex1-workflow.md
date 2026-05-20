@@ -1,6 +1,6 @@
 # Codex1 Workflow
 
-Codex1 is a local artifact workflow, not an issue tracker and not native goal state.
+Codex1 is a local artifact workflow, not native goal state.
 
 ## Flow
 
@@ -16,10 +16,6 @@ Codex1 is a local artifact workflow, not an issue tracker and not native goal st
 Core skills shape the mission: `$codex1`, `$clarify`, `$create-prd`, and `$plan`.
 
 Lane skills guide execution inside ready subplans: `$tdd`, `$diagnose`, `$improve-codebase-architecture`, and `$prototype`. `$plan` assigns the lane; native `/goal` executes. Use `standard` for docs, simple config, mechanical updates, low-risk chores, and work where a specialist lane would be fake ceremony.
-
-## No Issue Tracker
-
-Codex1 does not publish PRDs, issues, or plans to GitHub Issues, Linear, Jira, GitLab, or any other tracker. Durable work lives in `.codex1/missions/<id>/`.
 
 ## Native Goal Boundary
 

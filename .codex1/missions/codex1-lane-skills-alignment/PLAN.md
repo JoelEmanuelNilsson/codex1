@@ -8,7 +8,7 @@ Serves `PRD.md` in `.codex1/missions/codex1-lane-skills-alignment/`.
 
 Codex1 setup installs the core workflow skills plus the four lane skills as repo-local managed files. Plans and subplans can name execution lanes without depending on global skills. Docs explain the simple model: clarify, create PRD, plan, then native `/goal` executes the mission using lane guidance. The old broad dogfood workflow is not revived.
 
-Out of scope: global skill installation/removal, issue tracker integration, native goal state integration, a mega skill, broad default Browser dogfood, and making TDD mandatory where it does not fit.
+Out of scope: global skill installation/removal, native goal state integration, a mega skill, broad default Browser dogfood, and making TDD mandatory where it does not fit.
 
 Proof that matters: setup CLI tests, status/marker tests, installed content assertions, subplan lane contract assertions, docs assertions, and normal Rust formatting/tests/lints.
 
@@ -58,11 +58,10 @@ The first two implementation slices touch related setup/docs files and should us
 
 ## Risks And Non-Goals
 
-- Risk: copying original skills can accidentally weaken them. Keep changes tiny and obvious.
+- Risk: changing lane guidance can accidentally weaken it. Keep Codex1-specific changes tiny and obvious.
 - Risk: bundle marker changes can break existing setup refresh behavior. Tests must cover current and stale bundles.
 - Risk: docs can make Codex1 feel heavier than intended. Keep the user flow short and lanes optional.
 - Non-goal: no global skill cleanup.
-- Non-goal: no issue trackers.
 - Non-goal: no replacement dogfood skill in this mission.
 
 ## Human Decisions

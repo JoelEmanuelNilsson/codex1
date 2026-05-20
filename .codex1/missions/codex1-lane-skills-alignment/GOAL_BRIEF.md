@@ -48,7 +48,7 @@ Record proof in `PROOFS/`. Include commands run, summaries of outputs, failures,
 
 ## Review And Triage Rules
 
-Review changes against `PRD.md`, the spec, and every ready subplan. If an issue is found, fix it when in scope. If it is out of scope, record it as deferred or accepted risk with a reason.
+Review changes against `PRD.md`, the spec, and every ready subplan. If a problem is found, fix it when in scope. If it is out of scope, record it as deferred or accepted risk with a reason.
 
 ## Explicit Completion Criteria
 
@@ -73,7 +73,6 @@ Write `CLOSEOUT.md` after proof exists. Closeout must compare completed work aga
 
 - Do not create, inspect, mirror, or complete native goal state from Codex1.
 - Do not treat Codex1 setup/status/events/receipts as mission completion proof.
-- Do not create issue-tracker tickets.
 - Do not read `GOAL_BRIEF.md` as the first execution step of native goal execution.
 - Do not edit `/Users/joel/.agents/skills` or `/Users/joel/.codex/skills`.
 - Do not revive old standalone dogfood as a default requirement.
