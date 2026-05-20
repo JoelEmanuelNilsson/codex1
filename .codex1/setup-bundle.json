@@ -1,6 +1,6 @@
 {
   "managed_by": "codex1-managed",
-  "version": 6,
+  "version": 7,
   "files": [
     ".agents/skills/codex1/SKILL.md",
     ".agents/skills/codex1/agents/openai.yaml",
@@ -35,6 +35,9 @@
     ".agents/skills/prototype/agents/openai.yaml",
     ".agents/skills/prototype/LOGIC.md",
     ".agents/skills/prototype/UI.md",
+    ".agents/skills/codex-review/SKILL.md",
+    ".agents/skills/codex-review/agents/openai.yaml",
+    ".agents/skills/codex-review/scripts/codex-review",
     "docs/agents/codex1-workflow.md",
     "docs/agents/codex1-domain.md",
     "docs/agents/codex1-artifact-briefs.md",

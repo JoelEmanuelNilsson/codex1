@@ -10,7 +10,7 @@ Codex1 skills must not create native goals for ordinary one-turn work. When a na
 
 ## Setup
 
-`codex1 setup` materializes repo-scoped Codex1 artifact workflow guidance: a small overview skill, core workflow skills (`$clarify`, `$create-prd`, `$plan`), and repo-local lane skills (`$tdd`, `$diagnose`, `$improve-codebase-architecture`, `$prototype`). It does not install hooks, manage continuation, create native goals, or report mission status.
+`codex1 setup` materializes repo-scoped Codex1 artifact workflow guidance: a small overview skill, core workflow skills (`$clarify`, `$create-prd`, `$plan`), repo-local lane skills (`$tdd`, `$diagnose`, `$improve-codebase-architecture`, `$prototype`), and the `$codex-review` closeout helper. It does not install hooks, manage continuation, create native goals, or report mission status.
 
 ## Clarify
 
@@ -49,6 +49,8 @@ Workers should not edit mission-level artifacts unless explicitly assigned. If i
 Reviewers record opinions through `codex1 interview review`. Main Codex records adjudication through `codex1 interview triage`.
 
 Review artifacts are opinion records. Triage is main-Codex judgment. Neither is a CLI gate.
+
+Use `$codex-review` when a mission needs Codex's built-in reviewer to inspect a dirty diff, branch, or commit before closeout. Treat the review result as advisory evidence: verify findings against the real code path, fix accepted findings, rerun focused tests and review after review-triggered edits, and record useful review/triage artifacts when the mission asks for them.
 
 ## Proof And Closeout
 

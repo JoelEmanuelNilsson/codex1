@@ -14,7 +14,7 @@ use crate::error::{Codex1Error, Result};
 use crate::paths::{create_dir_all_contained, discover_repo_root, ensure_contained_for_write};
 
 const BACKUP_MANIFEST_VERSION: u32 = 1;
-const BUNDLE_VERSION: u32 = 6;
+const BUNDLE_VERSION: u32 = 7;
 const MANAGED_GUIDANCE_START: &str = "<!-- codex1-managed setup guidance start -->";
 const MANAGED_GUIDANCE_END: &str = "<!-- codex1-managed setup guidance end -->";
 const OVERVIEW_SKILL: &str = ".agents/skills/codex1/SKILL.md";
@@ -52,6 +52,9 @@ const PROTOTYPE_SKILL: &str = ".agents/skills/prototype/SKILL.md";
 const PROTOTYPE_OPENAI_YAML: &str = ".agents/skills/prototype/agents/openai.yaml";
 const PROTOTYPE_LOGIC: &str = ".agents/skills/prototype/LOGIC.md";
 const PROTOTYPE_UI: &str = ".agents/skills/prototype/UI.md";
+const CODEX_REVIEW_SKILL: &str = ".agents/skills/codex-review/SKILL.md";
+const CODEX_REVIEW_OPENAI_YAML: &str = ".agents/skills/codex-review/agents/openai.yaml";
+const CODEX_REVIEW_HELPER: &str = ".agents/skills/codex-review/scripts/codex-review";
 const LEGACY_PLAN_EXECUTION_PROMPT_FORMAT: &str = ".agents/skills/plan/EXECUTION-PROMPT-FORMAT.md";
 const WORKFLOW_DOC: &str = "docs/agents/codex1-workflow.md";
 const DOMAIN_DOC: &str = "docs/agents/codex1-domain.md";
@@ -60,7 +63,7 @@ const BUNDLE_GUIDANCE: &str = "AGENTS.md";
 const BUNDLE_MARKER: &str = ".codex1/setup-bundle.json";
 const BACKUP_MANIFEST: &str = ".codex1/setup-backups/manifest.json";
 const BACKUP_DIR: &str = ".codex1/setup-backups/files";
-const MANAGED_SKILL_FILES: [&str; 8] = [
+const MANAGED_SKILL_FILES: [&str; 9] = [
     OVERVIEW_SKILL,
     CLARIFY_SKILL,
     CREATE_PRD_SKILL,
@@ -69,8 +72,9 @@ const MANAGED_SKILL_FILES: [&str; 8] = [
     DIAGNOSE_SKILL,
     ARCHITECTURE_SKILL,
     PROTOTYPE_SKILL,
+    CODEX_REVIEW_SKILL,
 ];
-const MANAGED_SUPPORTING_DOC_FILES: [&str; 28] = [
+const MANAGED_SUPPORTING_DOC_FILES: [&str; 30] = [
     OVERVIEW_OPENAI_YAML,
     CLARIFY_OPENAI_YAML,
     CLARIFY_ADR_FORMAT,
@@ -96,11 +100,55 @@ const MANAGED_SUPPORTING_DOC_FILES: [&str; 28] = [
     PROTOTYPE_OPENAI_YAML,
     PROTOTYPE_LOGIC,
     PROTOTYPE_UI,
+    CODEX_REVIEW_OPENAI_YAML,
+    CODEX_REVIEW_HELPER,
     WORKFLOW_DOC,
     DOMAIN_DOC,
     ARTIFACT_BRIEFS_DOC,
 ];
-const MANAGED_BUNDLE_FILES: [&str; 37] = [
+const MANAGED_BUNDLE_FILES: [&str; 40] = [
+    OVERVIEW_SKILL,
+    OVERVIEW_OPENAI_YAML,
+    CLARIFY_SKILL,
+    CLARIFY_OPENAI_YAML,
+    CLARIFY_ADR_FORMAT,
+    CLARIFY_CONTEXT_FORMAT,
+    CREATE_PRD_SKILL,
+    CREATE_PRD_OPENAI_YAML,
+    CREATE_PRD_FORMAT,
+    PLAN_SKILL,
+    PLAN_OPENAI_YAML,
+    PLAN_ADR_FORMAT,
+    PLAN_SUBPLAN_BRIEF,
+    PLAN_GOAL_BRIEF_FORMAT,
+    TDD_SKILL,
+    TDD_OPENAI_YAML,
+    TDD_TESTS,
+    TDD_MOCKING,
+    TDD_DEEP_MODULES,
+    TDD_INTERFACE_DESIGN,
+    TDD_REFACTORING,
+    DIAGNOSE_SKILL,
+    DIAGNOSE_OPENAI_YAML,
+    DIAGNOSE_HITL_LOOP_TEMPLATE,
+    ARCHITECTURE_SKILL,
+    ARCHITECTURE_OPENAI_YAML,
+    ARCHITECTURE_LANGUAGE,
+    ARCHITECTURE_INTERFACE_DESIGN,
+    ARCHITECTURE_DEEPENING,
+    PROTOTYPE_SKILL,
+    PROTOTYPE_OPENAI_YAML,
+    PROTOTYPE_LOGIC,
+    PROTOTYPE_UI,
+    CODEX_REVIEW_SKILL,
+    CODEX_REVIEW_OPENAI_YAML,
+    CODEX_REVIEW_HELPER,
+    WORKFLOW_DOC,
+    DOMAIN_DOC,
+    ARTIFACT_BRIEFS_DOC,
+    BUNDLE_GUIDANCE,
+];
+const LEGACY_BUNDLE_FILES_V6: [&str; 37] = [
     OVERVIEW_SKILL,
     OVERVIEW_OPENAI_YAML,
     CLARIFY_SKILL,
@@ -1200,6 +1248,7 @@ fn is_current_marker(marker: &BundleMarker) -> bool {
 fn is_known_managed_marker(marker: &BundleMarker) -> bool {
     marker.managed_by == "codex1-managed"
         && (marker.files == bundle_files(MANAGED_BUNDLE_FILES)
+            || marker.files == bundle_files(LEGACY_BUNDLE_FILES_V6)
             || marker.files == bundle_files(LEGACY_BUNDLE_FILES_V5)
             || marker.files == bundle_files(LEGACY_BUNDLE_FILES_V4)
             || marker.files == bundle_files(LEGACY_BUNDLE_FILES_V3)
@@ -1287,6 +1336,13 @@ fn expected_body(relative: &str) -> String {
         }
         PROTOTYPE_LOGIC => include_str!("../.agents/skills/prototype/LOGIC.md").to_string(),
         PROTOTYPE_UI => include_str!("../.agents/skills/prototype/UI.md").to_string(),
+        CODEX_REVIEW_SKILL => include_str!("../.agents/skills/codex-review/SKILL.md").to_string(),
+        CODEX_REVIEW_OPENAI_YAML => {
+            include_str!("../.agents/skills/codex-review/agents/openai.yaml").to_string()
+        }
+        CODEX_REVIEW_HELPER => {
+            include_str!("../.agents/skills/codex-review/scripts/codex-review").to_string()
+        }
         LEGACY_PLAN_EXECUTION_PROMPT_FORMAT => legacy_execution_prompt_format_body().to_string(),
         WORKFLOW_DOC => workflow_doc_body().to_string(),
         DOMAIN_DOC => domain_doc_body().to_string(),
@@ -1354,6 +1410,7 @@ Skill-local references installed by setup:
 - `$diagnose`: reproduce-first debugging guidance plus the HITL loop template.
 - `$improve-codebase-architecture`: deep-module architecture guidance and interface references.
 - `$prototype`: throwaway logic and UI prototype guidance.
+- `$codex-review`: advisory Codex review closeout guidance plus a local helper script.
 
 Preferred UX:
 
@@ -1363,6 +1420,8 @@ Preferred UX:
 - The user asks Codex to create or refine a native goal from the generated goal brief.
 
 During execution, ready subplans may name an `Execution Lane`: `tdd`, `diagnose`, `improve-codebase-architecture`, `prototype`, `proof-qa`, or `standard`. `$plan` assigns lanes; native `/goal` executes them.
+
+Use `$codex-review` inside proof/QA or review cycles when a mission needs a second-model review pass. Review output is advisory evidence; Codex still owns triage, closeout judgment, and native `/goal` completion.
 
 Native Codex `/goal` owns persistent objectives, continuation, pause/resume, accounting, budgets, and completion. Codex1 must not create, mirror, inspect, or complete native goals.
 
@@ -2071,6 +2130,8 @@ Codex1 is a local artifact workflow, not native goal state.
 Core skills shape the mission: `$codex1`, `$clarify`, `$create-prd`, and `$plan`.
 
 Lane skills guide execution inside ready subplans: `$tdd`, `$diagnose`, `$improve-codebase-architecture`, and `$prototype`. `$plan` assigns the lane; native `/goal` executes. Use `standard` for docs, simple config, mechanical updates, low-risk chores, and work where a specialist lane would be fake ceremony.
+
+Review helper skills guide evidence gathering without adding an execution lane. Use `$codex-review` during proof/QA or the review cycle when a second-model Codex review should inspect a local diff, branch, or commit. Its output is advisory evidence until main Codex verifies and triages it.
 
 ## Native Goal Boundary
 

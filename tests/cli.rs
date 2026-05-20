@@ -13,7 +13,7 @@ use tempfile::TempDir;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 
-const MANAGED_SKILLS: [&str; 8] = [
+const MANAGED_SKILLS: [&str; 9] = [
     ".agents/skills/codex1/SKILL.md",
     ".agents/skills/clarify/SKILL.md",
     ".agents/skills/create-prd/SKILL.md",
@@ -22,8 +22,9 @@ const MANAGED_SKILLS: [&str; 8] = [
     ".agents/skills/diagnose/SKILL.md",
     ".agents/skills/improve-codebase-architecture/SKILL.md",
     ".agents/skills/prototype/SKILL.md",
+    ".agents/skills/codex-review/SKILL.md",
 ];
-const MANAGED_SUPPORTING_DOCS: [&str; 28] = [
+const MANAGED_SUPPORTING_DOCS: [&str; 30] = [
     ".agents/skills/codex1/agents/openai.yaml",
     ".agents/skills/clarify/agents/openai.yaml",
     ".agents/skills/clarify/ADR-FORMAT.md",
@@ -49,6 +50,8 @@ const MANAGED_SUPPORTING_DOCS: [&str; 28] = [
     ".agents/skills/prototype/agents/openai.yaml",
     ".agents/skills/prototype/LOGIC.md",
     ".agents/skills/prototype/UI.md",
+    ".agents/skills/codex-review/agents/openai.yaml",
+    ".agents/skills/codex-review/scripts/codex-review",
     "docs/agents/codex1-workflow.md",
     "docs/agents/codex1-domain.md",
     "docs/agents/codex1-artifact-briefs.md",
@@ -1090,7 +1093,12 @@ fn setup_install_materializes_repo_scoped_guidance_without_hooks() {
     assert!(combined.contains("$diagnose"));
     assert!(combined.contains("$improve-codebase-architecture"));
     assert!(combined.contains("$prototype"));
+    assert!(combined.contains("$codex-review"));
     assert!(combined.contains("Codex1 Local Use"));
+    assert!(combined.contains("Codex Review"));
+    assert!(combined.contains("review output as advisory"));
+    assert!(combined.contains("accepted/actionable findings"));
+    assert!(combined.contains("Do not add a separate execution lane just to run review"));
     assert!(combined.contains("red-green-refactor"));
     assert!(combined.contains("Build a feedback loop"));
     assert!(combined.contains("Improve Codebase Architecture"));
@@ -1214,6 +1222,7 @@ fn checked_in_docs_mark_execution_prompt_mentions_as_legacy_only() {
         ".agents/skills/diagnose/SKILL.md",
         ".agents/skills/improve-codebase-architecture/SKILL.md",
         ".agents/skills/prototype/SKILL.md",
+        ".agents/skills/codex-review/SKILL.md",
     ];
     for file in files {
         let text = fs::read_to_string(root.join(file)).unwrap();
@@ -1458,7 +1467,7 @@ fn setup_enable_repairs_stale_managed_skill_and_marker() {
         .join(".agents/skills/create-prd/SKILL.md")
         .is_file());
     assert!(repo.path().join(".agents/skills/plan/SKILL.md").is_file());
-    assert!(marker.contains(r#""version": 6"#));
+    assert!(marker.contains(r#""version": 7"#));
 }
 
 #[test]

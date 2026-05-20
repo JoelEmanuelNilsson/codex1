@@ -17,6 +17,8 @@ Core skills shape the mission: `$codex1`, `$clarify`, `$create-prd`, and `$plan`
 
 Lane skills guide execution inside ready subplans: `$tdd`, `$diagnose`, `$improve-codebase-architecture`, and `$prototype`. `$plan` assigns the lane; native `/goal` executes. Use `standard` for docs, simple config, mechanical updates, low-risk chores, and work where a specialist lane would be fake ceremony.
 
+Review helper skills guide evidence gathering without adding an execution lane. Use `$codex-review` during proof/QA or the review cycle when a second-model Codex review should inspect a local diff, branch, or commit. Its output is advisory evidence until main Codex verifies and triages it.
+
 ## Native Goal Boundary
 
 Native `/goal` owns persistent objectives, continuation, pause/resume, usage accounting, and completion. Codex1 artifacts provide context and evidence. They do not create, mirror, inspect, or complete native goals.

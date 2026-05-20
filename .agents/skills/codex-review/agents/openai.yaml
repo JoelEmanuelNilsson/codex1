@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Review"
+  short_description: "Run advisory Codex review before closeout"
+  default_prompt: "Use $codex-review to review this local diff, branch, or commit before closeout."

@@ -7,6 +7,7 @@ Codex1 setup materializes repo-scoped artifact workflow guidance:
 - a Create PRD workflow skill
 - a Plan workflow skill
 - repo-local lane skills for TDD, diagnosis, architecture improvement, and prototyping
+- a repo-local Codex review closeout helper skill
 - skill UI metadata in `agents/openai.yaml` where practical
 - a managed repo guidance block
 - a managed setup marker

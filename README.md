@@ -28,6 +28,7 @@ The installed skills expose the intended UX:
 $clarify     -> gather mission context while questions are allowed
 $create-prd  -> synthesize known context into PRD.md
 $plan        -> create an agentic E2E plan pack and GOAL_BRIEF.md
+$codex-review -> run advisory Codex review before proof/closeout when useful
 /goal        -> user creates or refines the native goal from the brief
 ```
 
