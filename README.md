@@ -1,12 +1,12 @@
 # Codex1
 
-Codex1 is a deterministic artifact helper for native Codex workflows.
+Codex1 is a tiny setup and mission-scaffold helper for native Codex workflows.
 
-It does not decide whether work is ready, reviewed, correct, or done. Codex remains the semantic judge. The CLI creates and moves durable files, renders built-in templates, reports artifact inventory, and records mission-local forensic event metadata.
+It does not decide whether work is ready, reviewed, correct, or done. Codex remains the semantic judge. The CLI only materializes repo-local Codex1 guidance and creates a path-safe mission directory layout.
 
-Long-running objective tracking belongs to native Codex goals. Use Codex's `/goal` flow to create, inspect, and complete an active goal; Codex1 only stores mission artifacts that can support that work.
+Long-running objective tracking belongs to native Codex goals. Use Codex's `/goal` flow to manage the active goal; Codex1 only stores mission artifacts that can support that work.
 
-For execution, Codex1 plans up to `GOAL_BRIEF.md`. The user keeps the explicit go moment by creating or refining a native `/goal` from that brief; Codex1 does not auto-start execution.
+For execution, Codex1 skills plan up to `GOAL_BRIEF.md`. The user keeps the explicit go moment by creating or refining a native `/goal` from that brief; the CLI does not auto-start execution or generate mission artifacts.
 
 ## Quickstart
 
@@ -20,7 +20,7 @@ codex1 setup enable
 codex1 setup backups list
 ```
 
-`setup install` materializes repo-scoped Codex1 skills and guidance files. It writes backups before changing managed repo guidance and never installs continuation hooks, edits global activation policy, or deletes mission artifacts.
+`setup install` materializes repo-scoped Codex1 skills and guidance files. It writes backups before changing managed repo guidance and never deletes mission artifacts.
 
 The installed skills expose the intended UX:
 
@@ -34,10 +34,8 @@ $codex-review -> run advisory Codex review before proof/closeout when useful
 
 ```sh
 cargo run -- --mission demo init
-cargo run -- --mission demo template list
-cargo run -- --mission demo interview prd --answers prd.answers.json
-cargo run -- --mission demo interview plan --answers plan.answers.json
-cargo run -- --mission demo inspect --json
+cargo run -- --json --mission demo init
+cargo run -- --json setup status
 ```
 
 Mission artifacts live under:
@@ -69,47 +67,17 @@ The mission ID is intentionally boring: ASCII letters, digits, `-`, and `_` only
   REVIEWS/
   TRIAGE/
   PROOFS/
-  .codex1/
-    events.jsonl
-    receipts/
 ```
 
-`init` creates the folders only. Interviews write content when Codex has enough answers.
-
-Codex1 also keeps `.codex1/events.jsonl` as a mission-local forensic trail of mechanical command metadata. It is usually ignored unless Codex or a human needs to debug unusual mission history. It is not status, not proof, and not mission truth.
-
-## Answers Files
-
-Interviews accept JSON either as a flat object or under an `answers` key:
-
-```json
-{
-  "title": "Example PRD",
-  "original_request": "Build the thing",
-  "interpreted_destination": "A working artifact workflow",
-  "success_criteria": ["PRD exists", "Tests pass"],
-  "proof_expectations": ["cargo test"],
-  "pr_intent": "No PR"
-}
-```
-
-String sections use strings. Repeatable sections use arrays of strings.
+`init` creates the folders only. The workflow skills create mission content when Codex has enough context.
 
 ## Research-Heavy Flow
 
-For uncertain work, Codex can create a PRD, then a `research-plan`, one or more `research` records, and then update the plan:
-
-```sh
-codex1 --mission demo interview research-plan --answers research-plan.json
-codex1 --mission demo interview research --answers research-record.json
-codex1 --mission demo interview plan --answers plan.json --overwrite
-```
-
-The CLI records what Codex learned. It does not decide that research is sufficient.
+For uncertain work, Codex can create a PRD, then a research plan, one or more research records, and then update the plan as normal Markdown files inside the mission tree. The CLI does not decide that research is sufficient.
 
 ## Native Goals
 
-Codex1 does not provide continuation commands or hook adapters. Those belonged to an older custom continuation layer that duplicated native Codex behavior.
+Codex1 does not provide native-goal commands.
 
 Use native Codex goals for continuation discipline:
 
@@ -121,10 +89,6 @@ Codex can use mission artifacts to clarify and prove the work, but the active ob
 
 When `$plan` or an equivalent planning workflow prepares execution, it writes `GOAL_BRIEF.md` as a native goal brief. Codex can use the brief to create or refine a whole-mission `/goal`. The brief should describe the mission, artifacts to read, subplan order, worker rules, proof/review/triage expectations, explicit completion criteria, non-completion behavior, closeout criteria, and prohibited actions.
 
-Legacy missions may contain `EXECUTION_PROMPT.md`. Treat it as old reading guidance only; current Codex1 writes `GOAL_BRIEF.md`.
-
-Legacy missions may contain old `.codex1/LOOP.json` files from the removed continuation system. Current Codex1 ignores those files and does not migrate them. Setup does not read, write, restore, or remove them.
-
 ## Anti-Oracle Rule
 
-Codex1 must not expose workflow truth. In particular, `inspect` is inventory-only: artifact counts plus mechanical warnings such as missing folders or malformed frontmatter. It does not emit next actions, completion claims, review pass/fail, close gates, graph waves, native goal state, or task status.
+Codex1 must not expose workflow truth. There is no mission-status command: artifact quality, readiness, proof sufficiency, review cleanliness, close safety, and native goal state remain Codex judgments made from the actual files.

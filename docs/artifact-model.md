@@ -16,8 +16,6 @@ Clarification artifacts or notes capture the user's raw intent, open questions, 
 
 `GOAL_BRIEF.md` is the native goal brief produced by planning. It helps Codex create or refine the real native `/goal` for the whole mission. It tells Codex what mission to execute, which artifacts to read, how to select subplans, how workers may be used, what may be edited, how proofs/reviews/triage should be recorded, what completion means, what to record if completion cannot be reached, what closeout means, and what not to do. It is not an execution trigger or native goal state by itself.
 
-Legacy missions may contain `EXECUTION_PROMPT.md`. Treat that file as old reading guidance only; it is not a current generated artifact.
-
 `CLOSEOUT.md` summarizes how Codex judges the PRD was satisfied, including completed, superseded, paused, or deferred work and remaining risks. It is durable evidence, not native goal completion state.
 
 ## Collection Artifacts
@@ -38,8 +36,4 @@ Legacy missions may contain `EXECUTION_PROMPT.md`. Treat that file as old readin
 
 ## Machine Substrate
 
-`.codex1/receipts/` stores optional audit receipts. Receipts are not replay authority.
-
-`.codex1/events.jsonl` stores automatic forensic command metadata. Events help explain mechanical command history during debugging, but they are not durable content truth, not receipts, not workflow state, not native goal state, and not replay authority. Normal planning and execution should ignore events unless mission archaeology is needed.
-
-There is no authoritative `STATE.json` and no Codex1-owned continuation file.
+The current CLI does not maintain mission-local machine state. Setup metadata lives at the repo level under `.codex1/setup-*`; mission truth remains the human-readable artifact tree.

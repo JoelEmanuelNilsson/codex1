@@ -1,14 +1,12 @@
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
-
-use crate::layout::{ArtifactKind, SubplanState};
+use clap::{Args, Parser, Subcommand};
 
 #[derive(Debug, Parser)]
 #[command(
     name = "codex1",
     version,
-    about = "Deterministic artifact workflow helper"
+    about = "Repo-local setup and mission scaffold helper"
 )]
 pub struct Cli {
     #[arg(long, global = true, help = "Emit a stable JSON envelope")]
@@ -29,57 +27,9 @@ pub struct Cli {
 #[derive(Clone, Debug, Subcommand)]
 pub enum Commands {
     Init,
-    Template {
-        #[command(subcommand)]
-        command: TemplateCommand,
-    },
-    Interview(InterviewArgs),
-    Inspect,
-    Subplan {
-        #[command(subcommand)]
-        command: SubplanCommand,
-    },
-    Receipt {
-        #[command(subcommand)]
-        command: ReceiptCommand,
-    },
     Setup {
         #[command(subcommand)]
         command: SetupCommand,
-    },
-    Doctor,
-}
-
-#[derive(Clone, Debug, Subcommand)]
-pub enum TemplateCommand {
-    List,
-    Show { kind: ArtifactKindArg },
-}
-
-#[derive(Clone, Debug, Args)]
-pub struct InterviewArgs {
-    pub kind: ArtifactKindArg,
-    #[arg(long, value_name = "FILE", help = "JSON answers file")]
-    pub answers: Option<PathBuf>,
-    #[arg(long, help = "Overwrite singleton artifacts")]
-    pub overwrite: bool,
-}
-
-#[derive(Clone, Debug, Subcommand)]
-pub enum SubplanCommand {
-    Move {
-        #[arg(long)]
-        id: String,
-        #[arg(long)]
-        to: SubplanStateArg,
-    },
-}
-
-#[derive(Clone, Debug, Subcommand)]
-pub enum ReceiptCommand {
-    Append {
-        #[arg(long)]
-        message: String,
     },
 }
 
@@ -126,60 +76,4 @@ pub struct SetupBackupRestoreArgs {
     pub force: bool,
     #[arg(long)]
     pub dry_run: bool,
-}
-
-#[derive(Clone, Debug, ValueEnum)]
-pub enum ArtifactKindArg {
-    Prd,
-    Plan,
-    ResearchPlan,
-    GoalBrief,
-    Research,
-    Spec,
-    Subplan,
-    Adr,
-    Review,
-    Triage,
-    Proof,
-    Closeout,
-}
-
-impl From<ArtifactKindArg> for ArtifactKind {
-    fn from(value: ArtifactKindArg) -> Self {
-        match value {
-            ArtifactKindArg::Prd => Self::Prd,
-            ArtifactKindArg::Plan => Self::Plan,
-            ArtifactKindArg::ResearchPlan => Self::ResearchPlan,
-            ArtifactKindArg::GoalBrief => Self::GoalBrief,
-            ArtifactKindArg::Research => Self::Research,
-            ArtifactKindArg::Spec => Self::Spec,
-            ArtifactKindArg::Subplan => Self::Subplan,
-            ArtifactKindArg::Adr => Self::Adr,
-            ArtifactKindArg::Review => Self::Review,
-            ArtifactKindArg::Triage => Self::Triage,
-            ArtifactKindArg::Proof => Self::Proof,
-            ArtifactKindArg::Closeout => Self::Closeout,
-        }
-    }
-}
-
-#[derive(Clone, Debug, ValueEnum)]
-pub enum SubplanStateArg {
-    Ready,
-    Active,
-    Done,
-    Paused,
-    Superseded,
-}
-
-impl From<SubplanStateArg> for SubplanState {
-    fn from(value: SubplanStateArg) -> Self {
-        match value {
-            SubplanStateArg::Ready => Self::Ready,
-            SubplanStateArg::Active => Self::Active,
-            SubplanStateArg::Done => Self::Done,
-            SubplanStateArg::Paused => Self::Paused,
-            SubplanStateArg::Superseded => Self::Superseded,
-        }
-    }
 }

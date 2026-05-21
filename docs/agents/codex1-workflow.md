@@ -21,11 +21,11 @@ Review helper skills guide evidence gathering without adding an execution lane. 
 
 ## Native Goal Boundary
 
-Native `/goal` owns persistent objectives, continuation, pause/resume, usage accounting, and completion. Codex1 artifacts provide context and evidence. They do not create, mirror, inspect, or complete native goals.
+Native `/goal` owns persistent objectives, continuation, pause/resume, usage accounting, and completion. Codex1 artifacts provide context and evidence. They do not manage native goals.
 
 ## Mechanical Commands
 
-`codex1 setup`, `codex1 inspect`, events, and receipts are mechanical helpers. They are not proof of readiness, review cleanliness, PRD satisfaction, closeout, or native goal state.
+`codex1 setup` materializes repo-local skills and guidance. `codex1 init` creates the standard mission directory layout with path-safety checks. The CLI stops there: it does not judge readiness, write mission content, manage execution, or report completion.
 
 ## Proof/QA
 

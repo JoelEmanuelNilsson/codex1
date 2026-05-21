@@ -2,7 +2,7 @@
 name = "codex1"
 version = "0.1.0"
 edition = "2021"
-description = "Deterministic artifact workflow helper for native Codex"
+description = "Repo-local setup and mission scaffold helper for native Codex"
 license = "MIT"
 
 [dependencies]

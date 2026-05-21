@@ -90,9 +90,10 @@ The helper:
 - otherwise uses `origin/main` for non-main branches
 - supports `--mode local`, `--mode branch`, and `--mode commit`
 - supports `--parallel-tests "<command>"` when a known test command should run beside review
-- supports `--output`, `--dry-run`, `--full-access`, and `--no-yolo`
+- supports `--output`, `--dry-run`, `--full-access`, `--no-yolo`, and `--verbose`
 - runs nested review with full access by default; use `--no-yolo` only when intentionally testing sandbox behavior
-- writes only to stdout unless `--output` is set
+- is quiet by default: it captures nested review output, prints only the summary or finding blocks, and preserves the full temp output path when findings/errors occur
+- streams the full nested review output when `--verbose` is set
 
 Do not force local mode after committing. For committed, pushed, or PR work, point Codex at the commit or branch diff.
 

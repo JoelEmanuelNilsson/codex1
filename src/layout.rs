@@ -59,23 +59,6 @@ impl ArtifactKind {
         }
     }
 
-    pub fn title(self) -> &'static str {
-        match self {
-            Self::Prd => "PRD",
-            Self::Plan => "Plan",
-            Self::ResearchPlan => "Research Plan",
-            Self::GoalBrief => "Goal Brief",
-            Self::Research => "Research Record",
-            Self::Spec => "Spec",
-            Self::Subplan => "Subplan",
-            Self::Adr => "ADR",
-            Self::Review => "Review",
-            Self::Triage => "Triage",
-            Self::Proof => "Proof",
-            Self::Closeout => "Closeout",
-        }
-    }
-
     pub fn is_singleton(self) -> bool {
         matches!(
             self,
@@ -151,20 +134,6 @@ impl MissionLayout {
         })
     }
 
-    pub fn from_cwd(repo_root: PathBuf, cwd: &Path) -> Option<Self> {
-        let missions_dir = repo_root.join(".codex1").join("missions");
-        let cwd = fs::canonicalize(cwd).ok()?;
-        let missions_dir = fs::canonicalize(missions_dir).ok()?;
-        let rel = cwd.strip_prefix(&missions_dir).ok()?;
-        let id = rel
-            .components()
-            .next()?
-            .as_os_str()
-            .to_string_lossy()
-            .to_string();
-        Self::new(repo_root, id).ok()
-    }
-
     pub fn create_dirs(&self) -> Result<()> {
         create_dir_all_contained(
             &self.repo_root,
@@ -178,31 +147,17 @@ impl MissionLayout {
 
     fn standard_dir_relatives(&self) -> Vec<PathBuf> {
         let mut dirs = vec![
-            PathBuf::from(".codex1"),
             PathBuf::from("RESEARCH"),
             PathBuf::from("SPECS"),
             PathBuf::from("ADRS"),
             PathBuf::from("REVIEWS"),
             PathBuf::from("TRIAGE"),
             PathBuf::from("PROOFS"),
-            PathBuf::from(".codex1").join("receipts"),
         ];
         for state in SubplanState::ALL {
             dirs.push(PathBuf::from("SUBPLANS").join(state.as_str()));
         }
         dirs
-    }
-
-    pub fn meta_dir(&self) -> PathBuf {
-        self.mission_dir.join(".codex1")
-    }
-
-    pub fn event_log(&self) -> PathBuf {
-        self.meta_dir().join("events.jsonl")
-    }
-
-    pub fn receipts_dir(&self) -> PathBuf {
-        self.meta_dir().join("receipts")
     }
 
     pub fn research_dir(&self) -> PathBuf {
@@ -335,9 +290,5 @@ pub fn descriptors(layout: &MissionLayout) -> Vec<ArtifactDescriptor> {
                 path: path.display().to_string(),
             })
         })
-        .chain([ArtifactDescriptor {
-            kind: "receipts".into(),
-            path: layout.receipts_dir().display().to_string(),
-        }])
         .collect()
 }

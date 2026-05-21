@@ -5,7 +5,7 @@ description: Repo-scoped Codex1 artifact workflow overview. Use as a router to t
 
 # Codex1
 
-Codex1 is a deterministic artifact helper for clarification context, PRD, PLAN, GOAL_BRIEF, SPEC, SUBPLAN, REVIEW, TRIAGE, PROOF, CLOSEOUT, receipts, and inventory inspection.
+Codex1 is a tiny local setup and mission-scaffold helper. Its CLI owns repo-local skill materialization plus path-safe mission directory creation; Codex skills own PRDs, plans, goal briefs, specs, subplans, reviews, triage, proofs, and closeout.
 
 Repo-local consumer docs installed by setup:
 
@@ -35,6 +35,6 @@ During execution, ready subplans may name an `Execution Lane`: `tdd`, `diagnose`
 
 Use `$codex-review` inside proof/QA or review cycles when a mission needs a second-model review pass. Review output is advisory evidence; Codex still owns triage, closeout judgment, and native `/goal` completion.
 
-Native Codex `/goal` owns persistent objectives, continuation, pause/resume, accounting, budgets, and completion. Codex1 must not create, mirror, inspect, or complete native goals.
+Native Codex `/goal` owns persistent objectives, continuation, pause/resume, accounting, budgets, and completion. Codex1 must not manage native goals.
 
-Codex1 setup is mechanical repo guidance. It is not mission truth, task readiness, review pass/fail, proof sufficiency, close safety, or native goal state.
+Codex1 setup and init are mechanical helpers. They are not mission truth, task readiness, review pass/fail, proof sufficiency, close safety, or native goal state.

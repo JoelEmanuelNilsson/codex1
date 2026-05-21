@@ -15,6 +15,7 @@ Options:
   --output FILE                    Also save review output to file.
   --parallel-tests CMD             Run review and the given test command concurrently.
   --dry-run                        Print selected commands, do not run.
+  --verbose                        Stream the full nested review output.
   -h, --help                       Show help.
 
 Modes:
@@ -33,6 +34,7 @@ yolo=${CODEX_REVIEW_YOLO:-1}
 output=${CODEX_REVIEW_OUTPUT:-}
 parallel_tests=
 dry_run=false
+verbose=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -45,6 +47,7 @@ while [[ $# -gt 0 ]]; do
     --output) output=${2:-}; shift 2 ;;
     --parallel-tests) parallel_tests=${2:-}; shift 2 ;;
     --dry-run) dry_run=true; shift ;;
+    --verbose) verbose=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
   esac
@@ -88,18 +91,18 @@ else
   exit 1
 fi
 
-codex_args=()
+review_cmd=("$codex_bin")
 case "$yolo" in
   0|false|False|FALSE|no|No|NO|off|Off|OFF) ;;
-  *) codex_args+=(--dangerously-bypass-approvals-and-sandbox) ;;
+  *) review_cmd+=(--dangerously-bypass-approvals-and-sandbox) ;;
 esac
 
 if [[ "$review_kind" == local ]]; then
-  review_cmd=("$codex_bin" "${codex_args[@]}" review --uncommitted)
+  review_cmd+=(review --uncommitted)
 elif [[ "$review_kind" == commit ]]; then
-  review_cmd=("$codex_bin" "${codex_args[@]}" review --commit "$commit_ref")
+  review_cmd+=(review --commit "$commit_ref")
 else
-  review_cmd=("$codex_bin" "${codex_args[@]}" review --base "$base_ref")
+  review_cmd+=(review --base "$base_ref")
 fi
 
 printf 'codex-review target: %s\n' "$review_kind"
@@ -130,13 +133,14 @@ fi
 
 review_output=$output
 review_output_is_temp=false
+keep_review_output=false
 if [[ -z "$review_output" ]]; then
   review_output=$(mktemp)
   review_output_is_temp=true
 fi
 
 cleanup() {
-  if [[ "${review_output_is_temp:-false}" == true && -n "${review_output:-}" ]]; then
+  if [[ "${review_output_is_temp:-false}" == true && "${keep_review_output:-false}" == false && -n "${review_output:-}" ]]; then
     rm -f "$review_output"
   fi
 }
@@ -144,7 +148,45 @@ trap cleanup EXIT
 
 run_review() {
   mkdir -p "$(dirname "$review_output")"
-  "${review_cmd[@]}" 2>&1 | tee "$review_output"
+  if [[ "$verbose" == true ]]; then
+    "${review_cmd[@]}" 2>&1 | tee "$review_output"
+  else
+    "${review_cmd[@]}" >"$review_output" 2>&1
+  fi
+}
+
+print_findings() {
+  awk '
+    /^codex$/ { in_response=1; in_review=0; printing=0; next }
+    /^(exec|user)$/ { in_response=0; in_review=0; printing=0; next }
+    in_response && /^(Review comment|Full review comments):/ { in_review=1; next }
+    in_review && /^[[:space:]]*$/ {
+      if (printing) {
+        print
+        printing=0
+      }
+      next
+    }
+    in_review && /^[[:space:]]*-[[:space:]]+\[P[0-3]\]/ { printing=1; print; next }
+    printing && /^[[:space:]]/ { print; next }
+    { printing=0; in_review=0 }
+  ' "$review_output"
+}
+
+print_review_tail() {
+  if [[ "$verbose" != true && -s "$review_output" ]]; then
+    printf 'review output tail:\n'
+    tail -40 "$review_output"
+  fi
+}
+
+note_full_output() {
+  if [[ "$verbose" != true ]]; then
+    if [[ "$review_output_is_temp" == true ]]; then
+      keep_review_output=true
+    fi
+    printf 'full output: %s\n' "$review_output"
+  fi
 }
 
 elapsed_since() {
@@ -168,7 +210,13 @@ review_output_empty() {
 }
 
 review_output_has_findings() {
-  grep -Eq '\[P[0-3]\]' "$review_output"
+  awk '
+    /^codex$/ { in_response=1; in_review=0; next }
+    /^(exec|user)$/ { in_response=0; in_review=0; next }
+    in_response && /^(Review comment|Full review comments):/ { in_review=1; next }
+    in_review && /^[[:space:]]*-[[:space:]]+\[P[0-3]\]/ { found=1 }
+    END { exit found ? 0 : 1 }
+  ' "$review_output"
 }
 
 report_clean_review_or_fail() {
@@ -177,10 +225,13 @@ report_clean_review_or_fail() {
   if review_output_has_findings; then
     printf 'codex-review complete after %s\n' "$elapsed_text"
     printf 'codex-review findings: accepted/actionable findings reported\n'
+    print_findings
+    note_full_output
     return 1
   fi
   if review_output_empty; then
     printf 'codex-review complete after %s; no output\n' "$elapsed_text"
+    note_full_output
     return 1
   fi
   printf 'codex-review complete after %s\n' "$elapsed_text"
@@ -198,6 +249,9 @@ if [[ -z "$parallel_tests" ]]; then
     report_clean_review_or_fail
     exit $?
   fi
+  printf 'codex-review exited %s after %s\n' "$review_status" "$(format_elapsed "$review_elapsed_seconds")"
+  print_review_tail
+  note_full_output
   exit "$review_status"
 fi
 
@@ -234,8 +288,18 @@ rm -f "$review_status_file" "$review_elapsed_file" "$tests_status_file"
 
 printf 'codex-review exit: %s\n' "$review_status"
 printf 'tests exit: %s\n' "$tests_status"
-if [[ "$review_status" != 0 || "$tests_status" != 0 ]]; then
-  exit 1
+review_report_status=0
+if [[ "$review_status" == 0 ]]; then
+  set +e
+  report_clean_review_or_fail
+  review_report_status=$?
+  set -e
+else
+  print_review_tail
+  note_full_output
+  review_report_status=$review_status
 fi
 
-report_clean_review_or_fail
+if [[ "$review_report_status" != 0 || "$tests_status" != 0 ]]; then
+  exit 1
+fi

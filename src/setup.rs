@@ -14,7 +14,7 @@ use crate::error::{Codex1Error, Result};
 use crate::paths::{create_dir_all_contained, discover_repo_root, ensure_contained_for_write};
 
 const BACKUP_MANIFEST_VERSION: u32 = 1;
-const BUNDLE_VERSION: u32 = 7;
+const BUNDLE_VERSION: u32 = 8;
 const MANAGED_GUIDANCE_START: &str = "<!-- codex1-managed setup guidance start -->";
 const MANAGED_GUIDANCE_END: &str = "<!-- codex1-managed setup guidance end -->";
 const OVERVIEW_SKILL: &str = ".agents/skills/codex1/SKILL.md";
@@ -563,7 +563,7 @@ fn materialize_bundle(repo: &Path, plan: &mut SetupPlan, dry_run: bool) -> Resul
     let marker_data = read_bundle_marker(&marker)?;
     if marker_data
         .as_ref()
-        .is_some_and(|marker| !is_known_managed_marker(marker))
+        .is_some_and(|marker| !is_managed_bundle_marker(marker))
     {
         return Err(Codex1Error::SetupBundle(
             "invalid Codex1 setup bundle marker".into(),
@@ -617,7 +617,7 @@ fn materialize_bundle(repo: &Path, plan: &mut SetupPlan, dry_run: bool) -> Resul
         repo,
         &marker,
         &bundle_marker_body(),
-        marker_data.as_ref().is_some_and(is_known_managed_marker),
+        marker_data.as_ref().is_some_and(is_managed_bundle_marker),
         "bundle marker",
         plan,
         dry_run,
@@ -631,7 +631,7 @@ fn remove_legacy_bundle_files_not_current(
     plan: &mut SetupPlan,
     dry_run: bool,
 ) -> Result<()> {
-    let Some(marker) = marker.filter(|marker| is_known_managed_marker(marker)) else {
+    let Some(marker) = marker.filter(|marker| is_managed_bundle_marker(marker)) else {
         return Ok(());
     };
     let current = bundle_files(MANAGED_BUNDLE_FILES);
@@ -696,7 +696,7 @@ fn remove_bundle(repo: &Path, plan: &mut SetupPlan, dry_run: bool) -> Result<()>
     let marker = setup_target(repo, BUNDLE_MARKER)?;
     let (files, strict) = match read_bundle_marker(&marker)? {
         Some(marker_data) => {
-            if !is_known_managed_marker(&marker_data) {
+            if !is_managed_bundle_marker(&marker_data) {
                 return Err(Codex1Error::SetupBundle(
                     "invalid Codex1 setup bundle marker".into(),
                 ));
@@ -710,14 +710,7 @@ fn remove_bundle(repo: &Path, plan: &mut SetupPlan, dry_run: bool) -> Result<()>
         if relative == BUNDLE_GUIDANCE {
             remove_guidance_if_owned(repo, &path, strict, plan, dry_run)?;
         } else {
-            remove_owned_file(
-                repo,
-                &path,
-                &expected_body(&relative),
-                strict,
-                plan,
-                dry_run,
-            )?;
+            remove_owned_file_if_managed(repo, &path, &relative, strict, plan, dry_run)?;
         }
     }
     remove_bundle_marker_file(repo, &marker, plan, dry_run)?;
@@ -815,10 +808,10 @@ fn write_guidance_file(
     Ok(())
 }
 
-fn remove_owned_file(
+fn remove_owned_file_if_managed(
     repo: &Path,
     path: &Path,
-    expected: &str,
+    relative: &str,
     strict: bool,
     plan: &mut SetupPlan,
     dry_run: bool,
@@ -834,13 +827,13 @@ fn remove_owned_file(
             )))
         }
     };
-    if text != expected && strict {
-        return Err(Codex1Error::SetupBundle(format!(
-            "refusing to remove non-managed file {}",
-            path.display()
-        )));
-    }
-    if text != expected {
+    if !is_managed_restore_body(relative, &text) {
+        if strict {
+            return Err(Codex1Error::SetupBundle(format!(
+                "refusing to remove modified setup file {}",
+                path.display()
+            )));
+        }
         return Ok(());
     }
     backup_target(repo, path, "remove managed setup file", plan, dry_run)?;
@@ -925,7 +918,7 @@ fn remove_bundle_marker_file(
     let marker: BundleMarker = serde_json::from_str(&text).map_err(|source| {
         Codex1Error::SetupBundle(format!("failed to parse {}: {source}", path.display()))
     })?;
-    if !is_known_managed_marker(&marker) {
+    if !is_managed_bundle_marker(&marker) {
         return Err(Codex1Error::SetupBundle(format!(
             "refusing to remove non-managed marker {}",
             path.display()
@@ -1100,11 +1093,7 @@ fn restore_absence(repo: &Path, path: &Path, dry_run: bool) -> Result<()> {
     if path == setup_target(repo, BUNDLE_GUIDANCE)? {
         return restore_guidance_absence(path, dry_run);
     }
-    let expected = if let Some(relative) = managed_owned_relative_for_path(repo, path)? {
-        expected_body(relative)
-    } else if path == setup_target(repo, BUNDLE_MARKER)? {
-        expected_body(BUNDLE_MARKER)
-    } else {
+    let Some(relative) = managed_restore_relative_for_path(repo, path)? else {
         return Err(Codex1Error::SetupRestore(format!(
             "backup target is not a managed setup file: {}",
             path.display()
@@ -1120,7 +1109,7 @@ fn restore_absence(repo: &Path, path: &Path, dry_run: bool) -> Result<()> {
             )))
         }
     };
-    if text != expected {
+    if !is_managed_restore_body(relative, &text) {
         return Err(Codex1Error::SetupRestore(format!(
             "refusing to remove non-managed setup file {}",
             path.display()
@@ -1132,6 +1121,79 @@ fn restore_absence(repo: &Path, path: &Path, dry_run: bool) -> Result<()> {
     fs::remove_file(path).map_err(|source| {
         Codex1Error::SetupRestore(format!("failed to remove {}: {source}", path.display()))
     })
+}
+
+fn managed_restore_relative_for_path(repo: &Path, path: &Path) -> Result<Option<&'static str>> {
+    for relative in managed_restore_files() {
+        if path == setup_target(repo, relative)? {
+            return Ok(Some(relative));
+        }
+    }
+    Ok(None)
+}
+
+fn is_managed_restore_body(relative: &str, text: &str) -> bool {
+    if relative == BUNDLE_MARKER {
+        return serde_json::from_str::<BundleMarker>(text)
+            .is_ok_and(|marker| is_managed_bundle_marker(&marker));
+    }
+    text == expected_body(relative) || matches_legacy_managed_body(relative, text)
+}
+
+struct LegacyBodyFingerprint {
+    relative: &'static str,
+    len: usize,
+    fnv1a64: u64,
+}
+
+const LEGACY_MANAGED_BODY_FINGERPRINTS: [LegacyBodyFingerprint; 6] = [
+    LegacyBodyFingerprint {
+        relative: OVERVIEW_SKILL,
+        len: 2431,
+        fnv1a64: 0x5bdad4b242679346,
+    },
+    LegacyBodyFingerprint {
+        relative: PLAN_SKILL,
+        len: 6599,
+        fnv1a64: 0x59643282b16f9eff,
+    },
+    LegacyBodyFingerprint {
+        relative: PLAN_GOAL_BRIEF_FORMAT,
+        len: 1818,
+        fnv1a64: 0x2bf7a05a412c9df7,
+    },
+    LegacyBodyFingerprint {
+        relative: CODEX_REVIEW_SKILL,
+        len: 5325,
+        fnv1a64: 0xcfe694510fae4fe2,
+    },
+    LegacyBodyFingerprint {
+        relative: CODEX_REVIEW_HELPER,
+        len: 6560,
+        fnv1a64: 0x1eb8f1e0bf4d22d1,
+    },
+    LegacyBodyFingerprint {
+        relative: WORKFLOW_DOC,
+        len: 1904,
+        fnv1a64: 0x576d42530da8f540,
+    },
+];
+
+fn matches_legacy_managed_body(relative: &str, text: &str) -> bool {
+    LEGACY_MANAGED_BODY_FINGERPRINTS.iter().any(|fingerprint| {
+        fingerprint.relative == relative
+            && fingerprint.len == text.len()
+            && fingerprint.fnv1a64 == fnv1a64(text.as_bytes())
+    })
+}
+
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf29ce484222325;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
 }
 
 fn restore_guidance_absence(path: &Path, dry_run: bool) -> Result<()> {
@@ -1178,10 +1240,9 @@ fn marker_state(repo: &Path) -> SetupFileState {
         return SetupFileState::Invalid;
     };
     match read_bundle_marker(&path) {
-        Ok(Some(marker)) => match validate_marker(&marker) {
-            Ok(()) => SetupFileState::Current,
-            Err(_) => SetupFileState::Invalid,
-        },
+        Ok(Some(marker)) if is_current_marker(&marker) => SetupFileState::Current,
+        Ok(Some(marker)) if is_managed_bundle_marker(&marker) => SetupFileState::Stale,
+        Ok(Some(_)) => SetupFileState::Invalid,
         Ok(None) => SetupFileState::Missing,
         Err(_) => SetupFileState::Invalid,
     }
@@ -1230,22 +1291,13 @@ fn read_bundle_marker(path: &Path) -> Result<Option<BundleMarker>> {
     })
 }
 
-fn validate_marker(marker: &BundleMarker) -> Result<()> {
-    if !is_current_marker(marker) {
-        return Err(Codex1Error::SetupBundle(
-            "invalid Codex1 setup bundle marker".into(),
-        ));
-    }
-    Ok(())
-}
-
 fn is_current_marker(marker: &BundleMarker) -> bool {
     marker.managed_by == "codex1-managed"
         && marker.version == BUNDLE_VERSION
         && marker.files == bundle_files(MANAGED_BUNDLE_FILES)
 }
 
-fn is_known_managed_marker(marker: &BundleMarker) -> bool {
+fn is_managed_bundle_marker(marker: &BundleMarker) -> bool {
     marker.managed_by == "codex1-managed"
         && (marker.files == bundle_files(MANAGED_BUNDLE_FILES)
             || marker.files == bundle_files(LEGACY_BUNDLE_FILES_V6)
@@ -1258,7 +1310,7 @@ fn is_known_managed_marker(marker: &BundleMarker) -> bool {
 
 fn marker_allows_file_repair(marker: Option<&BundleMarker>, relative: &str) -> bool {
     marker.is_some_and(|marker| {
-        is_known_managed_marker(marker) && marker.files.iter().any(|file| file == relative)
+        is_managed_bundle_marker(marker) && marker.files.iter().any(|file| file == relative)
     })
 }
 
@@ -1355,20 +1407,9 @@ fn expected_body(relative: &str) -> String {
 
 fn managed_restore_files() -> Vec<&'static str> {
     let mut files = MANAGED_BUNDLE_FILES.to_vec();
+    files.push(LEGACY_PLAN_EXECUTION_PROMPT_FORMAT);
     files.push(BUNDLE_MARKER);
     files
-}
-
-fn managed_owned_relative_for_path(repo: &Path, path: &Path) -> Result<Option<&'static str>> {
-    for &relative in &MANAGED_BUNDLE_FILES {
-        if relative == BUNDLE_GUIDANCE {
-            continue;
-        }
-        if path == setup_target(repo, relative)? {
-            return Ok(Some(relative));
-        }
-    }
-    Ok(None)
 }
 
 fn bundle_files<const N: usize>(files: [&str; N]) -> Vec<String> {
@@ -1393,7 +1434,7 @@ description: Repo-scoped Codex1 artifact workflow overview. Use as a router to t
 
 # Codex1
 
-Codex1 is a deterministic artifact helper for clarification context, PRD, PLAN, GOAL_BRIEF, SPEC, SUBPLAN, REVIEW, TRIAGE, PROOF, CLOSEOUT, receipts, and inventory inspection.
+Codex1 is a tiny local setup and mission-scaffold helper. Its CLI owns repo-local skill materialization plus path-safe mission directory creation; Codex skills own PRDs, plans, goal briefs, specs, subplans, reviews, triage, proofs, and closeout.
 
 Repo-local consumer docs installed by setup:
 
@@ -1423,9 +1464,9 @@ During execution, ready subplans may name an `Execution Lane`: `tdd`, `diagnose`
 
 Use `$codex-review` inside proof/QA or review cycles when a mission needs a second-model review pass. Review output is advisory evidence; Codex still owns triage, closeout judgment, and native `/goal` completion.
 
-Native Codex `/goal` owns persistent objectives, continuation, pause/resume, accounting, budgets, and completion. Codex1 must not create, mirror, inspect, or complete native goals.
+Native Codex `/goal` owns persistent objectives, continuation, pause/resume, accounting, budgets, and completion. Codex1 must not manage native goals.
 
-Codex1 setup is mechanical repo guidance. It is not mission truth, task readiness, review pass/fail, proof sufficiency, close safety, or native goal state.
+Codex1 setup and init are mechanical helpers. They are not mission truth, task readiness, review pass/fail, proof sufficiency, close safety, or native goal state.
 "#
 }
 
@@ -1694,7 +1735,7 @@ Use [GOAL-BRIEF-FORMAT.md](GOAL-BRIEF-FORMAT.md). The goal brief is not native g
 
 Completion criteria are only completion criteria. Do not put pause, escalation, or "ask the user" criteria under completion. The `/goal` execution phase may not ask questions. If completion cannot be reached from the artifacts, the objective should instruct Codex to record non-completion evidence, accepted risks, or deferred work instead of inventing scope or asking the user.
 
-Do not create, inspect, or complete native goal state. Do not treat Codex1 inspect/status/events/receipts as proof of readiness or completion. The user keeps the go moment by asking Codex to create a native goal from `GOAL_BRIEF.md` or by editing the brief before `/goal`.
+Do not manage native goal state from Codex1. Do not treat `codex1 setup` status or `codex1 init` output as proof of readiness or completion. The user keeps the go moment by asking Codex to create a native goal from `GOAL_BRIEF.md` or by editing the brief before `/goal`.
 "#
 }
 
@@ -2054,60 +2095,9 @@ When using workers, give each worker explicit ownership, relevant artifacts, edi
 
 Always prohibit:
 
-- Creating, inspecting, or completing native goal state from Codex1.
-- Treating `codex1 inspect`, setup status, events, or receipts as completion proof.
+- Managing native goal state from Codex1.
+- Treating `codex1 setup` status or `codex1 init` output as completion proof.
 - Reading `GOAL_BRIEF.md` as the first step of the native goal.
-"#
-}
-
-fn legacy_execution_prompt_format_body() -> &'static str {
-    r#"# Execution Prompt Format
-
-`EXECUTION_PROMPT.md` contains the objective text the user copies after typing native `/goal`.
-
-It is a copy source. The prompt must not tell Codex to read `EXECUTION_PROMPT.md`; the user has already copied from it.
-
-## Native Goal Objective Must Include
-
-- Mission path
-- Primary artifacts to read
-- Execution order
-- Subplan selection rules
-- Worker/subagent rules when useful
-- Editable scope
-- Proof recording rules
-- Review and triage rules
-- Explicit completion criteria
-- If completion cannot be reached
-- Closeout rules
-- Prohibited actions
-
-## Completion Criteria
-
-Completion criteria are only completion criteria. Do not include pause, escalation, "ask the user", or "wait for clarification" criteria.
-
-Good completion criteria are observable:
-
-- Required ready subplans are complete or explicitly triaged not applicable.
-- Required proofs exist and were audited.
-- PRD success criteria are satisfied or recorded as deferred with reason.
-- Closeout summarizes completed, superseded, paused, deferred, and risky work.
-
-## No-question Execution
-
-The `/goal` execution phase may not ask questions. If artifacts are insufficient, Codex should record non-completion evidence, blockers, accepted risks, or deferred work rather than inventing scope or asking the user.
-
-## Worker Rules
-
-When using workers, give each worker explicit ownership, relevant artifacts, editable scope, proof expectations, and non-goals. Workers should not edit mission-level artifacts unless assigned.
-
-## Prohibited Actions
-
-Always prohibit:
-
-- Creating, inspecting, or completing native goal state from Codex1.
-- Treating `codex1 inspect`, setup status, events, or receipts as completion proof.
-- Reading `EXECUTION_PROMPT.md` as the first step of the pasted objective.
 "#
 }
 
@@ -2135,11 +2125,11 @@ Review helper skills guide evidence gathering without adding an execution lane. 
 
 ## Native Goal Boundary
 
-Native `/goal` owns persistent objectives, continuation, pause/resume, usage accounting, and completion. Codex1 artifacts provide context and evidence. They do not create, mirror, inspect, or complete native goals.
+Native `/goal` owns persistent objectives, continuation, pause/resume, usage accounting, and completion. Codex1 artifacts provide context and evidence. They do not manage native goals.
 
 ## Mechanical Commands
 
-`codex1 setup`, `codex1 inspect`, events, and receipts are mechanical helpers. They are not proof of readiness, review cleanliness, PRD satisfaction, closeout, or native goal state.
+`codex1 setup` materializes repo-local skills and guidance. `codex1 init` creates the standard mission directory layout with path-safety checks. The CLI stops there: it does not judge readiness, write mission content, manage execution, or report completion.
 
 ## Proof/QA
 
@@ -2232,14 +2222,65 @@ Proofs record commands, tests, Browser checks, screenshots, manual checks, failu
 "#
 }
 
+fn legacy_execution_prompt_format_body() -> &'static str {
+    r#"# Execution Prompt Format
+
+`EXECUTION_PROMPT.md` contains the objective text the user copies after typing native `/goal`.
+
+It is a copy source. The prompt must not tell Codex to read `EXECUTION_PROMPT.md`; the user has already copied from it.
+
+## Native Goal Objective Must Include
+
+- Mission path
+- Primary artifacts to read
+- Execution order
+- Subplan selection rules
+- Worker/subagent rules when useful
+- Editable scope
+- Proof recording rules
+- Review and triage rules
+- Explicit completion criteria
+- If completion cannot be reached
+- Closeout rules
+- Prohibited actions
+
+## Completion Criteria
+
+Completion criteria are only completion criteria. Do not include pause, escalation, "ask the user", or "wait for clarification" criteria.
+
+Good completion criteria are observable:
+
+- Required ready subplans are complete or explicitly triaged not applicable.
+- Required proofs exist and were audited.
+- PRD success criteria are satisfied or recorded as deferred with reason.
+- Closeout summarizes completed, superseded, paused, deferred, and risky work.
+
+## No-question Execution
+
+The `/goal` execution phase may not ask questions. If artifacts are insufficient, Codex should record non-completion evidence, blockers, accepted risks, or deferred work rather than inventing scope or asking the user.
+
+## Worker Rules
+
+When using workers, give each worker explicit ownership, relevant artifacts, editable scope, proof expectations, and non-goals. Workers should not edit mission-level artifacts unless assigned.
+
+## Prohibited Actions
+
+Always prohibit:
+
+- Creating, inspecting, or completing native goal state from Codex1.
+- Treating `codex1 inspect`, setup status, events, or receipts as completion proof.
+- Reading `EXECUTION_PROMPT.md` as the first step of the pasted objective.
+"#
+}
+
 fn guidance_body() -> &'static str {
     r#"# Codex1 Setup Guidance
 
 codex1-managed
 
-Codex1 is enabled in this repository as a local artifact workflow convention. Use `$clarify`, `$create-prd`, and `$plan` for the mission workflow. Read `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, and `docs/agents/codex1-artifact-briefs.md` for the repo-local workflow, domain, ADR, and artifact rules. Use `codex1` for durable mission artifacts and mechanical evidence. Use native `/goal` for persistent objectives and continuation. The preferred flow is clarify, create PRD, plan, then create or refine the native goal from `GOAL_BRIEF.md`.
+Codex1 is enabled in this repository as a local artifact workflow convention. Use `$clarify`, `$create-prd`, and `$plan` for the mission workflow. Read `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, and `docs/agents/codex1-artifact-briefs.md` for the repo-local workflow, domain, ADR, and artifact rules. Use `codex1 setup` for repo-local guidance and `codex1 init` for path-safe mission scaffolding. Use native `/goal` for persistent objectives and continuation. The preferred flow is clarify, create PRD, plan, then create or refine the native goal from `GOAL_BRIEF.md`.
 
-Codex remains the semantic judge. Codex1 inspect, setup status, events, and receipts are not readiness, completion, review, proof, closeout, or native goal state.
+Codex remains the semantic judge. Codex1 setup status and init output are not readiness, completion, review, proof, closeout, or native goal state.
 "#
 }
 
@@ -2321,7 +2362,7 @@ mod tests {
     #[test]
     fn marker_body_matches_expected_files() {
         let marker: BundleMarker = serde_json::from_str(&bundle_marker_body()).unwrap();
-        validate_marker(&marker).unwrap();
+        assert!(is_current_marker(&marker));
         assert_eq!(marker.version, BUNDLE_VERSION);
         assert_eq!(marker.files, bundle_files(MANAGED_BUNDLE_FILES));
     }

@@ -173,28 +173,6 @@ pub fn create_dir_all_contained(base: &Path, relative: impl AsRef<Path>) -> Resu
     Ok(current)
 }
 
-pub fn ensure_existing_contained(base: &Path, path: &Path) -> Result<()> {
-    let base_real =
-        fs::canonicalize(base).io_context(format!("failed to canonicalize {}", base.display()))?;
-    let metadata =
-        fs::symlink_metadata(path).io_context(format!("failed to inspect {}", path.display()))?;
-    if metadata.file_type().is_symlink() {
-        return Err(Codex1Error::MissionPath(format!(
-            "path must not be a symlink: {}",
-            path.display()
-        )));
-    }
-    let real =
-        fs::canonicalize(path).io_context(format!("failed to canonicalize {}", path.display()))?;
-    if !real.starts_with(&base_real) {
-        return Err(Codex1Error::MissionPath(format!(
-            "path escapes base: {}",
-            path.display()
-        )));
-    }
-    Ok(())
-}
-
 pub fn ensure_contained_for_write(base: &Path, target: &Path) -> Result<()> {
     let base_real = fs::canonicalize(base)
         .io_context(format!("failed to canonicalize base {}", base.display()))?;
@@ -259,39 +237,6 @@ pub fn ensure_contained_for_write(base: &Path, target: &Path) -> Result<()> {
         }
     }
     Ok(())
-}
-
-pub fn slug(input: &str) -> String {
-    let mut out = String::new();
-    let mut last_dash = false;
-    for c in input.chars() {
-        let next = if c.is_ascii_alphanumeric() {
-            Some(c.to_ascii_lowercase())
-        } else if matches!(c, '-' | '_' | ' ' | '.' | ':') {
-            Some('-')
-        } else {
-            None
-        };
-        if let Some(c) = next {
-            if c == '-' {
-                if !last_dash && !out.is_empty() {
-                    out.push(c);
-                    last_dash = true;
-                }
-            } else {
-                out.push(c);
-                last_dash = false;
-            }
-        }
-    }
-    while out.ends_with('-') {
-        out.pop();
-    }
-    if out.is_empty() {
-        "artifact".into()
-    } else {
-        out
-    }
 }
 
 #[cfg(test)]

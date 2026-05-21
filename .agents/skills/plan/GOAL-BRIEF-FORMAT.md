@@ -44,6 +44,6 @@ When using workers, give each worker explicit ownership, relevant artifacts, edi
 
 Always prohibit:
 
-- Creating, inspecting, or completing native goal state from Codex1.
-- Treating `codex1 inspect`, setup status, events, or receipts as completion proof.
+- Managing native goal state from Codex1.
+- Treating `codex1 setup` status or `codex1 init` output as completion proof.
 - Reading `GOAL_BRIEF.md` as the first step of the native goal.

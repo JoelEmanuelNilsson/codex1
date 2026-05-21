@@ -1,6 +1,6 @@
 # Skill Workflow Notes
 
-Codex skills are the user-facing workflow. The CLI is a deterministic artifact helper.
+Codex skills are the user-facing workflow. The CLI is only setup and path-safe mission scaffolding.
 
 ## Native Goals
 
@@ -10,7 +10,7 @@ Codex1 skills must not create native goals for ordinary one-turn work. When a na
 
 ## Setup
 
-`codex1 setup` materializes repo-scoped Codex1 artifact workflow guidance: a small overview skill, core workflow skills (`$clarify`, `$create-prd`, `$plan`), repo-local lane skills (`$tdd`, `$diagnose`, `$improve-codebase-architecture`, `$prototype`), and the `$codex-review` closeout helper. It does not install hooks, manage continuation, create native goals, or report mission status.
+`codex1 setup` materializes repo-scoped Codex1 artifact workflow guidance: a small overview skill, core workflow skills (`$clarify`, `$create-prd`, `$plan`), repo-local lane skills (`$tdd`, `$diagnose`, `$improve-codebase-architecture`, `$prototype`), and the `$codex-review` closeout helper. `codex1 init` creates the standard mission directory tree. The CLI does not manage continuation, create native goals, report mission status, or write semantic artifacts.
 
 ## Clarify
 
@@ -20,7 +20,7 @@ Clarify may create durable notes or feed the later PRD answers, but it is not th
 
 ## Create PRD
 
-Create PRD synthesizes everything Codex already knows from the conversation, clarification output, repo inspection, and user-provided references into `PRD.md` through `codex1 interview prd`. It should not re-interview the user by default; it should write the best PRD from available context.
+Create PRD synthesizes everything Codex already knows from the conversation, clarification output, repo inspection, and user-provided references into `PRD.md`. It should not re-interview the user by default; it should write the best PRD from available context.
 
 The PRD should carry enough product and implementation context for `$plan`: problem statement, solution, extensive user stories, module sketch, implementation decisions, testing decisions, out-of-scope work, proof expectations, review expectations, and PR intent. It stays inside the Codex1 mission artifact tree.
 
@@ -46,7 +46,7 @@ Workers should not edit mission-level artifacts unless explicitly assigned. If i
 
 ## Review Cycle
 
-Reviewers record opinions through `codex1 interview review`. Main Codex records adjudication through `codex1 interview triage`.
+Reviewers record opinions in `REVIEWS/`. Main Codex records adjudication in `TRIAGE/`.
 
 Review artifacts are opinion records. Triage is main-Codex judgment. Neither is a CLI gate.
 

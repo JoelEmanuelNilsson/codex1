@@ -1,6 +1,6 @@
 {
   "managed_by": "codex1-managed",
-  "version": 7,
+  "version": 8,
   "files": [
     ".agents/skills/codex1/SKILL.md",
     ".agents/skills/codex1/agents/openai.yaml",

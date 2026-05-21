@@ -1,15 +1,10 @@
-use std::path::PathBuf;
-
 use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {
     Argument,
     MissionPath,
-    ArtifactValidation,
     Io,
-    Template,
-    Interview,
     SetupBackup,
     SetupRestore,
     SetupBundle,
@@ -20,10 +15,7 @@ impl ErrorCode {
         match self {
             Self::Argument => "ARGUMENT_ERROR",
             Self::MissionPath => "MISSION_PATH_ERROR",
-            Self::ArtifactValidation => "ARTIFACT_VALIDATION_ERROR",
             Self::Io => "IO_ERROR",
-            Self::Template => "TEMPLATE_ERROR",
-            Self::Interview => "INTERVIEW_ERROR",
             Self::SetupBackup => "SETUP_BACKUP_ERROR",
             Self::SetupRestore => "SETUP_RESTORE_ERROR",
             Self::SetupBundle => "SETUP_BUNDLE_ERROR",
@@ -38,12 +30,6 @@ pub enum Codex1Error {
     #[error("{0}")]
     MissionPath(String),
     #[error("{0}")]
-    ArtifactValidation(String),
-    #[error("{0}")]
-    Template(String),
-    #[error("{0}")]
-    Interview(String),
-    #[error("{0}")]
     SetupBackup(String),
     #[error("{0}")]
     SetupRestore(String),
@@ -55,12 +41,6 @@ pub enum Codex1Error {
         #[source]
         source: std::io::Error,
     },
-    #[error("failed to parse JSON in {path}: {source}")]
-    Json {
-        path: PathBuf,
-        #[source]
-        source: serde_json::Error,
-    },
 }
 
 impl Codex1Error {
@@ -68,9 +48,6 @@ impl Codex1Error {
         match self {
             Self::Argument(_) => ErrorCode::Argument,
             Self::MissionPath(_) => ErrorCode::MissionPath,
-            Self::ArtifactValidation(_) => ErrorCode::ArtifactValidation,
-            Self::Template(_) => ErrorCode::Template,
-            Self::Interview(_) | Self::Json { .. } => ErrorCode::Interview,
             Self::SetupBackup(_) => ErrorCode::SetupBackup,
             Self::SetupRestore(_) => ErrorCode::SetupRestore,
             Self::SetupBundle(_) => ErrorCode::SetupBundle,
