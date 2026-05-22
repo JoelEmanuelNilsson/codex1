@@ -12,16 +12,17 @@ Options:
   --codex-bin PATH                 Codex binary. Default: codex.
   --full-access                    Run nested review with full access. Default.
   --no-yolo                        Run nested review with normal sandbox/approval prompts.
-  --output FILE                    Also save review output to file.
+  --output FILE                    Save nested review JSONL stdout to file.
   --parallel-tests CMD             Run review and the given test command concurrently.
   --dry-run                        Print selected commands, do not run.
-  --verbose                        Stream the full nested review output.
+  --verbose                        Stream the full nested review JSONL/stderr output.
+  --timeout-seconds N              Timeout for nested review. Default: 1200. Use 0 to disable.
   -h, --help                       Show help.
 
 Modes:
-  local   codex review --uncommitted
-  branch  codex review --base REF
-  commit  codex review --commit REF
+  local   codex exec review --json --uncommitted
+  branch  codex exec review --json --base REF
+  commit  codex exec review --json --commit REF
   auto    dirty tree -> local; otherwise non-main branch/PR -> branch
 EOF
 }
@@ -30,24 +31,33 @@ mode=auto
 base_ref=
 commit_ref=HEAD
 codex_bin=${CODEX_BIN:-codex}
+codex_bin_explicit=false
 yolo=${CODEX_REVIEW_YOLO:-1}
 output=${CODEX_REVIEW_OUTPUT:-}
 parallel_tests=
 dry_run=false
 verbose=false
+timeout_seconds=${CODEX_REVIEW_TIMEOUT_SECONDS:-1200}
+review_child_pid=
+review_pid=
+tests_pid=
+tail_pid=
+stderr_tail_pid=
+review_timed_out=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --mode) mode=${2:-}; shift 2 ;;
     --base) base_ref=${2:-}; shift 2 ;;
     --commit) commit_ref=${2:-}; shift 2 ;;
-    --codex-bin) codex_bin=${2:-}; shift 2 ;;
+    --codex-bin) codex_bin=${2:-}; codex_bin_explicit=true; shift 2 ;;
     --full-access) yolo=1; shift ;;
     --no-yolo) yolo=0; shift ;;
     --output) output=${2:-}; shift 2 ;;
     --parallel-tests) parallel_tests=${2:-}; shift 2 ;;
     --dry-run) dry_run=true; shift ;;
     --verbose) verbose=true; shift ;;
+    --timeout-seconds) timeout_seconds=${2:-}; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
   esac
@@ -57,6 +67,18 @@ case "$mode" in
   auto|local|branch|commit) ;;
   *) echo "invalid --mode: $mode" >&2; exit 2 ;;
 esac
+
+if [[ ! "$timeout_seconds" =~ ^[0-9]+$ ]]; then
+  echo "invalid --timeout-seconds: $timeout_seconds" >&2
+  exit 2
+fi
+
+if [[ "${CODEX_REVIEW_HELPER_ACTIVE:-}" == 1 && "$dry_run" != true ]]; then
+  if [[ "$codex_bin_explicit" != true || "$(basename "$codex_bin")" == codex ]]; then
+    echo "nested codex-review helper invocation refused: an outer codex-review is already running" >&2
+    exit 2
+  fi
+fi
 
 repo_root=$(git rev-parse --show-toplevel)
 current_branch=$(git branch --show-current 2>/dev/null || true)
@@ -96,13 +118,14 @@ case "$yolo" in
   0|false|False|FALSE|no|No|NO|off|Off|OFF) ;;
   *) review_cmd+=(--dangerously-bypass-approvals-and-sandbox) ;;
 esac
+review_cmd+=(exec review --json)
 
 if [[ "$review_kind" == local ]]; then
-  review_cmd+=(review --uncommitted)
+  review_cmd+=(--uncommitted)
 elif [[ "$review_kind" == commit ]]; then
-  review_cmd+=(review --commit "$commit_ref")
+  review_cmd+=(--commit "$commit_ref")
 else
-  review_cmd+=(review --base "$base_ref")
+  review_cmd+=(--base "$base_ref")
 fi
 
 printf 'codex-review target: %s\n' "$review_kind"
@@ -117,6 +140,11 @@ printf '\n'
 if [[ -n "$parallel_tests" ]]; then
   printf 'tests: %s\n' "$parallel_tests"
 fi
+if (( timeout_seconds > 0 )); then
+  printf 'timeout: %ss\n' "$timeout_seconds"
+else
+  printf 'timeout: disabled\n'
+fi
 if [[ "$review_kind" == branch ]]; then
   printf 'fetch: git fetch origin --quiet\n'
 fi
@@ -125,6 +153,11 @@ if [[ -n "$output" ]]; then
 fi
 if [[ "$dry_run" == true ]]; then
   exit 0
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "jq is required to parse codex exec review --json output" >&2
+  exit 2
 fi
 
 if [[ "$review_kind" == branch ]]; then
@@ -138,28 +171,160 @@ if [[ -z "$review_output" ]]; then
   review_output=$(mktemp)
   review_output_is_temp=true
 fi
+review_stderr="${review_output}.stderr"
+review_message=$(mktemp)
 
 cleanup() {
+  cleanup_running_review
+  rm -f "${review_message:-}"
+  if [[ -n "${review_stderr:-}" && ! -s "${review_stderr:-}" ]]; then
+    rm -f "$review_stderr"
+  elif [[ "${review_output_is_temp:-false}" == true && "${keep_review_output:-false}" == false && -n "${review_stderr:-}" ]]; then
+    rm -f "$review_stderr"
+  fi
   if [[ "${review_output_is_temp:-false}" == true && "${keep_review_output:-false}" == false && -n "${review_output:-}" ]]; then
     rm -f "$review_output"
   fi
 }
+
+collect_process_tree_pids() {
+  local pid=${1:-}
+  local child
+  [[ -n "$pid" ]] || return 0
+  printf '%s\n' "$pid"
+  for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+    collect_process_tree_pids "$child"
+  done
+}
+
+terminate_process_tree() {
+  local pid=${1:-}
+  local pids
+  local victim
+  [[ -n "$pid" ]] || return 0
+  pids=$(collect_process_tree_pids "$pid" | awk '!seen[$0]++')
+  for victim in $pids; do
+    kill -s TERM "$victim" 2>/dev/null || true
+  done
+  sleep 0.2
+  for victim in $pids; do
+    if kill -0 "$victim" 2>/dev/null; then
+      kill -s KILL "$victim" 2>/dev/null || true
+    fi
+  done
+}
+
+stop_tail() {
+  if [[ -n "${tail_pid:-}" ]]; then
+    kill "$tail_pid" 2>/dev/null || true
+    wait "$tail_pid" 2>/dev/null || true
+    tail_pid=
+  fi
+  if [[ -n "${stderr_tail_pid:-}" ]]; then
+    kill "$stderr_tail_pid" 2>/dev/null || true
+    wait "$stderr_tail_pid" 2>/dev/null || true
+    stderr_tail_pid=
+  fi
+}
+
+cleanup_running_review() {
+  stop_tail
+  if [[ -n "${review_child_pid:-}" ]] && kill -0 "$review_child_pid" 2>/dev/null; then
+    terminate_process_tree "$review_child_pid"
+    wait "$review_child_pid" 2>/dev/null || true
+  fi
+  if [[ -n "${review_pid:-}" ]] && kill -0 "$review_pid" 2>/dev/null; then
+    terminate_process_tree "$review_pid"
+    wait "$review_pid" 2>/dev/null || true
+  fi
+  if [[ -n "${tests_pid:-}" ]] && kill -0 "$tests_pid" 2>/dev/null; then
+    terminate_process_tree "$tests_pid"
+    wait "$tests_pid" 2>/dev/null || true
+  fi
+  review_child_pid=
+  review_pid=
+  tests_pid=
+}
+
+handle_interrupt() {
+  keep_review_output=true
+  printf 'codex-review interrupted; stopping nested review\n' >&2
+  cleanup_running_review
+  if [[ -n "${review_output:-}" ]]; then
+    printf 'full output: %s\n' "$review_output" >&2
+  fi
+  if [[ -s "${review_stderr:-}" ]]; then
+    printf 'stderr output: %s\n' "$review_stderr" >&2
+  fi
+  exit 130
+}
+
 trap cleanup EXIT
+trap handle_interrupt INT TERM
 
 run_review() {
+  local started_at
+  local now
+  local next_heartbeat
+  local status
   mkdir -p "$(dirname "$review_output")"
+  : > "$review_output"
+  : > "$review_stderr"
   if [[ "$verbose" == true ]]; then
-    "${review_cmd[@]}" 2>&1 | tee "$review_output"
-  else
-    "${review_cmd[@]}" >"$review_output" 2>&1
+    tail -f "$review_output" &
+    tail_pid=$!
+    tail -f "$review_stderr" >&2 &
+    stderr_tail_pid=$!
   fi
+  CODEX_REVIEW_HELPER_ACTIVE=1 "${review_cmd[@]}" >"$review_output" 2>"$review_stderr" &
+  review_child_pid=$!
+  started_at=$(date +%s)
+  next_heartbeat=$((started_at + 60))
+  status=0
+  while kill -0 "$review_child_pid" 2>/dev/null; do
+    now=$(date +%s)
+    if (( timeout_seconds > 0 && now - started_at >= timeout_seconds )); then
+      review_timed_out=true
+      terminate_process_tree "$review_child_pid"
+      wait "$review_child_pid" 2>/dev/null || true
+      review_child_pid=
+      stop_tail
+      return 124
+    fi
+    if [[ "$verbose" != true && "$now" -ge "$next_heartbeat" ]]; then
+      printf 'codex-review still running after %s\n' "$(format_elapsed "$((now - started_at))")"
+      next_heartbeat=$((next_heartbeat + 60))
+    fi
+    sleep 1
+  done
+  wait "$review_child_pid"
+  status=$?
+  review_child_pid=
+  stop_tail
+  if [[ "$verbose" == true && "$status" != 0 ]]; then
+    cat "$review_output"
+    cat "$review_stderr" >&2
+  fi
+  return "$status"
+}
+
+extract_review_message() {
+  : > "$review_message"
+  jq -r -s '
+    [
+      .[]
+      | select(.type == "item.completed")
+      | select(.item.type == "agent_message")
+      | select(.item.text? | type == "string")
+      | .item.text
+    ]
+    | last // empty
+  ' "$review_output" > "$review_message" 2>/dev/null && [[ -s "$review_message" ]]
 }
 
 print_findings() {
   awk '
-    /^codex$/ { in_response=1; in_review=0; printing=0; next }
-    /^(exec|user)$/ { in_response=0; in_review=0; printing=0; next }
-    in_response && /^(Review comment|Full review comments):/ { in_review=1; next }
+    /^(Review comment|Full review comments):/ { in_review=1; printing=0; next }
     in_review && /^[[:space:]]*$/ {
       if (printing) {
         print
@@ -170,22 +335,25 @@ print_findings() {
     in_review && /^[[:space:]]*-[[:space:]]+\[P[0-3]\]/ { printing=1; print; next }
     printing && /^[[:space:]]/ { print; next }
     { printing=0; in_review=0 }
-  ' "$review_output"
+  ' "$review_message"
 }
 
 print_review_tail() {
   if [[ "$verbose" != true && -s "$review_output" ]]; then
-    printf 'review output tail:\n'
-    tail -40 "$review_output"
+    printf 'review JSONL tail:\n'
+    tail -20 "$review_output"
+  fi
+  if [[ "$verbose" != true && -s "$review_stderr" ]]; then
+    printf 'review stderr tail:\n'
+    tail -20 "$review_stderr"
   fi
 }
 
 note_full_output() {
-  if [[ "$verbose" != true ]]; then
-    if [[ "$review_output_is_temp" == true ]]; then
-      keep_review_output=true
-    fi
-    printf 'full output: %s\n' "$review_output"
+  keep_review_output=true
+  printf 'full output: %s\n' "$review_output"
+  if [[ -s "$review_stderr" ]]; then
+    printf 'stderr output: %s\n' "$review_stderr"
   fi
 }
 
@@ -209,33 +377,87 @@ review_output_empty() {
   [[ ! -s "$review_output" ]] || ! grep -q '[^[:space:]]' "$review_output"
 }
 
-review_output_has_findings() {
+review_output_is_valid_jsonl() {
+  jq -s -e 'true' "$review_output" >/dev/null 2>&1
+}
+
+review_output_has_error_event() {
+  jq -e 'select(.type == "turn.failed" or .type == "error") | true' "$review_output" >/dev/null 2>&1
+}
+
+review_message_has_clean_signal() {
+  grep -Eq 'No actionable correctness issues were found|No findings were reported\.|I did not find any discrete correctness issues' "$review_message"
+}
+
+review_message_has_findings() {
   awk '
-    /^codex$/ { in_response=1; in_review=0; next }
-    /^(exec|user)$/ { in_response=0; in_review=0; next }
-    in_response && /^(Review comment|Full review comments):/ { in_review=1; next }
+    /^(Review comment|Full review comments):/ { in_review=1; next }
     in_review && /^[[:space:]]*-[[:space:]]+\[P[0-3]\]/ { found=1 }
     END { exit found ? 0 : 1 }
-  ' "$review_output"
+  ' "$review_message"
 }
 
 report_clean_review_or_fail() {
   local elapsed_text
   elapsed_text=$(format_elapsed "${review_elapsed_seconds:-0}")
-  if review_output_has_findings; then
+  if review_output_empty; then
+    printf 'codex-review complete after %s; no JSONL output\n' "$elapsed_text"
+    note_full_output
+    return 1
+  fi
+  if ! review_output_is_valid_jsonl; then
+    printf 'codex-review complete after %s\n' "$elapsed_text"
+    printf 'codex-review failed: malformed JSONL output\n'
+    print_review_tail
+    note_full_output
+    return 1
+  fi
+  if review_output_has_error_event; then
+    printf 'codex-review complete after %s\n' "$elapsed_text"
+    printf 'codex-review failed: JSONL error event reported\n'
+    print_review_tail
+    note_full_output
+    return 1
+  fi
+  if ! extract_review_message; then
+    printf 'codex-review complete after %s\n' "$elapsed_text"
+    printf 'codex-review inconclusive: no final agent_message found\n'
+    print_review_tail
+    note_full_output
+    return 1
+  fi
+  if review_message_has_findings; then
     printf 'codex-review complete after %s\n' "$elapsed_text"
     printf 'codex-review findings: accepted/actionable findings reported\n'
     print_findings
     note_full_output
     return 1
   fi
-  if review_output_empty; then
-    printf 'codex-review complete after %s; no output\n' "$elapsed_text"
+  if ! review_message_has_clean_signal; then
+    printf 'codex-review complete after %s\n' "$elapsed_text"
+    printf 'codex-review inconclusive: no explicit clean review signal found\n'
     note_full_output
     return 1
   fi
   printf 'codex-review complete after %s\n' "$elapsed_text"
   printf 'codex-review clean: no accepted/actionable findings reported\n'
+}
+
+report_review_failure() {
+  local elapsed_text
+  elapsed_text=$(format_elapsed "${review_elapsed_seconds:-0}")
+  if [[ "$review_timed_out" == true ]]; then
+    printf 'codex-review timed out after %s\n' "$elapsed_text"
+  else
+    printf 'codex-review exited %s after %s\n' "${review_status:-1}" "$elapsed_text"
+  fi
+  if ! review_output_empty && review_output_is_valid_jsonl && extract_review_message && review_message_has_findings; then
+    printf 'codex-review findings: accepted/actionable findings reported\n'
+    print_findings
+  else
+    print_review_tail
+  fi
+  note_full_output
 }
 
 if [[ -z "$parallel_tests" ]]; then
@@ -249,14 +471,13 @@ if [[ -z "$parallel_tests" ]]; then
     report_clean_review_or_fail
     exit $?
   fi
-  printf 'codex-review exited %s after %s\n' "$review_status" "$(format_elapsed "$review_elapsed_seconds")"
-  print_review_tail
-  note_full_output
-  exit "$review_status"
+  report_review_failure
+  exit 1
 fi
 
 review_status_file=$(mktemp)
 review_elapsed_file=$(mktemp)
+review_timed_out_file=$(mktemp)
 tests_status_file=$(mktemp)
 
 (
@@ -267,6 +488,7 @@ tests_status_file=$(mktemp)
   elapsed=$(elapsed_since "$review_started_at")
   printf '%s\n' "$status" > "$review_status_file"
   printf '%s\n' "$elapsed" > "$review_elapsed_file"
+  printf '%s\n' "$review_timed_out" > "$review_timed_out_file"
 ) &
 review_pid=$!
 
@@ -283,8 +505,11 @@ wait "$tests_pid" || true
 
 review_status=$(cat "$review_status_file")
 review_elapsed_seconds=$(cat "$review_elapsed_file")
+review_timed_out=$(cat "$review_timed_out_file")
 tests_status=$(cat "$tests_status_file")
-rm -f "$review_status_file" "$review_elapsed_file" "$tests_status_file"
+rm -f "$review_status_file" "$review_elapsed_file" "$review_timed_out_file" "$tests_status_file"
+review_pid=
+tests_pid=
 
 printf 'codex-review exit: %s\n' "$review_status"
 printf 'tests exit: %s\n' "$tests_status"
@@ -295,9 +520,8 @@ if [[ "$review_status" == 0 ]]; then
   review_report_status=$?
   set -e
 else
-  print_review_tail
-  note_full_output
-  review_report_status=$review_status
+  report_review_failure
+  review_report_status=1
 fi
 
 if [[ "$review_report_status" != 0 || "$tests_status" != 0 ]]; then

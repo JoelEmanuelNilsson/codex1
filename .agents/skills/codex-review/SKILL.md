@@ -48,7 +48,7 @@ Treat helper exit 0 plus absence of actionable findings as the clean review resu
 Dirty local work:
 
 ```bash
-codex review --uncommitted
+codex exec review --json --uncommitted
 ```
 
 Use this only when the patch is actually unstaged, staged, or untracked in the current checkout. A clean `--uncommitted` review only proves there is no local patch.
@@ -57,20 +57,20 @@ Branch or PR work:
 
 ```bash
 git fetch origin
-codex review --base origin/main
+codex exec review --json --base origin/main
 ```
 
 If an open PR exists, prefer its actual base:
 
 ```bash
 base=$(gh pr view --json baseRefName --jq .baseRefName)
-codex review --base "origin/$base"
+codex exec review --json --base "origin/$base"
 ```
 
 Committed single change:
 
 ```bash
-codex review --commit HEAD
+codex exec review --json --commit HEAD
 ```
 
 Use commit review for already-landed or already-pushed work on `main`. For a small stack, review each commit explicitly or review the branch before merging with `--base`.
@@ -90,10 +90,15 @@ The helper:
 - otherwise uses `origin/main` for non-main branches
 - supports `--mode local`, `--mode branch`, and `--mode commit`
 - supports `--parallel-tests "<command>"` when a known test command should run beside review
-- supports `--output`, `--dry-run`, `--full-access`, `--no-yolo`, and `--verbose`
+- supports `--output`, `--dry-run`, `--full-access`, `--no-yolo`, `--verbose`, and `--timeout-seconds N`
 - runs nested review with full access by default; use `--no-yolo` only when intentionally testing sandbox behavior
-- is quiet by default: it captures nested review output, prints only the summary or finding blocks, and preserves the full temp output path when findings/errors occur
-- streams the full nested review output when `--verbose` is set
+- runs nested review through `codex exec review --json`
+- is quiet by default: it captures nested review JSONL stdout and stderr separately, prints progress heartbeats plus the summary or finding blocks, and preserves the full temp output path when findings/errors occur
+- writes raw JSONL stdout to `--output FILE`; if stderr has content, it is preserved beside it as `FILE.stderr`
+- streams the full nested review JSONL/stderr output when `--verbose` is set
+- refuses nested helper invocations so reviewing the helper cannot recurse into itself
+- exits clean only when the final JSONL `agent_message` contains a known clean signal such as `No findings were reported.` or `I did not find any discrete correctness issues`
+- times out nested review after 1200 seconds by default; use `CODEX_REVIEW_TIMEOUT_SECONDS` or `--timeout-seconds` to override
 
 Do not force local mode after committing. For committed, pushed, or PR work, point Codex at the commit or branch diff.
 
