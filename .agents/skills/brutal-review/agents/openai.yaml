@@ -1,0 +1,4 @@
+interface:
+  display_name: "Brutal Review"
+  short_description: "Run an adversarial multi-perspective review"
+  default_prompt: "Use $brutal-review to review the latest change with ruthless scrutiny."

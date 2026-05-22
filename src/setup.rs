@@ -14,7 +14,7 @@ use crate::error::{Codex1Error, Result};
 use crate::paths::{create_dir_all_contained, discover_repo_root, ensure_contained_for_write};
 
 const BACKUP_MANIFEST_VERSION: u32 = 1;
-const BUNDLE_VERSION: u32 = 8;
+const BUNDLE_VERSION: u32 = 10;
 const MANAGED_GUIDANCE_START: &str = "<!-- codex1-managed setup guidance start -->";
 const MANAGED_GUIDANCE_END: &str = "<!-- codex1-managed setup guidance end -->";
 const OVERVIEW_SKILL: &str = ".agents/skills/codex1/SKILL.md";
@@ -55,6 +55,8 @@ const PROTOTYPE_UI: &str = ".agents/skills/prototype/UI.md";
 const CODEX_REVIEW_SKILL: &str = ".agents/skills/codex-review/SKILL.md";
 const CODEX_REVIEW_OPENAI_YAML: &str = ".agents/skills/codex-review/agents/openai.yaml";
 const CODEX_REVIEW_HELPER: &str = ".agents/skills/codex-review/scripts/codex-review";
+const BRUTAL_REVIEW_SKILL: &str = ".agents/skills/brutal-review/SKILL.md";
+const BRUTAL_REVIEW_OPENAI_YAML: &str = ".agents/skills/brutal-review/agents/openai.yaml";
 const LEGACY_PLAN_EXECUTION_PROMPT_FORMAT: &str = ".agents/skills/plan/EXECUTION-PROMPT-FORMAT.md";
 const WORKFLOW_DOC: &str = "docs/agents/codex1-workflow.md";
 const DOMAIN_DOC: &str = "docs/agents/codex1-domain.md";
@@ -63,7 +65,7 @@ const BUNDLE_GUIDANCE: &str = "AGENTS.md";
 const BUNDLE_MARKER: &str = ".codex1/setup-bundle.json";
 const BACKUP_MANIFEST: &str = ".codex1/setup-backups/manifest.json";
 const BACKUP_DIR: &str = ".codex1/setup-backups/files";
-const MANAGED_SKILL_FILES: [&str; 9] = [
+const MANAGED_SKILL_FILES: [&str; 10] = [
     OVERVIEW_SKILL,
     CLARIFY_SKILL,
     CREATE_PRD_SKILL,
@@ -73,8 +75,9 @@ const MANAGED_SKILL_FILES: [&str; 9] = [
     ARCHITECTURE_SKILL,
     PROTOTYPE_SKILL,
     CODEX_REVIEW_SKILL,
+    BRUTAL_REVIEW_SKILL,
 ];
-const MANAGED_SUPPORTING_DOC_FILES: [&str; 30] = [
+const MANAGED_SUPPORTING_DOC_FILES: [&str; 31] = [
     OVERVIEW_OPENAI_YAML,
     CLARIFY_OPENAI_YAML,
     CLARIFY_ADR_FORMAT,
@@ -102,11 +105,56 @@ const MANAGED_SUPPORTING_DOC_FILES: [&str; 30] = [
     PROTOTYPE_UI,
     CODEX_REVIEW_OPENAI_YAML,
     CODEX_REVIEW_HELPER,
+    BRUTAL_REVIEW_OPENAI_YAML,
     WORKFLOW_DOC,
     DOMAIN_DOC,
     ARTIFACT_BRIEFS_DOC,
 ];
-const MANAGED_BUNDLE_FILES: [&str; 40] = [
+const MANAGED_BUNDLE_FILES: [&str; 42] = [
+    OVERVIEW_SKILL,
+    OVERVIEW_OPENAI_YAML,
+    CLARIFY_SKILL,
+    CLARIFY_OPENAI_YAML,
+    CLARIFY_ADR_FORMAT,
+    CLARIFY_CONTEXT_FORMAT,
+    CREATE_PRD_SKILL,
+    CREATE_PRD_OPENAI_YAML,
+    CREATE_PRD_FORMAT,
+    PLAN_SKILL,
+    PLAN_OPENAI_YAML,
+    PLAN_ADR_FORMAT,
+    PLAN_SUBPLAN_BRIEF,
+    PLAN_GOAL_BRIEF_FORMAT,
+    TDD_SKILL,
+    TDD_OPENAI_YAML,
+    TDD_TESTS,
+    TDD_MOCKING,
+    TDD_DEEP_MODULES,
+    TDD_INTERFACE_DESIGN,
+    TDD_REFACTORING,
+    DIAGNOSE_SKILL,
+    DIAGNOSE_OPENAI_YAML,
+    DIAGNOSE_HITL_LOOP_TEMPLATE,
+    ARCHITECTURE_SKILL,
+    ARCHITECTURE_OPENAI_YAML,
+    ARCHITECTURE_LANGUAGE,
+    ARCHITECTURE_INTERFACE_DESIGN,
+    ARCHITECTURE_DEEPENING,
+    PROTOTYPE_SKILL,
+    PROTOTYPE_OPENAI_YAML,
+    PROTOTYPE_LOGIC,
+    PROTOTYPE_UI,
+    CODEX_REVIEW_SKILL,
+    CODEX_REVIEW_OPENAI_YAML,
+    CODEX_REVIEW_HELPER,
+    BRUTAL_REVIEW_SKILL,
+    BRUTAL_REVIEW_OPENAI_YAML,
+    WORKFLOW_DOC,
+    DOMAIN_DOC,
+    ARTIFACT_BRIEFS_DOC,
+    BUNDLE_GUIDANCE,
+];
+const LEGACY_BUNDLE_FILES_V8: [&str; 40] = [
     OVERVIEW_SKILL,
     OVERVIEW_OPENAI_YAML,
     CLARIFY_SKILL,
@@ -1300,6 +1348,7 @@ fn is_current_marker(marker: &BundleMarker) -> bool {
 fn is_managed_bundle_marker(marker: &BundleMarker) -> bool {
     marker.managed_by == "codex1-managed"
         && (marker.files == bundle_files(MANAGED_BUNDLE_FILES)
+            || marker.files == bundle_files(LEGACY_BUNDLE_FILES_V8)
             || marker.files == bundle_files(LEGACY_BUNDLE_FILES_V6)
             || marker.files == bundle_files(LEGACY_BUNDLE_FILES_V5)
             || marker.files == bundle_files(LEGACY_BUNDLE_FILES_V4)
@@ -1394,6 +1443,10 @@ fn expected_body(relative: &str) -> String {
         }
         CODEX_REVIEW_HELPER => {
             include_str!("../.agents/skills/codex-review/scripts/codex-review").to_string()
+        }
+        BRUTAL_REVIEW_SKILL => include_str!("../.agents/skills/brutal-review/SKILL.md").to_string(),
+        BRUTAL_REVIEW_OPENAI_YAML => {
+            include_str!("../.agents/skills/brutal-review/agents/openai.yaml").to_string()
         }
         LEGACY_PLAN_EXECUTION_PROMPT_FORMAT => legacy_execution_prompt_format_body().to_string(),
         WORKFLOW_DOC => workflow_doc_body().to_string(),
@@ -1497,6 +1550,10 @@ Ask the questions one at a time, waiting for feedback on each question before co
 
 If a question can be answered by exploring the codebase, explore the codebase instead.
 
+When success or scope is fuzzy, clarify observable success outcomes and boundaries. Preserve those answers as context for `$create-prd`; do not turn them into a PRD template, task graph, or execution plan.
+
+Before considering clarification complete, make sure known context is sufficient for `$create-prd` to synthesize actors/core behaviors, observable success criteria, `Always Preserve`, `Ask Before Changing`, `Out Of Scope`, and any unresolved human decisions. Ask only for genuinely unclear product, scope, UX, credential, or human-judgment answers; inspect the repo for code-answerable ones.
+
 </what-to-do>
 
 <supporting-info>
@@ -1593,9 +1650,9 @@ Write `PRD.md` as a Codex1 mission artifact.
 
 A deep module (as opposed to a shallow module) is one which encapsulates a lot of functionality in a simple, testable interface which rarely changes.
 
-Capture the likely modules and test seams in the PRD. If a product, scope, UX, credential, or human-judgment decision is truly missing and the user is actively collaborating, ask. Otherwise record the assumption or unresolved question instead of restarting clarification.
+Capture the likely modules and test seams in the PRD. Capture observable success criteria and mission boundaries from known context. If a product, scope, UX, credential, or human-judgment decision is truly missing and the user is actively collaborating, ask. Otherwise record the assumption or unresolved question instead of restarting clarification.
 
-3. Write the PRD using the template below, then write it as `PRD.md` in the Codex1 mission artifact tree.
+3. Write the PRD using [PRD-FORMAT.md](./PRD-FORMAT.md), then write it as `PRD.md` in the Codex1 mission artifact tree. Keep the PRD at product/outcome level. Do not turn it into a task graph, dependency tracker, priority tracker, per-story acceptance-criteria engine, or execution plan; `$plan` owns execution design.
 
 <prd-template>
 
@@ -1609,15 +1666,37 @@ The solution to the problem, from the user's perspective.
 
 ## User Stories
 
-A LONG, numbered list of user stories. Each user story should be in the format of:
+A long numbered list of behavior-focused user stories. Each story should describe one coherent behavior or outcome, not a vague bundle. Use the format:
 
-1. As an <actor>, I want a <feature>, so that <benefit>
+1. As an <actor>, I want <feature>, so that <benefit>.
 
 <user-story-example>
-1. As a mobile bank customer, I want to see balance on my accounts, so that I can make better informed decisions about my spending
+1. As a mobile bank customer, I want to see balances for each of my accounts, so that I can make better informed decisions about my spending.
 </user-story-example>
 
-This list of user stories should be extremely extensive and cover all aspects of the feature.
+This list should cover major behavior, actors, edge cases, and artifact interactions, while staying specific enough that `$plan` can map slices back to the stories.
+
+## Success Criteria
+
+Observable, measurable outcomes that make the PRD satisfied. These are mission-level success facts, not implementation tasks or slice-level acceptance criteria.
+
+## Boundaries
+
+### Always Preserve
+
+Existing behaviors, contracts, data, user expectations, workflow boundaries, or artifacts that must remain intact.
+
+### Ask Before Changing
+
+Areas that require explicit human approval before the implementation changes them.
+
+### Out Of Scope
+
+Work this PRD intentionally does not include.
+
+## Module Sketch
+
+Likely modules, interfaces, contracts, and deep-module opportunities. Use stable names and concepts, not brittle paths.
 
 ## Implementation Decisions
 
@@ -1629,6 +1708,7 @@ A list of implementation decisions that were made. This can include:
 - Architectural decisions
 - Schema changes
 - API contracts
+- State ownership
 - Specific interactions
 
 Do NOT include specific file paths or code snippets. They may end up being outdated very quickly.
@@ -1642,10 +1722,15 @@ A list of testing decisions that were made. Include:
 - A description of what makes a good test (only test external behavior, not implementation details)
 - Which modules will be tested
 - Prior art for the tests (i.e. similar types of tests in the codebase)
+- Testing non-goals
 
-## Out of Scope
+## Proof Expectations
 
-A description of the things that are out of scope for this PRD.
+Commands, tests, screenshots, manual checks, review evidence, or other proof expected later.
+
+## Review Expectations
+
+Reviewer posture, review artifacts, triage expectations, or explicit "no special review" statement.
 
 ## Further Notes
 
@@ -1880,7 +1965,7 @@ Use this when `$create-prd` writes `PRD.md`.
 
 ## Required Quality Bar
 
-The PRD must be sufficient for `$plan` to design execution without reconstructing product intent. Write from the user's perspective first, then capture implementation and testing decisions.
+The PRD must be sufficient for `$plan` to design execution without reconstructing product intent. Write from the user's perspective first, then capture observable success criteria, mission boundaries, implementation decisions, and testing decisions.
 
 ## Template
 
@@ -1895,15 +1980,29 @@ The solution, from the user's perspective.
 
 ## User Stories
 
-A long numbered list of user stories:
+A long numbered list of behavior-focused user stories:
 
 1. As an <actor>, I want <feature>, so that <benefit>.
 
-Cover all major behavior, actors, edge cases, and artifact interactions.
+Each story should describe one coherent behavior or outcome. Avoid vague bundles like "manage settings" unless they are split into observable behaviors. Cover all major behavior, actors, edge cases, and artifact interactions.
 
 ## Success Criteria
 
-Observable facts that make the PRD satisfied.
+Observable, measurable outcomes that make the PRD satisfied. These are mission-level success facts, not implementation tasks or slice-level acceptance criteria.
+
+## Boundaries
+
+### Always Preserve
+
+Existing behaviors, contracts, data, user expectations, workflow boundaries, or artifacts that must remain intact.
+
+### Ask Before Changing
+
+Areas that require explicit human approval before the implementation changes them.
+
+### Out Of Scope
+
+Work this PRD intentionally does not include.
 
 ## Module Sketch
 
@@ -1931,10 +2030,6 @@ Do not include brittle file paths or code snippets.
 - Testing non-goals
 
 Tests should verify behavior through public interfaces, not implementation details.
-
-## Out Of Scope
-
-What this PRD intentionally does not include.
 
 ## Proof Expectations
 
@@ -2187,9 +2282,13 @@ Codex1 artifacts should stay durable as code changes. Prefer behavior, interface
 
 ## PRD Quality
 
-`PRD.md` should include problem statement, solution, extensive user stories, success criteria, module sketch, implementation decisions, testing decisions, out-of-scope work, proof expectations, review expectations, and PR intent.
+`PRD.md` should include problem statement, solution, extensive user stories, success criteria, boundaries, module sketch, implementation decisions, testing decisions, proof expectations, review expectations, and PR intent.
 
-User stories should be numbered and broad enough that `$plan` can map slices back to them.
+Success criteria should be observable, measurable outcomes that make the PRD satisfied. They are not implementation tasks or slice-level acceptance criteria.
+
+Boundaries should separate `Always Preserve`, `Ask Before Changing`, and `Out Of Scope` work so execution agents know what must remain stable, what needs human approval, and what is intentionally excluded.
+
+User stories should be numbered, behavior-focused, and broad enough that `$plan` can map slices back to them. Each story should describe one coherent behavior or outcome, not a vague bundle.
 
 ## Subplans As Agent Briefs
 

@@ -24,6 +24,10 @@ Ask the questions one at a time, waiting for feedback on each question before co
 
 If a question can be answered by exploring the codebase, explore the codebase instead.
 
+When success or scope is fuzzy, clarify observable success outcomes and boundaries. Preserve those answers as context for `$create-prd`; do not turn them into a PRD template, task graph, or execution plan.
+
+Before considering clarification complete, make sure known context is sufficient for `$create-prd` to synthesize actors/core behaviors, observable success criteria, `Always Preserve`, `Ask Before Changing`, `Out Of Scope`, and any unresolved human decisions. Ask only for genuinely unclear product, scope, UX, credential, or human-judgment answers; inspect the repo for code-answerable ones.
+
 </what-to-do>
 
 <supporting-info>
