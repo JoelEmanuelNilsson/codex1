@@ -19,7 +19,7 @@ Codex1 is a small CLI plus repo-local skill bundle.
 
 The CLI owns only:
 
-- `codex1 setup`: materialize, status-check, disable, enable, uninstall, back up, restore, and diagnose repo-local managed guidance.
+- `codex1 setup`: short install/repair command plus explicit setup subcommands to materialize, status-check, disable, enable, uninstall, back up, restore, and diagnose repo-local managed guidance.
 - `codex1 init`: create `.codex1/missions/<mission-id>/` with the standard path-safe folder tree.
 
 The skills own the mission workflow:

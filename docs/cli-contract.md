@@ -34,7 +34,7 @@ Error codes are mechanical: `ARGUMENT_ERROR`, `MISSION_PATH_ERROR`, `IO_ERROR`, 
 
 `init` creates the standard mission folder tree under `.codex1/missions/<mission-id>/`. It creates directories only and leaves mission content to the workflow skills.
 
-`setup install` and `setup enable` materialize or repair repo-scoped Codex1 skills and guidance files. The managed skills are the overview `codex1` skill, workflow skills, lane skills, and review helper skill. `--dry-run` reports planned writes, removals, backups, and materialized files without changing repo files.
+`setup` is the short form of `setup install`: it materializes or repairs repo-scoped Codex1 skills and guidance files in the current repository. `setup install` and `setup enable` are the explicit forms. The managed skills are the overview `codex1` skill, workflow skills, lane skills, and review helper skill. `--dry-run` on the explicit install/enable forms reports planned writes, removals, backups, and materialized files without changing repo files.
 
 `setup disable` and `setup uninstall` remove only Codex1-managed setup files and managed guidance blocks. They do not delete mission artifacts, user-authored guidance, user skills, or native goal state.
 

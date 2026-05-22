@@ -13,6 +13,7 @@ For execution, Codex1 skills plan up to `GOAL_BRIEF.md`. The user keeps the expl
 To activate the Codex1 bundle for the current repository:
 
 ```sh
+codex1 setup
 codex1 setup install
 codex1 setup status
 codex1 setup disable
@@ -20,7 +21,7 @@ codex1 setup enable
 codex1 setup backups list
 ```
 
-`setup install` materializes repo-scoped Codex1 skills and guidance files. It writes backups before changing managed repo guidance and never deletes mission artifacts.
+`codex1 setup` is the short install/repair command. `setup install` is the explicit form. Both materialize repo-scoped Codex1 skills and guidance files, write backups before changing managed repo guidance, and never delete mission artifacts.
 
 The installed skills expose the intended UX:
 

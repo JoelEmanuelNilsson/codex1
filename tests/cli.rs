@@ -1011,6 +1011,23 @@ fn setup_install_materializes_repo_scoped_guidance() {
 }
 
 #[test]
+fn setup_without_subcommand_materializes_repo_scoped_guidance() {
+    let repo = repo();
+
+    let value = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .arg("setup"),
+    );
+
+    assert_eq!(value["ok"], true);
+    assert!(repo.path().join(".agents/skills/codex1/SKILL.md").is_file());
+    assert!(repo.path().join("AGENTS.md").is_file());
+    assert!(repo.path().join(".codex1/setup-bundle.json").is_file());
+}
+
+#[test]
 fn setup_status_reports_bundle_state_only() {
     let repo = repo();
     json_output(

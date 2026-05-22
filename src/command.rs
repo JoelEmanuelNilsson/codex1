@@ -5,7 +5,7 @@ use clap::Parser;
 use serde::Serialize;
 use serde_json::json;
 
-use crate::cli::{Cli, Commands};
+use crate::cli::{Cli, Commands, SetupCommand, SetupRepoArgs};
 use crate::envelope;
 use crate::error::{Codex1Error, Result};
 use crate::layout::{descriptors, MissionLayout};
@@ -51,7 +51,16 @@ pub fn run() -> ExitCode {
 fn run_cli(cli: Cli) -> Result<()> {
     match cli.command.clone() {
         Commands::Init => cmd_init(&cli),
-        Commands::Setup { command } => setup::run(cli.json, cli.repo_root.clone(), command),
+        Commands::Setup { command } => setup::run(
+            cli.json,
+            cli.repo_root.clone(),
+            command.unwrap_or_else(|| {
+                SetupCommand::Install(SetupRepoArgs {
+                    repo: None,
+                    dry_run: false,
+                })
+            }),
+        ),
     }
 }
 

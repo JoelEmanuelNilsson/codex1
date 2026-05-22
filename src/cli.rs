@@ -29,7 +29,7 @@ pub enum Commands {
     Init,
     Setup {
         #[command(subcommand)]
-        command: SetupCommand,
+        command: Option<SetupCommand>,
     },
 }
 
