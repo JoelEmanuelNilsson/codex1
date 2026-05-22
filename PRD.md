@@ -43,6 +43,39 @@ The skills own the mission workflow:
 7. As a maintainer, I want setup backups and path containment well tested, so the real machinery remains reliable.
 8. As a future Codex session, I want docs to say exactly where Codex1 stops, so I do not look for hidden state.
 
+## Success Criteria
+
+- `codex1 --help` exposes only `init`, `setup`, and normal help/version behavior.
+- `codex1 init` creates only the path-safe mission scaffold and writes no semantic mission artifacts.
+- `codex1 setup` materializes, checks, repairs, disables, uninstalls, backs up, restores, and diagnoses only repo-local managed guidance.
+- Setup status and doctor output remain mechanical bundle-health checks, not mission readiness, proof, review, closeout, or native goal state.
+- Workflow skills describe the clarify, create PRD, plan, review, proof, and closeout flow without giving the CLI semantic authority.
+- Tests cover the tiny CLI boundary, setup materialization, path containment, backup/restore behavior, and anti-oracle guarantees.
+
+## Boundaries
+
+### Always Preserve
+
+- Native `/goal` owns persistent objectives, continuation, pause/resume, usage accounting, budgets, and completion.
+- Codex remains the semantic judge for artifact quality, proof sufficiency, review triage, and closeout.
+- Mission artifacts stay human-readable files under `.codex1/missions/<mission-id>/`.
+- Setup must not delete mission artifacts, user-authored guidance, user skills, or native goal state.
+
+### Ask Before Changing
+
+- Public CLI command surface beyond `init` and `setup`.
+- Mission artifact tree names or lifecycle folders.
+- JSON envelope shape or error code names.
+- Setup ownership rules for managed files, backups, and guidance blocks.
+
+### Out Of Scope
+
+- Implementing native goals inside Codex1.
+- Adding new execution state to the CLI.
+- Making setup status into mission status.
+- Adding semantic artifact authoring commands to the CLI.
+- Redesigning the artifact model beyond the minimal setup/init boundary.
+
 ## Implementation Decisions
 
 - Keep the public CLI surface to `setup` and `init`.
@@ -64,14 +97,6 @@ Good tests assert external behavior:
 - Setup materializes, reports, disables, enables, uninstalls, backs up, restores, and diagnoses repo-local managed guidance.
 - Setup refuses to overwrite unmanaged files.
 - Docs describe the small boundary.
-
-## Out Of Scope
-
-- Implementing native goals inside Codex1.
-- Adding new execution state to the CLI.
-- Making setup status into mission status.
-- Adding semantic artifact authoring commands to the CLI.
-- Redesigning the artifact model beyond the minimal setup/init boundary.
 
 ## Further Notes
 

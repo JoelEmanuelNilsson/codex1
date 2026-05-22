@@ -22,7 +22,7 @@ Clarify may create durable notes or feed the later PRD answers, but it is not th
 
 Create PRD synthesizes everything Codex already knows from the conversation, clarification output, repo inspection, and user-provided references into `PRD.md`. It should not re-interview the user by default; it should write the best PRD from available context.
 
-The PRD should carry enough product and implementation context for `$plan`: problem statement, solution, extensive user stories, module sketch, implementation decisions, testing decisions, out-of-scope work, proof expectations, review expectations, and PR intent. It stays inside the Codex1 mission artifact tree.
+The PRD should carry enough product and implementation context for `$plan`: problem statement, solution, extensive behavior-focused user stories, observable success criteria, boundaries, module sketch, implementation decisions, testing decisions, proof expectations, review expectations, and PR intent. Boundaries should distinguish what must always be preserved, what requires approval before changing, and what is out of scope. The PRD stays inside the Codex1 mission artifact tree.
 
 ## Plan
 

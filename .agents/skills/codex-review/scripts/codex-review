@@ -386,7 +386,7 @@ review_output_has_error_event() {
 }
 
 review_message_has_clean_signal() {
-  grep -Eq 'No actionable correctness issues were found|No findings were reported\.|I did not find any discrete correctness issues' "$review_message"
+  grep -Eq 'No actionable correctness issues were found|No findings were reported\.|I (did not find any|found no) discrete correctness issues' "$review_message"
 }
 
 review_message_has_findings() {

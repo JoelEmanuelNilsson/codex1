@@ -37,7 +37,7 @@ A native goal whose normal job is to complete one whole Codex1 mission plan, usi
 _Avoid_: slice goal by default, Codex1-owned goal
 
 **Agentic E2E plan pack**:
-The normal Codex1 planning output: a mission plan, acceptance criteria, executable subplans, proof expectations, optional specs, and a native goal brief strong enough for Codex to run the mission end to end.
+The normal Codex1 planning output: a mission plan, executable subplans with acceptance criteria, proof expectations, optional specs, and a native goal brief strong enough for Codex to run the mission end to end.
 _Avoid_: vague plan, prompt-only plan
 
 **Specs phase**:
@@ -45,7 +45,7 @@ The planning checkpoint where Codex decides which exact behavior, interface, art
 _Avoid_: mandatory spec ceremony, skipped contract thinking
 
 **Native goal brief**:
-The Codex1 planning artifact that gives Codex enough mission context, acceptance criteria, execution rules, proof rules, and closeout rules to create or refine the actual native goal.
+The Codex1 planning artifact that gives Codex enough mission context, PRD success criteria, subplan acceptance criteria, execution rules, proof rules, and closeout rules to create or refine the actual native goal.
 _Avoid_: sacred final prompt, Codex1-owned goal
 
 **Goal brief artifact**:

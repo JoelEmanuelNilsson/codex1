@@ -14,7 +14,7 @@ use crate::error::{Codex1Error, Result};
 use crate::paths::{create_dir_all_contained, discover_repo_root, ensure_contained_for_write};
 
 const BACKUP_MANIFEST_VERSION: u32 = 1;
-const BUNDLE_VERSION: u32 = 10;
+const BUNDLE_VERSION: u32 = 11;
 const MANAGED_GUIDANCE_START: &str = "<!-- codex1-managed setup guidance start -->";
 const MANAGED_GUIDANCE_END: &str = "<!-- codex1-managed setup guidance end -->";
 const OVERVIEW_SKILL: &str = ".agents/skills/codex1/SKILL.md";
@@ -1194,11 +1194,26 @@ struct LegacyBodyFingerprint {
     fnv1a64: u64,
 }
 
-const LEGACY_MANAGED_BODY_FINGERPRINTS: [LegacyBodyFingerprint; 6] = [
+const LEGACY_MANAGED_BODY_FINGERPRINTS: [LegacyBodyFingerprint; 12] = [
     LegacyBodyFingerprint {
         relative: OVERVIEW_SKILL,
         len: 2431,
         fnv1a64: 0x5bdad4b242679346,
+    },
+    LegacyBodyFingerprint {
+        relative: CLARIFY_SKILL,
+        len: 3919,
+        fnv1a64: 0xb75e2bb26bbfe162,
+    },
+    LegacyBodyFingerprint {
+        relative: CREATE_PRD_SKILL,
+        len: 3221,
+        fnv1a64: 0xe77c78c652529d1e,
+    },
+    LegacyBodyFingerprint {
+        relative: CREATE_PRD_FORMAT,
+        len: 1834,
+        fnv1a64: 0x0c53c184ad841164,
     },
     LegacyBodyFingerprint {
         relative: PLAN_SKILL,
@@ -1212,8 +1227,18 @@ const LEGACY_MANAGED_BODY_FINGERPRINTS: [LegacyBodyFingerprint; 6] = [
     },
     LegacyBodyFingerprint {
         relative: CODEX_REVIEW_SKILL,
+        len: 6209,
+        fnv1a64: 0xebc17dcf5b43258a,
+    },
+    LegacyBodyFingerprint {
+        relative: CODEX_REVIEW_SKILL,
         len: 5325,
         fnv1a64: 0xcfe694510fae4fe2,
+    },
+    LegacyBodyFingerprint {
+        relative: CODEX_REVIEW_HELPER,
+        len: 14947,
+        fnv1a64: 0x3b8b15d2cfecf630,
     },
     LegacyBodyFingerprint {
         relative: CODEX_REVIEW_HELPER,
@@ -1224,6 +1249,11 @@ const LEGACY_MANAGED_BODY_FINGERPRINTS: [LegacyBodyFingerprint; 6] = [
         relative: WORKFLOW_DOC,
         len: 1904,
         fnv1a64: 0x576d42530da8f540,
+    },
+    LegacyBodyFingerprint {
+        relative: ARTIFACT_BRIEFS_DOC,
+        len: 2225,
+        fnv1a64: 0x1defde1b457d9232,
     },
 ];
 
@@ -2464,5 +2494,34 @@ mod tests {
         assert!(is_current_marker(&marker));
         assert_eq!(marker.version, BUNDLE_VERSION);
         assert_eq!(marker.files, bundle_files(MANAGED_BUNDLE_FILES));
+    }
+
+    #[test]
+    fn checked_in_marker_matches_generated_marker() {
+        assert_eq!(
+            include_str!("../.codex1/setup-bundle.json"),
+            bundle_marker_body()
+        );
+    }
+
+    #[test]
+    fn legacy_fingerprints_cover_recent_managed_body_changes() {
+        for (relative, len, fnv1a64) in [
+            (CLARIFY_SKILL, 3919, 0xb75e2bb26bbfe162),
+            (CREATE_PRD_SKILL, 3221, 0xe77c78c652529d1e),
+            (CREATE_PRD_FORMAT, 1834, 0x0c53c184ad841164),
+            (ARTIFACT_BRIEFS_DOC, 2225, 0x1defde1b457d9232),
+            (CODEX_REVIEW_SKILL, 6209, 0xebc17dcf5b43258a),
+            (CODEX_REVIEW_HELPER, 14947, 0x3b8b15d2cfecf630),
+        ] {
+            assert!(
+                LEGACY_MANAGED_BODY_FINGERPRINTS.iter().any(|fingerprint| {
+                    fingerprint.relative == relative
+                        && fingerprint.len == len
+                        && fingerprint.fnv1a64 == fnv1a64
+                }),
+                "missing legacy managed body fingerprint for {relative}"
+            );
+        }
     }
 }

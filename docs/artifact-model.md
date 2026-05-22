@@ -8,7 +8,7 @@ Native Codex goals are external thread state. Codex1 artifacts provide context, 
 
 Clarification artifacts or notes capture the user's raw intent, open questions, constraints, and resolved understanding before PRD synthesis. They are inputs to PRD creation, not execution contracts.
 
-`PRD.md` captures the mission goal, problem statement, solution, user stories, interpreted destination, success criteria, module sketch, constraints, assumptions, implementation and testing decisions, proof expectations, review expectations, and PR intent. It is the anchor for durable work.
+`PRD.md` captures the mission goal, problem statement, solution, behavior-focused user stories, interpreted destination, observable success criteria, boundaries, module sketch, assumptions, implementation and testing decisions, proof expectations, review expectations, and PR intent. Its boundaries distinguish `Always Preserve`, `Ask Before Changing`, and `Out Of Scope` work. It is the anchor for durable work.
 
 `PLAN.md` is the executable route map. It describes the outcome contract, implementation shape, execution order, useful parallelization notes, ready subplans, proof strategy, risks, non-goals, and unresolved human decisions if any. It is not a status dashboard, dependency graph engine, or proof ledger.
 

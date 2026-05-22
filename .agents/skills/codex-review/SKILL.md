@@ -97,7 +97,7 @@ The helper:
 - writes raw JSONL stdout to `--output FILE`; if stderr has content, it is preserved beside it as `FILE.stderr`
 - streams the full nested review JSONL/stderr output when `--verbose` is set
 - refuses nested helper invocations so reviewing the helper cannot recurse into itself
-- exits clean only when the final JSONL `agent_message` contains a known clean signal such as `No findings were reported.` or `I did not find any discrete correctness issues`
+- exits clean only when the final JSONL `agent_message` contains a known clean signal such as `No findings were reported.`, `I did not find any discrete correctness issues`, or `I found no discrete correctness issues`
 - times out nested review after 1200 seconds by default; use `CODEX_REVIEW_TIMEOUT_SECONDS` or `--timeout-seconds` to override
 
 Do not force local mode after committing. For committed, pushed, or PR work, point Codex at the commit or branch diff.

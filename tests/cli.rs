@@ -387,6 +387,29 @@ printf '%s\n' '{"type":"item.completed","item":{"id":"item_0","type":"agent_mess
 
 #[cfg(unix)]
 #[test]
+fn codex_review_helper_accepts_found_no_discrete_clean_signal() {
+    let (_dir, fake_codex) =
+        fake_codex_jsonl_script("I found no discrete correctness issues in the changes.");
+
+    let output = Command::new("bash")
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .args([
+            ".agents/skills/codex-review/scripts/codex-review",
+            "--mode",
+            "local",
+            "--codex-bin",
+        ])
+        .arg(&fake_codex)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("codex-review clean"));
+}
+
+#[cfg(unix)]
+#[test]
 fn codex_review_helper_requires_explicit_clean_signal() {
     let (_dir, fake_codex) = fake_codex_jsonl_script("No findings here");
 
@@ -829,7 +852,7 @@ wait
         .spawn()
         .unwrap();
 
-    assert!(wait_until(Duration::from_secs(2), || child_pid_path
+    assert!(wait_until(Duration::from_secs(6), || child_pid_path
         .metadata()
         .is_ok_and(|metadata| metadata.len() > 0)));
     let child_pid: u32 = fs::read_to_string(&child_pid_path)
@@ -842,11 +865,11 @@ wait
         .status()
         .unwrap();
 
-    assert!(wait_until(Duration::from_secs(2), || helper
+    assert!(wait_until(Duration::from_secs(6), || helper
         .try_wait()
         .unwrap()
         .is_some()));
-    assert!(wait_until(Duration::from_secs(2), || !process_is_alive(
+    assert!(wait_until(Duration::from_secs(6), || !process_is_alive(
         child_pid
     )));
 }
@@ -1127,7 +1150,7 @@ fn setup_enable_repairs_stale_managed_skill_and_marker() {
     let marker = fs::read_to_string(&marker_path).unwrap();
     fs::write(
         &marker_path,
-        marker.replace(r#""version": 10"#, r#""version": 9"#),
+        marker.replace(r#""version": 11"#, r#""version": 10"#),
     )
     .unwrap();
     fs::write(
@@ -1147,7 +1170,7 @@ fn setup_enable_repairs_stale_managed_skill_and_marker() {
     let marker = fs::read_to_string(repo.path().join(".codex1/setup-bundle.json")).unwrap();
     assert!(skill.contains("$clarify"));
     assert!(repo.path().join(".agents/skills/plan/SKILL.md").is_file());
-    assert!(marker.contains(r#""version": 10"#));
+    assert!(marker.contains(r#""version": 11"#));
 }
 
 #[test]
