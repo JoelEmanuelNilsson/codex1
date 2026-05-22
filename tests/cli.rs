@@ -12,7 +12,7 @@ use tempfile::TempDir;
 #[cfg(unix)]
 use std::os::unix::fs::{symlink, PermissionsExt};
 
-const MANAGED_SKILLS: [&str; 9] = [
+const MANAGED_SKILLS: [&str; 10] = [
     ".agents/skills/codex1/SKILL.md",
     ".agents/skills/clarify/SKILL.md",
     ".agents/skills/create-prd/SKILL.md",
@@ -22,9 +22,10 @@ const MANAGED_SKILLS: [&str; 9] = [
     ".agents/skills/improve-codebase-architecture/SKILL.md",
     ".agents/skills/prototype/SKILL.md",
     ".agents/skills/codex-review/SKILL.md",
+    ".agents/skills/brutal-review/SKILL.md",
 ];
 
-const MANAGED_SUPPORTING_DOCS: [&str; 30] = [
+const MANAGED_SUPPORTING_DOCS: [&str; 31] = [
     ".agents/skills/codex1/agents/openai.yaml",
     ".agents/skills/clarify/agents/openai.yaml",
     ".agents/skills/clarify/ADR-FORMAT.md",
@@ -52,6 +53,7 @@ const MANAGED_SUPPORTING_DOCS: [&str; 30] = [
     ".agents/skills/prototype/UI.md",
     ".agents/skills/codex-review/agents/openai.yaml",
     ".agents/skills/codex-review/scripts/codex-review",
+    ".agents/skills/brutal-review/agents/openai.yaml",
     "docs/agents/codex1-workflow.md",
     "docs/agents/codex1-domain.md",
     "docs/agents/codex1-artifact-briefs.md",
@@ -1132,7 +1134,7 @@ fn setup_enable_repairs_stale_managed_skill_and_marker() {
     let marker = fs::read_to_string(repo.path().join(".codex1/setup-bundle.json")).unwrap();
     assert!(skill.contains("$clarify"));
     assert!(repo.path().join(".agents/skills/plan/SKILL.md").is_file());
-    assert!(marker.contains(r#""version": 8"#));
+    assert!(marker.contains(r#""version": 9"#));
 }
 
 #[test]
@@ -1399,6 +1401,8 @@ fn setup_backups_restore_previous_marker_absence_from_prior_bundle() {
                 ".agents/skills/codex-review/SKILL.md",
                 ".agents/skills/codex-review/agents/openai.yaml",
                 ".agents/skills/codex-review/scripts/codex-review",
+                ".agents/skills/brutal-review/SKILL.md",
+                ".agents/skills/brutal-review/agents/openai.yaml",
                 "docs/agents/codex1-workflow.md",
                 "docs/agents/codex1-domain.md",
                 "docs/agents/codex1-artifact-briefs.md",
