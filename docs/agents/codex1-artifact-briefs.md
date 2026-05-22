@@ -4,9 +4,13 @@ Codex1 artifacts should stay durable as code changes. Prefer behavior, interface
 
 ## PRD Quality
 
-`PRD.md` should include problem statement, solution, extensive user stories, success criteria, module sketch, implementation decisions, testing decisions, out-of-scope work, proof expectations, review expectations, and PR intent.
+`PRD.md` should include problem statement, solution, extensive user stories, success criteria, boundaries, module sketch, implementation decisions, testing decisions, proof expectations, review expectations, and PR intent.
 
-User stories should be numbered and broad enough that `$plan` can map slices back to them.
+Success criteria should be observable, measurable outcomes that make the PRD satisfied. They are not implementation tasks or slice-level acceptance criteria.
+
+Boundaries should separate `Always Preserve`, `Ask Before Changing`, and `Out Of Scope` work so execution agents know what must remain stable, what needs human approval, and what is intentionally excluded.
+
+User stories should be numbered, behavior-focused, and broad enough that `$plan` can map slices back to them. Each story should describe one coherent behavior or outcome, not a vague bundle.
 
 ## Subplans As Agent Briefs
 

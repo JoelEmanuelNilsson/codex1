@@ -4,7 +4,7 @@ Use this when `$create-prd` writes `PRD.md`.
 
 ## Required Quality Bar
 
-The PRD must be sufficient for `$plan` to design execution without reconstructing product intent. Write from the user's perspective first, then capture implementation and testing decisions.
+The PRD must be sufficient for `$plan` to design execution without reconstructing product intent. Write from the user's perspective first, then capture observable success criteria, mission boundaries, implementation decisions, and testing decisions.
 
 ## Template
 
@@ -19,15 +19,29 @@ The solution, from the user's perspective.
 
 ## User Stories
 
-A long numbered list of user stories:
+A long numbered list of behavior-focused user stories:
 
 1. As an <actor>, I want <feature>, so that <benefit>.
 
-Cover all major behavior, actors, edge cases, and artifact interactions.
+Each story should describe one coherent behavior or outcome. Avoid vague bundles like "manage settings" unless they are split into observable behaviors. Cover all major behavior, actors, edge cases, and artifact interactions.
 
 ## Success Criteria
 
-Observable facts that make the PRD satisfied.
+Observable, measurable outcomes that make the PRD satisfied. These are mission-level success facts, not implementation tasks or slice-level acceptance criteria.
+
+## Boundaries
+
+### Always Preserve
+
+Existing behaviors, contracts, data, user expectations, workflow boundaries, or artifacts that must remain intact.
+
+### Ask Before Changing
+
+Areas that require explicit human approval before the implementation changes them.
+
+### Out Of Scope
+
+Work this PRD intentionally does not include.
 
 ## Module Sketch
 
@@ -55,10 +69,6 @@ Do not include brittle file paths or code snippets.
 - Testing non-goals
 
 Tests should verify behavior through public interfaces, not implementation details.
-
-## Out Of Scope
-
-What this PRD intentionally does not include.
 
 ## Proof Expectations
 
