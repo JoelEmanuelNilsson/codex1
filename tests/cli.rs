@@ -12,7 +12,7 @@ use tempfile::TempDir;
 #[cfg(unix)]
 use std::os::unix::fs::{symlink, PermissionsExt};
 
-const MANAGED_SKILLS: [&str; 10] = [
+const MANAGED_SKILLS: [&str; 11] = [
     ".agents/skills/codex1/SKILL.md",
     ".agents/skills/clarify/SKILL.md",
     ".agents/skills/create-prd/SKILL.md",
@@ -23,9 +23,10 @@ const MANAGED_SKILLS: [&str; 10] = [
     ".agents/skills/prototype/SKILL.md",
     ".agents/skills/codex-review/SKILL.md",
     ".agents/skills/brutal-review/SKILL.md",
+    ".agents/skills/handoff/SKILL.md",
 ];
 
-const MANAGED_SUPPORTING_DOCS: [&str; 31] = [
+const MANAGED_SUPPORTING_DOCS: [&str; 32] = [
     ".agents/skills/codex1/agents/openai.yaml",
     ".agents/skills/clarify/agents/openai.yaml",
     ".agents/skills/clarify/ADR-FORMAT.md",
@@ -54,6 +55,7 @@ const MANAGED_SUPPORTING_DOCS: [&str; 31] = [
     ".agents/skills/codex-review/agents/openai.yaml",
     ".agents/skills/codex-review/scripts/codex-review",
     ".agents/skills/brutal-review/agents/openai.yaml",
+    ".agents/skills/handoff/agents/openai.yaml",
     "docs/agents/codex1-workflow.md",
     "docs/agents/codex1-domain.md",
     "docs/agents/codex1-artifact-briefs.md",
@@ -1167,7 +1169,7 @@ fn setup_enable_repairs_stale_managed_skill_and_marker() {
     let marker = fs::read_to_string(&marker_path).unwrap();
     fs::write(
         &marker_path,
-        marker.replace(r#""version": 11"#, r#""version": 10"#),
+        marker.replace(r#""version": 12"#, r#""version": 11"#),
     )
     .unwrap();
     fs::write(
@@ -1187,7 +1189,68 @@ fn setup_enable_repairs_stale_managed_skill_and_marker() {
     let marker = fs::read_to_string(repo.path().join(".codex1/setup-bundle.json")).unwrap();
     assert!(skill.contains("$clarify"));
     assert!(repo.path().join(".agents/skills/plan/SKILL.md").is_file());
-    assert!(marker.contains(r#""version": 11"#));
+    assert!(marker.contains(r#""version": 12"#));
+}
+
+#[test]
+fn setup_enable_upgrades_pre_handoff_bundle() {
+    let repo = repo();
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "install"]),
+    );
+
+    fs::remove_dir_all(repo.path().join(".agents/skills/handoff")).unwrap();
+    fs::write(
+        repo.path().join(".agents/skills/codex1/SKILL.md"),
+        "# Old managed overview\n",
+    )
+    .unwrap();
+
+    let marker_path = repo.path().join(".codex1/setup-bundle.json");
+    let mut marker: Value =
+        serde_json::from_str(&fs::read_to_string(&marker_path).unwrap()).unwrap();
+    marker["version"] = serde_json::json!(11);
+    let files = marker["files"].as_array_mut().unwrap();
+    files.retain(|file| {
+        !matches!(
+            file.as_str(),
+            Some(".agents/skills/handoff/SKILL.md")
+                | Some(".agents/skills/handoff/agents/openai.yaml")
+        )
+    });
+    fs::write(
+        &marker_path,
+        serde_json::to_string_pretty(&marker).unwrap() + "\n",
+    )
+    .unwrap();
+
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "enable"]),
+    );
+
+    let status = json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "status"]),
+    );
+    assert_eq!(status["data"]["status"]["repo_bundle_materialized"], true);
+    assert!(repo
+        .path()
+        .join(".agents/skills/handoff/SKILL.md")
+        .is_file());
+    assert!(repo
+        .path()
+        .join(".agents/skills/handoff/agents/openai.yaml")
+        .is_file());
+    let overview = fs::read_to_string(repo.path().join(".agents/skills/codex1/SKILL.md")).unwrap();
+    assert!(overview.contains("$handoff"));
 }
 
 #[test]
@@ -1347,6 +1410,42 @@ fn setup_install_refuses_marker_with_unmanaged_paths() {
 }
 
 #[test]
+fn setup_install_refuses_partial_managed_marker() {
+    let repo = repo();
+    fs::create_dir_all(repo.path().join(".codex1")).unwrap();
+    fs::create_dir_all(repo.path().join(".agents/skills/codex1")).unwrap();
+    fs::write(
+        repo.path().join(".agents/skills/codex1/SKILL.md"),
+        "# User skill\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join(".codex1/setup-bundle.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "managed_by": "codex1-managed",
+            "version": 1,
+            "files": [".agents/skills/codex1/SKILL.md"]
+        }))
+        .unwrap()
+            + "\n",
+    )
+    .unwrap();
+
+    bin()
+        .args(["--json", "--repo-root"])
+        .arg(repo.path())
+        .args(["setup", "install"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("SETUP_BUNDLE_ERROR"));
+
+    assert_eq!(
+        fs::read_to_string(repo.path().join(".agents/skills/codex1/SKILL.md")).unwrap(),
+        "# User skill\n"
+    );
+}
+
+#[test]
 fn setup_install_refuses_unmanaged_managed_files_without_marker() {
     for relative in [MANAGED_SKILLS[0], MANAGED_SUPPORTING_DOCS[0]] {
         let repo = repo();
@@ -1456,6 +1555,8 @@ fn setup_backups_restore_previous_marker_absence_from_prior_bundle() {
                 ".agents/skills/codex-review/scripts/codex-review",
                 ".agents/skills/brutal-review/SKILL.md",
                 ".agents/skills/brutal-review/agents/openai.yaml",
+                ".agents/skills/handoff/SKILL.md",
+                ".agents/skills/handoff/agents/openai.yaml",
                 "docs/agents/codex1-workflow.md",
                 "docs/agents/codex1-domain.md",
                 "docs/agents/codex1-artifact-briefs.md",

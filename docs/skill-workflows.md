@@ -10,7 +10,7 @@ Codex1 skills must not create native goals for ordinary one-turn work. When a na
 
 ## Setup
 
-`codex1 setup` materializes repo-scoped Codex1 artifact workflow guidance: a small overview skill, core workflow skills (`$clarify`, `$create-prd`, `$plan`), repo-local lane skills (`$tdd`, `$diagnose`, `$improve-codebase-architecture`, `$prototype`), and the `$codex-review` closeout helper. `codex1 init` creates the standard mission directory tree. The CLI does not manage continuation, create native goals, report mission status, or write semantic artifacts.
+`codex1 setup` materializes repo-scoped Codex1 artifact workflow guidance: a small overview skill, core workflow skills (`$clarify`, `$create-prd`, `$plan`), repo-local lane skills (`$tdd`, `$diagnose`, `$improve-codebase-architecture`, `$prototype`), the `$codex-review` closeout helper, and the `$handoff` continuation helper. `codex1 init` creates the standard mission directory tree. The CLI does not manage continuation, create native goals, report mission status, or write semantic artifacts.
 
 ## Clarify
 
@@ -61,5 +61,7 @@ Closeout summarizes the real state, including completed, superseded, paused, and
 ## Interrupt And Resume
 
 Interrupt and resume behavior belongs to native Codex, not Codex1. If a persistent objective should continue after interruption, use the official goal UI or goal tools. Do not create Codex1 files to simulate continuation.
+
+Use `$handoff` when a human wants a compact temporary note for another agent or future fresh context. Handoffs should reference existing artifacts instead of duplicating them, live outside the repo by default, and not be treated as mission state.
 
 Autonomous execution should clarify first, create the PRD, plan, create or refine the native `/goal` from `GOAL_BRIEF.md`, execute slices, record reviews and triage when useful, write proofs, and close out when explicit completion criteria are satisfied. It should only open a PR when PR intent is part of the PRD.

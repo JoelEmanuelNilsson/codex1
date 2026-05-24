@@ -23,6 +23,7 @@ Skill-local references installed by setup:
 - `$improve-codebase-architecture`: deep-module architecture guidance and interface references.
 - `$prototype`: throwaway logic and UI prototype guidance.
 - `$codex-review`: advisory Codex review closeout guidance plus a local helper script.
+- `$handoff`: compact continuation notes for a fresh agent, saved outside the repo.
 
 Preferred UX:
 
@@ -34,6 +35,8 @@ Preferred UX:
 During execution, ready subplans may name an `Execution Lane`: `tdd`, `diagnose`, `improve-codebase-architecture`, `prototype`, `proof-qa`, or `standard`. `$plan` assigns lanes; native `/goal` executes them.
 
 Use `$codex-review` inside proof/QA or review cycles when a mission needs a second-model review pass. Review output is advisory evidence; Codex still owns triage, closeout judgment, and native `/goal` completion.
+
+Use `$handoff` when a session should be compacted for another agent or future fresh context. Handoffs are temporary continuation notes, not Codex1 mission truth, proof, closeout, or native `/goal` state.
 
 Native Codex `/goal` owns persistent objectives, continuation, pause/resume, accounting, budgets, and completion. Codex1 must not manage native goals.
 
