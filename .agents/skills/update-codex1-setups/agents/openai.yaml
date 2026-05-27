@@ -1,0 +1,4 @@
+interface:
+  display_name: "Update Codex1 Setups"
+  short_description: "Refresh tracked local Codex1 setup repos"
+  default_prompt: "Use $update-codex1-setups to dry-run and apply Codex1 setup updates."
