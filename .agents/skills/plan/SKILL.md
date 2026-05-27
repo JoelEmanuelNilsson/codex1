@@ -7,6 +7,8 @@ description: Design an executable Codex1 mission from PRD.md, including research
 
 Use this after `PRD.md` exists. Planning turns the PRD into an executable route. It is not execution and not a project-management exercise.
 
+Completion scope default: PRD is the final finished-product contract unless it asks for staged delivery; subplans are implementation slices, not product stages.
+
 Ask the user only when a product, scope, UX, credential, or human-judgment decision is missing. Do not ask the user to decide technical dependency ordering, slice granularity, parallelization, test placement, or other planning mechanics that Codex can infer from the repo.
 
 Do not stop at phases, waves, or workstreams. `PLAN.md` must preserve the execution spine: outcome contract, implementation shape, execution order, ready subplans, proof strategy, risks/non-goals, and unresolved human decisions if any.

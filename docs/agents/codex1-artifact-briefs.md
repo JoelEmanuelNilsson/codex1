@@ -2,6 +2,8 @@
 
 Codex1 artifacts should stay durable as code changes. Prefer behavior, interfaces, stable artifact names, and acceptance criteria over brittle paths or line numbers.
 
+Completion scope default: assume the final finished product unless the user asks for staged delivery; exclusions go in boundaries; subplans are implementation slices, not product stages.
+
 ## PRD Quality
 
 `PRD.md` should include problem statement, solution, extensive user stories, success criteria, boundaries, module sketch, implementation decisions, testing decisions, proof expectations, review expectations, and PR intent.

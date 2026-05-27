@@ -17,7 +17,7 @@ A deep module (as opposed to a shallow module) is one which encapsulates a lot o
 
 Capture the likely modules and test seams in the PRD. Capture observable success criteria and mission boundaries from known context. If a product, scope, UX, credential, or human-judgment decision is truly missing and the user is actively collaborating, ask. Otherwise record the assumption or unresolved question instead of restarting clarification.
 
-3. Write the PRD using [PRD-FORMAT.md](./PRD-FORMAT.md), then write it as `PRD.md` in the Codex1 mission artifact tree. Keep the PRD at product/outcome level. Do not turn it into a task graph, dependency tracker, priority tracker, per-story acceptance-criteria engine, or execution plan; `$plan` owns execution design.
+3. Write the PRD using [PRD-FORMAT.md](./PRD-FORMAT.md), then write it as `PRD.md` in the Codex1 mission artifact tree. Keep the PRD at product/outcome level as the final finished-product contract unless the user asks for staged delivery. Put exclusions in boundaries. Do not turn it into a task graph, dependency tracker, priority tracker, per-story acceptance-criteria engine, or execution plan; `$plan` owns execution design.
 
 <prd-template>
 
@@ -46,6 +46,8 @@ This list should cover major behavior, actors, edge cases, and artifact interact
 Observable, measurable outcomes that make the PRD satisfied. These are mission-level success facts, not implementation tasks or slice-level acceptance criteria.
 
 ## Boundaries
+
+Default boundary: do not introduce fallback paths, legacy compatibility, duplicate sources of truth, or parallel information flows unless the user or existing artifacts explicitly require them.
 
 ### Always Preserve
 

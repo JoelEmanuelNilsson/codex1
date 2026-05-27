@@ -999,16 +999,26 @@ fn setup_install_materializes_repo_scoped_guidance() {
     let clarify = fs::read_to_string(repo.path().join(".agents/skills/clarify/SKILL.md")).unwrap();
     assert!(clarify.contains("clarify observable success outcomes and boundaries"));
     assert!(clarify.contains("Before considering clarification complete"));
+    assert!(clarify.contains("assume the final finished product"));
     assert!(clarify.contains("Always Preserve"));
     let prd_skill =
         fs::read_to_string(repo.path().join(".agents/skills/create-prd/SKILL.md")).unwrap();
     assert!(prd_skill.contains("per-story acceptance-criteria engine"));
+    assert!(prd_skill.contains("final finished-product contract"));
     assert!(prd_skill.contains("## Boundaries"));
+    assert!(prd_skill.contains("do not introduce fallback paths, legacy compatibility"));
     let prd_format =
         fs::read_to_string(repo.path().join(".agents/skills/create-prd/PRD-FORMAT.md")).unwrap();
     assert!(prd_format.contains("A long numbered list of behavior-focused user stories"));
+    assert!(prd_format.contains("final finished-product contract"));
+    assert!(prd_format.contains("do not introduce fallback paths, legacy compatibility"));
     assert!(prd_format.contains("### Always Preserve"));
     assert!(prd_format.contains("### Ask Before Changing"));
+    let plan = fs::read_to_string(repo.path().join(".agents/skills/plan/SKILL.md")).unwrap();
+    assert!(plan.contains("subplans are implementation slices, not product stages"));
+    let artifact_briefs =
+        fs::read_to_string(repo.path().join("docs/agents/codex1-artifact-briefs.md")).unwrap();
+    assert!(artifact_briefs.contains("assume the final finished product"));
     assert!(!repo.path().join(".codex/config.toml").exists());
 }
 
@@ -1169,7 +1179,7 @@ fn setup_enable_repairs_stale_managed_skill_and_marker() {
     let marker = fs::read_to_string(&marker_path).unwrap();
     fs::write(
         &marker_path,
-        marker.replace(r#""version": 12"#, r#""version": 11"#),
+        marker.replace(r#""version": 13"#, r#""version": 12"#),
     )
     .unwrap();
     fs::write(
@@ -1189,7 +1199,7 @@ fn setup_enable_repairs_stale_managed_skill_and_marker() {
     let marker = fs::read_to_string(repo.path().join(".codex1/setup-bundle.json")).unwrap();
     assert!(skill.contains("$clarify"));
     assert!(repo.path().join(".agents/skills/plan/SKILL.md").is_file());
-    assert!(marker.contains(r#""version": 12"#));
+    assert!(marker.contains(r#""version": 13"#));
 }
 
 #[test]

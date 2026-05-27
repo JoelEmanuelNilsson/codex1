@@ -14,7 +14,7 @@ use crate::error::{Codex1Error, Result};
 use crate::paths::{create_dir_all_contained, discover_repo_root, ensure_contained_for_write};
 
 const BACKUP_MANIFEST_VERSION: u32 = 1;
-const BUNDLE_VERSION: u32 = 12;
+const BUNDLE_VERSION: u32 = 13;
 const MANAGED_GUIDANCE_START: &str = "<!-- codex1-managed setup guidance start -->";
 const MANAGED_GUIDANCE_END: &str = "<!-- codex1-managed setup guidance end -->";
 const OVERVIEW_SKILL: &str = ".agents/skills/codex1/SKILL.md";
@@ -1637,6 +1637,8 @@ Ask the questions one at a time, waiting for feedback on each question before co
 
 If a question can be answered by exploring the codebase, explore the codebase instead.
 
+Completion scope default: assume the final finished product unless the user asks for staged delivery; do not invent staged scope.
+
 When success or scope is fuzzy, clarify observable success outcomes and boundaries. Preserve those answers as context for `$create-prd`; do not turn them into a PRD template, task graph, or execution plan.
 
 Before considering clarification complete, make sure known context is sufficient for `$create-prd` to synthesize actors/core behaviors, observable success criteria, `Always Preserve`, `Ask Before Changing`, `Out Of Scope`, and any unresolved human decisions. Ask only for genuinely unclear product, scope, UX, credential, or human-judgment answers; inspect the repo for code-answerable ones.
@@ -1739,7 +1741,7 @@ A deep module (as opposed to a shallow module) is one which encapsulates a lot o
 
 Capture the likely modules and test seams in the PRD. Capture observable success criteria and mission boundaries from known context. If a product, scope, UX, credential, or human-judgment decision is truly missing and the user is actively collaborating, ask. Otherwise record the assumption or unresolved question instead of restarting clarification.
 
-3. Write the PRD using [PRD-FORMAT.md](./PRD-FORMAT.md), then write it as `PRD.md` in the Codex1 mission artifact tree. Keep the PRD at product/outcome level. Do not turn it into a task graph, dependency tracker, priority tracker, per-story acceptance-criteria engine, or execution plan; `$plan` owns execution design.
+3. Write the PRD using [PRD-FORMAT.md](./PRD-FORMAT.md), then write it as `PRD.md` in the Codex1 mission artifact tree. Keep the PRD at product/outcome level as the final finished-product contract unless the user asks for staged delivery. Put exclusions in boundaries. Do not turn it into a task graph, dependency tracker, priority tracker, per-story acceptance-criteria engine, or execution plan; `$plan` owns execution design.
 
 <prd-template>
 
@@ -1768,6 +1770,8 @@ This list should cover major behavior, actors, edge cases, and artifact interact
 Observable, measurable outcomes that make the PRD satisfied. These are mission-level success facts, not implementation tasks or slice-level acceptance criteria.
 
 ## Boundaries
+
+Default boundary: do not introduce fallback paths, legacy compatibility, duplicate sources of truth, or parallel information flows unless the user or existing artifacts explicitly require them.
 
 ### Always Preserve
 
@@ -1836,6 +1840,8 @@ description: Design an executable Codex1 mission from PRD.md, including research
 # Plan
 
 Use this after `PRD.md` exists. Planning turns the PRD into an executable route. It is not execution and not a project-management exercise.
+
+Completion scope default: PRD is the final finished-product contract unless it asks for staged delivery; subplans are implementation slices, not product stages.
 
 Ask the user only when a product, scope, UX, credential, or human-judgment decision is missing. Do not ask the user to decide technical dependency ordering, slice granularity, parallelization, test placement, or other planning mechanics that Codex can infer from the repo.
 
@@ -2054,6 +2060,8 @@ Use this when `$create-prd` writes `PRD.md`.
 
 The PRD must be sufficient for `$plan` to design execution without reconstructing product intent. Write from the user's perspective first, then capture observable success criteria, mission boundaries, implementation decisions, and testing decisions.
 
+Completion scope default: PRD is the final finished-product contract unless the user asks for staged delivery; put exclusions in boundaries.
+
 ## Template
 
 ```md
@@ -2078,6 +2086,8 @@ Each story should describe one coherent behavior or outcome. Avoid vague bundles
 Observable, measurable outcomes that make the PRD satisfied. These are mission-level success facts, not implementation tasks or slice-level acceptance criteria.
 
 ## Boundaries
+
+Default boundary: do not introduce fallback paths, legacy compatibility, duplicate sources of truth, or parallel information flows unless the user or existing artifacts explicitly require them.
 
 ### Always Preserve
 
@@ -2366,6 +2376,8 @@ fn artifact_briefs_doc_body() -> &'static str {
     r#"# Codex1 Artifact Briefs
 
 Codex1 artifacts should stay durable as code changes. Prefer behavior, interfaces, stable artifact names, and acceptance criteria over brittle paths or line numbers.
+
+Completion scope default: assume the final finished product unless the user asks for staged delivery; exclusions go in boundaries; subplans are implementation slices, not product stages.
 
 ## PRD Quality
 

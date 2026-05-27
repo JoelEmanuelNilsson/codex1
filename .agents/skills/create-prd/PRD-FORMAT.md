@@ -6,6 +6,8 @@ Use this when `$create-prd` writes `PRD.md`.
 
 The PRD must be sufficient for `$plan` to design execution without reconstructing product intent. Write from the user's perspective first, then capture observable success criteria, mission boundaries, implementation decisions, and testing decisions.
 
+Completion scope default: PRD is the final finished-product contract unless the user asks for staged delivery; put exclusions in boundaries.
+
 ## Template
 
 ```md
@@ -30,6 +32,8 @@ Each story should describe one coherent behavior or outcome. Avoid vague bundles
 Observable, measurable outcomes that make the PRD satisfied. These are mission-level success facts, not implementation tasks or slice-level acceptance criteria.
 
 ## Boundaries
+
+Default boundary: do not introduce fallback paths, legacy compatibility, duplicate sources of truth, or parallel information flows unless the user or existing artifacts explicitly require them.
 
 ### Always Preserve
 
