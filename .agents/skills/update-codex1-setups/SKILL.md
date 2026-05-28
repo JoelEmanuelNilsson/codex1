@@ -9,6 +9,8 @@ Use when the user asks to update, refresh, repair, or upgrade every local Codex1
 
 Valid target: an exact Git repo root with a tracked `.codex1/setup-bundle.json`. Do not update repos that only have untracked old setup files.
 
+After editing setup-installed guidance, patch its canonical source first, usually `src/setup.rs`; `setup install` may overwrite `.agents/skills/*`.
+
 Run the dry run first:
 
 ```bash
