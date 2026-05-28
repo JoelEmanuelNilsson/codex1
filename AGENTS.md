@@ -1,3 +1,5 @@
+Codex1 is to be making the experience with codex as good as possible. That is partly by having skills be token-efficient, and removing "questionmarks" the llm's might have regarding stuff; the reasoning here is that if something is not clear in our skills, then the llm will use it's reasoning effort to reason on what it should do, hence making the llm dumber if it needs to think about stuff that is not clear, giving it context bloat.
+
 <!-- codex1-managed setup guidance start -->
 # Codex1 Setup Guidance
 

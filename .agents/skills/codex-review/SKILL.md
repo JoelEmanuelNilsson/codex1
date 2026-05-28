@@ -90,9 +90,10 @@ The helper:
 - otherwise uses `origin/main` for non-main branches
 - supports `--mode local`, `--mode branch`, and `--mode commit`
 - supports `--parallel-tests "<command>"` when a known test command should run beside review
-- supports `--output`, `--dry-run`, `--full-access`, `--no-yolo`, `--verbose`, and `--timeout-seconds N`
+- supports `--output`, `--dry-run`, `--full-access`, `--no-yolo`, `--allow-nested-codex`, `--verbose`, and `--timeout-seconds N`
 - runs nested review with full access by default; use `--no-yolo` only when intentionally testing sandbox behavior
 - runs nested review through `codex exec review --json`
+- blocks any `codex` command the nested reviewer tries to spawn by default, while still allowing normal tools like `git`, `rg`, `sed`, and test commands; use `--allow-nested-codex` only when intentionally testing recursive Codex behavior
 - is quiet by default: it captures nested review JSONL stdout and stderr separately, prints progress heartbeats plus the summary or finding blocks, and preserves the full temp output path when findings/errors occur
 - writes raw JSONL stdout to `--output FILE`; if stderr has content, it is preserved beside it as `FILE.stderr`
 - streams the full nested review JSONL/stderr output when `--verbose` is set

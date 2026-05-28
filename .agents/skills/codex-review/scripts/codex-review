@@ -12,6 +12,7 @@ Options:
   --codex-bin PATH                 Codex binary. Default: codex.
   --full-access                    Run nested review with full access. Default.
   --no-yolo                        Run nested review with normal sandbox/approval prompts.
+  --allow-nested-codex             Do not block codex commands spawned by the reviewer.
   --output FILE                    Save nested review JSONL stdout to file.
   --parallel-tests CMD             Run review and the given test command concurrently.
   --dry-run                        Print selected commands, do not run.
@@ -33,6 +34,7 @@ commit_ref=HEAD
 codex_bin=${CODEX_BIN:-codex}
 codex_bin_explicit=false
 yolo=${CODEX_REVIEW_YOLO:-1}
+block_nested_codex=${CODEX_REVIEW_BLOCK_NESTED_CODEX:-1}
 output=${CODEX_REVIEW_OUTPUT:-}
 parallel_tests=
 dry_run=false
@@ -44,6 +46,7 @@ tests_pid=
 tail_pid=
 stderr_tail_pid=
 review_timed_out=false
+nested_codex_shim_dir=
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -53,6 +56,7 @@ while [[ $# -gt 0 ]]; do
     --codex-bin) codex_bin=${2:-}; codex_bin_explicit=true; shift 2 ;;
     --full-access) yolo=1; shift ;;
     --no-yolo) yolo=0; shift ;;
+    --allow-nested-codex) block_nested_codex=0; shift ;;
     --output) output=${2:-}; shift 2 ;;
     --parallel-tests) parallel_tests=${2:-}; shift 2 ;;
     --dry-run) dry_run=true; shift ;;
@@ -176,6 +180,9 @@ review_message=$(mktemp)
 
 cleanup() {
   cleanup_running_review
+  if [[ -n "${nested_codex_shim_dir:-}" ]]; then
+    rm -rf "$nested_codex_shim_dir"
+  fi
   rm -f "${review_message:-}"
   if [[ -n "${review_stderr:-}" && ! -s "${review_stderr:-}" ]]; then
     rm -f "$review_stderr"
@@ -267,6 +274,8 @@ run_review() {
   local now
   local next_heartbeat
   local status
+  local review_env
+  local effective_review_cmd
   mkdir -p "$(dirname "$review_output")"
   : > "$review_output"
   : > "$review_stderr"
@@ -276,7 +285,25 @@ run_review() {
     tail -f "$review_stderr" >&2 &
     stderr_tail_pid=$!
   fi
-  CODEX_REVIEW_HELPER_ACTIVE=1 "${review_cmd[@]}" >"$review_output" 2>"$review_stderr" &
+  review_env=(env CODEX_REVIEW_HELPER_ACTIVE=1)
+  effective_review_cmd=("${review_cmd[@]}")
+  case "$block_nested_codex" in
+    0|false|False|FALSE|no|No|NO|off|Off|OFF) ;;
+    *)
+      if [[ "${effective_review_cmd[0]}" != */* ]]; then
+        effective_review_cmd[0]=$(command -v "${effective_review_cmd[0]}")
+      fi
+      nested_codex_shim_dir=$(mktemp -d)
+      cat >"${nested_codex_shim_dir}/codex" <<'EOF'
+#!/usr/bin/env bash
+echo "nested codex invocation refused by codex-review helper" >&2
+exit 2
+EOF
+      chmod +x "${nested_codex_shim_dir}/codex"
+      review_env+=(PATH="${nested_codex_shim_dir}:$PATH")
+      ;;
+  esac
+  "${review_env[@]}" "${effective_review_cmd[@]}" >"$review_output" 2>"$review_stderr" &
   review_child_pid=$!
   started_at=$(date +%s)
   next_heartbeat=$((started_at + 60))

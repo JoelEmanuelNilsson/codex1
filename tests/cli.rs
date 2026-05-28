@@ -743,6 +743,43 @@ fn codex_review_helper_allows_explicit_fake_codex_under_nested_marker() {
 
 #[cfg(unix)]
 #[test]
+fn codex_review_helper_blocks_codex_spawned_by_reviewer() {
+    let inner_stderr = tempfile::NamedTempFile::new().unwrap();
+    let inner_stderr_path = inner_stderr.path().to_path_buf();
+    let (_dir, fake_codex) = fake_codex_script(
+        r#"#!/usr/bin/env bash
+if codex exec review --json --commit HEAD 2>"$INNER_CODEX_STDERR"; then
+  echo "inner codex unexpectedly succeeded" >&2
+  exit 1
+fi
+cat <<'JSONL'
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"No actionable correctness issues were found."}}
+JSONL
+"#,
+    );
+
+    let output = Command::new("bash")
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .env("INNER_CODEX_STDERR", &inner_stderr_path)
+        .args([
+            ".agents/skills/codex-review/scripts/codex-review",
+            "--mode",
+            "local",
+            "--codex-bin",
+        ])
+        .arg(&fake_codex)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("codex-review clean"));
+    let inner_stderr = fs::read_to_string(inner_stderr_path).unwrap();
+    assert!(inner_stderr.contains("nested codex invocation refused by codex-review helper"));
+}
+
+#[cfg(unix)]
+#[test]
 fn codex_review_helper_refuses_nested_real_codex_bin() {
     let body = format!(
         "#!/usr/bin/env bash\ncat <<'JSONL'\n{}\nJSONL\n",
