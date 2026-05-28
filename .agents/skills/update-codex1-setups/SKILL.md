@@ -1,6 +1,6 @@
 ---
 name: update-codex1-setups
-description: Update every valid local Codex1 setup repo on Joel's machine using the current /Users/joel/codex1 checkout.
+description: Update every valid local Codex1 setup repo on Joel's machine using the current /Users/joel/codex1 checkout, optionally committing and pushing only setup-managed changes.
 ---
 
 # Update Codex1 Setups
@@ -23,4 +23,10 @@ If the dry run succeeds, apply:
 bash /Users/joel/codex1/.agents/skills/update-codex1-setups/scripts/update-codex1-setups.sh --apply
 ```
 
-The apply mode refuses to run if `/Users/joel/codex1` has uncommitted changes, then pulls with `--ff-only`, builds the local binary, and runs `setup install` for each valid repo.
+To apply, commit, and push setup-only changes:
+
+```bash
+bash /Users/joel/codex1/.agents/skills/update-codex1-setups/scripts/update-codex1-setups.sh --apply-commit-push
+```
+
+Apply modes refuse to run if `/Users/joel/codex1` has uncommitted changes, then pull with `--ff-only`, build the local binary, and run `setup install` for each valid repo. Commit-push mode stages only setup-managed paths, commits `Update Codex1 setup guidance`, and pushes only branches that already match upstream; it skips repos with staged changes, no upstream, detached HEAD, or pre-existing ahead/behind commits.
