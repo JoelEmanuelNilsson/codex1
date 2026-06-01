@@ -1595,8 +1595,12 @@ Preferred UX:
 
 - Use `$clarify` to gather and preserve user intent while questions are still allowed.
 - Use `$create-prd` to synthesize known context into `PRD.md`.
-- Use `$plan` to design the mission and write `GOAL_BRIEF.md`.
+- Use `$plan` to design the lean executable route and write `GOAL_BRIEF.md` for PRD-backed product missions.
 - The user asks Codex to create or refine a native goal from the generated goal brief.
+
+`GOAL_BRIEF.md` should shape the native goal around a measurable end state, specific evidence, preserved constraints, next-action policy, tracking expectations, and blocked-report behavior.
+
+Do not route diagnosis, optimization research, benchmarking, review, prompt writing, or goal-prompt preparation through `$plan`. Use the relevant lane skill or direct workflow and keep artifacts minimal.
 
 During execution, ready subplans may name an `Execution Lane`: `tdd`, `diagnose`, `improve-codebase-architecture`, `prototype`, `proof-qa`, or `standard`. `$plan` assigns lanes; native `/goal` executes them.
 
@@ -1834,12 +1838,12 @@ Any further notes about the feature.
 fn plan_skill_body() -> &'static str {
     r#"---
 name: plan
-description: Design an executable Codex1 mission from PRD.md, including research, specs, vertical subplans, and a native goal brief. Use after create-prd.
+description: Design a lean executable Codex1 mission route from PRD.md. Use after create-prd for PRD-backed product missions, not for diagnosis, optimization research, or prompt/goal prep.
 ---
 
 # Plan
 
-Use this after `PRD.md` exists. Planning turns the PRD into an executable route. It is not execution and not a project-management exercise.
+Use this after `PRD.md` exists for a product mission that needs durable execution artifacts. Planning turns the PRD into an executable route. It is not execution, project management, status tracking, or generic goal writing.
 
 Completion scope default: PRD is the final finished-product contract unless it asks for staged delivery; subplans are implementation slices, not product stages.
 
@@ -1849,36 +1853,69 @@ Do not stop at phases, waves, or workstreams. `PLAN.md` must preserve the execut
 
 Read `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, and `docs/agents/codex1-artifact-briefs.md` if present. Read [ADR-FORMAT.md](ADR-FORMAT.md) before writing ADRs, [SUBPLAN-BRIEF.md](SUBPLAN-BRIEF.md) before writing ready subplans, and [GOAL-BRIEF-FORMAT.md](GOAL-BRIEF-FORMAT.md) before writing `GOAL_BRIEF.md`.
 
+## Suitability Gate
+
+Before writing artifacts, decide whether `$plan` is the right workflow.
+
+Use `$plan` when:
+
+- A PRD exists and should become a whole-mission execution route.
+- The work needs durable ordering, proof, closeout, and maybe multiple executable slices.
+- A future native `/goal` or worker session will benefit from reading mission artifacts.
+
+Do not use `$plan` when the user asks to diagnose, debug, optimize, investigate, benchmark, review, prepare a prompt, prepare a goal, or explicitly says not to use `$plan`. In those cases, use the relevant lane skill or direct workflow, and write only the requested docs or copy-paste goal prompt.
+
+If the request is only "make a `/goal` prompt from known context", write a compact goal prompt directly. Do not create a Codex1 plan pack.
+
+## Artifact Minimalism
+
+The default output is the smallest executable spine:
+
+- `PLAN.md`
+- `GOAL_BRIEF.md`
+- `SUBPLANS/ready/` only when separate slices will actually guide execution
+
+Create optional artifacts only when they have a named consumer:
+
+- `RESEARCH_PLAN.md` and `RESEARCH/` only when uncertainty changes architecture, product behavior, verification, or external API usage.
+- `ADRS/` only for durable, surprising, hard-to-reverse decisions with real alternatives.
+- `SPECS/` only for bounded contracts that implementation agents need more precisely than the PRD and plan.
+- `SUBPLANS/paused/` only for durable HITL placeholders that prevent future confusion.
+
+Do not create an artifact merely because the old workflow listed it. Empty or generic artifacts make the next agent dumber.
+
 ## Process
 
 1. Read `PRD.md` first. Treat it as the outcome contract.
-2. Inspect repo context before planning: tests, docs, domain glossary, ADRs, prior mission artifacts, and relevant code.
-3. Restate the outcome contract: what must be true, what is out of scope, and what proof will matter.
-4. Decide whether research is needed. If uncertainty affects architecture, product behavior, verification, or external APIs, create `RESEARCH_PLAN.md` and record research before finalizing the plan.
+2. Apply the Suitability Gate. If `$plan` is wrong for the request, say so briefly and use the right workflow instead.
+3. Inspect repo context before planning: tests, docs, domain glossary, ADRs, prior mission artifacts, and relevant code.
+4. Restate the outcome contract: what must be true, what is out of scope, and what proof will matter.
 5. Identify the implementation shape: existing patterns, likely deep modules, needed contracts, risk areas, and whether architecture thinking is only a planning lens or a dedicated refactor mission.
-6. Create ADRs in `ADRS/` when planning makes or preserves a durable architecture decision, chooses between plausible alternatives, rejects a tempting approach for a load-bearing reason, or changes a previous architectural direction. Use [ADR-FORMAT.md](ADR-FORMAT.md) and keep ADRs lightweight unless the decision needs structure.
-7. Create specs for bounded contracts where implementation needs more precision than the PRD.
-8. Break work into tracer-bullet vertical slices. Each slice cuts end-to-end through the smallest behavior path that can be reviewed, tested, and proven independently.
+6. Decide which optional artifacts are genuinely needed, using Artifact Minimalism.
+7. Create research artifacts, ADRs, and specs only when their conditions are met.
+8. Break work into tracer-bullet vertical slices only when multiple independent execution contracts are useful. Each slice cuts end-to-end through the smallest behavior path that can be reviewed, tested, and proven independently.
 9. Assign an `Execution Lane` to every ready subplan: `tdd`, `diagnose`, `improve-codebase-architecture`, `prototype`, `proof-qa`, or `standard`. Use `standard` for docs, simple config, mechanical updates, low-risk chores, and work where a specialist lane would be artificial.
 10. Write the execution order. Use simple serial order by default. Add parallel-safe groups only when they are obvious and useful. This is guidance, not a dependency graph engine.
 11. Mark each slice as `AFK` or `HITL`. `AFK` means an agent can execute from artifacts without more human decisions. `HITL` means a human decision, design review, credential, or manual judgment is still required.
 12. Put only fully specified AFK slices in `SUBPLANS/ready/`. Keep HITL work out of ready execution; use `SUBPLANS/paused/` only when a durable placeholder is useful.
-13. Define proof for every executable slice: tests, commands, screenshots, logs, manual checks, review evidence, or accepted-risk records.
-14. Write `GOAL_BRIEF.md` as a native goal brief that helps Codex create or refine the actual `/goal` objective.
+13. Define proof for every executable slice: tests, commands, screenshots, logs, manual checks, review evidence, accepted-risk records, and metrics or baselines when measurable.
+14. Run a lightweight execution-readiness audit only for capabilities this mission actually needs. Classify each relevant capability as `proven`, `safe during goal`, `needs user decision`, or `blocked`; encode user-decision and blocked cases as stop/report rules.
+15. Shape the native goal contract: desired end state, specific evidence, preserved constraints, next-action policy between continuations, tracking rule, and blocked-report behavior.
+16. Write `PLAN.md` as the lean route map and `GOAL_BRIEF.md` as the rich native goal brief.
 
 ## Artifacts
 
-- `PLAN.md`: outcome contract, implementation shape, execution order, parallelization notes when useful, ready subplans, proof strategy, risks, and human decisions if any.
-- `RESEARCH_PLAN.md`: research questions, sources, experiments, expected outputs, stopping criteria, and how findings affect the plan.
-- `RESEARCH/`: durable research records with sources, facts, experiments, uncertainty, options, and recommendations.
-- `ADRS/`: durable architecture decisions with context, decision, options considered, tradeoffs, consequences, and links to PRD/plan/specs.
-- `SPECS/`: implementation contracts for bounded areas.
-- `SUBPLANS/ready/`: executable vertical slices that require no further user decisions.
-- `GOAL_BRIEF.md`: a native goal brief the user or Codex may use to create or refine the real `/goal` objective.
+- `PLAN.md`: required. Outcome contract, implementation shape, execution order, useful parallelization notes, ready subplans if any, proof strategy, risks, and human decisions if any.
+- `GOAL_BRIEF.md`: required. Rich native goal brief the user or Codex may use to create or refine the real `/goal` objective.
+- `SUBPLANS/ready/`: conditional. Executable vertical slices that require no further user decisions.
+- `RESEARCH_PLAN.md`: conditional. Research questions, sources, experiments, expected outputs, stopping criteria, and how findings affect the plan.
+- `RESEARCH/`: conditional. Durable research records with sources, facts, experiments, uncertainty, options, and recommendations.
+- `ADRS/`: conditional. Durable architecture decisions with context, decision, options considered, tradeoffs, consequences, and links to PRD/plan/specs.
+- `SPECS/`: conditional. Implementation contracts for bounded areas.
 
 ## Subplan Quality Bar
 
-Every ready subplan is an agent brief. Use [SUBPLAN-BRIEF.md](SUBPLAN-BRIEF.md). It must be durable even if files move, and must include:
+Every ready subplan is an agent brief. Use [SUBPLAN-BRIEF.md](SUBPLAN-BRIEF.md). Keep it compact enough to be read and used. Aim for 20-40 lines unless the slice is unusually risky. It must be durable even if files move, and must include:
 
 - slice type: AFK unless already resolved HITL work has become executable
 - execution lane: one of `tdd`, `diagnose`, `improve-codebase-architecture`, `prototype`, `proof-qa`, or `standard`
@@ -1896,7 +1933,9 @@ Do not reference line numbers. Avoid file paths unless they name stable artifact
 
 ## Goal Brief Requirements
 
-Use [GOAL-BRIEF-FORMAT.md](GOAL-BRIEF-FORMAT.md). The goal brief is not native goal state, not a file-loading instruction, and not a sacred final prompt. It must not say to read `GOAL_BRIEF.md` as the first execution step. It should give Codex enough context to create or refine a strong whole-mission native goal.
+Use [GOAL-BRIEF-FORMAT.md](GOAL-BRIEF-FORMAT.md). The goal brief is not native goal state, not a file-loading instruction, not a sacred final prompt, and not automatically character-limited. It must not say to read `GOAL_BRIEF.md` as the first execution step. It should give Codex enough context to create or refine a strong whole-mission native goal.
+
+If the user asks for the exact pasteable `/goal` prompt, write a compact `Suggested Goal Request` inside `GOAL_BRIEF.md` or create `GOAL_PROMPT.md` when that is clearer. Keep the pasteable prompt under the requested limit; do not compress the whole rich brief just to satisfy a prompt limit.
 
 - mission path
 - primary artifacts to read
@@ -1906,7 +1945,11 @@ Use [GOAL-BRIEF-FORMAT.md](GOAL-BRIEF-FORMAT.md). The goal brief is not native g
 - editable scope
 - proof recording rules
 - review and triage rules
+- metrics, baselines or proxies, validation loop, and readiness facts
+- iteration policy for how Codex chooses the next best action between continuations
+- `notes.md` tracking rule for long-running decisions, measurements, blockers, and next steps
 - explicit completion criteria
+- stop and ask rules before execution; stop and report rules during execution
 - non-completion behavior
 - closeout rules
 - prohibited actions
@@ -2245,12 +2288,28 @@ fn goal_brief_format_body() -> &'static str {
 
 `GOAL_BRIEF.md` helps Codex create or refine the native `/goal` objective for the whole mission.
 
-It is a brief, not native goal state and not the final authority. The brief must not tell Codex to read `GOAL_BRIEF.md` as the first execution step.
+It is a rich brief, not native goal state, not the final authority, and not necessarily the exact pasteable goal prompt. The brief must not tell Codex to read `GOAL_BRIEF.md` as the first execution step.
+
+Do not force the whole brief under a character limit. If the user needs an exact pasteable `/goal` prompt, include a compact `Suggested Goal Request` or create `GOAL_PROMPT.md`. Apply the character limit to that prompt, not to the full brief.
+
+## Goal Contract Pattern
+
+Shape the suggested native goal around this contract:
+
+```text
+/goal <desired end state> verified by <specific evidence> while preserving <constraints>.
+Between iterations, <how Codex chooses the next best action>.
+If blocked or no valid paths remain, <what to report and what would unlock progress>.
+```
+
+The contract should name measurable outcomes, baseline or proxy measurements when available, validation commands or checks, and the constraints that must stay intact.
+
+If the user will paste text after an already-entered `/goal`, omit the `/goal` prefix from the copy source.
 
 ## Goal Brief Must Include
 
 - Purpose
-- Suggested goal request
+- Suggested goal request, compact when it is meant to be pasted after `/goal`
 - Mission path
 - Primary artifacts to read
 - Execution order
@@ -2259,10 +2318,35 @@ It is a brief, not native goal state and not the final authority. The brief must
 - Editable scope
 - Proof recording rules
 - Review and triage rules
+- Metrics, baselines or proxies, and validation loop
+- Iteration policy: how Codex chooses the next best action between continuations
+- Tracking rule: for long-running work, maintain `notes.md` with decisions, measurements, blockers, and next steps
 - Explicit completion criteria
 - If completion cannot be reached
+- Stop and ask rules before execution; stop and report rules during execution
 - Closeout rules
 - Prohibited actions
+
+## Pasteable Goal Structure
+
+When `Suggested Goal Request` or `GOAL_PROMPT.md` is meant to be pasted, include these sections or their compact equivalents:
+
+- Objective
+- Context
+- Success criteria
+- Feedback loop
+- Tracking
+- Constraints
+- Stop and ask rules
+- Completion report
+
+Keep this prompt focused on executable behavior and evidence. Do not include setup history, artifact inventories, or background rationale unless they change execution.
+
+## Execution Readiness
+
+Before finalizing the brief, infer only the capabilities the mission actually needs. Check enough repo context to classify each relevant capability as `proven`, `safe during goal`, `needs user decision`, or `blocked`.
+
+Common capability areas include source control, runtime, tests, external APIs, secrets, browser checks, deploy, data access, cost, security, and time. Do not create a generic checklist; include only readiness facts that affect execution, stop rules, or proof.
 
 ## Completion Criteria
 
@@ -2278,6 +2362,10 @@ Good completion criteria are observable:
 ## No-question Execution
 
 The `/goal` execution phase may not ask questions. If artifacts are insufficient, Codex should record non-completion evidence, blockers, accepted risks, or deferred work rather than inventing scope or asking the user.
+
+## Optional Goal Prompt
+
+Use `GOAL_PROMPT.md` only when a separate copy source is clearer than embedding the prompt in `GOAL_BRIEF.md`. It should contain one pasteable native goal objective and no extra commentary. It must not instruct Codex to read itself; the user has already copied it.
 
 ## Worker Rules
 
@@ -2302,14 +2390,18 @@ Codex1 is a local artifact workflow, not native goal state.
 
 1. `$clarify` sharpens intent while questions are allowed.
 2. `$create-prd` synthesizes known context into `PRD.md`.
-3. `$plan` designs research, specs, ADRs, vertical subplans, and `GOAL_BRIEF.md`.
+3. `$plan` designs the lean executable route and `GOAL_BRIEF.md`.
 4. The user asks Codex to create or refine a native `/goal` from `GOAL_BRIEF.md`.
 
-`GOAL_BRIEF.md` is a native goal brief. It should not instruct Codex to read itself as the first execution step.
+`GOAL_BRIEF.md` is a rich native goal brief. It should not instruct Codex to read itself as the first execution step. It should shape the goal around a desired end state, specific evidence, preserved constraints, an iteration policy, tracking expectations, and blocked-report behavior. If the user needs an exact pasteable `/goal` prompt, use a compact suggested goal request or `GOAL_PROMPT.md`; do not shrink the whole brief just to satisfy a prompt limit.
+
+## When Not To Plan
+
+Do not use `$plan` for diagnosis, debugging, optimization research, benchmarking, code review, prompt writing, goal-prompt preparation, or any request where the user explicitly says not to use `$plan`. Use the relevant lane skill or direct workflow and write only the requested docs or prompt.
 
 ## Core Skills And Lane Skills
 
-Core skills shape the mission: `$codex1`, `$clarify`, `$create-prd`, and `$plan`.
+Core skills shape PRD-backed product missions: `$codex1`, `$clarify`, `$create-prd`, and `$plan`.
 
 Lane skills guide execution inside ready subplans: `$tdd`, `$diagnose`, `$improve-codebase-architecture`, and `$prototype`. `$plan` assigns the lane; native `/goal` executes. Use `standard` for docs, simple config, mechanical updates, low-risk chores, and work where a specialist lane would be fake ceremony.
 
@@ -2379,6 +2471,12 @@ Codex1 artifacts should stay durable as code changes. Prefer behavior, interface
 
 Completion scope default: assume the final finished product unless the user asks for staged delivery; exclusions go in boundaries; subplans are implementation slices, not product stages.
 
+## Artifact Minimalism
+
+Create the smallest artifact set that will actually guide execution. The usual planning spine is `PLAN.md`, `GOAL_BRIEF.md`, and ready subplans only when separate slices are useful.
+
+Create `RESEARCH_PLAN.md`, `RESEARCH/`, `ADRS/`, `SPECS/`, and paused subplans only when they have a named future consumer. Empty or generic artifacts are context bloat.
+
 ## PRD Quality
 
 `PRD.md` should include problem statement, solution, extensive user stories, success criteria, boundaries, module sketch, implementation decisions, testing decisions, proof expectations, review expectations, and PR intent.
@@ -2391,7 +2489,7 @@ User stories should be numbered, behavior-focused, and broad enough that `$plan`
 
 ## Subplans As Agent Briefs
 
-Ready subplans are contracts for future Codex work. Each ready subplan should include:
+Ready subplans are contracts for future Codex work. Keep them compact enough to be read and acted on. Each ready subplan should include:
 
 - slice type: `AFK` or already-resolved `HITL`
 - execution lane: `tdd`, `diagnose`, `improve-codebase-architecture`, `prototype`, `proof-qa`, or `standard`
@@ -2410,7 +2508,13 @@ Write subplans as tracer bullets: thin vertical slices that deliver a complete, 
 
 ## Goal Brief
 
-`GOAL_BRIEF.md` helps Codex create or refine the native `/goal` objective. The brief must include purpose, suggested goal request, mission path, primary artifacts to read, execution order, subplan selection, worker rules, editable scope, proof rules, review/triage rules, completion criteria, non-completion behavior, closeout, and prohibited actions.
+`GOAL_BRIEF.md` helps Codex create or refine the native `/goal` objective. It is rich mission context, not automatically the exact pasteable prompt. The brief must include purpose, suggested goal request, mission path, primary artifacts to read, execution order, subplan selection, worker rules, editable scope, proof rules, review/triage rules, completion criteria, non-completion behavior, closeout, and prohibited actions.
+
+Shape the suggested goal as: desired end state, verified by specific evidence, while preserving named constraints. Include how Codex should choose the next best action between continuations, what to track in `notes.md` for long-running work, and what to report if blocked or no valid path remains.
+
+When useful, include mission-specific metrics, baselines or proxies, validation commands, and readiness facts. Readiness is not a generic checklist; classify only relevant capabilities as `proven`, `safe during goal`, `needs user decision`, or `blocked`.
+
+If the user needs the exact `/goal` text under a character limit, write a compact suggested goal request or optional `GOAL_PROMPT.md`. Apply the limit to the pasteable prompt, not to the full brief.
 
 Execution may not ask the user questions. If completion cannot be reached from artifacts, record non-completion evidence, accepted risks, or deferred work.
 
@@ -2476,7 +2580,7 @@ fn guidance_body() -> &'static str {
 
 codex1-managed
 
-Codex1 is enabled in this repository as a local artifact workflow convention. Use `$clarify`, `$create-prd`, and `$plan` for the mission workflow. Read `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, and `docs/agents/codex1-artifact-briefs.md` for the repo-local workflow, domain, ADR, and artifact rules. Use `codex1 setup` for repo-local guidance and `codex1 init` for path-safe mission scaffolding. Use native `/goal` for persistent objectives and continuation. The preferred flow is clarify, create PRD, plan, then create or refine the native goal from `GOAL_BRIEF.md`.
+Codex1 is enabled in this repository as a local artifact workflow convention. Use `$clarify`, `$create-prd`, and `$plan` for PRD-backed product missions. Do not route diagnosis, optimization research, benchmarking, review, prompt writing, or goal-prompt preparation through `$plan`. Read `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, and `docs/agents/codex1-artifact-briefs.md` for the repo-local workflow, domain, ADR, and artifact rules. Use `codex1 setup` for repo-local guidance and `codex1 init` for path-safe mission scaffolding. Use native `/goal` for persistent objectives and continuation. The preferred product-mission flow is clarify, create PRD, plan, then create or refine the native goal from `GOAL_BRIEF.md`, with measurable evidence, preserved constraints, iteration policy, tracking expectations, and blocked-report behavior.
 
 Codex remains the semantic judge. Codex1 setup status and init output are not readiness, completion, review, proof, closeout, or native goal state.
 "#

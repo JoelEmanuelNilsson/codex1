@@ -29,8 +29,12 @@ Preferred UX:
 
 - Use `$clarify` to gather and preserve user intent while questions are still allowed.
 - Use `$create-prd` to synthesize known context into `PRD.md`.
-- Use `$plan` to design the mission and write `GOAL_BRIEF.md`.
+- Use `$plan` to design the lean executable route and write `GOAL_BRIEF.md` for PRD-backed product missions.
 - The user asks Codex to create or refine a native goal from the generated goal brief.
+
+`GOAL_BRIEF.md` should shape the native goal around a measurable end state, specific evidence, preserved constraints, next-action policy, tracking expectations, and blocked-report behavior.
+
+Do not route diagnosis, optimization research, benchmarking, review, prompt writing, or goal-prompt preparation through `$plan`. Use the relevant lane skill or direct workflow and keep artifacts minimal.
 
 During execution, ready subplans may name an `Execution Lane`: `tdd`, `diagnose`, `improve-codebase-architecture`, `prototype`, `proof-qa`, or `standard`. `$plan` assigns lanes; native `/goal` executes them.
 

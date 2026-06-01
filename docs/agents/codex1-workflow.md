@@ -6,14 +6,18 @@ Codex1 is a local artifact workflow, not native goal state.
 
 1. `$clarify` sharpens intent while questions are allowed.
 2. `$create-prd` synthesizes known context into `PRD.md`.
-3. `$plan` designs research, specs, ADRs, vertical subplans, and `GOAL_BRIEF.md`.
+3. `$plan` designs the lean executable route and `GOAL_BRIEF.md`.
 4. The user asks Codex to create or refine a native `/goal` from `GOAL_BRIEF.md`.
 
-`GOAL_BRIEF.md` is a native goal brief. It should not instruct Codex to read itself as the first execution step.
+`GOAL_BRIEF.md` is a rich native goal brief. It should not instruct Codex to read itself as the first execution step. It should shape the goal around a desired end state, specific evidence, preserved constraints, an iteration policy, tracking expectations, and blocked-report behavior. If the user needs an exact pasteable `/goal` prompt, use a compact suggested goal request or `GOAL_PROMPT.md`; do not shrink the whole brief just to satisfy a prompt limit.
+
+## When Not To Plan
+
+Do not use `$plan` for diagnosis, debugging, optimization research, benchmarking, code review, prompt writing, goal-prompt preparation, or any request where the user explicitly says not to use `$plan`. Use the relevant lane skill or direct workflow and write only the requested docs or prompt.
 
 ## Core Skills And Lane Skills
 
-Core skills shape the mission: `$codex1`, `$clarify`, `$create-prd`, and `$plan`.
+Core skills shape PRD-backed product missions: `$codex1`, `$clarify`, `$create-prd`, and `$plan`.
 
 Lane skills guide execution inside ready subplans: `$tdd`, `$diagnose`, `$improve-codebase-architecture`, and `$prototype`. `$plan` assigns the lane; native `/goal` executes. Use `standard` for docs, simple config, mechanical updates, low-risk chores, and work where a specialist lane would be fake ceremony.
 

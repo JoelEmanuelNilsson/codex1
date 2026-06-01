@@ -5,7 +5,7 @@ Codex1 is to be making the experience with codex as good as possible. That is pa
 
 codex1-managed
 
-Codex1 is enabled in this repository as a local artifact workflow convention. Use `$clarify`, `$create-prd`, and `$plan` for the mission workflow. Read `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, and `docs/agents/codex1-artifact-briefs.md` for the repo-local workflow, domain, ADR, and artifact rules. Use `codex1 setup` for repo-local guidance and `codex1 init` for path-safe mission scaffolding. Use native `/goal` for persistent objectives and continuation. The preferred flow is clarify, create PRD, plan, then create or refine the native goal from `GOAL_BRIEF.md`.
+Codex1 is enabled in this repository as a local artifact workflow convention. Use `$clarify`, `$create-prd`, and `$plan` for PRD-backed product missions. Do not route diagnosis, optimization research, benchmarking, review, prompt writing, or goal-prompt preparation through `$plan`. Read `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, and `docs/agents/codex1-artifact-briefs.md` for the repo-local workflow, domain, ADR, and artifact rules. Use `codex1 setup` for repo-local guidance and `codex1 init` for path-safe mission scaffolding. Use native `/goal` for persistent objectives and continuation. The preferred product-mission flow is clarify, create PRD, plan, then create or refine the native goal from `GOAL_BRIEF.md`, with measurable evidence, preserved constraints, iteration policy, tracking expectations, and blocked-report behavior.
 
 Codex remains the semantic judge. Codex1 setup status and init output are not readiness, completion, review, proof, closeout, or native goal state.
 <!-- codex1-managed setup guidance end -->

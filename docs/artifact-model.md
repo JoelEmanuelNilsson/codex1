@@ -10,23 +10,25 @@ Clarification artifacts or notes capture the user's raw intent, open questions, 
 
 `PRD.md` captures the mission goal, problem statement, solution, behavior-focused user stories, interpreted destination, observable success criteria, boundaries, module sketch, assumptions, implementation and testing decisions, proof expectations, review expectations, and PR intent. Its boundaries distinguish `Always Preserve`, `Ask Before Changing`, and `Out Of Scope` work. It is the anchor for durable work.
 
-`PLAN.md` is the executable route map. It describes the outcome contract, implementation shape, execution order, useful parallelization notes, ready subplans, proof strategy, risks, non-goals, and unresolved human decisions if any. It is not a status dashboard, dependency graph engine, or proof ledger.
+`PLAN.md` is the executable route map. It describes the outcome contract, implementation shape, execution order, useful parallelization notes, ready subplans if any, proof strategy, risks, non-goals, and unresolved human decisions if any. It is not a status dashboard, dependency graph engine, or proof ledger.
 
 `RESEARCH_PLAN.md` is optional. Codex writes it when research is substantial enough to need durable structure.
 
-`GOAL_BRIEF.md` is the native goal brief produced by planning. It helps Codex create or refine the real native `/goal` for the whole mission. It tells Codex what mission to execute, which artifacts to read, how to select subplans, how workers may be used, what may be edited, how proofs/reviews/triage should be recorded, what completion means, what to record if completion cannot be reached, what closeout means, and what not to do. It is not an execution trigger or native goal state by itself.
+`GOAL_BRIEF.md` is the rich native goal brief produced by planning. It helps Codex create or refine the real native `/goal` for the whole mission. It tells Codex what mission to execute, which artifacts to read, how to select subplans, how workers may be used, what may be edited, how proofs/reviews/triage should be recorded, what completion means, how Codex should choose the next best action between continuations, what long-running notes to keep, what to record if completion cannot be reached, what closeout means, and what not to do. It is not an execution trigger, native goal state, or necessarily the exact pasteable prompt.
+
+`GOAL_PROMPT.md` is optional. Use it only when the user needs one compact copy source for the exact native `/goal` objective.
 
 `CLOSEOUT.md` summarizes how Codex judges the PRD was satisfied, including completed, superseded, paused, or deferred work and remaining risks. It is durable evidence, not native goal completion state.
 
 ## Collection Artifacts
 
-`RESEARCH/` stores research records: sources inspected, facts found, experiments run, uncertainties, options, recommendations, and affected artifacts.
+`RESEARCH/` stores research records when research is actually needed: sources inspected, facts found, experiments run, uncertainties, options, recommendations, and affected artifacts.
 
-`SPECS/` stores bounded implementation contracts. Specs describe responsibility, PRD relevance, scope, expected behavior, interfaces, proof expectations, and risks.
+`SPECS/` stores bounded implementation contracts when the PRD and plan are not precise enough for implementation. Specs describe responsibility, PRD relevance, scope, expected behavior, interfaces, proof expectations, and risks.
 
-`SUBPLANS/` stores tracer-bullet slices in visible lifecycle folders. Ready subplans act as durable agent briefs: slice type, current and desired behavior, stable interfaces, scope, out-of-scope work, dependencies, acceptance criteria, proof, and exit criteria. Folder placement is a cue for humans and Codex, not a CLI state machine. Multiple files may be in `active/`.
+`SUBPLANS/` stores tracer-bullet slices in visible lifecycle folders when separate execution contracts are useful. Ready subplans act as durable agent briefs: slice type, current and desired behavior, stable interfaces, scope, out-of-scope work, dependencies, acceptance criteria, proof, and exit criteria. Folder placement is a cue for humans and Codex, not a CLI state machine. Multiple files may be in `active/`.
 
-`ADRS/` stores durable architecture decisions and tradeoffs. ADRs should stay lightweight unless extra structure adds real value.
+`ADRS/` stores durable architecture decisions and tradeoffs when a decision is hard to reverse, surprising without context, and has real alternatives. ADRs should stay lightweight unless extra structure adds real value.
 
 `REVIEWS/` stores reviewer opinions. Reviews do not mutate mission truth.
 

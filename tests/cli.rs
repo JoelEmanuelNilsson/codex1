@@ -1053,9 +1053,25 @@ fn setup_install_materializes_repo_scoped_guidance() {
     assert!(prd_format.contains("### Ask Before Changing"));
     let plan = fs::read_to_string(repo.path().join(".agents/skills/plan/SKILL.md")).unwrap();
     assert!(plan.contains("subplans are implementation slices, not product stages"));
+    assert!(plan.contains("## Suitability Gate"));
+    assert!(plan.contains("## Artifact Minimalism"));
+    assert!(plan.contains("Do not use `$plan` when the user asks to diagnose"));
+    assert!(plan.contains("Run a lightweight execution-readiness audit"));
+    assert!(plan.contains("next-action policy between continuations"));
+    let goal_brief_format =
+        fs::read_to_string(repo.path().join(".agents/skills/plan/GOAL-BRIEF-FORMAT.md")).unwrap();
+    assert!(goal_brief_format.contains("GOAL_PROMPT.md"));
+    assert!(goal_brief_format.contains("Do not force the whole brief under a character limit"));
+    assert!(goal_brief_format.contains("## Goal Contract Pattern"));
+    assert!(goal_brief_format.contains("Stop and ask rules"));
+    assert!(goal_brief_format.contains("notes.md"));
+    assert!(goal_brief_format.contains("proven"));
+    assert!(goal_brief_format.contains("safe during goal"));
     let artifact_briefs =
         fs::read_to_string(repo.path().join("docs/agents/codex1-artifact-briefs.md")).unwrap();
     assert!(artifact_briefs.contains("assume the final finished product"));
+    assert!(artifact_briefs.contains("Artifact Minimalism"));
+    assert!(artifact_briefs.contains("desired end state, verified by specific evidence"));
     assert!(!repo.path().join(".codex/config.toml").exists());
 }
 
