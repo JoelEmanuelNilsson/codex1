@@ -14,22 +14,18 @@ use tempfile::TempDir;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-pub const MANAGED_SKILLS: [&str; 11] = [
-    ".agents/skills/codex1/SKILL.md",
+pub const MANAGED_SKILLS: [&str; 8] = [
     ".agents/skills/clarify/SKILL.md",
     ".agents/skills/create-prd/SKILL.md",
     ".agents/skills/plan/SKILL.md",
     ".agents/skills/tdd/SKILL.md",
     ".agents/skills/diagnose/SKILL.md",
     ".agents/skills/improve-codebase-architecture/SKILL.md",
-    ".agents/skills/prototype/SKILL.md",
     ".agents/skills/codex-review/SKILL.md",
-    ".agents/skills/brutal-review/SKILL.md",
     ".agents/skills/handoff/SKILL.md",
 ];
 
-pub const MANAGED_SUPPORTING_DOCS: [&str; 32] = [
-    ".agents/skills/codex1/agents/openai.yaml",
+pub const MANAGED_SUPPORTING_DOCS: [&str; 27] = [
     ".agents/skills/clarify/agents/openai.yaml",
     ".agents/skills/clarify/ADR-FORMAT.md",
     ".agents/skills/clarify/CONTEXT-FORMAT.md",
@@ -51,12 +47,8 @@ pub const MANAGED_SUPPORTING_DOCS: [&str; 32] = [
     ".agents/skills/improve-codebase-architecture/LANGUAGE.md",
     ".agents/skills/improve-codebase-architecture/INTERFACE-DESIGN.md",
     ".agents/skills/improve-codebase-architecture/DEEPENING.md",
-    ".agents/skills/prototype/agents/openai.yaml",
-    ".agents/skills/prototype/LOGIC.md",
-    ".agents/skills/prototype/UI.md",
     ".agents/skills/codex-review/agents/openai.yaml",
     ".agents/skills/codex-review/scripts/codex-review",
-    ".agents/skills/brutal-review/agents/openai.yaml",
     ".agents/skills/handoff/agents/openai.yaml",
     "docs/agents/codex1-workflow.md",
     "docs/agents/codex1-domain.md",

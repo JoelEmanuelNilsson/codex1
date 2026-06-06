@@ -10,7 +10,7 @@ Codex1 skills must not create native goals for ordinary one-turn work. When a na
 
 ## Setup
 
-`codex1 setup` materializes repo-scoped Codex1 artifact workflow guidance: a small overview skill, core workflow skills (`$clarify`, `$create-prd`, `$plan`), repo-local lane skills (`$tdd`, `$diagnose`, `$improve-codebase-architecture`, `$prototype`), the `$codex-review` closeout helper, and the `$handoff` continuation helper. `codex1 init` creates the standard mission directory tree. The CLI does not manage continuation, create native goals, report mission status, or write semantic artifacts.
+`codex1 setup` materializes repo-scoped Codex1 artifact workflow guidance: core workflow skills (`$clarify`, `$create-prd`, `$plan`), repo-local lane skills (`$tdd`, `$diagnose`, `$improve-codebase-architecture`), the `$codex-review` closeout helper, and the `$handoff` continuation helper. `codex1 init` creates the standard mission directory tree. The CLI does not manage continuation, create native goals, report mission status, or write semantic artifacts.
 
 ## Clarify
 

@@ -355,18 +355,17 @@ fn remove_legacy_bundle_files_not_current(
         if catalog::is_current_bundle_file(relative) || relative == catalog::BUNDLE_GUIDANCE {
             continue;
         }
-        let Some(expected) = catalog::expected_body(relative) else {
-            continue;
-        };
         let path = workspace::setup_target(repo, relative)?;
         match fs::read_to_string(&path) {
-            Ok(text) if text == expected => workspace::remove_file_with_backup(
-                repo,
-                &path,
-                "remove legacy managed setup file",
-                plan,
-                dry_run,
-            )?,
+            Ok(text) if catalog::is_managed_restore_body(relative, &text) => {
+                workspace::remove_file_with_backup(
+                    repo,
+                    &path,
+                    "remove legacy managed setup file",
+                    plan,
+                    dry_run,
+                )?
+            }
             Ok(_) => {}
             Err(error) if error.kind() == ErrorKind::NotFound => {}
             Err(error) => {

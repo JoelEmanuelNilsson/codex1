@@ -1,4 +1,4 @@
 interface:
   display_name: "Plan"
-  short_description: "Create an executable Codex1 plan pack"
-  default_prompt: "Use $plan to create an executable Codex1 mission plan pack."
+  short_description: "Create a lean PRD-backed plan pack"
+  default_prompt: "Use $plan after PRD.md to create a lean Codex1 plan pack and native /goal brief."

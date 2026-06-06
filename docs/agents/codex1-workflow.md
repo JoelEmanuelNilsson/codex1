@@ -17,9 +17,9 @@ Do not use `$plan` for diagnosis, debugging, optimization research, benchmarking
 
 ## Core Skills And Lane Skills
 
-Core skills shape PRD-backed product missions: `$codex1`, `$clarify`, `$create-prd`, and `$plan`.
+Core skills shape PRD-backed product missions: `$clarify`, `$create-prd`, and `$plan`.
 
-Lane skills guide execution inside ready subplans: `$tdd`, `$diagnose`, `$improve-codebase-architecture`, and `$prototype`. `$plan` assigns the lane; native `/goal` executes. Use `standard` for docs, simple config, mechanical updates, low-risk chores, and work where a specialist lane would be fake ceremony.
+Lane skills guide execution inside ready subplans: `$tdd`, `$diagnose`, and `$improve-codebase-architecture`. `$plan` assigns the lane; native `/goal` executes. Use `standard` for docs, simple config, mechanical updates, low-risk chores, and work where a specialist lane would be fake ceremony.
 
 Review helper skills guide evidence gathering without adding an execution lane. Use `$codex-review` during proof/QA or the review cycle when a second-model Codex review should inspect a local diff, branch, or commit. Its output is advisory evidence until main Codex verifies and triages it.
 

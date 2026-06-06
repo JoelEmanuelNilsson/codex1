@@ -85,7 +85,10 @@ fn setup_without_subcommand_materializes_repo_scoped_guidance() {
     );
 
     assert_eq!(value["ok"], true);
-    assert!(repo.path().join(".agents/skills/codex1/SKILL.md").is_file());
+    assert!(repo
+        .path()
+        .join(".agents/skills/clarify/SKILL.md")
+        .is_file());
     assert!(repo.path().join("AGENTS.md").is_file());
     assert!(repo.path().join(".codex1/setup-bundle.json").is_file());
 }
@@ -230,11 +233,11 @@ fn setup_enable_repairs_stale_managed_skill_and_marker() {
     let marker = fs::read_to_string(&marker_path).unwrap();
     fs::write(
         &marker_path,
-        marker.replace(r#""version": 13"#, r#""version": 12"#),
+        marker.replace(r#""version": 14"#, r#""version": 13"#),
     )
     .unwrap();
     fs::write(
-        repo.path().join(".agents/skills/codex1/SKILL.md"),
+        repo.path().join(".agents/skills/clarify/SKILL.md"),
         "# Stale managed skill\n",
     )
     .unwrap();
@@ -246,11 +249,11 @@ fn setup_enable_repairs_stale_managed_skill_and_marker() {
             .args(["setup", "enable"]),
     );
 
-    let skill = fs::read_to_string(repo.path().join(".agents/skills/codex1/SKILL.md")).unwrap();
+    let skill = fs::read_to_string(repo.path().join(".agents/skills/clarify/SKILL.md")).unwrap();
     let marker = fs::read_to_string(repo.path().join(".codex1/setup-bundle.json")).unwrap();
-    assert!(skill.contains("$clarify"));
+    assert!(skill.contains("Relentlessly clarify"));
     assert!(repo.path().join(".agents/skills/plan/SKILL.md").is_file());
-    assert!(marker.contains(r#""version": 13"#));
+    assert!(marker.contains(r#""version": 14"#));
 }
 
 #[test]
@@ -265,26 +268,64 @@ fn setup_enable_upgrades_pre_handoff_bundle() {
 
     fs::remove_dir_all(repo.path().join(".agents/skills/handoff")).unwrap();
     fs::write(
-        repo.path().join(".agents/skills/codex1/SKILL.md"),
-        "# Old managed overview\n",
+        repo.path().join(".agents/skills/clarify/SKILL.md"),
+        "# Old managed clarify\n",
     )
     .unwrap();
 
     let marker_path = repo.path().join(".codex1/setup-bundle.json");
-    let mut marker: Value =
-        serde_json::from_str(&fs::read_to_string(&marker_path).unwrap()).unwrap();
-    marker["version"] = serde_json::json!(11);
-    let files = marker["files"].as_array_mut().unwrap();
-    files.retain(|file| {
-        !matches!(
-            file.as_str(),
-            Some(".agents/skills/handoff/SKILL.md")
-                | Some(".agents/skills/handoff/agents/openai.yaml")
-        )
-    });
     fs::write(
         &marker_path,
-        serde_json::to_string_pretty(&marker).unwrap() + "\n",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "managed_by": "codex1-managed",
+            "version": 11,
+            "files": [
+                ".agents/skills/codex1/SKILL.md",
+                ".agents/skills/codex1/agents/openai.yaml",
+                ".agents/skills/clarify/SKILL.md",
+                ".agents/skills/clarify/agents/openai.yaml",
+                ".agents/skills/clarify/ADR-FORMAT.md",
+                ".agents/skills/clarify/CONTEXT-FORMAT.md",
+                ".agents/skills/create-prd/SKILL.md",
+                ".agents/skills/create-prd/agents/openai.yaml",
+                ".agents/skills/create-prd/PRD-FORMAT.md",
+                ".agents/skills/plan/SKILL.md",
+                ".agents/skills/plan/agents/openai.yaml",
+                ".agents/skills/plan/ADR-FORMAT.md",
+                ".agents/skills/plan/SUBPLAN-BRIEF.md",
+                ".agents/skills/plan/GOAL-BRIEF-FORMAT.md",
+                ".agents/skills/tdd/SKILL.md",
+                ".agents/skills/tdd/agents/openai.yaml",
+                ".agents/skills/tdd/tests.md",
+                ".agents/skills/tdd/mocking.md",
+                ".agents/skills/tdd/deep-modules.md",
+                ".agents/skills/tdd/interface-design.md",
+                ".agents/skills/tdd/refactoring.md",
+                ".agents/skills/diagnose/SKILL.md",
+                ".agents/skills/diagnose/agents/openai.yaml",
+                ".agents/skills/diagnose/scripts/hitl-loop.template.sh",
+                ".agents/skills/improve-codebase-architecture/SKILL.md",
+                ".agents/skills/improve-codebase-architecture/agents/openai.yaml",
+                ".agents/skills/improve-codebase-architecture/LANGUAGE.md",
+                ".agents/skills/improve-codebase-architecture/INTERFACE-DESIGN.md",
+                ".agents/skills/improve-codebase-architecture/DEEPENING.md",
+                ".agents/skills/prototype/SKILL.md",
+                ".agents/skills/prototype/agents/openai.yaml",
+                ".agents/skills/prototype/LOGIC.md",
+                ".agents/skills/prototype/UI.md",
+                ".agents/skills/codex-review/SKILL.md",
+                ".agents/skills/codex-review/agents/openai.yaml",
+                ".agents/skills/codex-review/scripts/codex-review",
+                ".agents/skills/brutal-review/SKILL.md",
+                ".agents/skills/brutal-review/agents/openai.yaml",
+                "docs/agents/codex1-workflow.md",
+                "docs/agents/codex1-domain.md",
+                "docs/agents/codex1-artifact-briefs.md",
+                "AGENTS.md"
+            ]
+        }))
+        .unwrap()
+            + "\n",
     )
     .unwrap();
 
@@ -310,8 +351,9 @@ fn setup_enable_upgrades_pre_handoff_bundle() {
         .path()
         .join(".agents/skills/handoff/agents/openai.yaml")
         .is_file());
-    let overview = fs::read_to_string(repo.path().join(".agents/skills/codex1/SKILL.md")).unwrap();
-    assert!(overview.contains("$handoff"));
+    let clarify = fs::read_to_string(repo.path().join(".agents/skills/clarify/SKILL.md")).unwrap();
+    assert!(clarify.contains("Relentlessly clarify"));
+    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
 }
 
 #[test]
@@ -355,7 +397,7 @@ fn setup_uninstall_refuses_modified_marker_owned_skill() {
             .arg(repo.path())
             .args(["setup", "install"]),
     );
-    let skill = repo.path().join(".agents/skills/codex1/SKILL.md");
+    let skill = repo.path().join(".agents/skills/clarify/SKILL.md");
     fs::write(&skill, "# User edited skill\n").unwrap();
 
     bin()

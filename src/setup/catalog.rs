@@ -4,7 +4,7 @@ use crate::error::{Codex1Error, Result};
 
 use super::guidance;
 
-pub(super) const BUNDLE_VERSION: u32 = 13;
+pub(super) const BUNDLE_VERSION: u32 = 14;
 pub(super) const BUNDLE_GUIDANCE: &str = "AGENTS.md";
 pub(super) const BUNDLE_MARKER: &str = ".codex1/setup-bundle.json";
 
@@ -55,22 +55,18 @@ const WORKFLOW_DOC: &str = "docs/agents/codex1-workflow.md";
 const DOMAIN_DOC: &str = "docs/agents/codex1-domain.md";
 const ARTIFACT_BRIEFS_DOC: &str = "docs/agents/codex1-artifact-briefs.md";
 
-const MANAGED_SKILL_FILES: [&str; 11] = [
-    OVERVIEW_SKILL,
+const MANAGED_SKILL_FILES: [&str; 8] = [
     CLARIFY_SKILL,
     CREATE_PRD_SKILL,
     PLAN_SKILL,
     TDD_SKILL,
     DIAGNOSE_SKILL,
     ARCHITECTURE_SKILL,
-    PROTOTYPE_SKILL,
     CODEX_REVIEW_SKILL,
-    BRUTAL_REVIEW_SKILL,
     HANDOFF_SKILL,
 ];
 
-const MANAGED_SUPPORTING_DOC_FILES: [&str; 32] = [
-    OVERVIEW_OPENAI_YAML,
+const MANAGED_SUPPORTING_DOC_FILES: [&str; 27] = [
     CLARIFY_OPENAI_YAML,
     CLARIFY_ADR_FORMAT,
     CLARIFY_CONTEXT_FORMAT,
@@ -92,19 +88,54 @@ const MANAGED_SUPPORTING_DOC_FILES: [&str; 32] = [
     ARCHITECTURE_LANGUAGE,
     ARCHITECTURE_INTERFACE_DESIGN,
     ARCHITECTURE_DEEPENING,
-    PROTOTYPE_OPENAI_YAML,
-    PROTOTYPE_LOGIC,
-    PROTOTYPE_UI,
     CODEX_REVIEW_OPENAI_YAML,
     CODEX_REVIEW_HELPER,
-    BRUTAL_REVIEW_OPENAI_YAML,
     HANDOFF_OPENAI_YAML,
     WORKFLOW_DOC,
     DOMAIN_DOC,
     ARTIFACT_BRIEFS_DOC,
 ];
 
-const MANAGED_BUNDLE_FILES: [&str; 44] = [
+const MANAGED_BUNDLE_FILES: [&str; 36] = [
+    CLARIFY_SKILL,
+    CLARIFY_OPENAI_YAML,
+    CLARIFY_ADR_FORMAT,
+    CLARIFY_CONTEXT_FORMAT,
+    CREATE_PRD_SKILL,
+    CREATE_PRD_OPENAI_YAML,
+    CREATE_PRD_FORMAT,
+    PLAN_SKILL,
+    PLAN_OPENAI_YAML,
+    PLAN_ADR_FORMAT,
+    PLAN_SUBPLAN_BRIEF,
+    PLAN_GOAL_BRIEF_FORMAT,
+    TDD_SKILL,
+    TDD_OPENAI_YAML,
+    TDD_TESTS,
+    TDD_MOCKING,
+    TDD_DEEP_MODULES,
+    TDD_INTERFACE_DESIGN,
+    TDD_REFACTORING,
+    DIAGNOSE_SKILL,
+    DIAGNOSE_OPENAI_YAML,
+    DIAGNOSE_HITL_LOOP_TEMPLATE,
+    ARCHITECTURE_SKILL,
+    ARCHITECTURE_OPENAI_YAML,
+    ARCHITECTURE_LANGUAGE,
+    ARCHITECTURE_INTERFACE_DESIGN,
+    ARCHITECTURE_DEEPENING,
+    CODEX_REVIEW_SKILL,
+    CODEX_REVIEW_OPENAI_YAML,
+    CODEX_REVIEW_HELPER,
+    HANDOFF_SKILL,
+    HANDOFF_OPENAI_YAML,
+    WORKFLOW_DOC,
+    DOMAIN_DOC,
+    ARTIFACT_BRIEFS_DOC,
+    BUNDLE_GUIDANCE,
+];
+
+const LEGACY_BUNDLE_FILES_V13: [&str; 44] = [
     OVERVIEW_SKILL,
     OVERVIEW_OPENAI_YAML,
     CLARIFY_SKILL,
@@ -375,10 +406,6 @@ pub(super) fn expected_current_body(relative: &str) -> Result<String> {
 pub(super) fn expected_body(relative: &str) -> Option<String> {
     Some(
         match relative {
-            OVERVIEW_SKILL => include_str!("../../.agents/skills/codex1/SKILL.md"),
-            OVERVIEW_OPENAI_YAML => {
-                include_str!("../../.agents/skills/codex1/agents/openai.yaml")
-            }
             CLARIFY_SKILL => include_str!("../../.agents/skills/clarify/SKILL.md"),
             CLARIFY_OPENAI_YAML => {
                 include_str!("../../.agents/skills/clarify/agents/openai.yaml")
@@ -428,22 +455,12 @@ pub(super) fn expected_body(relative: &str) -> Option<String> {
             ARCHITECTURE_DEEPENING => {
                 include_str!("../../.agents/skills/improve-codebase-architecture/DEEPENING.md")
             }
-            PROTOTYPE_SKILL => include_str!("../../.agents/skills/prototype/SKILL.md"),
-            PROTOTYPE_OPENAI_YAML => {
-                include_str!("../../.agents/skills/prototype/agents/openai.yaml")
-            }
-            PROTOTYPE_LOGIC => include_str!("../../.agents/skills/prototype/LOGIC.md"),
-            PROTOTYPE_UI => include_str!("../../.agents/skills/prototype/UI.md"),
             CODEX_REVIEW_SKILL => include_str!("../../.agents/skills/codex-review/SKILL.md"),
             CODEX_REVIEW_OPENAI_YAML => {
                 include_str!("../../.agents/skills/codex-review/agents/openai.yaml")
             }
             CODEX_REVIEW_HELPER => {
                 include_str!("../../.agents/skills/codex-review/scripts/codex-review")
-            }
-            BRUTAL_REVIEW_SKILL => include_str!("../../.agents/skills/brutal-review/SKILL.md"),
-            BRUTAL_REVIEW_OPENAI_YAML => {
-                include_str!("../../.agents/skills/brutal-review/agents/openai.yaml")
             }
             HANDOFF_SKILL => include_str!("../../.agents/skills/handoff/SKILL.md"),
             HANDOFF_OPENAI_YAML => include_str!("../../.agents/skills/handoff/agents/openai.yaml"),
@@ -496,9 +513,10 @@ pub(super) fn is_managed_restore_body(relative: &str, text: &str) -> bool {
     expected_body(relative).as_deref() == Some(text) || matches_legacy_managed_body(relative, text)
 }
 
-fn legacy_bundle_file_sets() -> [&'static [&'static str]; 9] {
+fn legacy_bundle_file_sets() -> [&'static [&'static str]; 10] {
     [
         &MANAGED_BUNDLE_FILES,
+        &LEGACY_BUNDLE_FILES_V13,
         &LEGACY_BUNDLE_FILES_V11,
         &LEGACY_BUNDLE_FILES_V8,
         &LEGACY_BUNDLE_FILES_V6,
@@ -520,7 +538,47 @@ struct LegacyBodyFingerprint {
     fnv1a64: u64,
 }
 
-const LEGACY_MANAGED_BODY_FINGERPRINTS: [LegacyBodyFingerprint; 12] = [
+const LEGACY_MANAGED_BODY_FINGERPRINTS: [LegacyBodyFingerprint; 20] = [
+    LegacyBodyFingerprint {
+        relative: OVERVIEW_SKILL,
+        len: 3209,
+        fnv1a64: 0x667b264ffb0259ce,
+    },
+    LegacyBodyFingerprint {
+        relative: OVERVIEW_OPENAI_YAML,
+        len: 170,
+        fnv1a64: 0x6d68d149503a1d9f,
+    },
+    LegacyBodyFingerprint {
+        relative: PROTOTYPE_SKILL,
+        len: 3582,
+        fnv1a64: 0x93f2aa6e2fd036d8,
+    },
+    LegacyBodyFingerprint {
+        relative: PROTOTYPE_OPENAI_YAML,
+        len: 198,
+        fnv1a64: 0x8cbd7c6c5cacca56,
+    },
+    LegacyBodyFingerprint {
+        relative: PROTOTYPE_LOGIC,
+        len: 5560,
+        fnv1a64: 0xd90b2b8bae3e3186,
+    },
+    LegacyBodyFingerprint {
+        relative: PROTOTYPE_UI,
+        len: 6751,
+        fnv1a64: 0x95c3d45f92e30a0b,
+    },
+    LegacyBodyFingerprint {
+        relative: BRUTAL_REVIEW_SKILL,
+        len: 7003,
+        fnv1a64: 0xe6befb5de5631afb,
+    },
+    LegacyBodyFingerprint {
+        relative: BRUTAL_REVIEW_OPENAI_YAML,
+        len: 201,
+        fnv1a64: 0x273260d7035b709b,
+    },
     LegacyBodyFingerprint {
         relative: OVERVIEW_SKILL,
         len: 2431,

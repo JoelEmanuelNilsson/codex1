@@ -25,7 +25,7 @@ User stories should be numbered, behavior-focused, and broad enough that `$plan`
 Ready subplans are contracts for future Codex work. Keep them compact enough to be read and acted on. Each ready subplan should include:
 
 - slice type: `AFK` or already-resolved `HITL`
-- execution lane: `tdd`, `diagnose`, `improve-codebase-architecture`, `prototype`, `proof-qa`, or `standard`
+- execution lane: `tdd`, `diagnose`, `improve-codebase-architecture`, `proof-qa`, or `standard`
 - current behavior or repo state
 - desired behavior
 - key interfaces or stable contracts

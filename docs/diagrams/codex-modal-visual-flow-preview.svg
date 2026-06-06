@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2140 1320" width="2140" height="1320">
+<defs>
+<marker id="arrow-1971c2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#1971c2"/></marker>
+<marker id="arrow-343a40" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#343a40"/></marker>
+<marker id="arrow-6741d9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#6741d9"/></marker>
+<marker id="arrow-2b8a3e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2b8a3e"/></marker>
+<marker id="arrow-e67700" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#e67700"/></marker>
+<marker id="arrow-2f9e44" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2f9e44"/></marker>
+<marker id="arrow-c92a2a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#c92a2a"/></marker>
+<marker id="arrow-0c8599" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#0c8599"/></marker>
+</defs>
+<rect width="2140" height="1320" fill="#ffffff"/>
+<rect x="40" y="140" width="360" height="710" rx="14" fill="#e7f5ff" fill-opacity="0.22" stroke="#1971c2" stroke-width="3" stroke-dasharray="9 7"/>
+<rect x="440" y="140" width="440" height="710" rx="14" fill="#f3f0ff" fill-opacity="0.22" stroke="#6741d9" stroke-width="3" stroke-dasharray="9 7"/>
+<rect x="920" y="140" width="470" height="710" rx="14" fill="#ebfbee" fill-opacity="0.22" stroke="#2b8a3e" stroke-width="3" stroke-dasharray="9 7"/>
+<rect x="1430" y="140" width="440" height="710" rx="14" fill="#fff9db" fill-opacity="0.22" stroke="#e67700" stroke-width="3" stroke-dasharray="9 7"/>
+<rect x="40" y="900" width="790" height="360" rx="14" fill="#e6fcf5" fill-opacity="0.22" stroke="#0c8599" stroke-width="3" stroke-dasharray="9 7"/>
+<rect x="870" y="900" width="520" height="360" rx="14" fill="#fff5f5" fill-opacity="0.22" stroke="#c92a2a" stroke-width="3" stroke-dasharray="9 7"/>
+<rect x="1430" y="900" width="440" height="360" rx="14" fill="#ebfbee" fill-opacity="0.22" stroke="#2f9e44" stroke-width="3" stroke-dasharray="9 7"/>
+<polyline points="220,298 220,342" fill="none" stroke="#1971c2" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-1971c2)"/>
+<polyline points="362,383 478,259" fill="none" stroke="#343a40" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-343a40)"/>
+<polyline points="643,298 643,334" fill="none" stroke="#6741d9" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-6741d9)"/>
+<polyline points="808,259 960,259" fill="none" stroke="#343a40" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-343a40)"/>
+<polyline points="1140,298 1140,334" fill="none" stroke="#2b8a3e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-2b8a3e)"/>
+<polyline points="1140,430 1140,484" fill="none" stroke="#2b8a3e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-2b8a3e)"/>
+<polyline points="1320,525 1468,373" fill="none" stroke="#343a40" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-343a40)"/>
+<polyline points="1628,296 1628,462" fill="none" stroke="#e67700" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-e67700)"/>
+<polyline points="1628,412 1628,462" fill="none" stroke="#e67700" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-e67700)"/>
+<polyline points="1628,562 1628,646" fill="none" stroke="#e67700" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-e67700)"/>
+<polyline points="1468,689 1320,689" fill="none" stroke="#e67700" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-e67700)"/>
+<polyline points="1050,646 910,590 900,385 960,382" fill="none" stroke="#e67700" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-e67700)"/>
+<polyline points="960,525 808,691" fill="none" stroke="#6741d9" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-6741d9)"/>
+<polyline points="643,734 643,900" fill="none" stroke="#2f9e44" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-2f9e44)"/>
+<polyline points="78,1020 18,1020 18,716 78,716" fill="none" stroke="#2f9e44" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-2f9e44)"/>
+<polyline points="808,515 908,1020" fill="none" stroke="#c92a2a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-c92a2a)" stroke-dasharray="9 7"/>
+<polyline points="643,420 643,1120" fill="none" stroke="#0c8599" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-0c8599)" stroke-dasharray="9 7"/>
+<polyline points="1040,430 318,1120" fill="none" stroke="#0c8599" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-0c8599)" stroke-dasharray="9 7"/>
+<polyline points="798,1160 1144,1154" fill="none" stroke="#c92a2a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-c92a2a)" stroke-dasharray="9 7"/>
+<polyline points="1628,1072 1628,1032 1788,1032 1788,1112 1788,1112" fill="none" stroke="#e67700" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-e67700)"/>
+<rect x="1290" y="34" width="815" height="76" rx="14" fill="#f8f9fa" fill-opacity="1" stroke="#adb5bd" stroke-width="2"/>
+<rect x="78" y="220" width="284" height="78" rx="14" fill="#a5d8ff" fill-opacity="1" stroke="#1971c2" stroke-width="2"/>
+<rect x="78" y="342" width="284" height="82" rx="14" fill="#a5d8ff" fill-opacity="1" stroke="#1971c2" stroke-width="2"/>
+<rect x="78" y="468" width="284" height="82" rx="14" fill="#d0ebff" fill-opacity="1" stroke="#1971c2" stroke-width="2"/>
+<rect x="78" y="676" width="284" height="86" rx="14" fill="#fff3bf" fill-opacity="1" stroke="#e67700" stroke-width="2"/>
+<rect x="478" y="220" width="330" height="78" rx="14" fill="#d0bfff" fill-opacity="1" stroke="#6741d9" stroke-width="2"/>
+<rect x="478" y="334" width="330" height="86" rx="14" fill="#d0bfff" fill-opacity="1" stroke="#6741d9" stroke-width="2"/>
+<rect x="478" y="468" width="330" height="94" rx="14" fill="#fff3bf" fill-opacity="1" stroke="#e67700" stroke-width="2"/>
+<rect x="478" y="648" width="330" height="86" rx="14" fill="#d0bfff" fill-opacity="1" stroke="#6741d9" stroke-width="2"/>
+<rect x="960" y="220" width="360" height="78" rx="14" fill="#b2f2bb" fill-opacity="1" stroke="#2b8a3e" stroke-width="2"/>
+<rect x="960" y="334" width="360" height="96" rx="14" fill="#b2f2bb" fill-opacity="1" stroke="#2b8a3e" stroke-width="2"/>
+<rect x="960" y="484" width="360" height="82" rx="14" fill="#c3fae8" fill-opacity="1" stroke="#0c8599" stroke-width="2"/>
+<rect x="960" y="646" width="360" height="86" rx="14" fill="#fff3bf" fill-opacity="1" stroke="#e67700" stroke-width="2"/>
+<rect x="1468" y="220" width="320" height="76" rx="14" fill="#ffd8a8" fill-opacity="1" stroke="#e67700" stroke-width="2"/>
+<rect x="1468" y="334" width="320" height="78" rx="14" fill="#ffd8a8" fill-opacity="1" stroke="#e67700" stroke-width="2"/>
+<rect x="1468" y="462" width="320" height="100" rx="14" fill="#fff3bf" fill-opacity="1" stroke="#e67700" stroke-width="2"/>
+<rect x="1468" y="646" width="320" height="86" rx="14" fill="#fff3bf" fill-opacity="1" stroke="#e67700" stroke-width="2"/>
+<rect x="78" y="980" width="220" height="80" rx="14" fill="#b2f2bb" fill-opacity="1" stroke="#2f9e44" stroke-width="2"/>
+<rect x="328" y="980" width="220" height="80" rx="14" fill="#b2f2bb" fill-opacity="1" stroke="#2f9e44" stroke-width="2"/>
+<rect x="578" y="980" width="220" height="80" rx="14" fill="#fff3bf" fill-opacity="1" stroke="#e67700" stroke-width="2"/>
+<rect x="78" y="1120" width="330" height="78" rx="14" fill="#c3fae8" fill-opacity="1" stroke="#0c8599" stroke-width="2"/>
+<rect x="468" y="1120" width="330" height="78" rx="14" fill="#c3fae8" fill-opacity="1" stroke="#0c8599" stroke-width="2"/>
+<rect x="908" y="982" width="206" height="78" rx="14" fill="#ffc9c9" fill-opacity="1" stroke="#c92a2a" stroke-width="2"/>
+<rect x="1144" y="982" width="206" height="78" rx="14" fill="#ffc9c9" fill-opacity="1" stroke="#c92a2a" stroke-width="2"/>
+<rect x="908" y="1114" width="206" height="78" rx="14" fill="#ffc9c9" fill-opacity="1" stroke="#c92a2a" stroke-width="2"/>
+<rect x="1144" y="1114" width="206" height="78" rx="14" fill="#ffc9c9" fill-opacity="1" stroke="#c92a2a" stroke-width="2"/>
+<rect x="1468" y="978" width="320" height="72" rx="14" fill="#b2f2bb" fill-opacity="1" stroke="#2f9e44" stroke-width="2"/>
+<rect x="1468" y="1072" width="320" height="80" rx="14" fill="#fff3bf" fill-opacity="1" stroke="#e67700" stroke-width="2"/>
+<rect x="1468" y="1174" width="320" height="72" rx="14" fill="#d0bfff" fill-opacity="1" stroke="#6741d9" stroke-width="2"/>
+<rect x="478" y="578" width="330" height="46" rx="14" fill="#fff9db" fill-opacity="1" stroke="#e67700" stroke-width="2"/>
+<rect x="1468" y="578" width="320" height="44" rx="14" fill="#fff9db" fill-opacity="1" stroke="#e67700" stroke-width="2"/>
+<rect x="920" y="792" width="950" height="44" rx="14" fill="#f8f9fa" fill-opacity="1" stroke="#868e96" stroke-width="2"/>
+<text x="48" y="70" font-size="36" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#172033" text-anchor="start"><tspan x="48" dy="0">Codex + Modal Visual Build Loop</tspan></text>
+<text x="50" y="106" font-size="20" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#495057" text-anchor="start"><tspan x="50" dy="0">What happens now, why preview artifacts exist, where visual compare loops, and what the clean mental</tspan><tspan x="50" dy="25">model should be.</tspan></text>
+<text x="1312" y="66" font-size="17" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#343a40" text-anchor="start"><tspan x="1312" dy="0">Color code: blue = user/input purple = orchestration green = real app/durable</tspan><tspan x="1312" dy="21.25">output yellow = compare/decision red = failure/confusion teal = storage/cache</tspan></text>
+<text x="58" y="178" font-size="22" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1971c2" text-anchor="start"><tspan x="58" dy="0">1. USER + PRODUCT UI</tspan></text>
+<text x="458" y="178" font-size="22" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#6741d9" text-anchor="start"><tspan x="458" dy="0">2. MODAL WORKER</tspan></text>
+<text x="938" y="178" font-size="22" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#2b8a3e" text-anchor="start"><tspan x="938" dy="0">3. CODEX + REAL APP</tspan></text>
+<text x="1448" y="178" font-size="22" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#e67700" text-anchor="start"><tspan x="1448" dy="0">4. VISUAL COMPARE TOOL</tspan></text>
+<text x="58" y="938" font-size="22" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#0c8599" text-anchor="start"><tspan x="58" dy="0">5. DELIVERY + ARTIFACTS</tspan></text>
+<text x="888" y="938" font-size="22" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#c92a2a" text-anchor="start"><tspan x="888" dy="0">WHY IT GOT CONFUSING</tspan></text>
+<text x="1448" y="938" font-size="22" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#2f9e44" text-anchor="start"><tspan x="1448" dy="0">CLEAN TARGET MODEL</tspan></text>
+<text x="220" y="252.34" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="220" dy="0">User intent</tspan><tspan x="220" dy="22.5">&quot;replicate this URL&quot;</tspan></text>
+<text x="220" y="376.34" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="220" dy="0">Product app</tspan><tspan x="220" dy="22.5">creates build request</tspan></text>
+<text x="220" y="502.34" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="220" dy="0">User watches</tspan><tspan x="220" dy="22.5">status + iframe preview</tspan></text>
+<text x="220" y="712.34" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="220" dy="0">User can point at</tspan><tspan x="220" dy="22.5">wrong box/arrow/detail</tspan></text>
+<text x="643" y="252.34" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="643" dy="0">Build job</tspan><tspan x="643" dy="22.5">orchestrates run</tspan></text>
+<text x="643" y="370.34" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="643" dy="0">Workspace + volume</tspan><tspan x="643" dy="22.5">clone, deps, env, roots</tspan></text>
+<text x="643" y="497.09" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="643" dy="0">preview.html branch</tspan><tspan x="643" dy="22.5">tiny smoke/fallback target</tspan><tspan x="643" dy="22.5">not the product</tspan></text>
+<text x="643" y="684.34" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="643" dy="0">Readiness smoke</tspan><tspan x="643" dy="22.5">&quot;can the real app load?&quot;</tspan></text>
+<text x="1140" y="252.34" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="1140" dy="0">Codex receives</tspan><tspan x="1140" dy="22.5">spec + target details</tspan></text>
+<text x="1140" y="364.09" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="1140" dy="0">Builds real app</tspan><tspan x="1140" dy="22.5">React/Tailwind/source files</tspan><tspan x="1140" dy="22.5">= durable truth</tspan></text>
+<text x="1140" y="518.34" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="1140" dy="0">Dev server / live root</tspan><tspan x="1140" dy="22.5">what iframe should show</tspan></text>
+<text x="1140" y="682.34" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="1140" dy="0">Revision loop</tspan><tspan x="1140" dy="22.5">read diff, edit app, rerun</tspan></text>
+<text x="1628" y="251.34" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="1628" dy="0">Target capture</tspan><tspan x="1628" dy="22.5">source page screenshot</tspan></text>
+<text x="1628" y="366.34" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="1628" dy="0">Result capture</tspan><tspan x="1628" dy="22.5">generated app screenshot</tspan></text>
+<text x="1628" y="489" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="1628" dy="0">Side-by-side / slider</tspan><tspan x="1628" dy="22.5">layout, color, spacing,</tspan><tspan x="1628" dy="22.5">content</tspan><tspan x="1628" dy="22.5">become inspectable</tspan></text>
+<text x="1628" y="682.34" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="1628" dy="0">Feedback to Codex</tspan><tspan x="1628" dy="22.5">concrete visual fixes</tspan></text>
+<text x="188" y="1007" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="188" dy="0">Live iframe</tspan><tspan x="188" dy="22.5">preview</tspan><tspan x="188" dy="22.5">real app endpoint</tspan></text>
+<text x="438" y="1013.34" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="438" dy="0">Code artifact</tspan><tspan x="438" dy="22.5">actual app source</tspan></text>
+<text x="688" y="1007" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="688" dy="0">Comparison slider</tspan><tspan x="688" dy="22.5">proof + critique</tspan><tspan x="688" dy="22.5">surface</tspan></text>
+<text x="243" y="1147" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="243" dy="0">Durable: repo/app files,</tspan><tspan x="243" dy="22.5">final screenshots, logs worth</tspan><tspan x="243" dy="22.5">keeping</tspan></text>
+<text x="633" y="1147" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="633" dy="0">Temporary: node_modules,</tspan><tspan x="633" dy="22.5">caches, old run roots,</tspan><tspan x="633" dy="22.5">preview fallback</tspan></text>
+<text x="1011" y="1009" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="1011" dy="0">Two sources of</tspan><tspan x="1011" dy="22.5">truth</tspan><tspan x="1011" dy="22.5">real app vs</tspan><tspan x="1011" dy="22.5">preview fallback</tspan></text>
+<text x="1247" y="1009" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="1247" dy="0">Worker too smart</tspan><tspan x="1247" dy="22.5">starts owning</tspan><tspan x="1247" dy="22.5">product behavior</tspan></text>
+<text x="1011" y="1141" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="1011" dy="0">False readiness</tspan><tspan x="1011" dy="22.5">smoke passes</tspan><tspan x="1011" dy="22.5">wrong surface</tspan></text>
+<text x="1247" y="1141" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="1247" dy="0">Inode pressure</tspan><tspan x="1247" dy="22.5">old roots +</tspan><tspan x="1247" dy="22.5">dependency cache</tspan></text>
+<text x="1628" y="1007.34" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="1628" dy="0">One real app</tspan><tspan x="1628" dy="22.5">source of truth</tspan></text>
+<text x="1628" y="1099" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="1628" dy="0">One visual loop</tspan><tspan x="1628" dy="22.5">compare -&gt; Codex edit -&gt;</tspan><tspan x="1628" dy="22.5">rerun</tspan></text>
+<text x="1628" y="1203.34" font-size="18" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#1e1e1e" text-anchor="middle"><tspan x="1628" dy="0">Worker stays small</tspan><tspan x="1628" dy="22.5">orchestrate, verify, deliver</tspan></text>
+<text x="445" y="310.08" font-size="16" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#495057" text-anchor="middle"><tspan x="445" dy="0">starts job</tspan></text>
+<text x="895" y="244.07999999999998" font-size="16" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#495057" text-anchor="middle"><tspan x="895" dy="0">prompts agent</tspan></text>
+<text x="1395" y="442.08" font-size="16" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#495057" text-anchor="middle"><tspan x="1395" dy="0">capture app</tspan></text>
+<text x="1403" y="668.08" font-size="16" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#495057" text-anchor="middle"><tspan x="1403" dy="0">visual feedback</tspan></text>
+<text x="959" y="546.08" font-size="16" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#495057" text-anchor="middle"><tspan x="959" dy="0">iterate</tspan></text>
+<text x="867" y="593.08" font-size="16" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#495057" text-anchor="middle"><tspan x="867" dy="0">real app loads</tspan></text>
+<text x="737" y="808" font-size="16" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#495057" text-anchor="middle"><tspan x="737" dy="0">passes final</tspan><tspan x="737" dy="20">check</tspan></text>
+<text x="99" y="866" font-size="16" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#495057" text-anchor="middle"><tspan x="99" dy="0">user sees</tspan><tspan x="99" dy="20">outputs</tspan></text>
+<text x="490" y="599" font-size="15" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#5c3d00" text-anchor="start"><tspan x="490" dy="0">Key idea: preview exists to help</tspan><tspan x="490" dy="18.75">run/check, but should never replace</tspan><tspan x="490" dy="18.75">the real app.</tspan></text>
+<text x="1480" y="599" font-size="15" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#5c3d00" text-anchor="start"><tspan x="1480" dy="0">The compare view is not</tspan><tspan x="1480" dy="18.75">decoration. It is the repair</tspan><tspan x="1480" dy="18.75">signal.</tspan></text>
+<text x="936" y="817" font-size="17" font-family="Inter, ui-sans-serif, system-ui, sans-serif" fill="#343a40" text-anchor="start"><tspan x="936" dy="0">Mental model: User asks -&gt; worker orchestrates -&gt; Codex builds real app -&gt; visual compare</tspan><tspan x="936" dy="21.25">finds mismatch -&gt; Codex revises -&gt; worker verifies and delivers.</tspan></text>
+</svg>
