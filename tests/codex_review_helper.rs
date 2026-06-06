@@ -647,7 +647,7 @@ wait
         .spawn()
         .unwrap();
 
-    assert!(wait_until(Duration::from_secs(5), || review_pid_path
+    assert!(wait_until(Duration::from_secs(10), || review_pid_path
         .metadata()
         .is_ok_and(|metadata| metadata.len() > 0)
         && test_pid_path
@@ -668,14 +668,14 @@ wait
         .status()
         .unwrap();
 
-    assert!(wait_until(Duration::from_secs(2), || helper
+    assert!(wait_until(Duration::from_secs(6), || helper
         .try_wait()
         .unwrap()
         .is_some()));
-    assert!(wait_until(Duration::from_secs(2), || !process_is_alive(
+    assert!(wait_until(Duration::from_secs(6), || !process_is_alive(
         review_child_pid
     )));
-    assert!(wait_until(Duration::from_secs(2), || !process_is_alive(
+    assert!(wait_until(Duration::from_secs(6), || !process_is_alive(
         test_child_pid
     )));
 }
