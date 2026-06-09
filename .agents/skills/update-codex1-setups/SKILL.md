@@ -29,4 +29,22 @@ To apply, commit, and push setup-only changes:
 bash /Users/joel/codex1/.agents/skills/update-codex1-setups/scripts/update-codex1-setups.sh --apply-commit-push
 ```
 
-Apply modes refuse to run if `/Users/joel/codex1` has uncommitted changes, then pull with `--ff-only`, build the local binary, and run `setup install` for each valid repo. Commit-push mode stages only setup-managed paths, commits `Update Codex1 setup guidance`, and pushes only branches that already match upstream; it skips repos with staged changes, no upstream, detached HEAD, or pre-existing ahead/behind commits.
+Apply modes refuse to run if `/Users/joel/codex1` has uncommitted changes, print the dirty source paths, then pull with `--ff-only`, build the local binary, and run `setup install` for each valid repo. Commit-push mode stages only setup-managed paths, commits `Update Codex1 setup guidance`, and pushes only branches that already match upstream; it skips repos with staged changes, no upstream, detached HEAD, or pre-existing ahead/behind commits.
+
+For local fixture validation or agent dry-runs, the script accepts environment overrides:
+
+```bash
+CODEX1_SETUP_SEARCH_ROOT=/tmp/codex1-fixtures \
+CODEX1_SETUP_BIN=/Users/joel/codex1/target/debug/codex1 \
+bash /Users/joel/codex1/.agents/skills/update-codex1-setups/scripts/update-codex1-setups.sh --dry-run
+```
+
+- `CODEX1_SETUP_SOURCE_ROOT` overrides the source checkout used for dirty checks, pulls, and builds.
+- `CODEX1_SETUP_SEARCH_ROOT` overrides the fleet search root.
+- `CODEX1_SETUP_BIN` skips the build and uses an existing executable.
+
+Validate updater behavior without touching the real fleet:
+
+```bash
+cargo test --test setup_updater
+```

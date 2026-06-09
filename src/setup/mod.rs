@@ -157,19 +157,17 @@ fn doctor(args: SetupStatusArgs) -> Result<serde_json::Value> {
 fn status(repo_arg: Option<PathBuf>) -> Result<SetupStatus> {
     let repo = resolve_repo(repo_arg)?;
     let marker = marker_state(&repo);
-    let skills: Vec<_> = catalog::managed_skill_files()
-        .iter()
-        .map(|path| SetupManagedSkill {
-            path,
-            state: owned_file_state(&repo, path),
+    let skills: Vec<_> = catalog::entries_by_role(catalog::BundleFileRole::ManagedSkill)
+        .map(|entry| SetupManagedSkill {
+            path: entry.relative,
+            state: owned_file_state(&repo, entry.relative),
         })
         .collect();
     let skill = aggregate_states(skills.iter().map(|skill| skill.state));
-    let supporting_docs: Vec<_> = catalog::managed_supporting_doc_files()
-        .iter()
-        .map(|path| SetupManagedDoc {
-            path,
-            state: owned_file_state(&repo, path),
+    let supporting_docs: Vec<_> = catalog::entries_by_role(catalog::BundleFileRole::SupportingDoc)
+        .map(|entry| SetupManagedDoc {
+            path: entry.relative,
+            state: owned_file_state(&repo, entry.relative),
         })
         .collect();
     let supporting_doc = aggregate_states(supporting_docs.iter().map(|doc| doc.state));
@@ -285,43 +283,23 @@ fn materialize_bundle(repo: &Path, plan: &mut SetupPlan, dry_run: bool) -> Resul
         ));
     }
 
-    for relative in catalog::managed_skill_files() {
-        let skill = workspace::setup_target(repo, relative)?;
+    for entry in catalog::owned_file_entries() {
+        let path = workspace::setup_target(repo, entry.relative)?;
         workspace::ensure_owned_file_writable(
-            &skill,
-            &catalog::expected_current_body(relative)?,
-            catalog::marker_allows_file_repair(marker_data.as_ref(), relative),
-        )?;
-    }
-    for relative in catalog::managed_supporting_doc_files() {
-        let doc = workspace::setup_target(repo, relative)?;
-        workspace::ensure_owned_file_writable(
-            &doc,
-            &catalog::expected_current_body(relative)?,
-            catalog::marker_allows_file_repair(marker_data.as_ref(), relative),
+            &path,
+            &entry.expected_body(),
+            catalog::marker_allows_file_repair(marker_data.as_ref(), entry.relative),
         )?;
     }
 
-    for relative in catalog::managed_skill_files() {
-        let skill = workspace::setup_target(repo, relative)?;
+    for entry in catalog::owned_file_entries() {
+        let path = workspace::setup_target(repo, entry.relative)?;
         workspace::write_owned_file(
             repo,
-            &skill,
-            &catalog::expected_current_body(relative)?,
-            catalog::marker_allows_file_repair(marker_data.as_ref(), relative),
-            "managed skill",
-            plan,
-            dry_run,
-        )?;
-    }
-    for relative in catalog::managed_supporting_doc_files() {
-        let doc = workspace::setup_target(repo, relative)?;
-        workspace::write_owned_file(
-            repo,
-            &doc,
-            &catalog::expected_current_body(relative)?,
-            catalog::marker_allows_file_repair(marker_data.as_ref(), relative),
-            "managed supporting doc",
+            &path,
+            &entry.expected_body(),
+            catalog::marker_allows_file_repair(marker_data.as_ref(), entry.relative),
+            entry.role.materialize_reason(),
             plan,
             dry_run,
         )?;
@@ -352,7 +330,7 @@ fn remove_legacy_bundle_files_not_current(
         return Ok(());
     };
     for relative in &marker.files {
-        if catalog::is_current_bundle_file(relative) || relative == catalog::BUNDLE_GUIDANCE {
+        if catalog::is_current_bundle_file(relative) {
             continue;
         }
         let path = workspace::setup_target(repo, relative)?;
@@ -457,5 +435,58 @@ fn aggregate_states(states: impl IntoIterator<Item = SetupFileState>) -> SetupFi
         SetupFileState::Missing
     } else {
         SetupFileState::Stale
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn materialize_bundle_upgrades_pre_handoff_release() {
+        let repo = tempfile::tempdir().unwrap();
+        let marker = repo.path().join(catalog::BUNDLE_MARKER);
+        fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        fs::create_dir_all(repo.path().join(".agents/skills/clarify")).unwrap();
+        fs::write(
+            repo.path().join(".agents/skills/clarify/SKILL.md"),
+            "# Old managed clarify\n",
+        )
+        .unwrap();
+        fs::write(&marker, catalog::legacy_marker_body_for_test(11)).unwrap();
+
+        let mut plan = SetupPlan::new(false);
+        materialize_bundle(repo.path(), &mut plan, false).unwrap();
+
+        let status = status(Some(repo.path().to_path_buf())).unwrap();
+        assert!(status.repo_bundle_materialized);
+        assert!(repo
+            .path()
+            .join(".agents/skills/handoff/SKILL.md")
+            .is_file());
+        assert!(repo
+            .path()
+            .join(".agents/skills/handoff/agents/openai.yaml")
+            .is_file());
+        let clarify =
+            fs::read_to_string(repo.path().join(".agents/skills/clarify/SKILL.md")).unwrap();
+        assert!(clarify.contains("Relentlessly clarify"));
+    }
+
+    #[test]
+    fn materialize_bundle_removes_retired_managed_file_with_body_proof() {
+        let repo = tempfile::tempdir().unwrap();
+        let retired = ".agents/skills/plan/EXECUTION-PROMPT-FORMAT.md";
+        let retired_path = repo.path().join(retired);
+        let marker = repo.path().join(catalog::BUNDLE_MARKER);
+        fs::create_dir_all(retired_path.parent().unwrap()).unwrap();
+        fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        fs::write(&retired_path, catalog::expected_body(retired).unwrap()).unwrap();
+        fs::write(&marker, catalog::legacy_marker_body_for_test(4)).unwrap();
+
+        let mut plan = SetupPlan::new(false);
+        materialize_bundle(repo.path(), &mut plan, false).unwrap();
+
+        assert!(!retired_path.exists());
     }
 }

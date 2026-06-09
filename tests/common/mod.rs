@@ -14,96 +14,6 @@ use tempfile::TempDir;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-pub const MANAGED_SKILLS: [&str; 8] = [
-    ".agents/skills/clarify/SKILL.md",
-    ".agents/skills/create-prd/SKILL.md",
-    ".agents/skills/plan/SKILL.md",
-    ".agents/skills/tdd/SKILL.md",
-    ".agents/skills/diagnose/SKILL.md",
-    ".agents/skills/improve-codebase-architecture/SKILL.md",
-    ".agents/skills/codex-review/SKILL.md",
-    ".agents/skills/handoff/SKILL.md",
-];
-
-pub const MANAGED_SUPPORTING_DOCS: [&str; 27] = [
-    ".agents/skills/clarify/agents/openai.yaml",
-    ".agents/skills/clarify/ADR-FORMAT.md",
-    ".agents/skills/clarify/CONTEXT-FORMAT.md",
-    ".agents/skills/create-prd/agents/openai.yaml",
-    ".agents/skills/create-prd/PRD-FORMAT.md",
-    ".agents/skills/plan/agents/openai.yaml",
-    ".agents/skills/plan/ADR-FORMAT.md",
-    ".agents/skills/plan/SUBPLAN-BRIEF.md",
-    ".agents/skills/plan/GOAL-BRIEF-FORMAT.md",
-    ".agents/skills/tdd/agents/openai.yaml",
-    ".agents/skills/tdd/tests.md",
-    ".agents/skills/tdd/mocking.md",
-    ".agents/skills/tdd/deep-modules.md",
-    ".agents/skills/tdd/interface-design.md",
-    ".agents/skills/tdd/refactoring.md",
-    ".agents/skills/diagnose/agents/openai.yaml",
-    ".agents/skills/diagnose/scripts/hitl-loop.template.sh",
-    ".agents/skills/improve-codebase-architecture/agents/openai.yaml",
-    ".agents/skills/improve-codebase-architecture/LANGUAGE.md",
-    ".agents/skills/improve-codebase-architecture/INTERFACE-DESIGN.md",
-    ".agents/skills/improve-codebase-architecture/DEEPENING.md",
-    ".agents/skills/codex-review/agents/openai.yaml",
-    ".agents/skills/codex-review/scripts/codex-review",
-    ".agents/skills/handoff/agents/openai.yaml",
-    "docs/agents/codex1-workflow.md",
-    "docs/agents/codex1-domain.md",
-    "docs/agents/codex1-artifact-briefs.md",
-];
-
-pub const LEGACY_EXECUTION_PROMPT_FORMAT_BODY: &str = r#"# Execution Prompt Format
-
-`EXECUTION_PROMPT.md` contains the objective text the user copies after typing native `/goal`.
-
-It is a copy source. The prompt must not tell Codex to read `EXECUTION_PROMPT.md`; the user has already copied from it.
-
-## Native Goal Objective Must Include
-
-- Mission path
-- Primary artifacts to read
-- Execution order
-- Subplan selection rules
-- Worker/subagent rules when useful
-- Editable scope
-- Proof recording rules
-- Review and triage rules
-- Explicit completion criteria
-- If completion cannot be reached
-- Closeout rules
-- Prohibited actions
-
-## Completion Criteria
-
-Completion criteria are only completion criteria. Do not include pause, escalation, "ask the user", or "wait for clarification" criteria.
-
-Good completion criteria are observable:
-
-- Required ready subplans are complete or explicitly triaged not applicable.
-- Required proofs exist and were audited.
-- PRD success criteria are satisfied or recorded as deferred with reason.
-- Closeout summarizes completed, superseded, paused, deferred, and risky work.
-
-## No-question Execution
-
-The `/goal` execution phase may not ask questions. If artifacts are insufficient, Codex should record non-completion evidence, blockers, accepted risks, or deferred work rather than inventing scope or asking the user.
-
-## Worker Rules
-
-When using workers, give each worker explicit ownership, relevant artifacts, editable scope, proof expectations, and non-goals. Workers should not edit mission-level artifacts unless assigned.
-
-## Prohibited Actions
-
-Always prohibit:
-
-- Creating, inspecting, or completing native goal state from Codex1.
-- Treating `codex1 inspect`, setup status, events, or receipts as completion proof.
-- Reading `EXECUTION_PROMPT.md` as the first step of the pasted objective.
-"#;
-
 pub fn bin() -> Command {
     Command::cargo_bin("codex1").unwrap()
 }
@@ -123,6 +33,41 @@ pub fn json_output(command: &mut Command) -> Value {
         String::from_utf8_lossy(&output.stderr)
     );
     serde_json::from_slice(&output.stdout).unwrap()
+}
+
+pub fn setup_status(repo: &TempDir) -> Value {
+    json_output(
+        bin()
+            .args(["--json", "--repo-root"])
+            .arg(repo.path())
+            .args(["setup", "status"]),
+    )
+}
+
+pub fn managed_skill_paths(repo: &TempDir) -> Vec<String> {
+    status_collection_paths(&setup_status(repo), "skills")
+}
+
+pub fn managed_supporting_doc_paths(repo: &TempDir) -> Vec<String> {
+    status_collection_paths(&setup_status(repo), "supporting_docs")
+}
+
+pub fn status_collection_paths(status_output: &Value, collection: &str) -> Vec<String> {
+    status_output["data"]["status"][collection]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["path"].as_str().unwrap().to_string())
+        .collect()
+}
+
+pub fn planned_materialized_paths(value: &Value) -> Vec<PathBuf> {
+    value["data"]["plan"]["materialized"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|path| PathBuf::from(path.as_str().unwrap()))
+        .collect()
 }
 
 pub fn init(repo: &TempDir, mission: &str) {

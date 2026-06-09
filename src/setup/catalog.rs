@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Codex1Error, Result};
-
 use super::guidance;
 
 pub(super) const BUNDLE_VERSION: u32 = 14;
@@ -55,315 +53,395 @@ const WORKFLOW_DOC: &str = "docs/agents/codex1-workflow.md";
 const DOMAIN_DOC: &str = "docs/agents/codex1-domain.md";
 const ARTIFACT_BRIEFS_DOC: &str = "docs/agents/codex1-artifact-briefs.md";
 
-const MANAGED_SKILL_FILES: [&str; 8] = [
-    CLARIFY_SKILL,
-    CREATE_PRD_SKILL,
-    PLAN_SKILL,
-    TDD_SKILL,
-    DIAGNOSE_SKILL,
-    ARCHITECTURE_SKILL,
-    CODEX_REVIEW_SKILL,
-    HANDOFF_SKILL,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum BundleFileRole {
+    ManagedSkill,
+    SupportingDoc,
+    Guidance,
+}
+
+impl BundleFileRole {
+    pub(super) fn materialize_reason(self) -> &'static str {
+        match self {
+            Self::ManagedSkill => "managed skill",
+            Self::SupportingDoc => "managed supporting doc",
+            Self::Guidance => "managed guidance",
+        }
+    }
+
+    fn is_owned_file(self) -> bool {
+        matches!(self, Self::ManagedSkill | Self::SupportingDoc)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct BundleEntry {
+    pub(super) relative: &'static str,
+    pub(super) role: BundleFileRole,
+    body: BundleBody,
+}
+
+impl BundleEntry {
+    const fn managed_skill(relative: &'static str, body: &'static str) -> Self {
+        Self {
+            relative,
+            role: BundleFileRole::ManagedSkill,
+            body: BundleBody::Static(body),
+        }
+    }
+
+    const fn supporting_doc(relative: &'static str, body: &'static str) -> Self {
+        Self {
+            relative,
+            role: BundleFileRole::SupportingDoc,
+            body: BundleBody::Static(body),
+        }
+    }
+
+    const fn guidance(relative: &'static str) -> Self {
+        Self {
+            relative,
+            role: BundleFileRole::Guidance,
+            body: BundleBody::Guidance,
+        }
+    }
+
+    pub(super) fn expected_body(self) -> String {
+        match self.body {
+            BundleBody::Static(body) => body.to_string(),
+            BundleBody::Guidance => guidance::body().to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum BundleBody {
+    Static(&'static str),
+    Guidance,
+}
+
+const CURRENT_BUNDLE_ENTRIES: [BundleEntry; 36] = [
+    BundleEntry::managed_skill(
+        CLARIFY_SKILL,
+        include_str!("../../.agents/skills/clarify/SKILL.md"),
+    ),
+    BundleEntry::supporting_doc(
+        CLARIFY_OPENAI_YAML,
+        include_str!("../../.agents/skills/clarify/agents/openai.yaml"),
+    ),
+    BundleEntry::supporting_doc(
+        CLARIFY_ADR_FORMAT,
+        include_str!("../../.agents/skills/clarify/ADR-FORMAT.md"),
+    ),
+    BundleEntry::supporting_doc(
+        CLARIFY_CONTEXT_FORMAT,
+        include_str!("../../.agents/skills/clarify/CONTEXT-FORMAT.md"),
+    ),
+    BundleEntry::managed_skill(
+        CREATE_PRD_SKILL,
+        include_str!("../../.agents/skills/create-prd/SKILL.md"),
+    ),
+    BundleEntry::supporting_doc(
+        CREATE_PRD_OPENAI_YAML,
+        include_str!("../../.agents/skills/create-prd/agents/openai.yaml"),
+    ),
+    BundleEntry::supporting_doc(
+        CREATE_PRD_FORMAT,
+        include_str!("../../.agents/skills/create-prd/PRD-FORMAT.md"),
+    ),
+    BundleEntry::managed_skill(
+        PLAN_SKILL,
+        include_str!("../../.agents/skills/plan/SKILL.md"),
+    ),
+    BundleEntry::supporting_doc(
+        PLAN_OPENAI_YAML,
+        include_str!("../../.agents/skills/plan/agents/openai.yaml"),
+    ),
+    BundleEntry::supporting_doc(
+        PLAN_ADR_FORMAT,
+        include_str!("../../.agents/skills/plan/ADR-FORMAT.md"),
+    ),
+    BundleEntry::supporting_doc(
+        PLAN_SUBPLAN_BRIEF,
+        include_str!("../../.agents/skills/plan/SUBPLAN-BRIEF.md"),
+    ),
+    BundleEntry::supporting_doc(
+        PLAN_GOAL_BRIEF_FORMAT,
+        include_str!("../../.agents/skills/plan/GOAL-BRIEF-FORMAT.md"),
+    ),
+    BundleEntry::managed_skill(TDD_SKILL, include_str!("../../.agents/skills/tdd/SKILL.md")),
+    BundleEntry::supporting_doc(
+        TDD_OPENAI_YAML,
+        include_str!("../../.agents/skills/tdd/agents/openai.yaml"),
+    ),
+    BundleEntry::supporting_doc(TDD_TESTS, include_str!("../../.agents/skills/tdd/tests.md")),
+    BundleEntry::supporting_doc(
+        TDD_MOCKING,
+        include_str!("../../.agents/skills/tdd/mocking.md"),
+    ),
+    BundleEntry::supporting_doc(
+        TDD_DEEP_MODULES,
+        include_str!("../../.agents/skills/tdd/deep-modules.md"),
+    ),
+    BundleEntry::supporting_doc(
+        TDD_INTERFACE_DESIGN,
+        include_str!("../../.agents/skills/tdd/interface-design.md"),
+    ),
+    BundleEntry::supporting_doc(
+        TDD_REFACTORING,
+        include_str!("../../.agents/skills/tdd/refactoring.md"),
+    ),
+    BundleEntry::managed_skill(
+        DIAGNOSE_SKILL,
+        include_str!("../../.agents/skills/diagnose/SKILL.md"),
+    ),
+    BundleEntry::supporting_doc(
+        DIAGNOSE_OPENAI_YAML,
+        include_str!("../../.agents/skills/diagnose/agents/openai.yaml"),
+    ),
+    BundleEntry::supporting_doc(
+        DIAGNOSE_HITL_LOOP_TEMPLATE,
+        include_str!("../../.agents/skills/diagnose/scripts/hitl-loop.template.sh"),
+    ),
+    BundleEntry::managed_skill(
+        ARCHITECTURE_SKILL,
+        include_str!("../../.agents/skills/improve-codebase-architecture/SKILL.md"),
+    ),
+    BundleEntry::supporting_doc(
+        ARCHITECTURE_OPENAI_YAML,
+        include_str!("../../.agents/skills/improve-codebase-architecture/agents/openai.yaml"),
+    ),
+    BundleEntry::supporting_doc(
+        ARCHITECTURE_LANGUAGE,
+        include_str!("../../.agents/skills/improve-codebase-architecture/LANGUAGE.md"),
+    ),
+    BundleEntry::supporting_doc(
+        ARCHITECTURE_INTERFACE_DESIGN,
+        include_str!("../../.agents/skills/improve-codebase-architecture/INTERFACE-DESIGN.md"),
+    ),
+    BundleEntry::supporting_doc(
+        ARCHITECTURE_DEEPENING,
+        include_str!("../../.agents/skills/improve-codebase-architecture/DEEPENING.md"),
+    ),
+    BundleEntry::managed_skill(
+        CODEX_REVIEW_SKILL,
+        include_str!("../../.agents/skills/codex-review/SKILL.md"),
+    ),
+    BundleEntry::supporting_doc(
+        CODEX_REVIEW_OPENAI_YAML,
+        include_str!("../../.agents/skills/codex-review/agents/openai.yaml"),
+    ),
+    BundleEntry::supporting_doc(
+        CODEX_REVIEW_HELPER,
+        include_str!("../../.agents/skills/codex-review/scripts/codex-review"),
+    ),
+    BundleEntry::managed_skill(
+        HANDOFF_SKILL,
+        include_str!("../../.agents/skills/handoff/SKILL.md"),
+    ),
+    BundleEntry::supporting_doc(
+        HANDOFF_OPENAI_YAML,
+        include_str!("../../.agents/skills/handoff/agents/openai.yaml"),
+    ),
+    BundleEntry::supporting_doc(
+        WORKFLOW_DOC,
+        include_str!("../../docs/agents/codex1-workflow.md"),
+    ),
+    BundleEntry::supporting_doc(
+        DOMAIN_DOC,
+        include_str!("../../docs/agents/codex1-domain.md"),
+    ),
+    BundleEntry::supporting_doc(
+        ARTIFACT_BRIEFS_DOC,
+        include_str!("../../docs/agents/codex1-artifact-briefs.md"),
+    ),
+    BundleEntry::guidance(BUNDLE_GUIDANCE),
 ];
 
-const MANAGED_SUPPORTING_DOC_FILES: [&str; 27] = [
-    CLARIFY_OPENAI_YAML,
-    CLARIFY_ADR_FORMAT,
-    CLARIFY_CONTEXT_FORMAT,
-    CREATE_PRD_OPENAI_YAML,
-    CREATE_PRD_FORMAT,
-    PLAN_OPENAI_YAML,
-    PLAN_ADR_FORMAT,
-    PLAN_SUBPLAN_BRIEF,
-    PLAN_GOAL_BRIEF_FORMAT,
-    TDD_OPENAI_YAML,
-    TDD_TESTS,
-    TDD_MOCKING,
-    TDD_DEEP_MODULES,
-    TDD_INTERFACE_DESIGN,
-    TDD_REFACTORING,
-    DIAGNOSE_OPENAI_YAML,
-    DIAGNOSE_HITL_LOOP_TEMPLATE,
-    ARCHITECTURE_OPENAI_YAML,
-    ARCHITECTURE_LANGUAGE,
-    ARCHITECTURE_INTERFACE_DESIGN,
-    ARCHITECTURE_DEEPENING,
-    CODEX_REVIEW_OPENAI_YAML,
-    CODEX_REVIEW_HELPER,
-    HANDOFF_OPENAI_YAML,
-    WORKFLOW_DOC,
-    DOMAIN_DOC,
-    ARTIFACT_BRIEFS_DOC,
-];
+#[derive(Clone, Copy, Debug)]
+struct LegacyReleaseSpec {
+    workflow_skills: bool,
+    openai_yaml: bool,
+    clarify_formats: bool,
+    create_prd_format: bool,
+    plan_adr_format: bool,
+    plan_subplan_brief: bool,
+    plan_goal_brief_format: bool,
+    plan_legacy_execution_prompt: bool,
+    tdd: bool,
+    diagnose: bool,
+    architecture: bool,
+    prototype: bool,
+    codex_review: bool,
+    brutal_review: bool,
+    handoff: bool,
+    agent_docs: bool,
+}
 
-const MANAGED_BUNDLE_FILES: [&str; 36] = [
-    CLARIFY_SKILL,
-    CLARIFY_OPENAI_YAML,
-    CLARIFY_ADR_FORMAT,
-    CLARIFY_CONTEXT_FORMAT,
-    CREATE_PRD_SKILL,
-    CREATE_PRD_OPENAI_YAML,
-    CREATE_PRD_FORMAT,
-    PLAN_SKILL,
-    PLAN_OPENAI_YAML,
-    PLAN_ADR_FORMAT,
-    PLAN_SUBPLAN_BRIEF,
-    PLAN_GOAL_BRIEF_FORMAT,
-    TDD_SKILL,
-    TDD_OPENAI_YAML,
-    TDD_TESTS,
-    TDD_MOCKING,
-    TDD_DEEP_MODULES,
-    TDD_INTERFACE_DESIGN,
-    TDD_REFACTORING,
-    DIAGNOSE_SKILL,
-    DIAGNOSE_OPENAI_YAML,
-    DIAGNOSE_HITL_LOOP_TEMPLATE,
-    ARCHITECTURE_SKILL,
-    ARCHITECTURE_OPENAI_YAML,
-    ARCHITECTURE_LANGUAGE,
-    ARCHITECTURE_INTERFACE_DESIGN,
-    ARCHITECTURE_DEEPENING,
-    CODEX_REVIEW_SKILL,
-    CODEX_REVIEW_OPENAI_YAML,
-    CODEX_REVIEW_HELPER,
-    HANDOFF_SKILL,
-    HANDOFF_OPENAI_YAML,
-    WORKFLOW_DOC,
-    DOMAIN_DOC,
-    ARTIFACT_BRIEFS_DOC,
-    BUNDLE_GUIDANCE,
+const LEGACY_RELEASES: [LegacyReleaseSpec; 9] = [
+    LegacyReleaseSpec {
+        workflow_skills: true,
+        openai_yaml: true,
+        clarify_formats: true,
+        create_prd_format: true,
+        plan_adr_format: true,
+        plan_subplan_brief: true,
+        plan_goal_brief_format: true,
+        plan_legacy_execution_prompt: false,
+        tdd: true,
+        diagnose: true,
+        architecture: true,
+        prototype: true,
+        codex_review: true,
+        brutal_review: true,
+        handoff: true,
+        agent_docs: true,
+    },
+    LegacyReleaseSpec {
+        workflow_skills: true,
+        openai_yaml: true,
+        clarify_formats: true,
+        create_prd_format: true,
+        plan_adr_format: true,
+        plan_subplan_brief: true,
+        plan_goal_brief_format: true,
+        plan_legacy_execution_prompt: false,
+        tdd: true,
+        diagnose: true,
+        architecture: true,
+        prototype: true,
+        codex_review: true,
+        brutal_review: true,
+        handoff: false,
+        agent_docs: true,
+    },
+    LegacyReleaseSpec {
+        workflow_skills: true,
+        openai_yaml: true,
+        clarify_formats: true,
+        create_prd_format: true,
+        plan_adr_format: true,
+        plan_subplan_brief: true,
+        plan_goal_brief_format: true,
+        plan_legacy_execution_prompt: false,
+        tdd: true,
+        diagnose: true,
+        architecture: true,
+        prototype: true,
+        codex_review: true,
+        brutal_review: false,
+        handoff: false,
+        agent_docs: true,
+    },
+    LegacyReleaseSpec {
+        workflow_skills: true,
+        openai_yaml: true,
+        clarify_formats: true,
+        create_prd_format: true,
+        plan_adr_format: true,
+        plan_subplan_brief: true,
+        plan_goal_brief_format: true,
+        plan_legacy_execution_prompt: false,
+        tdd: true,
+        diagnose: true,
+        architecture: true,
+        prototype: true,
+        codex_review: false,
+        brutal_review: false,
+        handoff: false,
+        agent_docs: true,
+    },
+    LegacyReleaseSpec {
+        workflow_skills: true,
+        openai_yaml: false,
+        clarify_formats: true,
+        create_prd_format: true,
+        plan_adr_format: true,
+        plan_subplan_brief: true,
+        plan_goal_brief_format: true,
+        plan_legacy_execution_prompt: false,
+        tdd: false,
+        diagnose: false,
+        architecture: false,
+        prototype: false,
+        codex_review: false,
+        brutal_review: false,
+        handoff: false,
+        agent_docs: true,
+    },
+    LegacyReleaseSpec {
+        workflow_skills: true,
+        openai_yaml: false,
+        clarify_formats: true,
+        create_prd_format: true,
+        plan_adr_format: true,
+        plan_subplan_brief: true,
+        plan_goal_brief_format: false,
+        plan_legacy_execution_prompt: true,
+        tdd: false,
+        diagnose: false,
+        architecture: false,
+        prototype: false,
+        codex_review: false,
+        brutal_review: false,
+        handoff: false,
+        agent_docs: true,
+    },
+    LegacyReleaseSpec {
+        workflow_skills: true,
+        openai_yaml: false,
+        clarify_formats: false,
+        create_prd_format: false,
+        plan_adr_format: false,
+        plan_subplan_brief: false,
+        plan_goal_brief_format: false,
+        plan_legacy_execution_prompt: false,
+        tdd: false,
+        diagnose: false,
+        architecture: false,
+        prototype: false,
+        codex_review: false,
+        brutal_review: false,
+        handoff: false,
+        agent_docs: true,
+    },
+    LegacyReleaseSpec {
+        workflow_skills: true,
+        openai_yaml: false,
+        clarify_formats: false,
+        create_prd_format: false,
+        plan_adr_format: false,
+        plan_subplan_brief: false,
+        plan_goal_brief_format: false,
+        plan_legacy_execution_prompt: false,
+        tdd: false,
+        diagnose: false,
+        architecture: false,
+        prototype: false,
+        codex_review: false,
+        brutal_review: false,
+        handoff: false,
+        agent_docs: false,
+    },
+    LegacyReleaseSpec {
+        workflow_skills: false,
+        openai_yaml: false,
+        clarify_formats: false,
+        create_prd_format: false,
+        plan_adr_format: false,
+        plan_subplan_brief: false,
+        plan_goal_brief_format: false,
+        plan_legacy_execution_prompt: false,
+        tdd: false,
+        diagnose: false,
+        architecture: false,
+        prototype: false,
+        codex_review: false,
+        brutal_review: false,
+        handoff: false,
+        agent_docs: false,
+    },
 ];
-
-const LEGACY_BUNDLE_FILES_V13: [&str; 44] = [
-    OVERVIEW_SKILL,
-    OVERVIEW_OPENAI_YAML,
-    CLARIFY_SKILL,
-    CLARIFY_OPENAI_YAML,
-    CLARIFY_ADR_FORMAT,
-    CLARIFY_CONTEXT_FORMAT,
-    CREATE_PRD_SKILL,
-    CREATE_PRD_OPENAI_YAML,
-    CREATE_PRD_FORMAT,
-    PLAN_SKILL,
-    PLAN_OPENAI_YAML,
-    PLAN_ADR_FORMAT,
-    PLAN_SUBPLAN_BRIEF,
-    PLAN_GOAL_BRIEF_FORMAT,
-    TDD_SKILL,
-    TDD_OPENAI_YAML,
-    TDD_TESTS,
-    TDD_MOCKING,
-    TDD_DEEP_MODULES,
-    TDD_INTERFACE_DESIGN,
-    TDD_REFACTORING,
-    DIAGNOSE_SKILL,
-    DIAGNOSE_OPENAI_YAML,
-    DIAGNOSE_HITL_LOOP_TEMPLATE,
-    ARCHITECTURE_SKILL,
-    ARCHITECTURE_OPENAI_YAML,
-    ARCHITECTURE_LANGUAGE,
-    ARCHITECTURE_INTERFACE_DESIGN,
-    ARCHITECTURE_DEEPENING,
-    PROTOTYPE_SKILL,
-    PROTOTYPE_OPENAI_YAML,
-    PROTOTYPE_LOGIC,
-    PROTOTYPE_UI,
-    CODEX_REVIEW_SKILL,
-    CODEX_REVIEW_OPENAI_YAML,
-    CODEX_REVIEW_HELPER,
-    BRUTAL_REVIEW_SKILL,
-    BRUTAL_REVIEW_OPENAI_YAML,
-    HANDOFF_SKILL,
-    HANDOFF_OPENAI_YAML,
-    WORKFLOW_DOC,
-    DOMAIN_DOC,
-    ARTIFACT_BRIEFS_DOC,
-    BUNDLE_GUIDANCE,
-];
-
-const LEGACY_BUNDLE_FILES_V11: [&str; 42] = [
-    OVERVIEW_SKILL,
-    OVERVIEW_OPENAI_YAML,
-    CLARIFY_SKILL,
-    CLARIFY_OPENAI_YAML,
-    CLARIFY_ADR_FORMAT,
-    CLARIFY_CONTEXT_FORMAT,
-    CREATE_PRD_SKILL,
-    CREATE_PRD_OPENAI_YAML,
-    CREATE_PRD_FORMAT,
-    PLAN_SKILL,
-    PLAN_OPENAI_YAML,
-    PLAN_ADR_FORMAT,
-    PLAN_SUBPLAN_BRIEF,
-    PLAN_GOAL_BRIEF_FORMAT,
-    TDD_SKILL,
-    TDD_OPENAI_YAML,
-    TDD_TESTS,
-    TDD_MOCKING,
-    TDD_DEEP_MODULES,
-    TDD_INTERFACE_DESIGN,
-    TDD_REFACTORING,
-    DIAGNOSE_SKILL,
-    DIAGNOSE_OPENAI_YAML,
-    DIAGNOSE_HITL_LOOP_TEMPLATE,
-    ARCHITECTURE_SKILL,
-    ARCHITECTURE_OPENAI_YAML,
-    ARCHITECTURE_LANGUAGE,
-    ARCHITECTURE_INTERFACE_DESIGN,
-    ARCHITECTURE_DEEPENING,
-    PROTOTYPE_SKILL,
-    PROTOTYPE_OPENAI_YAML,
-    PROTOTYPE_LOGIC,
-    PROTOTYPE_UI,
-    CODEX_REVIEW_SKILL,
-    CODEX_REVIEW_OPENAI_YAML,
-    CODEX_REVIEW_HELPER,
-    BRUTAL_REVIEW_SKILL,
-    BRUTAL_REVIEW_OPENAI_YAML,
-    WORKFLOW_DOC,
-    DOMAIN_DOC,
-    ARTIFACT_BRIEFS_DOC,
-    BUNDLE_GUIDANCE,
-];
-
-const LEGACY_BUNDLE_FILES_V8: [&str; 40] = [
-    OVERVIEW_SKILL,
-    OVERVIEW_OPENAI_YAML,
-    CLARIFY_SKILL,
-    CLARIFY_OPENAI_YAML,
-    CLARIFY_ADR_FORMAT,
-    CLARIFY_CONTEXT_FORMAT,
-    CREATE_PRD_SKILL,
-    CREATE_PRD_OPENAI_YAML,
-    CREATE_PRD_FORMAT,
-    PLAN_SKILL,
-    PLAN_OPENAI_YAML,
-    PLAN_ADR_FORMAT,
-    PLAN_SUBPLAN_BRIEF,
-    PLAN_GOAL_BRIEF_FORMAT,
-    TDD_SKILL,
-    TDD_OPENAI_YAML,
-    TDD_TESTS,
-    TDD_MOCKING,
-    TDD_DEEP_MODULES,
-    TDD_INTERFACE_DESIGN,
-    TDD_REFACTORING,
-    DIAGNOSE_SKILL,
-    DIAGNOSE_OPENAI_YAML,
-    DIAGNOSE_HITL_LOOP_TEMPLATE,
-    ARCHITECTURE_SKILL,
-    ARCHITECTURE_OPENAI_YAML,
-    ARCHITECTURE_LANGUAGE,
-    ARCHITECTURE_INTERFACE_DESIGN,
-    ARCHITECTURE_DEEPENING,
-    PROTOTYPE_SKILL,
-    PROTOTYPE_OPENAI_YAML,
-    PROTOTYPE_LOGIC,
-    PROTOTYPE_UI,
-    CODEX_REVIEW_SKILL,
-    CODEX_REVIEW_OPENAI_YAML,
-    CODEX_REVIEW_HELPER,
-    WORKFLOW_DOC,
-    DOMAIN_DOC,
-    ARTIFACT_BRIEFS_DOC,
-    BUNDLE_GUIDANCE,
-];
-
-const LEGACY_BUNDLE_FILES_V6: [&str; 37] = [
-    OVERVIEW_SKILL,
-    OVERVIEW_OPENAI_YAML,
-    CLARIFY_SKILL,
-    CLARIFY_OPENAI_YAML,
-    CLARIFY_ADR_FORMAT,
-    CLARIFY_CONTEXT_FORMAT,
-    CREATE_PRD_SKILL,
-    CREATE_PRD_OPENAI_YAML,
-    CREATE_PRD_FORMAT,
-    PLAN_SKILL,
-    PLAN_OPENAI_YAML,
-    PLAN_ADR_FORMAT,
-    PLAN_SUBPLAN_BRIEF,
-    PLAN_GOAL_BRIEF_FORMAT,
-    TDD_SKILL,
-    TDD_OPENAI_YAML,
-    TDD_TESTS,
-    TDD_MOCKING,
-    TDD_DEEP_MODULES,
-    TDD_INTERFACE_DESIGN,
-    TDD_REFACTORING,
-    DIAGNOSE_SKILL,
-    DIAGNOSE_OPENAI_YAML,
-    DIAGNOSE_HITL_LOOP_TEMPLATE,
-    ARCHITECTURE_SKILL,
-    ARCHITECTURE_OPENAI_YAML,
-    ARCHITECTURE_LANGUAGE,
-    ARCHITECTURE_INTERFACE_DESIGN,
-    ARCHITECTURE_DEEPENING,
-    PROTOTYPE_SKILL,
-    PROTOTYPE_OPENAI_YAML,
-    PROTOTYPE_LOGIC,
-    PROTOTYPE_UI,
-    WORKFLOW_DOC,
-    DOMAIN_DOC,
-    ARTIFACT_BRIEFS_DOC,
-    BUNDLE_GUIDANCE,
-];
-
-const LEGACY_BUNDLE_FILES_V5: [&str; 14] = [
-    OVERVIEW_SKILL,
-    CLARIFY_SKILL,
-    CLARIFY_ADR_FORMAT,
-    CLARIFY_CONTEXT_FORMAT,
-    CREATE_PRD_SKILL,
-    CREATE_PRD_FORMAT,
-    PLAN_SKILL,
-    PLAN_ADR_FORMAT,
-    PLAN_SUBPLAN_BRIEF,
-    PLAN_GOAL_BRIEF_FORMAT,
-    WORKFLOW_DOC,
-    DOMAIN_DOC,
-    ARTIFACT_BRIEFS_DOC,
-    BUNDLE_GUIDANCE,
-];
-
-const LEGACY_BUNDLE_FILES_V4: [&str; 14] = [
-    OVERVIEW_SKILL,
-    CLARIFY_SKILL,
-    CLARIFY_ADR_FORMAT,
-    CLARIFY_CONTEXT_FORMAT,
-    CREATE_PRD_SKILL,
-    CREATE_PRD_FORMAT,
-    PLAN_SKILL,
-    PLAN_ADR_FORMAT,
-    PLAN_SUBPLAN_BRIEF,
-    LEGACY_PLAN_EXECUTION_PROMPT_FORMAT,
-    WORKFLOW_DOC,
-    DOMAIN_DOC,
-    ARTIFACT_BRIEFS_DOC,
-    BUNDLE_GUIDANCE,
-];
-
-const LEGACY_BUNDLE_FILES_V3: [&str; 8] = [
-    OVERVIEW_SKILL,
-    CLARIFY_SKILL,
-    CREATE_PRD_SKILL,
-    PLAN_SKILL,
-    WORKFLOW_DOC,
-    DOMAIN_DOC,
-    ARTIFACT_BRIEFS_DOC,
-    BUNDLE_GUIDANCE,
-];
-
-const LEGACY_BUNDLE_FILES_V2: [&str; 5] = [
-    OVERVIEW_SKILL,
-    CLARIFY_SKILL,
-    CREATE_PRD_SKILL,
-    PLAN_SKILL,
-    BUNDLE_GUIDANCE,
-];
-
-const LEGACY_BUNDLE_FILES_V1: [&str; 2] = [OVERVIEW_SKILL, BUNDLE_GUIDANCE];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(super) struct BundleMarker {
@@ -372,108 +450,51 @@ pub(super) struct BundleMarker {
     pub files: Vec<String>,
 }
 
-pub(super) fn managed_skill_files() -> &'static [&'static str] {
-    &MANAGED_SKILL_FILES
+pub(super) fn entries_by_role(role: BundleFileRole) -> impl Iterator<Item = &'static BundleEntry> {
+    CURRENT_BUNDLE_ENTRIES
+        .iter()
+        .filter(move |entry| entry.role == role)
 }
 
-pub(super) fn managed_supporting_doc_files() -> &'static [&'static str] {
-    &MANAGED_SUPPORTING_DOC_FILES
+pub(super) fn owned_file_entries() -> impl Iterator<Item = &'static BundleEntry> {
+    CURRENT_BUNDLE_ENTRIES
+        .iter()
+        .filter(|entry| entry.role.is_owned_file())
 }
 
 pub(super) fn current_bundle_files() -> Vec<String> {
-    files_to_strings(&MANAGED_BUNDLE_FILES)
+    CURRENT_BUNDLE_ENTRIES
+        .iter()
+        .map(|entry| entry.relative.to_string())
+        .collect()
 }
 
 pub(super) fn is_current_bundle_file(relative: &str) -> bool {
-    MANAGED_BUNDLE_FILES.contains(&relative)
+    current_entry(relative).is_some()
 }
 
 pub(super) fn managed_restore_files() -> Vec<&'static str> {
-    let mut files = MANAGED_BUNDLE_FILES.to_vec();
-    files.push(LEGACY_PLAN_EXECUTION_PROMPT_FORMAT);
+    let mut files: Vec<_> = CURRENT_BUNDLE_ENTRIES
+        .iter()
+        .map(|entry| entry.relative)
+        .collect();
+    for retired in retired_legacy_files() {
+        if !files.contains(&retired) {
+            files.push(retired);
+        }
+    }
     files.push(BUNDLE_MARKER);
     files
 }
 
-pub(super) fn expected_current_body(relative: &str) -> Result<String> {
-    expected_body(relative).ok_or_else(|| {
-        Codex1Error::SetupBundle(format!(
-            "missing expected body for managed setup file {relative}"
-        ))
-    })
-}
-
 pub(super) fn expected_body(relative: &str) -> Option<String> {
-    Some(
-        match relative {
-            CLARIFY_SKILL => include_str!("../../.agents/skills/clarify/SKILL.md"),
-            CLARIFY_OPENAI_YAML => {
-                include_str!("../../.agents/skills/clarify/agents/openai.yaml")
-            }
-            CLARIFY_ADR_FORMAT => include_str!("../../.agents/skills/clarify/ADR-FORMAT.md"),
-            CLARIFY_CONTEXT_FORMAT => {
-                include_str!("../../.agents/skills/clarify/CONTEXT-FORMAT.md")
-            }
-            CREATE_PRD_SKILL => include_str!("../../.agents/skills/create-prd/SKILL.md"),
-            CREATE_PRD_OPENAI_YAML => {
-                include_str!("../../.agents/skills/create-prd/agents/openai.yaml")
-            }
-            CREATE_PRD_FORMAT => include_str!("../../.agents/skills/create-prd/PRD-FORMAT.md"),
-            PLAN_SKILL => include_str!("../../.agents/skills/plan/SKILL.md"),
-            PLAN_OPENAI_YAML => include_str!("../../.agents/skills/plan/agents/openai.yaml"),
-            PLAN_ADR_FORMAT => include_str!("../../.agents/skills/plan/ADR-FORMAT.md"),
-            PLAN_SUBPLAN_BRIEF => include_str!("../../.agents/skills/plan/SUBPLAN-BRIEF.md"),
-            PLAN_GOAL_BRIEF_FORMAT => {
-                include_str!("../../.agents/skills/plan/GOAL-BRIEF-FORMAT.md")
-            }
-            TDD_SKILL => include_str!("../../.agents/skills/tdd/SKILL.md"),
-            TDD_OPENAI_YAML => include_str!("../../.agents/skills/tdd/agents/openai.yaml"),
-            TDD_TESTS => include_str!("../../.agents/skills/tdd/tests.md"),
-            TDD_MOCKING => include_str!("../../.agents/skills/tdd/mocking.md"),
-            TDD_DEEP_MODULES => include_str!("../../.agents/skills/tdd/deep-modules.md"),
-            TDD_INTERFACE_DESIGN => include_str!("../../.agents/skills/tdd/interface-design.md"),
-            TDD_REFACTORING => include_str!("../../.agents/skills/tdd/refactoring.md"),
-            DIAGNOSE_SKILL => include_str!("../../.agents/skills/diagnose/SKILL.md"),
-            DIAGNOSE_OPENAI_YAML => {
-                include_str!("../../.agents/skills/diagnose/agents/openai.yaml")
-            }
-            DIAGNOSE_HITL_LOOP_TEMPLATE => {
-                include_str!("../../.agents/skills/diagnose/scripts/hitl-loop.template.sh")
-            }
-            ARCHITECTURE_SKILL => {
-                include_str!("../../.agents/skills/improve-codebase-architecture/SKILL.md")
-            }
-            ARCHITECTURE_OPENAI_YAML => include_str!(
-                "../../.agents/skills/improve-codebase-architecture/agents/openai.yaml"
-            ),
-            ARCHITECTURE_LANGUAGE => {
-                include_str!("../../.agents/skills/improve-codebase-architecture/LANGUAGE.md")
-            }
-            ARCHITECTURE_INTERFACE_DESIGN => include_str!(
-                "../../.agents/skills/improve-codebase-architecture/INTERFACE-DESIGN.md"
-            ),
-            ARCHITECTURE_DEEPENING => {
-                include_str!("../../.agents/skills/improve-codebase-architecture/DEEPENING.md")
-            }
-            CODEX_REVIEW_SKILL => include_str!("../../.agents/skills/codex-review/SKILL.md"),
-            CODEX_REVIEW_OPENAI_YAML => {
-                include_str!("../../.agents/skills/codex-review/agents/openai.yaml")
-            }
-            CODEX_REVIEW_HELPER => {
-                include_str!("../../.agents/skills/codex-review/scripts/codex-review")
-            }
-            HANDOFF_SKILL => include_str!("../../.agents/skills/handoff/SKILL.md"),
-            HANDOFF_OPENAI_YAML => include_str!("../../.agents/skills/handoff/agents/openai.yaml"),
-            WORKFLOW_DOC => include_str!("../../docs/agents/codex1-workflow.md"),
-            DOMAIN_DOC => include_str!("../../docs/agents/codex1-domain.md"),
-            ARTIFACT_BRIEFS_DOC => include_str!("../../docs/agents/codex1-artifact-briefs.md"),
-            LEGACY_PLAN_EXECUTION_PROMPT_FORMAT => legacy_execution_prompt_format_body(),
-            BUNDLE_GUIDANCE => guidance::body(),
-            BUNDLE_MARKER => return Some(bundle_marker_body()),
-            _ => return None,
-        }
-        .to_string(),
-    )
+    if relative == BUNDLE_MARKER {
+        return Some(bundle_marker_body());
+    }
+    if relative == LEGACY_PLAN_EXECUTION_PROMPT_FORMAT {
+        return Some(legacy_execution_prompt_format_body().to_string());
+    }
+    current_entry(relative).map(|entry| entry.expected_body())
 }
 
 pub(super) fn is_current_marker(marker: &BundleMarker) -> bool {
@@ -483,10 +504,7 @@ pub(super) fn is_current_marker(marker: &BundleMarker) -> bool {
 }
 
 pub(super) fn is_managed_bundle_marker(marker: &BundleMarker) -> bool {
-    marker.managed_by == "codex1-managed"
-        && legacy_bundle_file_sets()
-            .iter()
-            .any(|files| marker.files == files_to_strings(files))
+    marker.managed_by == "codex1-managed" && files_match_known_bundle(&marker.files)
 }
 
 pub(super) fn marker_allows_file_repair(marker: Option<&BundleMarker>, relative: &str) -> bool {
@@ -513,21 +531,169 @@ pub(super) fn is_managed_restore_body(relative: &str, text: &str) -> bool {
     expected_body(relative).as_deref() == Some(text) || matches_legacy_managed_body(relative, text)
 }
 
-fn legacy_bundle_file_sets() -> [&'static [&'static str]; 10] {
-    [
-        &MANAGED_BUNDLE_FILES,
-        &LEGACY_BUNDLE_FILES_V13,
-        &LEGACY_BUNDLE_FILES_V11,
-        &LEGACY_BUNDLE_FILES_V8,
-        &LEGACY_BUNDLE_FILES_V6,
-        &LEGACY_BUNDLE_FILES_V5,
-        &LEGACY_BUNDLE_FILES_V4,
-        &LEGACY_BUNDLE_FILES_V3,
-        &LEGACY_BUNDLE_FILES_V2,
-        &LEGACY_BUNDLE_FILES_V1,
-    ]
+fn current_entry(relative: &str) -> Option<&'static BundleEntry> {
+    CURRENT_BUNDLE_ENTRIES
+        .iter()
+        .find(|entry| entry.relative == relative)
 }
 
+fn files_match_known_bundle(files: &[String]) -> bool {
+    files == current_bundle_files()
+        || LEGACY_RELEASES
+            .iter()
+            .any(|release| files_match(files, &legacy_bundle_files(*release)))
+}
+
+fn files_match(actual: &[String], expected: &[&str]) -> bool {
+    actual.len() == expected.len()
+        && actual
+            .iter()
+            .zip(expected.iter())
+            .all(|(actual, expected)| actual == expected)
+}
+
+fn legacy_bundle_files(release: LegacyReleaseSpec) -> Vec<&'static str> {
+    let mut files = vec![OVERVIEW_SKILL];
+    if release.openai_yaml {
+        files.push(OVERVIEW_OPENAI_YAML);
+    }
+    if release.workflow_skills {
+        push_workflow_files(&mut files, release);
+    }
+    if release.tdd {
+        push_tdd_files(&mut files, release.openai_yaml);
+    }
+    if release.diagnose {
+        push_diagnose_files(&mut files, release.openai_yaml);
+    }
+    if release.architecture {
+        push_architecture_files(&mut files, release.openai_yaml);
+    }
+    if release.prototype {
+        push_prototype_files(&mut files, release.openai_yaml);
+    }
+    if release.codex_review {
+        push_codex_review_files(&mut files, release.openai_yaml);
+    }
+    if release.brutal_review {
+        push_brutal_review_files(&mut files, release.openai_yaml);
+    }
+    if release.handoff {
+        files.push(HANDOFF_SKILL);
+        if release.openai_yaml {
+            files.push(HANDOFF_OPENAI_YAML);
+        }
+    }
+    if release.agent_docs {
+        files.extend([WORKFLOW_DOC, DOMAIN_DOC, ARTIFACT_BRIEFS_DOC]);
+    }
+    files.push(BUNDLE_GUIDANCE);
+    files
+}
+
+fn push_workflow_files(files: &mut Vec<&'static str>, release: LegacyReleaseSpec) {
+    files.push(CLARIFY_SKILL);
+    if release.openai_yaml {
+        files.push(CLARIFY_OPENAI_YAML);
+    }
+    if release.clarify_formats {
+        files.extend([CLARIFY_ADR_FORMAT, CLARIFY_CONTEXT_FORMAT]);
+    }
+    files.push(CREATE_PRD_SKILL);
+    if release.openai_yaml {
+        files.push(CREATE_PRD_OPENAI_YAML);
+    }
+    if release.create_prd_format {
+        files.push(CREATE_PRD_FORMAT);
+    }
+    files.push(PLAN_SKILL);
+    if release.openai_yaml {
+        files.push(PLAN_OPENAI_YAML);
+    }
+    if release.plan_adr_format {
+        files.push(PLAN_ADR_FORMAT);
+    }
+    if release.plan_subplan_brief {
+        files.push(PLAN_SUBPLAN_BRIEF);
+    }
+    if release.plan_goal_brief_format {
+        files.push(PLAN_GOAL_BRIEF_FORMAT);
+    }
+    if release.plan_legacy_execution_prompt {
+        files.push(LEGACY_PLAN_EXECUTION_PROMPT_FORMAT);
+    }
+}
+
+fn push_tdd_files(files: &mut Vec<&'static str>, openai_yaml: bool) {
+    files.push(TDD_SKILL);
+    if openai_yaml {
+        files.push(TDD_OPENAI_YAML);
+    }
+    files.extend([
+        TDD_TESTS,
+        TDD_MOCKING,
+        TDD_DEEP_MODULES,
+        TDD_INTERFACE_DESIGN,
+        TDD_REFACTORING,
+    ]);
+}
+
+fn push_diagnose_files(files: &mut Vec<&'static str>, openai_yaml: bool) {
+    files.push(DIAGNOSE_SKILL);
+    if openai_yaml {
+        files.push(DIAGNOSE_OPENAI_YAML);
+    }
+    files.push(DIAGNOSE_HITL_LOOP_TEMPLATE);
+}
+
+fn push_architecture_files(files: &mut Vec<&'static str>, openai_yaml: bool) {
+    files.push(ARCHITECTURE_SKILL);
+    if openai_yaml {
+        files.push(ARCHITECTURE_OPENAI_YAML);
+    }
+    files.extend([
+        ARCHITECTURE_LANGUAGE,
+        ARCHITECTURE_INTERFACE_DESIGN,
+        ARCHITECTURE_DEEPENING,
+    ]);
+}
+
+fn push_prototype_files(files: &mut Vec<&'static str>, openai_yaml: bool) {
+    files.push(PROTOTYPE_SKILL);
+    if openai_yaml {
+        files.push(PROTOTYPE_OPENAI_YAML);
+    }
+    files.extend([PROTOTYPE_LOGIC, PROTOTYPE_UI]);
+}
+
+fn push_codex_review_files(files: &mut Vec<&'static str>, openai_yaml: bool) {
+    files.push(CODEX_REVIEW_SKILL);
+    if openai_yaml {
+        files.push(CODEX_REVIEW_OPENAI_YAML);
+    }
+    files.push(CODEX_REVIEW_HELPER);
+}
+
+fn push_brutal_review_files(files: &mut Vec<&'static str>, openai_yaml: bool) {
+    files.push(BRUTAL_REVIEW_SKILL);
+    if openai_yaml {
+        files.push(BRUTAL_REVIEW_OPENAI_YAML);
+    }
+}
+
+fn retired_legacy_files() -> Vec<&'static str> {
+    let mut retired = Vec::new();
+    for release in LEGACY_RELEASES {
+        for relative in legacy_bundle_files(release) {
+            if !is_current_bundle_file(relative) && !retired.contains(&relative) {
+                retired.push(relative);
+            }
+        }
+    }
+    retired
+}
+
+#[cfg(test)]
 fn files_to_strings(files: &[&str]) -> Vec<String> {
     files.iter().map(|file| (*file).to_string()).collect()
 }
@@ -710,32 +876,84 @@ Always prohibit:
 }
 
 #[cfg(test)]
+pub(super) fn legacy_marker_body_for_test(version: u32) -> String {
+    let release = match version {
+        13 => LEGACY_RELEASES[0],
+        11 => LEGACY_RELEASES[1],
+        8 => LEGACY_RELEASES[2],
+        6 => LEGACY_RELEASES[3],
+        5 => LEGACY_RELEASES[4],
+        4 => LEGACY_RELEASES[5],
+        3 => LEGACY_RELEASES[6],
+        2 => LEGACY_RELEASES[7],
+        1 => LEGACY_RELEASES[8],
+        _ => panic!("unknown legacy release version: {version}"),
+    };
+    serde_json::to_string_pretty(&BundleMarker {
+        managed_by: "codex1-managed".into(),
+        version,
+        files: files_to_strings(&legacy_bundle_files(release)),
+    })
+    .unwrap()
+        + "\n"
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashSet;
 
     #[test]
-    fn current_bundle_files_have_no_duplicates() {
+    fn current_bundle_entries_have_no_duplicates() {
         let mut seen = HashSet::new();
-        for file in MANAGED_BUNDLE_FILES {
-            assert!(seen.insert(file), "duplicate managed setup file: {file}");
+        for entry in CURRENT_BUNDLE_ENTRIES {
+            assert!(
+                seen.insert(entry.relative),
+                "duplicate managed setup file: {}",
+                entry.relative
+            );
         }
     }
 
     #[test]
-    fn skills_and_supporting_docs_are_in_the_current_bundle() {
-        for file in MANAGED_SKILL_FILES
-            .iter()
-            .chain(MANAGED_SUPPORTING_DOC_FILES.iter())
-        {
-            assert!(MANAGED_BUNDLE_FILES.contains(file), "{file}");
-        }
+    fn current_bundle_entries_are_fully_classified() {
+        assert!(entries_by_role(BundleFileRole::ManagedSkill).count() > 0);
+        assert!(entries_by_role(BundleFileRole::SupportingDoc).count() > 0);
+        assert_eq!(entries_by_role(BundleFileRole::Guidance).count(), 1);
+        assert_eq!(
+            owned_file_entries().count() + entries_by_role(BundleFileRole::Guidance).count(),
+            CURRENT_BUNDLE_ENTRIES.len()
+        );
     }
 
     #[test]
     fn current_managed_files_have_expected_bodies() {
-        for relative in MANAGED_BUNDLE_FILES {
-            assert!(expected_body(relative).is_some(), "{relative}");
+        for entry in CURRENT_BUNDLE_ENTRIES {
+            assert!(
+                expected_body(entry.relative).is_some(),
+                "{}",
+                entry.relative
+            );
+        }
+    }
+
+    #[test]
+    fn expected_bodies_match_checked_in_bundle_files() {
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        for entry in CURRENT_BUNDLE_ENTRIES {
+            let checked_in = std::fs::read_to_string(repo.join(entry.relative)).unwrap();
+            match entry.role {
+                BundleFileRole::Guidance => {
+                    assert!(
+                        checked_in.contains(&guidance::managed_block()),
+                        "{}",
+                        entry.relative
+                    );
+                }
+                BundleFileRole::ManagedSkill | BundleFileRole::SupportingDoc => {
+                    assert_eq!(entry.expected_body(), checked_in, "{}", entry.relative);
+                }
+            }
         }
     }
 
@@ -756,14 +974,30 @@ mod tests {
     }
 
     #[test]
-    fn generated_managed_skill_bodies_match_checked_in_files() {
-        for relative in MANAGED_SKILL_FILES {
-            let checked_in = std::fs::read_to_string(
-                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(relative),
-            )
-            .unwrap();
-            assert_eq!(expected_body(relative).unwrap(), checked_in, "{relative}");
+    fn legacy_release_specs_match_known_compatibility_markers() {
+        for version in [13, 11, 8, 6, 5, 4, 3, 2, 1] {
+            let marker: BundleMarker =
+                serde_json::from_str(&legacy_marker_body_for_test(version)).unwrap();
+            assert!(
+                is_managed_bundle_marker(&marker),
+                "legacy release {version}"
+            );
         }
+    }
+
+    #[test]
+    fn retired_legacy_files_are_not_current_bundle_files() {
+        for relative in retired_legacy_files() {
+            assert!(!is_current_bundle_file(relative), "{relative}");
+        }
+    }
+
+    #[test]
+    fn retired_execution_prompt_body_is_managed_body_proof() {
+        assert!(is_managed_restore_body(
+            LEGACY_PLAN_EXECUTION_PROMPT_FORMAT,
+            legacy_execution_prompt_format_body()
+        ));
     }
 
     #[test]

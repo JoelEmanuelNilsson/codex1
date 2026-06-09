@@ -2,9 +2,9 @@
 
 ## Objective
 
-Prepare a future native `/goal` to refactor Codex1 setup maintenance so the Setup bundle is direct, safe, and agent-drivable to change across projects.
+Prepare a future native `/goal` to refactor Codex1 setup maintenance so the Setup bundle is simpler, direct, safe, and agent-drivable to change across projects.
 
-Codex1 setup is not optional skill decoration. It is Joel's universal repo setup layer: curated skills, managed docs, setup guidance, marker JSON, backups, upgrade/removal behavior, and the local fleet update path. The refactor should deepen the setup maintenance module so one clear interface owns current bundle inventory, retired managed files, legacy compatibility, expected bodies, validation, docs, and update flow.
+Codex1 setup is not optional skill decoration. It is Joel's universal repo setup layer: curated skills, managed docs, setup guidance, marker JSON, backups, upgrade/removal behavior, and the local fleet update path. The refactor should be net subtractive: deepen the setup maintenance module by removing duplicated sources of truth, manual steps, and shallow pass-through code. Any new manifest, generator, helper, or module must replace older machinery before completion, not sit beside it.
 
 This prep did not implement the refactor, did not commit or push, and did not run fleet updates. The parent session launched one nested Codex prep worker; that worker did not launch any additional nested Codex workers.
 
@@ -14,6 +14,7 @@ This prep did not implement the refactor, did not commit or push, and did not ru
 - Preserve setup safety: no overwriting user-authored files, no deleting user skills or Mission scaffold artifacts, no weakening backups, no path-containment regressions, and no unsafe legacy removal.
 - Preserve the dirty worktree. Existing setup/skill-removal changes are baseline context, not something this mission may discard.
 - Do not require real fleet apply, commit, or push to complete the refactor. The updater path can be validated with local fixture repos, dry-run behavior, syntax checks, and documented operator steps.
+- Make the end state simpler than the starting state. Do not leave `old catalog arrays + old marker JSON + duplicate tests + new manifest/generator` as the final architecture.
 
 ## Current Baseline
 
@@ -58,8 +59,8 @@ Friction found:
 
 ## What Should Be Refactored
 
-1. Deepen the Setup bundle catalog module.
-   - Create one authoritative bundle manifest/interface that drives current inventory, file roles, marker generation, expected bodies, current/retired classification, and status categories.
+1. Deepen the Setup bundle catalog module by subtraction.
+   - Collapse current inventory, file roles, marker generation, expected bodies, current/retired classification, and status categories into one authoritative interface. Whether that interface is a manifest, a Rust table, generated code, or a smaller hand-written module is an implementation choice. The non-negotiable result is deleting redundant sources of truth.
    - Expected impact: highest. It removes most edit fan-out.
    - Main risk: accidentally weakening safety around user-authored files or legacy removal.
 
@@ -68,8 +69,8 @@ Friction found:
    - Expected impact: high. It improves locality without expanding the CLI contract.
    - Main risk: subtle dry-run, backup, or ordering regressions.
 
-3. Replace legacy array archaeology with a small compatibility model.
-   - Keep exact known managed marker validation, but store/generate release manifests and retired managed file fingerprints through one documented path.
+3. Replace legacy array archaeology with a smaller compatibility model.
+   - Keep exact known managed marker validation, but remove full historical array sprawl where a smaller release/tombstone/fingerprint model can prove the same safety. Bias toward refusal when unsure.
    - Expected impact: high for retirement work.
    - Main risk: too-permissive marker acceptance. The future implementation must bias toward refusal.
 
@@ -78,9 +79,9 @@ Friction found:
    - Expected impact: medium-high. It prevents test code from becoming another catalog.
    - Main risk: losing coverage by deriving tests from the same broken source without independent fixture checks.
 
-5. Improve the local fleet updater path.
+5. Simplify the local fleet updater path.
    - Keep setup-only staging and conservative apply/push behavior.
-   - Add agent-readable status or dry-run output and fixture coverage, or move the logic behind a small deterministic helper if that gives a better interface than shell.
+   - Add agent-readable status or dry-run output and fixture coverage only if it lets the future agent delete shell ceremony, remove ambiguity, or avoid manual reasoning. Do not add a second updater layer that leaves the old one equally important.
    - Expected impact: medium. It removes late surprises like dirty-source refusal.
    - Main risk: accidentally making real fleet mutation too easy.
 
@@ -93,6 +94,8 @@ Friction found:
 
 - Current bundle inventory has one authoritative source in code or generated code. There are zero hand-maintained duplicate current bundle path lists in tests or marker artifacts.
 - Adding or retiring one managed Setup bundle file requires at most 3 edit points outside the file content itself. Expected allowed edit points: the manifest/source table, optional legacy fingerprint/retirement data, and docs/playbook or changelog.
+- The final implementation includes a subtraction ledger: duplicated inventories, arrays, helper paths, manual steps, and docs made obsolete by the refactor are removed or explicitly superseded. Completion fails if a new manifest/generator/helper is merely additive over the old machinery.
+- The final setup-maintenance surface is smaller by authority and workflow, even if tests grow: fewer authoritative current-bundle locations, fewer manual update steps, fewer places a future agent must inspect to retire a managed file, and no unresolved "which source is real?" question.
 - Drift checks fail if `.codex1/setup-bundle.json`, expected bodies, current inventory, or docs-visible bundle counts disagree.
 - Safety tests still cover refusal to overwrite unmanaged files, refusal to remove modified marker-owned files, refusing unmanaged marker paths, path containment, dry-run no writes, backups/restores, and Mission scaffold preservation.
 - Legacy tests cover at least v1, the most recent pre-refactor version, the current skill-removal version, and a retired managed file with a fingerprint/body proof.
@@ -113,10 +116,10 @@ Friction found:
    - Risk: low if tests capture current behavior before restructuring.
    - Validation: current tests plus new contract tests for marker generation, role categorization, expected bodies, and legacy recognition.
 
-2. Collapse current bundle data into one manifest/table and derive marker, categories, and expected bodies.
+2. Collapse current bundle data into one source table/interface and delete replaced data paths.
    - Impact: highest.
    - Risk: medium because `include_str!` bodies and marker JSON must remain exact.
-   - Validation: generated marker equals checked-in marker, install/status tests pass, and an explicit duplicate-list guard passes.
+   - Validation: generated/derived marker equals checked-in marker, install/status tests pass, an explicit duplicate-list guard passes, and the subtraction ledger shows removed or superseded old machinery.
 
 3. Move legacy releases and retired file recognition behind a compatibility module.
    - Impact: high.
@@ -142,6 +145,7 @@ Friction found:
 
 - Only update docs. Rejected because the main cost is architectural fan-out in the code and tests.
 - Only add helper scripts around the current catalog. Rejected because the source of truth would remain duplicated.
+- Add a manifest/generator while keeping the old arrays, marker JSON ceremony, and duplicate test inventories. Rejected because it is net additive complexity.
 - Accept any marker where every path is currently known. Rejected because it weakens exact managed marker safety.
 - Move all setup state into runtime scanning of `.agents/skills`. Rejected because it would blur managed vs user-authored files and weaken deterministic setup behavior.
 - Make `codex1 setup status` decide readiness or completion. Rejected by the Anti-Oracle Rule.
@@ -155,13 +159,13 @@ The future goal should use a red-green-refactor loop for behavioral changes:
 2. Add or adjust the smallest contract test that captures the next safety or maintainability target.
 3. Refactor the module/interface to pass that test while keeping existing tests green.
 4. Run the narrowest relevant command first, then broaden to full `cargo test`.
-5. Re-measure edit points, duplicate lists, and docs drift.
+5. Re-measure edit points, duplicate lists, docs drift, and the subtraction ledger.
 6. Repeat until all success metrics are met.
 7. Run closeout checks and an advisory `codex-review` if useful for the final diff.
 
 Anti-gaming constraints:
 
-- Do not satisfy edit-point metrics by hiding path lists in opaque strings, deleting legacy coverage, removing safety tests, weakening marker validation, or making tests derive everything from the exact code under test.
+- Do not satisfy edit-point metrics by hiding path lists in opaque strings, adding another source of truth, deleting legacy coverage, removing safety tests, weakening marker validation, or making tests derive everything from the exact code under test.
 - Do not mark updater proof complete by skipping dirty-source, commit-push skip, or setup-only staging cases.
 - Do not reduce the managed bundle surface just to reduce counts.
 - Do not treat setup status/doctor as semantic proof of mission readiness or completion.

@@ -17,11 +17,15 @@ case "${1:---dry-run}" in
     ;;
 esac
 
-source_root=/Users/joel/codex1
+source_root=${CODEX1_SETUP_SOURCE_ROOT:-/Users/joel/codex1}
+search_root=${CODEX1_SETUP_SEARCH_ROOT:-/Users/joel}
+bin=${CODEX1_SETUP_BIN:-}
 
 if [[ "$mode" != dry-run ]]; then
-  if [[ -n "$(git -C "$source_root" status --porcelain --untracked-files=all)" ]]; then
-    echo "refusing apply: $source_root has uncommitted changes" >&2
+  dirty_source=$(git -C "$source_root" status --porcelain --untracked-files=all)
+  if [[ -n "$dirty_source" ]]; then
+    echo "refusing apply: source checkout has uncommitted changes: $source_root" >&2
+    echo "$dirty_source" >&2
     exit 1
   fi
   git -C "$source_root" pull --ff-only
@@ -113,8 +117,15 @@ can_commit_push_repo() {
   fi
 }
 
-cargo build --manifest-path "$source_root/Cargo.toml" >/dev/null
-bin="$source_root/target/debug/codex1"
+if [[ -n "$bin" ]]; then
+  if [[ ! -x "$bin" ]]; then
+    echo "configured CODEX1_SETUP_BIN is not executable: $bin" >&2
+    exit 1
+  fi
+else
+  cargo build --manifest-path "$source_root/Cargo.toml" >/dev/null
+  bin="$source_root/target/debug/codex1"
+fi
 count=0
 committed=0
 pushed=0
@@ -122,7 +133,11 @@ skipped_commit_push=0
 
 while IFS= read -r -d "" marker; do
   repo=${marker%/.codex1/setup-bundle.json}
+  repo=$(cd "$repo" && pwd -P)
   top=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null || true)
+  if [[ -n "$top" ]]; then
+    top=$(cd "$top" && pwd -P)
+  fi
   [[ -n "$top" && "$repo" == "$top" ]] || continue
   git -C "$repo" ls-files --error-unmatch .codex1/setup-bundle.json >/dev/null 2>&1 || continue
 
@@ -157,8 +172,8 @@ while IFS= read -r -d "" marker; do
     "$bin" --repo-root "$repo" setup install
   fi
 done < <(
-  find /Users/joel \
-    \( -path /Users/joel/Library -o -path /Users/joel/.Trash -o -name node_modules -o -name target -o -name "*.photoslibrary" -o -name "Photo Booth Library" \) -prune -o \
+  find "$search_root" \
+    \( -path "$search_root/Library" -o -path "$search_root/.Trash" -o -name node_modules -o -name target -o -name "*.photoslibrary" -o -name "Photo Booth Library" \) -prune -o \
     -path "*/.codex1/setup-bundle.json" -type f \
     -not -path "*/.codex1/setup-backups/*" \
     -print0 2>/dev/null

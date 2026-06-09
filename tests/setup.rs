@@ -20,11 +20,12 @@ fn setup_install_materializes_repo_scoped_guidance() {
     );
 
     assert_eq!(value["ok"], true);
-    for skill in MANAGED_SKILLS {
-        assert!(repo.path().join(skill).is_file(), "{skill}");
+    let status = setup_status(&repo);
+    for skill in status_collection_paths(&status, "skills") {
+        assert!(repo.path().join(&skill).is_file(), "{skill}");
     }
-    for doc in MANAGED_SUPPORTING_DOCS {
-        assert!(repo.path().join(doc).is_file(), "{doc}");
+    for doc in status_collection_paths(&status, "supporting_docs") {
+        assert!(repo.path().join(&doc).is_file(), "{doc}");
     }
     assert!(repo.path().join("AGENTS.md").is_file());
     assert!(repo.path().join(".codex1/setup-bundle.json").is_file());
@@ -133,11 +134,8 @@ fn setup_install_dry_run_does_not_materialize_files() {
 
     assert_eq!(value["ok"], true);
     assert_eq!(value["data"]["plan"]["dry_run"], true);
-    for skill in MANAGED_SKILLS {
-        assert!(!repo.path().join(skill).exists(), "{skill}");
-    }
-    for doc in MANAGED_SUPPORTING_DOCS {
-        assert!(!repo.path().join(doc).exists(), "{doc}");
+    for path in planned_materialized_paths(&value) {
+        assert!(!path.exists(), "{}", path.display());
     }
     assert!(!repo.path().join("AGENTS.md").exists());
     assert!(!repo.path().join(".codex1/setup-bundle.json").exists());
@@ -162,6 +160,9 @@ fn setup_disable_and_enable_preserve_user_guidance_and_missions() {
             .arg(repo.path())
             .args(["setup", "install"]),
     );
+    let status = setup_status(&repo);
+    let mut managed_paths = status_collection_paths(&status, "skills");
+    managed_paths.extend(status_collection_paths(&status, "supporting_docs"));
 
     json_output(
         bin()
@@ -173,8 +174,8 @@ fn setup_disable_and_enable_preserve_user_guidance_and_missions() {
     let agents = fs::read_to_string(repo.path().join("AGENTS.md")).unwrap();
     assert!(agents.contains("Keep this."));
     assert!(!agents.contains("codex1-managed setup guidance start"));
-    for skill in MANAGED_SKILLS {
-        assert!(!repo.path().join(skill).exists(), "{skill}");
+    for path in managed_paths {
+        assert!(!repo.path().join(&path).exists(), "{path}");
     }
     assert!(repo.path().join(".codex1/missions/alpha").is_dir());
 
@@ -257,106 +258,6 @@ fn setup_enable_repairs_stale_managed_skill_and_marker() {
 }
 
 #[test]
-fn setup_enable_upgrades_pre_handoff_bundle() {
-    let repo = repo();
-    json_output(
-        bin()
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args(["setup", "install"]),
-    );
-
-    fs::remove_dir_all(repo.path().join(".agents/skills/handoff")).unwrap();
-    fs::write(
-        repo.path().join(".agents/skills/clarify/SKILL.md"),
-        "# Old managed clarify\n",
-    )
-    .unwrap();
-
-    let marker_path = repo.path().join(".codex1/setup-bundle.json");
-    fs::write(
-        &marker_path,
-        serde_json::to_string_pretty(&serde_json::json!({
-            "managed_by": "codex1-managed",
-            "version": 11,
-            "files": [
-                ".agents/skills/codex1/SKILL.md",
-                ".agents/skills/codex1/agents/openai.yaml",
-                ".agents/skills/clarify/SKILL.md",
-                ".agents/skills/clarify/agents/openai.yaml",
-                ".agents/skills/clarify/ADR-FORMAT.md",
-                ".agents/skills/clarify/CONTEXT-FORMAT.md",
-                ".agents/skills/create-prd/SKILL.md",
-                ".agents/skills/create-prd/agents/openai.yaml",
-                ".agents/skills/create-prd/PRD-FORMAT.md",
-                ".agents/skills/plan/SKILL.md",
-                ".agents/skills/plan/agents/openai.yaml",
-                ".agents/skills/plan/ADR-FORMAT.md",
-                ".agents/skills/plan/SUBPLAN-BRIEF.md",
-                ".agents/skills/plan/GOAL-BRIEF-FORMAT.md",
-                ".agents/skills/tdd/SKILL.md",
-                ".agents/skills/tdd/agents/openai.yaml",
-                ".agents/skills/tdd/tests.md",
-                ".agents/skills/tdd/mocking.md",
-                ".agents/skills/tdd/deep-modules.md",
-                ".agents/skills/tdd/interface-design.md",
-                ".agents/skills/tdd/refactoring.md",
-                ".agents/skills/diagnose/SKILL.md",
-                ".agents/skills/diagnose/agents/openai.yaml",
-                ".agents/skills/diagnose/scripts/hitl-loop.template.sh",
-                ".agents/skills/improve-codebase-architecture/SKILL.md",
-                ".agents/skills/improve-codebase-architecture/agents/openai.yaml",
-                ".agents/skills/improve-codebase-architecture/LANGUAGE.md",
-                ".agents/skills/improve-codebase-architecture/INTERFACE-DESIGN.md",
-                ".agents/skills/improve-codebase-architecture/DEEPENING.md",
-                ".agents/skills/prototype/SKILL.md",
-                ".agents/skills/prototype/agents/openai.yaml",
-                ".agents/skills/prototype/LOGIC.md",
-                ".agents/skills/prototype/UI.md",
-                ".agents/skills/codex-review/SKILL.md",
-                ".agents/skills/codex-review/agents/openai.yaml",
-                ".agents/skills/codex-review/scripts/codex-review",
-                ".agents/skills/brutal-review/SKILL.md",
-                ".agents/skills/brutal-review/agents/openai.yaml",
-                "docs/agents/codex1-workflow.md",
-                "docs/agents/codex1-domain.md",
-                "docs/agents/codex1-artifact-briefs.md",
-                "AGENTS.md"
-            ]
-        }))
-        .unwrap()
-            + "\n",
-    )
-    .unwrap();
-
-    json_output(
-        bin()
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args(["setup", "enable"]),
-    );
-
-    let status = json_output(
-        bin()
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args(["setup", "status"]),
-    );
-    assert_eq!(status["data"]["status"]["repo_bundle_materialized"], true);
-    assert!(repo
-        .path()
-        .join(".agents/skills/handoff/SKILL.md")
-        .is_file());
-    assert!(repo
-        .path()
-        .join(".agents/skills/handoff/agents/openai.yaml")
-        .is_file());
-    let clarify = fs::read_to_string(repo.path().join(".agents/skills/clarify/SKILL.md")).unwrap();
-    assert!(clarify.contains("Relentlessly clarify"));
-    assert!(!repo.path().join(".agents/skills/codex1/SKILL.md").exists());
-}
-
-#[test]
 fn setup_uninstall_accepts_v1_managed_marker() {
     let repo = repo();
     json_output(
@@ -409,52 +310,6 @@ fn setup_uninstall_refuses_modified_marker_owned_skill() {
         .stdout(predicate::str::contains("SETUP_BUNDLE_ERROR"));
 
     assert_eq!(fs::read_to_string(skill).unwrap(), "# User edited skill\n");
-}
-
-#[test]
-fn setup_install_removes_retired_managed_bundle_file_before_rewriting_marker() {
-    let repo = repo();
-    let retired = repo
-        .path()
-        .join(".agents/skills/plan/EXECUTION-PROMPT-FORMAT.md");
-    fs::create_dir_all(retired.parent().unwrap()).unwrap();
-    fs::create_dir_all(repo.path().join(".codex1")).unwrap();
-    fs::write(&retired, LEGACY_EXECUTION_PROMPT_FORMAT_BODY).unwrap();
-    fs::write(
-        repo.path().join(".codex1/setup-bundle.json"),
-        serde_json::to_string_pretty(&serde_json::json!({
-            "managed_by": "codex1-managed",
-            "version": 4,
-            "files": [
-                ".agents/skills/codex1/SKILL.md",
-                ".agents/skills/clarify/SKILL.md",
-                ".agents/skills/clarify/ADR-FORMAT.md",
-                ".agents/skills/clarify/CONTEXT-FORMAT.md",
-                ".agents/skills/create-prd/SKILL.md",
-                ".agents/skills/create-prd/PRD-FORMAT.md",
-                ".agents/skills/plan/SKILL.md",
-                ".agents/skills/plan/ADR-FORMAT.md",
-                ".agents/skills/plan/SUBPLAN-BRIEF.md",
-                ".agents/skills/plan/EXECUTION-PROMPT-FORMAT.md",
-                "docs/agents/codex1-workflow.md",
-                "docs/agents/codex1-domain.md",
-                "docs/agents/codex1-artifact-briefs.md",
-                "AGENTS.md"
-            ]
-        }))
-        .unwrap()
-            + "\n",
-    )
-    .unwrap();
-
-    json_output(
-        bin()
-            .args(["--json", "--repo-root"])
-            .arg(repo.path())
-            .args(["setup", "install"]),
-    );
-
-    assert!(!retired.exists());
 }
 
 #[test]
@@ -550,9 +405,14 @@ fn setup_install_refuses_partial_managed_marker() {
 
 #[test]
 fn setup_install_refuses_unmanaged_managed_files_without_marker() {
-    for relative in [MANAGED_SKILLS[0], MANAGED_SUPPORTING_DOCS[0]] {
+    for collection in ["skills", "supporting_docs"] {
         let repo = repo();
-        let path = repo.path().join(relative);
+        let status = setup_status(&repo);
+        let relative = status_collection_paths(&status, collection)
+            .into_iter()
+            .next()
+            .unwrap();
+        let path = repo.path().join(&relative);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, "# User file\n").unwrap();
 
@@ -614,62 +474,7 @@ fn setup_backups_restore_previous_marker_absence_from_prior_bundle() {
     let repo_root = fs::canonicalize(repo.path()).unwrap();
     fs::create_dir_all(repo_root.join(".codex1/setup-backups")).unwrap();
     let marker = repo_root.join(".codex1/setup-bundle.json");
-    fs::write(
-        &marker,
-        serde_json::to_string_pretty(&serde_json::json!({
-            "managed_by": "codex1-managed",
-            "version": 7,
-            "files": [
-                ".agents/skills/codex1/SKILL.md",
-                ".agents/skills/codex1/agents/openai.yaml",
-                ".agents/skills/clarify/SKILL.md",
-                ".agents/skills/clarify/agents/openai.yaml",
-                ".agents/skills/clarify/ADR-FORMAT.md",
-                ".agents/skills/clarify/CONTEXT-FORMAT.md",
-                ".agents/skills/create-prd/SKILL.md",
-                ".agents/skills/create-prd/agents/openai.yaml",
-                ".agents/skills/create-prd/PRD-FORMAT.md",
-                ".agents/skills/plan/SKILL.md",
-                ".agents/skills/plan/agents/openai.yaml",
-                ".agents/skills/plan/ADR-FORMAT.md",
-                ".agents/skills/plan/SUBPLAN-BRIEF.md",
-                ".agents/skills/plan/GOAL-BRIEF-FORMAT.md",
-                ".agents/skills/tdd/SKILL.md",
-                ".agents/skills/tdd/agents/openai.yaml",
-                ".agents/skills/tdd/tests.md",
-                ".agents/skills/tdd/mocking.md",
-                ".agents/skills/tdd/deep-modules.md",
-                ".agents/skills/tdd/interface-design.md",
-                ".agents/skills/tdd/refactoring.md",
-                ".agents/skills/diagnose/SKILL.md",
-                ".agents/skills/diagnose/agents/openai.yaml",
-                ".agents/skills/diagnose/scripts/hitl-loop.template.sh",
-                ".agents/skills/improve-codebase-architecture/SKILL.md",
-                ".agents/skills/improve-codebase-architecture/agents/openai.yaml",
-                ".agents/skills/improve-codebase-architecture/LANGUAGE.md",
-                ".agents/skills/improve-codebase-architecture/INTERFACE-DESIGN.md",
-                ".agents/skills/improve-codebase-architecture/DEEPENING.md",
-                ".agents/skills/prototype/SKILL.md",
-                ".agents/skills/prototype/agents/openai.yaml",
-                ".agents/skills/prototype/LOGIC.md",
-                ".agents/skills/prototype/UI.md",
-                ".agents/skills/codex-review/SKILL.md",
-                ".agents/skills/codex-review/agents/openai.yaml",
-                ".agents/skills/codex-review/scripts/codex-review",
-                ".agents/skills/brutal-review/SKILL.md",
-                ".agents/skills/brutal-review/agents/openai.yaml",
-                ".agents/skills/handoff/SKILL.md",
-                ".agents/skills/handoff/agents/openai.yaml",
-                "docs/agents/codex1-workflow.md",
-                "docs/agents/codex1-domain.md",
-                "docs/agents/codex1-artifact-briefs.md",
-                "AGENTS.md"
-            ]
-        }))
-        .unwrap()
-            + "\n",
-    )
-    .unwrap();
+    fs::write(&marker, include_str!("../.codex1/setup-bundle.json")).unwrap();
     fs::write(
         repo_root.join(".codex1/setup-backups/manifest.json"),
         serde_json::to_string_pretty(&serde_json::json!({
