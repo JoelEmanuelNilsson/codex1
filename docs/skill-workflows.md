@@ -10,7 +10,7 @@ Codex1 skills must not create native goals for ordinary one-turn work. When a na
 
 ## Setup
 
-`codex1 setup` materializes repo-scoped Codex1 artifact workflow guidance: core workflow skills (`$clarify`, `$create-prd`, `$plan`), repo-local lane skills (`$tdd`, `$diagnose`, `$improve-codebase-architecture`), the `$codex-review` closeout helper, and the `$handoff` continuation helper. `codex1 init` creates the standard mission directory tree. The CLI does not manage continuation, create native goals, report mission status, or write semantic artifacts.
+`codex1 setup` materializes repo-scoped Codex1 artifact workflow guidance: core workflow skills (`$clarify`, `$create-prd`), repo-local lane skills (`$tdd`, `$diagnose`, `$improve-codebase-architecture`), the `$codex-review` closeout helper, and the `$handoff` continuation helper. `codex1 init` creates the standard mission directory tree. The CLI does not manage continuation, create native goals, report mission status, or write semantic artifacts.
 
 ## Clarify
 
@@ -22,25 +22,11 @@ Clarify may create durable notes or feed the later PRD answers, but it is not th
 
 Create PRD synthesizes everything Codex already knows from the conversation, clarification output, repo inspection, and user-provided references into `PRD.md`. It should not re-interview the user by default; it should write the best PRD from available context.
 
-The PRD should carry enough product and implementation context for `$plan`: problem statement, solution, extensive behavior-focused user stories, observable success criteria, boundaries, module sketch, implementation decisions, testing decisions, proof expectations, review expectations, and PR intent. Boundaries should distinguish what must always be preserved, what requires approval before changing, and what is out of scope. The PRD stays inside the Codex1 mission artifact tree.
-
-## Plan
-
-Plan reads the PRD and turns it into a lean executable route for PRD-backed product missions. It is not the right workflow for diagnosis, optimization research, benchmarking, review, prompt writing, or goal-prompt preparation; use the relevant lane skill or direct workflow for those.
-
-The default output is the smallest executable spine: `PLAN.md`, `GOAL_BRIEF.md`, and ready subplans only when separate slices will guide execution. For substantial uncertainty, Plan may create `RESEARCH_PLAN.md` and `RESEARCH/` records. It may also create ADRs and specs when they have named future consumers. ADRs are for durable architecture decisions and rejected alternatives with load-bearing reasons, not tiny implementation notes. Architecture work can be a planning lens or its own refactor mission. Ready subplans should be compact tracer-bullet vertical slices and durable agent briefs with current/desired behavior, key interfaces, scope, out-of-scope work, dependencies, acceptance criteria, proof, ownership rules, and exit criteria. The planner decides technical ordering and parallel-safe work; ask the user only for missing product, scope, UX, credential, or human-judgment decisions.
-
-`PLAN.md` should not stop at phases, waves, or workstreams. It should preserve the execution spine: outcome contract, implementation shape, execution order, ready subplans, proof strategy, risks/non-goals, and unresolved human decisions if any.
-
-The final planning output for executable work is `GOAL_BRIEF.md`: a rich native goal brief that preserves the user's explicit go moment without pretending Codex1 owns the goal. The brief should shape the native goal around a desired end state, specific evidence, preserved constraints, how Codex chooses the next best action between continuations, what long-running work records in `notes.md`, and what gets reported if the mission is blocked.
-
-The goal brief is not native goal state, not a file-loading instruction, not automatically the exact pasteable prompt, and not sacred final text. It should give Codex enough context to create or refine a whole-mission `/goal`, including mission-specific metrics, baselines or proxies, validation loop, and readiness facts when they affect execution. It must not tell Codex to read `GOAL_BRIEF.md` as the first execution step. If an exact under-limit prompt is needed, write a compact suggested goal request or `GOAL_PROMPT.md`.
-
-In Plan mode, native goal continuation is suppressed by Codex itself. Codex1 should still only write artifacts the user requested or the plan clearly needs.
+The PRD should carry enough product and implementation context for direct execution or a native `/goal`: problem statement, solution, extensive behavior-focused user stories, observable success criteria, boundaries, module sketch, implementation decisions, testing decisions, proof expectations, review expectations, and PR intent. Boundaries should distinguish what must always be preserved, what requires approval before changing, and what is out of scope. The PRD stays inside the Codex1 mission artifact tree.
 
 ## Execute
 
-Execute works from active or ready subplans. Each executable slice should have a subplan. Workers receive the PRD, plan, relevant spec, relevant subplan, applicable ADRs, explicit ownership, proof expectations, and non-goals.
+Execute works from the PRD, current user request, current repo evidence, and any optional specs or subplans that already exist. Subplans are helpful only when separate execution slices genuinely reduce ambiguity. Workers receive the PRD, relevant specs or subplans, applicable ADRs, explicit ownership, proof expectations, and non-goals.
 
 Workers should not edit mission-level artifacts unless explicitly assigned. If implementation reveals a mismatch, they should report it or update only their assigned spec when allowed.
 
@@ -64,4 +50,4 @@ Interrupt and resume behavior belongs to native Codex, not Codex1. If a persiste
 
 Use `$handoff` when a human wants a compact temporary note for another agent or future fresh context. Handoffs should reference existing artifacts instead of duplicating them, live outside the repo by default, and not be treated as mission state.
 
-Autonomous execution for a PRD-backed mission should clarify first, create the PRD, plan, create or refine the native `/goal` from `GOAL_BRIEF.md`, execute slices, record reviews and triage when useful, write proofs, and close out when explicit completion criteria are satisfied. It should only open a PR when PR intent is part of the PRD.
+Autonomous execution for a PRD-backed mission should clarify first, create the PRD, create or refine a native `/goal` only when the user wants persistence, execute with the right lane skill when useful, record reviews and triage when useful, write proofs, and close out when explicit completion criteria are satisfied. It should only open a PR when PR intent is part of the PRD.

@@ -6,7 +6,7 @@ It does not decide whether work is ready, reviewed, correct, or done. Codex rema
 
 Long-running objective tracking belongs to native Codex goals. Use Codex's `/goal` flow to manage the active goal; Codex1 only stores mission artifacts that can support that work.
 
-For execution, Codex1 skills plan up to a rich `GOAL_BRIEF.md`. The user keeps the explicit go moment by creating or refining a native `/goal` from that brief, or from an optional compact `GOAL_PROMPT.md`; the CLI does not auto-start execution or generate mission artifacts.
+Codex1 skills clarify product intent and synthesize PRDs; execution stays with Codex directly or with a native `/goal` when the user wants persistence. The CLI does not auto-start execution or generate semantic mission artifacts.
 
 ## Quickstart
 
@@ -28,10 +28,9 @@ The installed skills expose the intended UX:
 ```text
 $clarify     -> gather mission context while questions are allowed
 $create-prd  -> synthesize known context into PRD.md
-$plan        -> create the lean executable route and GOAL_BRIEF.md
 $codex-review -> run advisory Codex review before proof/closeout when useful
 $handoff     -> compact the session into a temporary note for a fresh agent
-/goal        -> user creates or refines the native goal from the brief
+/goal        -> user creates or refines the native goal when persistence is useful
 ```
 
 ```sh
@@ -76,7 +75,7 @@ The mission ID is intentionally boring: ASCII letters, digits, `-`, and `_` only
 
 ## Research-Heavy Flow
 
-For uncertain work, Codex can create a PRD, then a research plan, one or more research records, and then update the plan as normal Markdown files inside the mission tree. The CLI does not decide that research is sufficient.
+For uncertain work, Codex can create a PRD, then a research plan and one or more research records as normal Markdown files inside the mission tree. The CLI does not decide that research is sufficient.
 
 ## Native Goals
 
@@ -90,7 +89,7 @@ Use native Codex goals for continuation discipline:
 
 Codex can use mission artifacts to clarify and prove the work, but the active objective, continuation, pause/resume, accounting, budget limiting, and completion discipline live in Codex itself. Codex1 does not create, mirror, or complete native goals.
 
-When `$plan` prepares execution, it writes `GOAL_BRIEF.md` as a rich native goal brief. Codex can use the brief to create or refine a whole-mission `/goal`. The brief should describe the mission, artifacts to read, subplan order, worker rules, proof/review/triage expectations, explicit completion criteria, non-completion behavior, closeout criteria, and prohibited actions. It should also name the desired end state, specific evidence, preserved constraints, iteration policy, long-running `notes.md` tracking rule, and blocked-report behavior. If the user needs exact copy/paste text under a limit, write that separately as a compact suggested goal request or `GOAL_PROMPT.md`.
+When persistent execution is useful, Codex can use the PRD, current repo evidence, and any existing mission artifacts to create or refine a whole-mission `/goal`. If the user needs exact copy/paste text under a limit, keep that as a compact `GOAL_PROMPT.md` rather than turning the CLI into a goal author.
 
 ## Anti-Oracle Rule
 

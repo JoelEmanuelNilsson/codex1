@@ -10,11 +10,11 @@ Clarification artifacts or notes capture the user's raw intent, open questions, 
 
 `PRD.md` captures the mission goal, problem statement, solution, behavior-focused user stories, interpreted destination, observable success criteria, boundaries, module sketch, assumptions, implementation and testing decisions, proof expectations, review expectations, and PR intent. Its boundaries distinguish `Always Preserve`, `Ask Before Changing`, and `Out Of Scope` work. It is the anchor for durable work.
 
-`PLAN.md` is the executable route map. It describes the outcome contract, implementation shape, execution order, useful parallelization notes, ready subplans if any, proof strategy, risks, non-goals, and unresolved human decisions if any. It is not a status dashboard, dependency graph engine, or proof ledger.
+`PLAN.md` is an optional route map when a mission genuinely needs one. It can describe execution order, proof strategy, risks, non-goals, and unresolved human decisions. It is not a required phase, status dashboard, dependency graph engine, or proof ledger.
 
 `RESEARCH_PLAN.md` is optional. Codex writes it when research is substantial enough to need durable structure.
 
-`GOAL_BRIEF.md` is the rich native goal brief produced by planning. It helps Codex create or refine the real native `/goal` for the whole mission. It tells Codex what mission to execute, which artifacts to read, how to select subplans, how workers may be used, what may be edited, how proofs/reviews/triage should be recorded, what completion means, how Codex should choose the next best action between continuations, what long-running notes to keep, what to record if completion cannot be reached, what closeout means, and what not to do. It is not an execution trigger, native goal state, or necessarily the exact pasteable prompt.
+`GOAL_BRIEF.md` is an optional native goal brief. It can help Codex create or refine the real native `/goal` for the whole mission by preserving the desired end state, artifacts to read, editable scope, proof/review/triage expectations, completion criteria, non-completion behavior, closeout expectations, and prohibited actions. It is not an execution trigger, native goal state, or necessarily the exact pasteable prompt.
 
 `GOAL_PROMPT.md` is optional. Use it only when the user needs one compact copy source for the exact native `/goal` objective.
 
@@ -24,7 +24,7 @@ Clarification artifacts or notes capture the user's raw intent, open questions, 
 
 `RESEARCH/` stores research records when research is actually needed: sources inspected, facts found, experiments run, uncertainties, options, recommendations, and affected artifacts.
 
-`SPECS/` stores bounded implementation contracts when the PRD and plan are not precise enough for implementation. Specs describe responsibility, PRD relevance, scope, expected behavior, interfaces, proof expectations, and risks.
+`SPECS/` stores bounded implementation contracts when the PRD is not precise enough for implementation. Specs describe responsibility, PRD relevance, scope, expected behavior, interfaces, proof expectations, and risks.
 
 `SUBPLANS/` stores tracer-bullet slices in visible lifecycle folders when separate execution contracts are useful. Ready subplans act as durable agent briefs: slice type, current and desired behavior, stable interfaces, scope, out-of-scope work, dependencies, acceptance criteria, proof, and exit criteria. Folder placement is a cue for humans and Codex, not a CLI state machine. Multiple files may be in `active/`.
 

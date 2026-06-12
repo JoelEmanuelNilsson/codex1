@@ -50,22 +50,11 @@ fn setup_install_materializes_repo_scoped_guidance() {
     assert!(prd_format.contains("do not introduce fallback paths, legacy compatibility"));
     assert!(prd_format.contains("### Always Preserve"));
     assert!(prd_format.contains("### Ask Before Changing"));
-    let plan = fs::read_to_string(repo.path().join(".agents/skills/plan/SKILL.md")).unwrap();
-    assert!(plan.contains("subplans are implementation slices, not product stages"));
-    assert!(plan.contains("## Suitability Gate"));
-    assert!(plan.contains("## Artifact Minimalism"));
-    assert!(plan.contains("Do not use `$plan` when the user asks to diagnose"));
-    assert!(plan.contains("Run a lightweight execution-readiness audit"));
-    assert!(plan.contains("next-action policy between continuations"));
-    let goal_brief_format =
-        fs::read_to_string(repo.path().join(".agents/skills/plan/GOAL-BRIEF-FORMAT.md")).unwrap();
-    assert!(goal_brief_format.contains("GOAL_PROMPT.md"));
-    assert!(goal_brief_format.contains("Do not force the whole brief under a character limit"));
-    assert!(goal_brief_format.contains("## Goal Contract Pattern"));
-    assert!(goal_brief_format.contains("Stop and ask rules"));
-    assert!(goal_brief_format.contains("notes.md"));
-    assert!(goal_brief_format.contains("proven"));
-    assert!(goal_brief_format.contains("safe during goal"));
+    assert!(!repo.path().join(".agents/skills/plan/SKILL.md").exists());
+    assert!(!repo
+        .path()
+        .join(".agents/skills/plan/GOAL-BRIEF-FORMAT.md")
+        .exists());
     let artifact_briefs =
         fs::read_to_string(repo.path().join("docs/agents/codex1-artifact-briefs.md")).unwrap();
     assert!(artifact_briefs.contains("assume the final finished product"));
@@ -253,8 +242,8 @@ fn setup_enable_repairs_stale_managed_skill_and_marker() {
     let skill = fs::read_to_string(repo.path().join(".agents/skills/clarify/SKILL.md")).unwrap();
     let marker = fs::read_to_string(repo.path().join(".codex1/setup-bundle.json")).unwrap();
     assert!(skill.contains("Relentlessly clarify"));
-    assert!(repo.path().join(".agents/skills/plan/SKILL.md").is_file());
-    assert!(marker.contains(r#""version": 14"#));
+    assert!(!repo.path().join(".agents/skills/plan/SKILL.md").exists());
+    assert!(marker.contains(r#""version": 15"#));
 }
 
 #[test]

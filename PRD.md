@@ -10,7 +10,7 @@ The user-facing mental model should be simple:
 
 - Native `/goal` means persistent objective and continuation.
 - Codex1 CLI means `setup` and `init`.
-- Codex1 skills mean clarify, PRD synthesis, planning, execution lanes, review evidence, proof, and closeout.
+- Codex1 skills mean clarify, PRD synthesis, execution lanes, review evidence, proof, and closeout.
 - Codex remains the semantic judge.
 
 ## Solution
@@ -26,18 +26,17 @@ The skills own the mission workflow:
 
 - `$clarify` sharpens intent while questions are allowed.
 - `$create-prd` synthesizes known context into `PRD.md`.
-- `$plan` writes the execution plan, specs, subplans, ADRs, and `GOAL_BRIEF.md` when useful.
 - Lane skills guide execution where they fit.
 - `$codex-review` provides advisory review evidence.
 
-`GOAL_BRIEF.md` helps Codex create or refine a native `/goal`; it is not goal state by itself.
+Optional mission artifacts can help Codex create or refine a native `/goal`; they are not goal state by themselves.
 
 ## User Stories
 
 1. As a Codex1 user, I want native `/goal` to own long-running continuation, so persistent objectives follow the official Codex model.
 2. As a Codex1 user, I want setup to install repo-local workflow guidance, so Codex can discover the conventions in enabled repos.
 3. As a Codex1 user, I want init to create the mission directory tree safely, so artifacts have a predictable home.
-4. As a Codex1 user, I want PRDs, plans, specs, subplans, proofs, reviews, triage, and closeout to stay readable, so future sessions can understand the work.
+4. As a Codex1 user, I want PRDs, specs, subplans, proofs, reviews, triage, and closeout to stay readable, so future sessions can understand the work.
 5. As a Codex1 user, I want no CLI readiness oracle, so correctness and completion remain Codex judgments over actual evidence.
 6. As a maintainer, I want the CLI command surface to stay tiny, so bloat does not creep back.
 7. As a maintainer, I want setup backups and path containment well tested, so the real machinery remains reliable.
@@ -49,7 +48,7 @@ The skills own the mission workflow:
 - `codex1 init` creates only the path-safe mission scaffold and writes no semantic mission artifacts.
 - `codex1 setup` materializes, checks, repairs, disables, uninstalls, backs up, restores, and diagnoses only repo-local managed guidance.
 - Setup status and doctor output remain mechanical bundle-health checks, not mission readiness, proof, review, closeout, or native goal state.
-- Workflow skills describe the clarify, create PRD, plan, review, proof, and closeout flow without giving the CLI semantic authority.
+- Workflow skills describe the clarify, create PRD, review, proof, and closeout flow without giving the CLI semantic authority.
 - Tests cover the tiny CLI boundary, setup materialization, path containment, backup/restore behavior, and anti-oracle guarantees.
 
 ## Boundaries

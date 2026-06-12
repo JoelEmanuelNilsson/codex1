@@ -6,20 +6,15 @@ Codex1 is a local artifact workflow, not native goal state.
 
 1. `$clarify` sharpens intent while questions are allowed.
 2. `$create-prd` synthesizes known context into `PRD.md`.
-3. `$plan` designs the lean executable route and `GOAL_BRIEF.md`.
-4. The user asks Codex to create or refine a native `/goal` from `GOAL_BRIEF.md`.
+3. Codex executes directly from the PRD, or the user asks Codex to create or refine a native `/goal` when persistence is useful.
 
-`GOAL_BRIEF.md` is a rich native goal brief. It should not instruct Codex to read itself as the first execution step. It should shape the goal around a desired end state, specific evidence, preserved constraints, an iteration policy, tracking expectations, and blocked-report behavior. If the user needs an exact pasteable `/goal` prompt, use a compact suggested goal request or `GOAL_PROMPT.md`; do not shrink the whole brief just to satisfy a prompt limit.
-
-## When Not To Plan
-
-Do not use `$plan` for diagnosis, debugging, optimization research, benchmarking, code review, prompt writing, goal-prompt preparation, or any request where the user explicitly says not to use `$plan`. Use the relevant lane skill or direct workflow and write only the requested docs or prompt.
+If the user needs exact pasteable `/goal` text, write a compact goal request or `GOAL_PROMPT.md`. Do not make Codex1 own native goal state.
 
 ## Core Skills And Lane Skills
 
-Core skills shape PRD-backed product missions: `$clarify`, `$create-prd`, and `$plan`.
+Core skills shape PRD-backed product missions: `$clarify` and `$create-prd`.
 
-Lane skills guide execution inside ready subplans: `$tdd`, `$diagnose`, and `$improve-codebase-architecture`. `$plan` assigns the lane; native `/goal` executes. Use `standard` for docs, simple config, mechanical updates, low-risk chores, and work where a specialist lane would be fake ceremony.
+Lane skills guide execution when their discipline fits: `$tdd`, `$diagnose`, and `$improve-codebase-architecture`. Use direct execution for docs, simple config, mechanical updates, low-risk chores, and work where a specialist lane would be fake ceremony.
 
 Review helper skills guide evidence gathering without adding an execution lane. Use `$codex-review` during proof/QA or the review cycle when a second-model Codex review should inspect a local diff, branch, or commit. Its output is advisory evidence until main Codex verifies and triages it.
 

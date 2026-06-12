@@ -2,7 +2,7 @@
 
 Codex1 commands are deliberately small. The CLI only does work that benefits from deterministic code and path-safety checks.
 
-Native Codex `/goal` owns continuation, pause/resume, usage accounting, and completion. Codex skills own PRDs, plans, specs, subplans, reviews, proofs, triage, and closeout.
+Native Codex `/goal` owns continuation, pause/resume, usage accounting, and completion. Codex skills own PRDs, specs, subplans, reviews, proofs, triage, and closeout.
 
 ## Global Flags
 

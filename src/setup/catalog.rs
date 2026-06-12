@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::guidance;
 
-pub(super) const BUNDLE_VERSION: u32 = 14;
+pub(super) const BUNDLE_VERSION: u32 = 15;
 pub(super) const BUNDLE_GUIDANCE: &str = "AGENTS.md";
 pub(super) const BUNDLE_MARKER: &str = ".codex1/setup-bundle.json";
 
@@ -120,7 +120,7 @@ enum BundleBody {
     Guidance,
 }
 
-const CURRENT_BUNDLE_ENTRIES: [BundleEntry; 36] = [
+const CURRENT_BUNDLE_ENTRIES: [BundleEntry; 31] = [
     BundleEntry::managed_skill(
         CLARIFY_SKILL,
         include_str!("../../.agents/skills/clarify/SKILL.md"),
@@ -148,26 +148,6 @@ const CURRENT_BUNDLE_ENTRIES: [BundleEntry; 36] = [
     BundleEntry::supporting_doc(
         CREATE_PRD_FORMAT,
         include_str!("../../.agents/skills/create-prd/PRD-FORMAT.md"),
-    ),
-    BundleEntry::managed_skill(
-        PLAN_SKILL,
-        include_str!("../../.agents/skills/plan/SKILL.md"),
-    ),
-    BundleEntry::supporting_doc(
-        PLAN_OPENAI_YAML,
-        include_str!("../../.agents/skills/plan/agents/openai.yaml"),
-    ),
-    BundleEntry::supporting_doc(
-        PLAN_ADR_FORMAT,
-        include_str!("../../.agents/skills/plan/ADR-FORMAT.md"),
-    ),
-    BundleEntry::supporting_doc(
-        PLAN_SUBPLAN_BRIEF,
-        include_str!("../../.agents/skills/plan/SUBPLAN-BRIEF.md"),
-    ),
-    BundleEntry::supporting_doc(
-        PLAN_GOAL_BRIEF_FORMAT,
-        include_str!("../../.agents/skills/plan/GOAL-BRIEF-FORMAT.md"),
     ),
     BundleEntry::managed_skill(TDD_SKILL, include_str!("../../.agents/skills/tdd/SKILL.md")),
     BundleEntry::supporting_doc(
@@ -539,6 +519,7 @@ fn current_entry(relative: &str) -> Option<&'static BundleEntry> {
 
 fn files_match_known_bundle(files: &[String]) -> bool {
     files == current_bundle_files()
+        || files_match(files, &pre_plan_retirement_bundle_files())
         || LEGACY_RELEASES
             .iter()
             .any(|release| files_match(files, &legacy_bundle_files(*release)))
@@ -587,6 +568,21 @@ fn legacy_bundle_files(release: LegacyReleaseSpec) -> Vec<&'static str> {
     if release.agent_docs {
         files.extend([WORKFLOW_DOC, DOMAIN_DOC, ARTIFACT_BRIEFS_DOC]);
     }
+    files.push(BUNDLE_GUIDANCE);
+    files
+}
+
+fn pre_plan_retirement_bundle_files() -> Vec<&'static str> {
+    let release = LEGACY_RELEASES[0];
+    let mut files = Vec::new();
+    push_workflow_files(&mut files, release);
+    push_tdd_files(&mut files, release.openai_yaml);
+    push_diagnose_files(&mut files, release.openai_yaml);
+    push_architecture_files(&mut files, release.openai_yaml);
+    push_codex_review_files(&mut files, release.openai_yaml);
+    files.push(HANDOFF_SKILL);
+    files.push(HANDOFF_OPENAI_YAML);
+    files.extend([WORKFLOW_DOC, DOMAIN_DOC, ARTIFACT_BRIEFS_DOC]);
     files.push(BUNDLE_GUIDANCE);
     files
 }
@@ -683,6 +679,11 @@ fn push_brutal_review_files(files: &mut Vec<&'static str>, openai_yaml: bool) {
 
 fn retired_legacy_files() -> Vec<&'static str> {
     let mut retired = Vec::new();
+    for relative in pre_plan_retirement_bundle_files() {
+        if !is_current_bundle_file(relative) && !retired.contains(&relative) {
+            retired.push(relative);
+        }
+    }
     for release in LEGACY_RELEASES {
         for relative in legacy_bundle_files(release) {
             if !is_current_bundle_file(relative) && !retired.contains(&relative) {
@@ -704,7 +705,7 @@ struct LegacyBodyFingerprint {
     fnv1a64: u64,
 }
 
-const LEGACY_MANAGED_BODY_FINGERPRINTS: [LegacyBodyFingerprint; 20] = [
+const LEGACY_MANAGED_BODY_FINGERPRINTS: [LegacyBodyFingerprint; 25] = [
     LegacyBodyFingerprint {
         relative: OVERVIEW_SKILL,
         len: 3209,
@@ -771,9 +772,34 @@ const LEGACY_MANAGED_BODY_FINGERPRINTS: [LegacyBodyFingerprint; 20] = [
         fnv1a64: 0x59643282b16f9eff,
     },
     LegacyBodyFingerprint {
+        relative: PLAN_SKILL,
+        len: 12566,
+        fnv1a64: 0xf0bb154ce15a5f52,
+    },
+    LegacyBodyFingerprint {
+        relative: PLAN_OPENAI_YAML,
+        len: 193,
+        fnv1a64: 0x5e370f80030562eb,
+    },
+    LegacyBodyFingerprint {
+        relative: PLAN_ADR_FORMAT,
+        len: 2208,
+        fnv1a64: 0x8b527e3ae5a8916c,
+    },
+    LegacyBodyFingerprint {
+        relative: PLAN_SUBPLAN_BRIEF,
+        len: 3586,
+        fnv1a64: 0xc8d942a06e10775e,
+    },
+    LegacyBodyFingerprint {
         relative: PLAN_GOAL_BRIEF_FORMAT,
         len: 1818,
         fnv1a64: 0x2bf7a05a412c9df7,
+    },
+    LegacyBodyFingerprint {
+        relative: PLAN_GOAL_BRIEF_FORMAT,
+        len: 5918,
+        fnv1a64: 0xdaf848443c7c9c74,
     },
     LegacyBodyFingerprint {
         relative: CODEX_REVIEW_SKILL,
@@ -878,6 +904,15 @@ Always prohibit:
 #[cfg(test)]
 pub(super) fn legacy_marker_body_for_test(version: u32) -> String {
     let release = match version {
+        14 => {
+            return serde_json::to_string_pretty(&BundleMarker {
+                managed_by: "codex1-managed".into(),
+                version,
+                files: files_to_strings(&pre_plan_retirement_bundle_files()),
+            })
+            .unwrap()
+                + "\n"
+        }
         13 => LEGACY_RELEASES[0],
         11 => LEGACY_RELEASES[1],
         8 => LEGACY_RELEASES[2],
@@ -975,7 +1010,7 @@ mod tests {
 
     #[test]
     fn legacy_release_specs_match_known_compatibility_markers() {
-        for version in [13, 11, 8, 6, 5, 4, 3, 2, 1] {
+        for version in [14, 13, 11, 8, 6, 5, 4, 3, 2, 1] {
             let marker: BundleMarker =
                 serde_json::from_str(&legacy_marker_body_for_test(version)).unwrap();
             assert!(
@@ -1006,6 +1041,11 @@ mod tests {
             (CLARIFY_SKILL, 3919, 0xb75e2bb26bbfe162),
             (CREATE_PRD_SKILL, 3221, 0xe77c78c652529d1e),
             (CREATE_PRD_FORMAT, 1834, 0x0c53c184ad841164),
+            (PLAN_SKILL, 12566, 0xf0bb154ce15a5f52),
+            (PLAN_OPENAI_YAML, 193, 0x5e370f80030562eb),
+            (PLAN_ADR_FORMAT, 2208, 0x8b527e3ae5a8916c),
+            (PLAN_SUBPLAN_BRIEF, 3586, 0xc8d942a06e10775e),
+            (PLAN_GOAL_BRIEF_FORMAT, 5918, 0xdaf848443c7c9c74),
             (ARTIFACT_BRIEFS_DOC, 2225, 0x1defde1b457d9232),
             (CODEX_REVIEW_SKILL, 6209, 0xebc17dcf5b43258a),
             (CODEX_REVIEW_HELPER, 14947, 0x3b8b15d2cfecf630),
