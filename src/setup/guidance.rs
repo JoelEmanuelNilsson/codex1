@@ -6,7 +6,7 @@ pub(super) fn body() -> &'static str {
 
 codex1-managed
 
-Codex1 is enabled in this repository as a local artifact workflow convention. Use `$clarify` for product discovery and `$create-prd` to synthesize known context into `PRD.md` for PRD-backed product missions. Read `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, and `docs/agents/codex1-artifact-briefs.md` for the repo-local workflow, domain, ADR, and artifact rules. Use `codex1 setup` for repo-local guidance and `codex1 init` for path-safe mission scaffolding. Use native `/goal` for persistent objectives and continuation. For execution, work directly from the PRD and current repo evidence, choosing lane skills such as `$tdd`, `$diagnose`, or `$improve-codebase-architecture` only when they fit the task.
+Codex1 is enabled in this repository as a local artifact workflow convention. Use `$clarify` for product discovery and `$create-prd` to synthesize known context into `PRD.md` for PRD-backed product missions. Read `docs/agents/codex1-workflow.md`, `docs/agents/codex1-domain.md`, and `docs/agents/codex1-artifact-briefs.md` for the repo-local workflow, domain, ADR, and artifact rules. Use `codex1 setup` for repo-local guidance and `codex1 init` for path-safe mission scaffolding. Use native `/goal` for persistent objectives and continuation. For execution, work directly from the PRD and current repo evidence. For coding work, always use `$tdd` when its red-green-refactor loop is relevant; choose `$diagnose` or `$improve-codebase-architecture` when those lanes better fit the task.
 
 Codex remains the semantic judge. Codex1 setup status and init output are not readiness, completion, review, proof, closeout, or native goal state.
 "#
@@ -67,6 +67,7 @@ mod tests {
         assert!(replaced.contains("before"));
         assert!(replaced.contains("after"));
         assert!(replaced.contains("native `/goal`"));
+        assert!(replaced.contains("always use `$tdd`"));
         let removed = remove_block(&replaced).unwrap();
         assert!(removed.contains("before"));
         assert!(removed.contains("after"));

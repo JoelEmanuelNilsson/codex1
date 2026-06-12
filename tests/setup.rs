@@ -32,6 +32,9 @@ fn setup_install_materializes_repo_scoped_guidance() {
 
     let guidance = fs::read_to_string(repo.path().join("AGENTS.md")).unwrap();
     assert!(guidance.contains("codex1-managed setup guidance start"));
+    assert!(guidance.contains("always use `$tdd`"));
+    let workflow = fs::read_to_string(repo.path().join("docs/agents/codex1-workflow.md")).unwrap();
+    assert!(workflow.contains("For coding work, always use `$tdd`"));
     let clarify = fs::read_to_string(repo.path().join(".agents/skills/clarify/SKILL.md")).unwrap();
     assert!(clarify.contains("clarify observable success outcomes and boundaries"));
     assert!(clarify.contains("Before considering clarification complete"));

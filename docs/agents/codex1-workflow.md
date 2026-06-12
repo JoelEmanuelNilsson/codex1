@@ -14,7 +14,7 @@ If the user needs exact pasteable `/goal` text, write a compact goal request or 
 
 Core skills shape PRD-backed product missions: `$clarify` and `$create-prd`.
 
-Lane skills guide execution when their discipline fits: `$tdd`, `$diagnose`, and `$improve-codebase-architecture`. Use direct execution for docs, simple config, mechanical updates, low-risk chores, and work where a specialist lane would be fake ceremony.
+Lane skills guide execution when their discipline fits. For coding work, always use `$tdd` when its red-green-refactor loop is relevant. Use `$diagnose` for disciplined debugging and `$improve-codebase-architecture` for architecture deepening. Use direct execution for docs, simple config, mechanical updates, low-risk chores, and work where a specialist lane would be fake ceremony.
 
 Review helper skills guide evidence gathering without adding an execution lane. Use `$codex-review` during proof/QA or the review cycle when a second-model Codex review should inspect a local diff, branch, or commit. Its output is advisory evidence until main Codex verifies and triages it.
 
